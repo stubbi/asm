@@ -3,6 +3,7 @@ LD ?= ld
 PYTHON ?= python3
 PREFIX ?= /usr/local
 DESTDIR ?=
+REPLACE ?= 0
 
 .PHONY: all test clean install uninstall check
 all: build/asm
@@ -22,11 +23,10 @@ test: build/asm
 check: test
 
 install: build/asm
-	install -d "$(DESTDIR)$(PREFIX)/bin"
-	install -m 755 build/asm "$(DESTDIR)$(PREFIX)/bin/asm"
+	sh cli/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
 
-uninstall:
-	rm -f "$(DESTDIR)$(PREFIX)/bin/asm"
+uninstall: build/asm
+	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
 	rm -f build/asm build/asm.o
