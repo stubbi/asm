@@ -16,7 +16,7 @@
     if (typeof value !== "string") return null;
     try {
       const url = new URL(value);
-      if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port) return null;
+      if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port || url.search || url.hash) return null;
       if (releaseAsset && !/^\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/[^/]+$/.test(url.pathname)) return null;
       if (!releaseAsset && !/^\/[^/]+\/[^/]+\/?$/.test(url.pathname)) return null;
       return url.href;
@@ -32,7 +32,7 @@
     return data.packages.filter((pkg) => {
       return pkg && typeof pkg.name === "string" && pkg.name.length <= 128 &&
         typeof pkg.summary === "string" && pkg.summary.length <= 2000 &&
-        typeof pkg.latest === "string" && Array.isArray(pkg.targets) &&
+        (typeof pkg.latest === "string" || pkg.latest === null) && Array.isArray(pkg.targets) &&
         pkg.targets.every((target) => typeof target === "string" && target.length <= 128) &&
         Array.isArray(pkg.versions);
     }).map((pkg) => ({
@@ -151,12 +151,19 @@
         const item = element("li", "artifact");
         const title = element("p", "artifact-title");
         const label = artifact.kind === "executable" ? "Executable" : "Source archive";
-        title.append(link(label, githubURL(artifact.url, true)));
+        if (version.evidence?.artifacts === "validated") {
+          title.append(link(label, githubURL(artifact.url, true)));
+        } else {
+          title.append(element("span", "", label));
+        }
         title.append(element("span", "", `${artifact.target} · ${formatBytes(artifact.bytes)}`));
         item.append(title, element("code", "artifact-digest", `SHA-256 ${artifact.sha256}`));
         artifactList.append(item);
       });
       section.append(artifactList);
+      if (version.evidence?.artifacts !== "validated") {
+        section.append(element("p", "registry-fallback", "The site has not checked the published artifact bytes. Read the index for their declared URLs."));
+      }
     } else {
       section.append(element("p", "registry-fallback", "No supported artifact links are present in this record."));
     }
@@ -177,7 +184,7 @@
     const record = element("details", "package-record");
     const summary = element("summary");
     summary.append(element("span", "package-name", pkg.name));
-    summary.append(element("span", "package-version", pkg.latest));
+    summary.append(element("span", "package-version", pkg.latest || "No active release"));
     summary.append(element("span", "package-description", pkg.summary));
     summary.append(element("span", "package-targets", pkg.targets.join(" · ")));
     record.append(summary);
@@ -203,7 +210,7 @@
 
   function renderCliDownload() {
     const pkg = packages.find((entry) => entry.name === "stubbi/asm");
-    const version = pkg?.versions.find((entry) => entry.version === pkg.latest && !entry.yanked);
+    const version = pkg?.versions.find((entry) => entry.version === pkg.latest && !entry.yanked && entry.evidence?.artifacts === "validated");
     const artifacts = version?.artifacts.filter((artifact) => validArtifact(artifact) && artifact.kind === "executable") || [];
     const panel = document.getElementById("cli-download");
     if (!panel || !artifacts.length) return;

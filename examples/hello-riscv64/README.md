@@ -1,6 +1,6 @@
 # Hello on RISC-V Linux
 
-This program writes `Hello from ASM.` and a newline to standard output. It then exits with status 0. It uses the Linux system-call interface and does not need a C runtime.
+This program writes `Hello from asm!` and a newline to standard output. It then exits with status 0. It uses the Linux system-call interface and does not need a C runtime.
 
 The source uses GNU assembler syntax. The build below targets little-endian RV64I with the LP64 ABI. The current ASM CLI runs and builds on x86-64 Linux. It can fetch this package, but it does not build or run this target.
 

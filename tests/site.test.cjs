@@ -17,6 +17,8 @@ test("download links reject executable schemes, credentials, misleading hosts, a
     "https://github.com.evil.example/stubbi/asm/releases/download/v1/asm",
     "https://user:secret@github.com/stubbi/asm/releases/download/v1/asm",
     "https://github.com/stubbi/asm/blob/main/cli/asm.s",
+    "https://github.com/stubbi/asm/releases/download/v1/asm?unexpected=value",
+    "https://github.com/stubbi/asm/releases/download/v1/asm#fragment",
     "https://github.com:8443/stubbi/asm/releases/download/v1/asm"
   ]) assert.equal(githubURL(url, true), null);
   const good = "https://github.com/stubbi/asm/releases/download/v0.1.0/asm-linux-x86_64";
@@ -35,6 +37,13 @@ test("malformed records are excluded and valid targets remain exact", () => {
   const records = normalizeIndex({ schema: 1, packages: [null, {}, { ...pkg, targets: [null] }, pkg] });
   assert.equal(records.length, 1);
   assert.deepEqual(records[0].targets, ["x86_64-linux"]);
+});
+
+test("packages remain visible when every release has been yanked", () => {
+  const pkg = record("owner/alpha", "x86_64-linux");
+  pkg.latest = null;
+  pkg.versions[0].yanked = true;
+  assert.equal(normalizeIndex({ schema: 1, packages: [pkg] }).length, 1);
 });
 
 test("search combines all terms with an exact target filter", () => {

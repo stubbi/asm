@@ -1,6 +1,6 @@
 # Hello on AArch64 Linux
 
-This program writes `Hello from ASM.` and a newline to standard output. It then exits with status 0. It uses the Linux system-call interface and does not need a C runtime.
+This program writes `Hello from asm!` and a newline to standard output. It then exits with status 0. It uses the Linux system-call interface and does not need a C runtime.
 
 The source uses GNU assembler syntax. The target is little-endian, 64-bit AArch64 Linux. The current ASM CLI runs and builds on x86-64 Linux. It can fetch this package, but it does not build or run this target.
 

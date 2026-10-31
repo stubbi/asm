@@ -15,6 +15,6 @@ _start:
 
 .section .rodata
 message:
-    .ascii "Hello from ASM.\n"
+    .ascii "Hello from asm!\n"
 
 .section .note.GNU-stack,"",@progbits
