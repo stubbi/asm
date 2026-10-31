@@ -1,0 +1,7 @@
+/build/
+/dist/
+/.pages/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.bundle
