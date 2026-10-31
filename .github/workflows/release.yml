@@ -2,12 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      source_ref:
-        description: 'Commit or tag to build'
-        required: true
-        default: main
-        type: string
 
 permissions: {}
 
@@ -27,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Install target verification tools
