@@ -6,11 +6,17 @@ ASM distributes executable code. A package can be correctly signed, build succes
 
 ## Current implementation
 
-The registry tools validate strict metadata, immutable release history when a baseline is supplied, artifact size and SHA-256, bounded source archives, and ELF architecture and segment bounds. Source packaging can read a pinned Git commit. The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination.
+The registry tools validate metadata, artifact size, and SHA-256. They compare immutable history when a baseline is supplied. They also check source archives and ELF architecture and segment bounds. Source packaging can read a pinned Git commit.
 
-The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. The client has no dependency lockfile. Provenance verification, advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
+The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
+
+The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Provenance verification, advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
 
 The controls in the following sections are requirements for those later services. Passing the current validator is not evidence that the later controls have run.
+
+Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate ASM processes; they do not constrain other processes running as the same user.
+
+Lock checks cover declared dependencies. GNU assembler includes and data directives can select other local files. The local build workflow is not a hermetic sandbox. Registry workers need separate isolation before they build untrusted submissions.
 
 ## Trust boundaries
 
@@ -32,11 +38,11 @@ Treat package contents, manifests, documentation, proof projects, build output, 
 
 The initial publication route is a reviewed pull request to the registry repository. Opening a pull request does not establish ownership of a name. A maintainer must verify the first namespace claim and subsequent changes against the recorded owners. A source URL or a display name is not identity verification.
 
-Validation runs must have read-only repository permissions. They must not receive deployment credentials or use `pull_request_target` to execute contributor-controlled code. A trusted publication job must validate accepted inputs again using an approved validator revision; contributor-supplied CI output is not registry evidence.
+Validation runs must have read-only repository permissions. They must not receive deployment credentials or use `pull_request_target` to execute contributor-controlled code. A trusted publication job must validate accepted inputs again with an approved validator revision. Contributor-supplied CI output is not registry evidence.
 
 For unattended publishing, use short-lived OIDC credentials bound to a specific repository, workflow, and allowed release context. Verify issuer, audience, expiry, signature, repository identity, and workflow claims before authorizing a single package release. Changes to publisher identity require an auditable owner action. Retain no reusable publisher token in the source tree or artifacts.
 
-[npm's trusted publishing](https://docs.npmjs.com/trusted-publishers/) and [PyPI's security model](https://docs.pypi.org/trusted-publishers/security-model/) provide useful precedents: short-lived credentials reduce exposure, but the workflow and people allowed to trigger it remain trusted.
+[npm's trusted publishing](https://docs.npmjs.com/trusted-publishers/) and [PyPI's security model](https://docs.pypi.org/trusted-publishers/security-model/) provide useful precedents. Short-lived credentials reduce exposure. The workflow and people allowed to trigger it remain trusted.
 
 ## Integrity, provenance, and registry freshness
 
@@ -50,13 +56,13 @@ A checksum served beside an archive is useful against accidental corruption. It 
 
 Use GitHub artifact attestations or a Sigstore bundle for release provenance. Verify the artifact digest, certificate identity, OIDC issuer, expected repository/workflow, and the relevant transparency evidence. Verification against any valid signer is insufficient. [GitHub documents artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations); [Sigstore documents identity-bound blob verification](https://docs.sigstore.dev/quickstart/quickstart-cosign/). A valid attestation establishes origin, not code safety, as [PyPI explicitly explains](https://docs.pypi.org/attestations/security-model/).
 
-Before the client supports unattended registry updates or self-updates, implement an audited TUF client or an equivalently reviewed update protocol. Pin the initial root through the CLI release, separate signing roles, keep root authority offline, and test key rotation and compromise recovery. Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots. A custom signature over one JSON file is not a substitute for that protocol.
+Before the client supports unattended registry updates or self-updates, implement an audited TUF client or an equivalently reviewed update protocol. Pin the initial root through the CLI release. Separate signing roles. Keep root authority offline. Test key rotation and compromise recovery. Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots. A custom signature over one JSON file is not a substitute for that protocol.
 
 Never silently downgrade verification after an unavailable service, expired metadata, or invalid signature. A future explicit offline mode may use already-verified, locked artifacts; it must show which freshness checks could not be performed.
 
 ## Archive and execution policy
 
-The source registry must reject absolute paths, `..` traversal, duplicate normalized paths, backslash/drive-name ambiguity, NUL bytes, symlinks, hard links, devices, FIFOs, and other special entries. Limit file count, path length, individual file size, total expanded size, and archive size. Extraction must remain inside a newly created staging directory and become visible atomically only after validation succeeds.
+The source registry rejects absolute paths, `..` traversal, duplicate paths, ambiguous separators, and NUL bytes. It also rejects links, devices, FIFOs, and other special entries. Limit file count, path length, individual file size, total expanded size, and archive size. Extraction must remain inside a newly created staging directory and become visible atomically only after validation succeeds.
 
 Installing or adding a dependency must not execute package code or install hooks. Build recipes must describe tools and arguments rather than interpolate package-controlled strings into a shell. Assembly includes and macros can still read files, and assemblers and linkers have their own attack surface. Registry builds therefore require isolation even when a package has no shell script.
 
@@ -76,19 +82,19 @@ Each check result must identify:
 
 Use OSV for known-advisory checks where a dependency has a supported ecosystem identity or a known upstream commit. [OSV supports version and commit queries](https://google.github.io/osv.dev/api/). Do not invent an `ASM` ecosystem identifier and assume coverage. An empty response means no matching advisory was returned at that time. Native ASM advisories need their own maintained identifiers and version ranges until an upstream mapping exists.
 
-Yanking removes a version from the v1 native index without changing its recorded bytes. There is no implemented client revocation service. A later emergency-revocation policy must be able to block a known malicious artifact, preserve an audit record, and give a reason and replacement guidance. Any legal or secret-removal exception must leave a tombstone; the old version must never become assignable to different content.
+Yanking removes a version from the v1 native index without changing its recorded bytes. There is no implemented client revocation service. A later emergency-revocation policy must block known malicious artifacts. It must preserve an audit record, reason, and replacement guidance. Any legal or secret-removal exception must leave a tombstone; the old version must never become assignable to different content.
 
 ## Lean and Kraken
 
 The proposed Kraken integration is [AeneasVerif/kraken](https://github.com/AeneasVerif/kraken), the assembly-semantics project associated with Lean. This is the researched interpretation of the requested “Kraken,” not an installed dependency or completed integration.
 
-Its current README describes x64 and AArch64 support, with RISC-V planned. It reasons at an abstraction above assembly and linking. Its documented x64 scope covers sequential computation and excludes operating-system and concurrency features, among other limitations. ASM must pin a reviewed commit and publish the exact supported subset instead of promising verification for every instruction or target.
+Its current README describes x64 and AArch64 support, with RISC-V planned. It reasons at an abstraction above assembly and linking. Its documented x64 scope covers sequential computation and excludes operating-system and concurrency features, among other limitations. ASM must pin a reviewed commit and publish the exact supported subset. Coverage must identify the supported instructions and targets.
 
-Start with small routines and explicit contracts: arithmetic results, bounds on memory access, preserved registers, and preconditions. A proof about a mathematical model does not automatically cover the assembler, linker, loader, operating system, timing behavior, or final executable. Reproducible builds and provenance help connect inputs and outputs; they do not prove that translation preserves semantics.
+Start with small routines and explicit contracts: arithmetic results, bounds on memory access, preserved registers, and preconditions. A proof about a mathematical model has a defined scope. It does not automatically cover toolchains, loaders, operating systems, timing, or final executables. Reproducible builds and provenance help connect inputs and outputs; they do not prove that translation preserves semantics.
 
-A proof record must bind the source/artifact digest, routine, target/ABI, semantics revision, theorem statement, assumptions, Lean/toolchain versions, and imported proof dependencies. The trusted statement must be maintained separately from the submitted proof. Unsupported instructions or an unproved source-to-model correspondence must fail the requested proof claim, not be replaced with axioms.
+A proof record must identify the source digest, routine, target, ABI, theorem, and assumptions. It must also identify semantics, toolchain, and proof-dependency revisions. The trusted statement must be maintained separately from the submitted proof. Unsupported instructions or an unproved source-to-model correspondence must fail the requested proof claim, not be replaced with axioms.
 
-For the default proof profile, reject `sorryAx`, custom axioms, and native-evaluation shortcuts that add unapproved trust. Audit transitive axioms against a documented allowlist. A successful `lake build` alone is insufficient for adversarial submissions. Follow Lean's [proof-validation guidance](https://lean-lang.org/doc/reference/latest/ValidatingProofs/): isolate proof generation, validate exported proof data, and compare the resulting theorem against the trusted statement using a separate checker. Where supported by the pinned toolchain, use `comparator` with an independent checker. Lean's [axiom reference](https://lean-lang.org/doc/reference/latest/Axioms/) explains why an accepted theorem is still conditional on its axioms.
+For the default proof profile, reject `sorryAx`, custom axioms, and native-evaluation shortcuts that add unapproved trust. Audit transitive axioms against a documented allowlist. A successful `lake build` alone is insufficient for adversarial submissions. Follow Lean's [proof-validation guidance](https://lean-lang.org/doc/reference/latest/ValidatingProofs/). Isolate proof generation. Validate exported proof data. Compare the resulting theorem against the trusted statement with a separate checker. Where supported by the pinned toolchain, use `comparator` with an independent checker. Lean's [axiom reference](https://lean-lang.org/doc/reference/latest/Axioms/) explains why an accepted theorem is still conditional on its axioms.
 
 ## LLMs and agents
 
@@ -96,10 +102,10 @@ Agents may propose tests, inspect changes, identify suspicious routines, explain
 
 Give each analysis job a bounded input set and disposable workspace. Keep registry signing, credentials, releases, and owner changes outside its permissions. Record the model identifier, prompt/policy revision, input digests, tool calls, and report. Redact credentials and private data before any external model request. Repository comments and documentation must not be allowed to change the agent's tools or policy.
 
-No model verdict may override a failed digest, unauthorized publisher, unsupported proof, or failed kernel check. There is no “LLM approved” safety badge. A proven finding may trigger a narrowly defined quarantine rule; uncertain findings go to review with the evidence and the ability to appeal.
+No model verdict may override a failed digest, unauthorized publisher, unsupported proof, or failed kernel check. There is no “LLM approved” safety badge. A proven finding may trigger a defined quarantine rule. Uncertain findings need review, supporting evidence, and an appeal route.
 
 ## Release gates
 
-Before public unattended installation, demonstrate rejection of tampered archives, malformed metadata, hostile paths, target mismatches, signature substitution, stale metadata, and compromised publisher identities. Before displaying formal-verification results, include negative tests with an incorrect theorem, a changed instruction, a hidden axiom, and a mismatched artifact digest.
+Before public unattended installation, test rejection of tampered archives, malformed metadata, hostile paths, and target mismatches. Also test signature substitution, stale metadata, and compromised publisher identities. Before displaying formal-verification results, test incorrect theorems, changed instructions, hidden axioms, and mismatched artifact digests.
 
 Before accepting untrusted build or proof jobs, test isolation independently of the package being evaluated. A static site, a policy document, and a green workflow run do not establish these guarantees by themselves.

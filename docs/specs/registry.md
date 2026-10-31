@@ -2,7 +2,7 @@
 
 ASM v1 serves a static registry over HTTPS. Maintainers review publication records in GitHub pull requests. GitHub Releases holds the artifacts. The native CLI and website read indexes made from the same records.
 
-The current implementation supports package discovery, version lists, exact artifact selection, download, and size and SHA-256 checks. It does not implement dependency graphs, lockfiles, authenticated index metadata, or unattended publishing. See the [roadmap](../roadmap.md) for those gates.
+The native CLI supports package discovery, version lists, exact artifact selection, download, and size and SHA-256 checks. It can also prepare a local publication record. Direct dependency locks and cache verification are separate from transitive resolution. Authenticated index metadata and unattended publishing remain future work. See the [roadmap](../roadmap.md).
 
 ## Package identity
 
@@ -142,11 +142,11 @@ Use `tools/registry.py` with Python 3.11 or later. It uses the standard library.
 6. Submit that record as a pull request. Include the source commit, test instructions, namespace claim, and any relevant check reports.
 7. Maintainers review the claim and validate against the published history. A trusted deployment job checks accepted bytes again and generates both indexes.
 
-`pack` can make a local archive for inspection. It does not provide commit binding. `prepare` writes a local file; it does not upload, reserve a name, or publish a package. Concrete commands are in the [registry contributor guide](../../registry/README.md).
+`pack` can make a local archive for inspection. It does not provide commit binding. `prepare` writes a local file; it does not upload, reserve a name, or publish a package. The native `asm publish` command prepares the same record without Python. Concrete commands are in the [registry contributor guide](../../registry/README.md).
 
-Archives use deterministic USTAR and gzip: sorted paths, normalized modes, zero timestamps and ownership, and no links or special files. The inspector reads the archive without extracting or executing it. It rejects traversal, duplicate or case-colliding paths, file/directory conflicts, invalid tar checksums, hidden trailing content, sensitive file names, and resource-limit violations.
+Archives use deterministic USTAR and gzip: sorted paths, normalized modes, zero timestamps and ownership, and no links or special files. The inspector reads the archive without extracting or executing it. It rejects traversal, duplicate paths, case collisions, file/directory conflicts, invalid checksums, and hidden trailing content. It also rejects sensitive file names and resource-limit violations.
 
-The limits are 4096 members, 240 characters per path, 16 MiB per file, and 64 MiB for both compressed and expanded archive data. An accepted archive is a structural check, not proof of benign code. See the [security model](security.md).
+An archive can contain 4096 members. Paths can contain 240 characters. Files can contain 16 MiB. Both compressed data and the expanded TAR stream are limited to 64 MiB. An accepted archive is a structural check, not proof of benign code. See the [security model](security.md).
 
 ## Consume a package
 
@@ -161,9 +161,41 @@ asm fetch stubbi/hello@0.1.0 --target x86_64-linux --kind source --output hello.
 
 Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind. The defaults are `x86_64-linux` and `source`. Use exact versions in reproducible instructions.
 
-Fetch checks byte size and SHA-256 before it exposes the output. It does not overwrite an existing destination, set an execute bit, extract, install, or run package contents. A download failure or hash mismatch is an error. Source review, extraction, and building are separate user actions. The digest is checked against the HTTPS index; v1 does not authenticate that index with a separate signing key or protect against a compromised registry origin.
+Fetch checks byte size and SHA-256 before it exposes the output. It does not overwrite an existing destination, set an execute bit, extract, install, or run package contents. A download failure or hash mismatch is an error. Source review, extraction, and building are separate user actions. The digest is checked against the HTTPS index. V1 has no separate signing key for that index. A compromised registry origin can replace both metadata and artifacts.
 
 `--index PATH` uses a local index. `--registry HTTPS_URL` selects another index URL. `--artifact PATH` lets fetch check a local artifact for offline tests. The same metadata and digest rules apply.
+
+## Direct dependencies and locks
+
+Use an exact version to add a source dependency:
+
+```sh
+asm add stubbi/math@0.1.0
+asm lock
+asm build --locked
+```
+
+Add accepts source packages for the current build target, `x86_64-linux`. It checks the artifact before extraction and writes `asm.lock` after extraction succeeds. It runs no package code.
+
+The lock starts with `# asm-lock-v1` and a `# registry ORIGIN` line. Its remaining rows use the eight native-index fields. One row identifies each direct dependency. A lock uses one registry origin. Local test indexes use the origin `local`.
+
+The source cache is `.asm/packages/<owner>/<name>/<version>/<target>`. The original archive is `.asm/cache/<sha256>.tar.gz`. Builds verify locked archive hashes and compare every extracted file with its archive content. Changed, missing, or unexpected members cause an error.
+
+Normal builds verify dependencies when a lock exists. `--locked` also rejects a missing lock. `asm lock` checks the existing lock and cache; it does not resolve newer versions.
+
+`asm sync` restores exact locked artifacts through their recorded URLs. It does not query a newer index. It retains local cache edits and reports a mismatch instead of discarding them.
+
+`asm update owner/name@version` selects an explicit replacement version. `asm remove owner/name` removes its lock entry and retains cache files. Failed updates preserve the prior lock. Advisory file locks coordinate ASM processes in the same project.
+
+The assembler receives `.asm/packages` as an include directory. For the math example, use:
+
+```asm
+.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+```
+
+Lock checks cover declared dependencies. Assembly source can also select other local files through includes or data directives. This is not a hermetic build sandbox. Source caches should remain unchanged; copy a package elsewhere before editing it.
+
+V1 has no transitive resolver, version ranges, feature selection, or automatic symbol imports.
 
 ## Immutability and yanking
 
@@ -171,7 +203,7 @@ Once a release appears in the published history, all its fields except `yanked` 
 
 Pass `--base-ref FULL_COMMIT` to compare against the registry history in Git, or `--baseline DIRECTORY` to compare with another registry directory. Validation without a baseline cannot detect a rewrite of previously published history.
 
-Yanking keeps the JSON record and artifact identity but removes its rows from the native index. The current client therefore cannot make a new fetch selection for a yanked version, even by exact version. Previously downloaded bytes remain on the user's machine. There is no implemented revocation service or lockfile exception in v1.
+Yanking keeps the JSON record and artifact identity but removes its rows from the native index. The current client cannot make a new fetch or add selection for a yanked version, even by exact version. Previously downloaded bytes remain on the user's machine. There is no implemented revocation service. Existing locks retain exact artifact URLs and digests; sync does not read the current index.
 
 The distinction between immutable content and a reversible yank is useful in [Cargo's publication model](https://doc.rust-lang.org/cargo/reference/publishing.html) and [PyPI's yank policy](https://docs.pypi.org/project-management/yanking/). Their client behavior differs. The preceding paragraph defines ASM v1 behavior.
 
@@ -185,4 +217,4 @@ Run the local contract tests with:
 python3 -m unittest discover -s tests/registry -p 'test_*.py' -v
 ```
 
-The tests cover publication and index generation, committed-source packaging, immutable history, numeric versions, artifact digests, target mismatch, archive attacks, ELF bounds, and unavailable download counts. Native CLI and release tests cover the connected client and distribution routes. A passing schema test does not stand in for a real artifact download and build.
+The tests cover publication, index generation, committed-source packaging, immutable history, numeric versions, and artifact digests. They also cover target mismatch, archive attacks, ELF bounds, and unavailable download counts. Native CLI and release tests cover the connected client and distribution routes. A passing schema test does not stand in for a real artifact download and build.

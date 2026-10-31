@@ -1,65 +1,77 @@
 # Roadmap
 
-ASM is intended to be the project tool and package registry for assembly. The CLI is written in assembly. The registry, website, and validation services may use other languages where that makes them easier to operate and audit.
+ASM is a project tool and package registry for assembly. The CLI is written in assembly. Registry tooling and the website use other languages.
 
-The items below are delivery gates, not release dates. An item becomes complete when its behavior is implemented, tested, and available through the documented route. A proposed command or a website mockup does not count as a shipped service.
+These are delivery gates. A gate closes when its behavior is implemented, tested, and available through the documented route.
 
-## 0. A usable first release
+## Current release
 
-**In progress.**
+The code now contains:
 
-- A native assembly CLI with help, version, diagnostics, project creation, and a working build/run loop on its initial host platform.
-- A real source package, immutable version metadata, and a downloadable artifact.
-- A static registry and package pages at `asm.build`, with search, version history, target information, source, license, and honest check status.
-- A documented contributor route for publishing through reviewed pull requests.
-- Checksums, bounded archive validation, and tests for invalid input and version replacement.
+- A native x86-64 Linux CLI with project creation, build, run, test, and diagnostics.
+- Registry search, package information, version lists, checked downloads, and explicit executable installation.
+- Native source-archive validation, extraction, and cache comparison.
+- Native preparation of publication records for reviewed pull requests.
+- Immutable registry metadata, source and ELF checks, and deterministic index generation.
+- Package pages with real records, version history, target details, and check status.
+- Download counts from GitHub release assets, with unavailable values marked explicitly.
+- GNU assembly examples for x86-64, AArch64, and RISC-V Linux.
 
-**Exit test:** start from a clean supported machine, build the CLI, create a project, consume the example package through the documented registry route, build and run it, and reject a modified artifact. Unsupported commands must fail clearly rather than print a success message.
+The AArch64 and RISC-V examples use cross tools and QEMU user-mode tests. Native CLI ports for those hosts remain future work.
 
-## 1. Stable packages and dependency resolution
+**Release gate:** build from a clean checkout. Run the documented package workflow. Verify published artifacts through the public registry. Reject changed artifacts and malformed records.
 
-- Freeze a versioned manifest/index schema with migration rules.
-- Add exact locked versions, transitive dependency resolution, deterministic target selection, and an offline verified cache.
-- Separate build-host tools from target libraries; track ABI, object format, assembler dialect, and ISA requirements.
-- Make publish, yank, ownership, and immutable-version checks enforceable in CI.
-- Add download statistics from a real event or release-asset source. Until then, show that the metric is unavailable.
+## Direct dependencies
 
-**Exit test:** a multi-package project resolves identically from a lockfile; yanked versions are excluded from new locks; wrong-target and hash-mismatch cases fail before execution.
+The native dependency commands use exact versions and a project lockfile. The cache retains the locked archive and extracted source files.
 
-## 2. Authenticated distribution
+**Acceptance gate:** add a library and call its exported routine. Rebuild from the lock without network access. Restore missing cache data with sync. Reject changed archives, changed source files, and unexpected cache entries. Preserve the previous lock after a failed update.
 
-- Publish CLI and package provenance tied to exact artifact digests and expected workflow identities.
-- Introduce narrowly scoped OIDC trusted publishers for unattended releases.
-- Add authenticated registry metadata, rollback/freeze protection, key rotation, and recovery drills.
-- Verify on the client as well as at publication time; keep self-update disabled until this route is complete.
+Transitive resolution, version ranges, feature selection, and solver diagnostics remain future work. They require a separate resolver specification and adversarial graph tests.
 
-**Exit test:** substitution, downgrade, expired metadata, and publisher-identity changes are detected using adversarial fixtures. A documented recovery can rotate compromised keys without replacing trusted history.
+## Authenticated distribution
 
-## 3. More hosts and targets
+- Bind artifact provenance to expected repository and workflow identities.
+- Add narrowly scoped OIDC trusted publishers.
+- Authenticate registry metadata and detect rollback or expiry.
+- Test key rotation and compromise recovery.
+- Verify these properties in the client before unattended updates.
 
-- Add native CLI ports beyond the initial platform.
-- Ship target-specific package examples for x86-64, AArch64, and RISC-V as their toolchains are implemented.
-- Test native execution where possible and identify emulator-only results explicitly.
-- Document calling conventions, exported symbols, clobbers, and cross-compilation requirements.
+**Acceptance gate:** reject signature substitution, stale metadata, and unauthorized publisher changes. Complete a documented key-recovery exercise.
 
-**Exit test:** the same project workflow selects and tests the correct implementation for each supported target. Listing a target in a manifest is insufficient.
+## More hosts and package interfaces
 
-## 4. Security evidence and formal contracts
+- Add native CLI ports beyond x86-64 Linux.
+- Add general cross-build support.
+- Describe ABI, object format, assembler dialect, and required ISA extensions in metadata.
+- Separate host tools from target libraries.
+- Record exported symbols and register clobbers.
+- Test on native hardware where available.
 
-- Add maintained advisory checks and isolated static-analysis/build workers.
-- Integrate a pinned Lean/Kraken toolchain for a documented subset of routines and architectures.
-- Check submitted proofs against separately trusted statements, audited axioms, and exact source digests.
-- Display the proposition and assumptions behind each result. Keep source-model proofs distinct from final-binary claims.
+**Acceptance gate:** select, build, and test the correct package implementation for each supported target. Label emulated results separately.
 
-**Exit test:** a real routine passes its stated contract; altered code, false claims, unsupported instructions, hidden axioms, and wrong digests fail. Publish the reproducible evidence.
+## Formal contracts and security evidence
 
-## 5. Agent-assisted review and registry operations
+Lean/Kraken integration needs a separate design review before implementation. The intended Kraken project is [AeneasVerif/kraken](https://github.com/AeneasVerif/kraken). The registry does not currently run a proof service.
 
-- Run bounded agents to propose tests, review changes, explain findings, and generate candidate proofs.
-- Keep models outside the publication/signing authority and treat package text as untrusted input.
-- Add independent moderation, incident response, namespace recovery, abuse handling, mirrors, and capacity planning.
-- Move artifact storage and counters beyond GitHub Pages when measured usage requires it.
+- Select a small routine and a useful contract.
+- Pin the semantics and proof toolchain.
+- Maintain the trusted theorem statement separately from submitted proofs.
+- Bind each report to exact source digests and assumptions.
+- Validate exported proofs with an independent checker where supported.
+- Keep model proofs distinct from claims about final binaries.
+- Add maintained advisory checks and isolated build workers.
 
-**Exit test:** prompt-injection fixtures cannot change permissions or publish a package, and every reported outcome links to the exact inputs and checker that produced it.
+**Acceptance gate:** prove the stated contract for a real routine. Reject changed code, false statements, unsupported instructions, hidden axioms, and wrong digests.
 
-See the [registry specification](specs/registry.md) and [security model](specs/security.md) for the contracts these gates enforce.
+## Agents and registry operations
+
+- Let bounded agents propose tests, findings, and candidate proofs.
+- Keep publication credentials and signing authority outside agent permissions.
+- Treat package text as untrusted input.
+- Add namespace recovery, moderation, incident response, and mirrors.
+- Expand storage and metrics when measured usage requires it.
+
+**Acceptance gate:** package instructions cannot change agent permissions or publish releases. Each report identifies its inputs, tool versions, scope, and outcome.
+
+See the [registry specification](specs/registry.md) and [security model](specs/security.md) for the detailed contracts.

@@ -33,7 +33,8 @@ Upload your exact artifact files to a public GitHub release. Check that the rele
 Create the record from the local artifact bytes:
 
 ```sh
-python3 tools/registry.py prepare \
+mkdir -p registry/packages/owner/hello
+asm publish \
   --name owner/hello \
   --version 0.1.0 \
   --summary 'A small Linux assembly example.' \
@@ -47,7 +48,11 @@ python3 tools/registry.py prepare \
   --output registry/packages/owner/hello/0.1.0.json
 ```
 
-Repeat `--artifact TARGET KIND FILE URL` for other artifacts in the same release. `prepare` calculates the size and SHA-256, checks the source archive or ELF structure, and writes the record. It makes no network request and publishes nothing.
+Repeat `--artifact TARGET KIND FILE URL` for other artifacts in the same release. The native command calculates size and SHA-256 from a private copy. It checks source contents or ELF structure before it writes the record. It makes no network request and publishes nothing.
+
+Source packages must match the declared name, version, and target. Their manifest uses the native CLI's small TOML subset. Up to six target/kind artifacts can share one record. The output must be a new file, and its parent directory must exist.
+
+CI and other automation can use `python3 tools/registry.py prepare` with the same publication arguments. Both routes produce the same registry schema.
 
 ## Submit and review
 
