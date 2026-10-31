@@ -1,0 +1,31 @@
+{
+  "version": "0.1.0",
+  "implementation": "x86_64 assembly",
+  "targets": [
+    "x86_64-linux"
+  ],
+  "implemented": [
+    "help",
+    "version",
+    "doctor",
+    "init",
+    "new",
+    "build",
+    "run",
+    "test",
+    "clean",
+    "targets",
+    "status"
+  ],
+  "unimplemented": [
+    "add",
+    "remove",
+    "search",
+    "install",
+    "update",
+    "lock",
+    "publish",
+    "login",
+    "yank"
+  ]
+}
