@@ -207,6 +207,7 @@ def read_records(registry: Path) -> list[dict]:
         require(not path.is_symlink(), "registry metadata cannot contain symlinks")
         if path.is_dir():
             continue
+        require(stat.S_ISREG(path.stat().st_mode), "registry metadata must be a regular file")
         if path == package_root / ".gitkeep":
             info = path.stat()
             require(stat.S_ISREG(info.st_mode) and info.st_size == 0,
@@ -255,7 +256,8 @@ def read_regular(root: Path, relative: str) -> bytes:
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
-        file_descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=descriptor)
+        file_descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                  dir_fd=descriptor)
         with os.fdopen(file_descriptor, "rb") as stream:
             info = os.fstat(stream.fileno())
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "source must be a regular, unlinked file")

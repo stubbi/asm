@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -204,6 +205,25 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             registry.collect_files(source)
 
+    def test_filesystem_fifos_are_rejected_without_open_blocking(self):
+        source = self.root / "source"
+        source.mkdir()
+        os.mkfifo(source / "pipe")
+        result = subprocess.run(
+            ["python3", str(ROOT / "tools/registry.py"), "pack", str(source),
+             "--name", "stubbi/hello", "--version", "0.1.0", "--target", "x86_64-linux",
+             "--output", str(self.root / "output.tar.gz")],
+            capture_output=True, timeout=3,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        metadata = self.root / "metadata/packages/stubbi/hello"
+        metadata.mkdir(parents=True)
+        os.mkfifo(metadata / "0.1.0.json")
+        result = subprocess.run(
+            ["python3", str(ROOT / "tools/registry.py"), "validate", "--registry", str(self.root / "metadata")],
+            capture_output=True, timeout=3,
+        )
+        self.assertNotEqual(result.returncode, 0)
     def test_elf_target_and_segment_bounds_are_checked(self):
         registry.validate_elf(minimal_elf(), "x86_64-linux")
         with self.assertRaises(registry.RegistryError):
