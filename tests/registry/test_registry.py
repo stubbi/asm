@@ -252,6 +252,28 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             registry.read_records(self.root)
 
+    def test_empty_registry_root_marker_is_the_only_allowed_marker(self):
+        packages = self.root / "packages"
+        packages.mkdir()
+        marker = packages / ".gitkeep"
+        marker.write_bytes(b"")
+        self.assertEqual(registry.read_records(self.root), [])
+        marker.write_bytes(b"not empty")
+        with self.assertRaises(registry.RegistryError):
+            registry.read_records(self.root)
+        marker.unlink()
+        elsewhere = self.root / "empty"
+        elsewhere.write_bytes(b"")
+        marker.symlink_to(elsewhere)
+        with self.assertRaises(registry.RegistryError):
+            registry.read_records(self.root)
+        marker.unlink()
+        nested = packages / "owner"
+        nested.mkdir()
+        (nested / ".gitkeep").write_bytes(b"")
+        with self.assertRaises(registry.RegistryError):
+            registry.read_records(self.root)
+
     def test_immutable_history_allows_only_yank_changes(self):
         old, _ = release()
         yanked = copy.deepcopy(old)

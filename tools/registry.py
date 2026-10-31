@@ -207,6 +207,11 @@ def read_records(registry: Path) -> list[dict]:
         require(not path.is_symlink(), "registry metadata cannot contain symlinks")
         if path.is_dir():
             continue
+        if path == package_root / ".gitkeep":
+            info = path.stat()
+            require(stat.S_ISREG(info.st_mode) and info.st_size == 0,
+                    "registry root .gitkeep must be an empty regular file")
+            continue
         require(path.suffix == ".json", f"unexpected registry file: {path.name}")
         require(path.stat().st_size <= 65536, "manifest is too large")
         record = validate_manifest(strict_json(path.read_bytes()))
