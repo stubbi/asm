@@ -379,7 +379,9 @@ def tar_string(field: bytes) -> str:
 
 def read_archive(data: bytes) -> dict[str, bytes]:
     require(0 < len(data) <= MAX_ARTIFACT_BYTES, "archive size is out of range")
-    limit = MAX_EXPANDED_BYTES + MAX_FILES * 1024 + 10240
+    # Match the native extractor: the whole TAR stream, including headers and
+    # padding, must fit the decompression bound before it is parsed.
+    limit = MAX_EXPANDED_BYTES
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb") as compressed:
             raw = compressed.read(limit + 1)
