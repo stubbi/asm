@@ -17,8 +17,10 @@
     try {
       const url = new URL(value);
       if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port || url.search || url.hash) return null;
-      if (releaseAsset && !/^\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/[^/]+$/.test(url.pathname)) return null;
-      if (!releaseAsset && !/^\/[^/]+\/[^/]+\/?$/.test(url.pathname)) return null;
+      const repository = "[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}";
+      const segment = "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
+      const pattern = releaseAsset ? `${repository}/releases/download/${segment}/${segment}` : repository;
+      if (!(new RegExp(`^https://github\\.com/${pattern}$`)).test(value)) return null;
       return url.href;
     } catch {
       return null;
@@ -78,9 +80,21 @@
     return `GitHub asset downloads: ${record.total.toLocaleString("en-US")}${observed}`;
   }
 
+  function installInstructions(artifact, version) {
+    if (!validArtifact(artifact) || artifact.kind !== "executable" || artifact.target !== "x86_64-linux") return null;
+    if (typeof version !== "string" || !/^(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})$/.test(version)) return null;
+    const filename = new URL(artifact.url).pathname.split("/").pop();
+    return {
+      filename,
+      verify: `printf '%s  %s\\n' '${artifact.sha256}' '${filename}' | sha256sum --check`,
+      run: `chmod u+x ./${filename}\n./${filename} version`,
+      install: `./${filename} install stubbi/asm@${version}\nexport PATH="$HOME/.local/bin:$PATH"\nasm version`
+    };
+  }
+
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, formatBytes, validArtifact, evidenceText, formatDownloadCount };
+    module.exports = { githubURL, normalizeIndex, findPackages, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions };
   }
   if (typeof document === "undefined") return;
 
@@ -97,8 +111,9 @@
     return node;
   }
 
-  document.querySelectorAll("[data-copy]").forEach((button) => {
-    button.addEventListener("click", async () => {
+  document.addEventListener("click", async (event) => {
+      const button = event.target.closest?.("[data-copy]");
+      if (!button || button.disabled) return;
       const code = document.getElementById(button.dataset.copy);
       const status = document.getElementById("copy-status");
       if (!code) return;
@@ -107,7 +122,7 @@
         await navigator.clipboard.writeText(code.textContent.trim());
         const previousContent = Array.from(button.childNodes).map((node) => node.cloneNode(true));
         button.textContent = "Copied";
-        status.textContent = "Source build commands copied to clipboard.";
+        status.textContent = "Commands copied to clipboard.";
         button.disabled = true;
         window.setTimeout(() => {
           button.replaceChildren(...previousContent);
@@ -121,8 +136,24 @@
         selection?.addRange(range);
         status.textContent = "Commands selected. Use your keyboard’s copy command to copy them.";
       }
-    });
   });
+
+  function commandBlock(id, title, text) {
+    const block = element("div", "command-block");
+    const heading = element("div", "command-block-heading");
+    heading.append(element("span", "", title));
+    const copy = element("button", "copy-button", "Copy");
+    copy.type = "button";
+    copy.dataset.copy = id;
+    copy.setAttribute("aria-label", `Copy ${title.toLowerCase()}`);
+    heading.append(copy);
+    const code = element("code", "", text);
+    code.id = id;
+    const pre = element("pre");
+    pre.append(code);
+    block.append(heading, pre);
+    return block;
+  }
 
   const list = document.getElementById("package-list");
   const status = document.getElementById("registry-status");
@@ -220,8 +251,41 @@
       panel.append(link(`Download for ${artifact.target} ↗`, githubURL(artifact.url, true), "button button-primary"));
       panel.append(element("p", "checksum-label", `${formatBytes(artifact.bytes)} · SHA-256`));
       panel.append(element("code", "", artifact.sha256));
+      const instructions = installInstructions(artifact, version.version);
+      if (instructions) {
+        const guide = element("details", "install-guide");
+        guide.append(element("summary", "", "Verify and install this CLI"));
+        guide.append(element("p", "", "Open a terminal in the directory that contains the download. Check its checksum first."));
+        guide.append(commandBlock("binary-checksum-command", "Check the download", instructions.verify));
+        guide.append(element("p", "", `If the check reports “${instructions.filename}: OK”, make the file executable.`));
+        guide.append(commandBlock("binary-version-command", "Check the CLI version", instructions.run));
+        guide.append(element("p", "", "Install the command for your user account. The installer refuses an existing destination."));
+        guide.append(commandBlock("binary-install-command", "Install asm", instructions.install));
+        guide.append(element("p", "", "The command is installed at $HOME/.local/bin/asm. The PATH change applies to this terminal."));
+        guide.append(element("p", "", "Registry commands require /usr/bin/curl and /usr/bin/sha256sum. Source dependencies also require /usr/bin/gzip."));
+        panel.append(guide);
+      }
     });
     panel.append(element("p", "", "Release records above list the checks performed on each artifact."));
+    panel.hidden = false;
+  }
+
+  function renderMathGuide() {
+    const pkg = packages.find((entry) => entry.name === "stubbi/math");
+    const version = pkg?.versions.find((entry) => entry.version === pkg.latest && !entry.yanked && entry.evidence?.artifacts === "validated");
+    if (!version || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version.version)) return;
+    if (!version.artifacts.some((item) => validArtifact(item) && item.target === "x86_64-linux" && item.kind === "source")) return;
+    const panel = document.getElementById("math-guide");
+    if (!panel) return;
+    panel.append(element("h3", "", "Use a source dependency"));
+    panel.append(element("p", "", "From your project directory, add an exact version. ASM records it in asm.lock and checks the extracted source files."));
+    panel.append(commandBlock("math-add-commands", "Add the math package", `asm add stubbi/math@${version.version} --target x86_64-linux\nasm lock`));
+    panel.append(element("p", "", "Add this include at file scope. Call asm_u64_min from your function with the two unsigned values in rdi and rsi."));
+    panel.append(commandBlock("math-include-command", "Include the routine", `.include "stubbi/math/${version.version}/x86_64-linux/src/min.s"`));
+    panel.append(element("p", "", "The routine returns the smaller value in rax. Read its contract for register and memory requirements."));
+    panel.append(commandBlock("math-build-command", "Build with the lock file", "asm build --locked"));
+    panel.append(element("p", "", "Commit asm.lock with your project. Use asm sync to restore its exact packages on another machine."));
+    panel.append(link("Read the routine and tests ↗", "https://github.com/stubbi/asm/tree/main/examples/math", "text-link"));
     panel.hidden = false;
   }
 
@@ -252,6 +316,7 @@
       targetSelect.addEventListener("change", renderPackages);
       renderPackages();
       renderCliDownload();
+      renderMathGuide();
       try {
         const records = await getJSON("registry/v1/downloads.json");
         if (records?.schema === 1 && records.source === "github-release-assets") {
