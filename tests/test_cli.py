@@ -215,6 +215,10 @@ class NativeCliTests(unittest.TestCase):
         manifest.symlink_to(actual)
         self.cli("build", cwd=project, code=1)
 
+    def test_fifo_manifest_is_rejected_without_blocking(self):
+        os.mkfifo(self.work / "asm.toml")
+        self.cli("build", code=1)
+
     def test_options_and_unsupported_targets(self):
         project = self.project()
         self.cli("build", "--target", "x86_64-linux", "--no-color", cwd=project)
@@ -235,7 +239,7 @@ class NativeCliTests(unittest.TestCase):
         self.assertTrue((self.work / "-literal/asm.toml").is_file())
 
     def test_registry_commands_fail_honestly(self):
-        for command in ["add", "remove", "install", "update", "lock", "publish", "login", "yank"]:
+        for command in ["add", "remove", "update", "lock", "publish", "login", "yank"]:
             with self.subTest(command=command):
                 result = self.cli(command, "example", "--json", code=69)
                 self.assertFalse(json.loads(result.stderr)["ok"])

@@ -3,7 +3,7 @@
 .global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
 .global create_exclusive_file, json_mode
-.extern cmd_search, cmd_info, cmd_versions, cmd_fetch
+.extern cmd_search, cmd_info, cmd_versions, cmd_fetch, cmd_install
 
 /* asm's CLI is native x86-64 assembly. No C runtime or shell is involved.
  * Calls use the System V register convention; Linux syscalls use r10 for arg4.
@@ -35,6 +35,7 @@
 .equ O_NOFOLLOW, 131072
 .equ O_DIRECTORY, 65536
 .equ O_CLOEXEC, 524288
+.equ O_NONBLOCK, 2048
 
 .section .text
 _start:
@@ -685,7 +686,7 @@ read_manifest:
     push r15
     mov eax, SYS_open
     lea rdi, [rip + manifest_path]
-    mov esi, O_NOFOLLOW + O_CLOEXEC
+    mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
     xor edx, edx
     syscall
     test rax, rax
@@ -1424,7 +1425,7 @@ commands:
     .quad command_search, cmd_search, command_publish, cmd_unimplemented
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
-    .quad command_install, cmd_unimplemented, command_update, cmd_unimplemented
+    .quad command_install, cmd_install, command_update, cmd_unimplemented
     .quad command_lock, cmd_unimplemented, command_login, cmd_unimplemented
     .quad command_yank, cmd_unimplemented, 0, 0
 command_help: .asciz "help"
@@ -1532,6 +1533,7 @@ help_text:
     .ascii "  info <package>   Show registry package metadata\n"
     .ascii "  versions <pkg>   List published package versions\n"
     .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
+    .ascii "  install <pkg>    Install a host ELF executable without running it\n"
     .ascii "  doctor           Check the local GNU assembler and linker\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
@@ -1544,9 +1546,9 @@ help_text:
     .ascii "Unimplemented commands fail with exit status 69; use asm status.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"doctor\",\"targets\",\"status\",\"version\",\"help\"]}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"doctor\",\"targets\",\"status\",\"version\",\"help\"]}\n"
 status_json:
-    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\"],\"unimplemented\":[\"add\",\"remove\",\"install\",\"update\",\"lock\",\"publish\",\"login\",\"yank\"]}\n"
+    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\"],\"unimplemented\":[\"add\",\"remove\",\"update\",\"lock\",\"publish\",\"login\",\"yank\"]}\n"
 manifest_prefix: .asciz "[package]\nname = \""
 manifest_suffix: .asciz "\"\nversion = \"0.1.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
 main_template:
@@ -1602,3 +1604,4 @@ made_test: .skip 1
 /* Keep one assembler translation unit so the CLI can build itself with the
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
 .include "cli/registry.s"
+.include "cli/elf.s"

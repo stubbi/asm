@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -135,6 +136,56 @@ class RegistryCliTests(unittest.TestCase):
         link = self.work / "artifact-link"
         link.symlink_to(self.artifact)
         self.cli("fetch", "stubbi/hello", "--artifact", link, code=1)
+
+    def test_native_install_checks_host_elf_and_does_not_run_it(self):
+        self.artifact.write_bytes(ASM.read_bytes())
+        self.digest = hashlib.sha256(self.artifact.read_bytes()).hexdigest()
+        self.write_index(self.row(kind="executable"))
+        destination = self.work / "installed asm"
+        result = json.loads(self.cli(
+            "install", "stubbi/hello@0.1.0", "--artifact", self.artifact,
+            "--output", destination, "--json",
+        ).stdout)
+        self.assertTrue(result["verified"])
+        self.assertEqual(destination.read_bytes(), self.artifact.read_bytes())
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+        # This explicit test invocation, separate from installation, checks the result.
+        version = subprocess.run([str(destination), "--version"], capture_output=True, text=True, check=True)
+        self.assertIn("asm 0.1.0", version.stdout)
+        self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", destination, code=1)
+
+    def test_install_rejects_wrong_target_and_malformed_elf(self):
+        original = ASM.read_bytes()
+        program_offset = struct.unpack_from("<Q", original, 32)[0]
+        bad = []
+        for offset, format_, value in [
+            (4, "B", 1), (5, "B", 2), (18, "H", 183), (56, "H", 65535),
+            (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
+            (program_offset + 4, "I", 7),
+            (program_offset + 32, "Q", 2**64 - 1),
+        ]:
+            data = bytearray(original)
+            struct.pack_into("<" + format_, data, offset, value)
+            bad.append(bytes(data))
+        bad.append(b"#!/bin/sh\necho must-not-run\n")
+        for data in bad:
+            with self.subTest(prefix=data[:24]):
+                self.artifact.write_bytes(data)
+                self.digest = hashlib.sha256(data).hexdigest()
+                self.write_index(self.row(kind="executable"))
+                self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
+                self.assertFalse((self.work / "rejected").exists())
+        self.write_index(self.row(kind="executable", target="aarch64-linux"))
+        self.cli("install", "stubbi/hello", "--target", "aarch64-linux", "--output", "rejected", code=2)
+
+    def test_fifo_inputs_fail_without_blocking(self):
+        self.write_index(self.row())
+        fifo = self.work / "fifo"
+        os.mkfifo(fifo)
+        self.cli("fetch", "stubbi/hello", "--artifact", fifo, code=1)
+        self.index.unlink()
+        os.mkfifo(self.index)
+        self.cli("search", code=1)
 
     def test_index_structure_is_strict(self):
         malformed = [

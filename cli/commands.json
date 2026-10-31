@@ -19,12 +19,12 @@
     "search",
     "info",
     "versions",
-    "fetch"
+    "fetch",
+    "install"
   ],
   "unimplemented": [
     "add",
     "remove",
-    "install",
     "update",
     "lock",
     "publish",

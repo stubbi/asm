@@ -1,5 +1,5 @@
 .intel_syntax noprefix
-.global cmd_search, cmd_info, cmd_versions, cmd_fetch
+.global cmd_search, cmd_info, cmd_versions, cmd_fetch, cmd_install
 .extern next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .extern die, exit_ok, exit_code, spawn_wait, unsigned_decimal
 .extern create_exclusive_file, json_mode
@@ -18,6 +18,7 @@
 .equ ARTIFACT_LIMIT, 67108864
 .equ O_NOFOLLOW, 131072
 .equ O_CLOEXEC, 524288
+.equ O_NONBLOCK, 2048
 .equ AT_FDCWD, -100
 
 .section .text
@@ -32,6 +33,9 @@ cmd_versions:
     jmp registry_command
 cmd_fetch:
     mov byte ptr [rip + registry_mode], 4
+    jmp registry_command
+cmd_install:
+    mov byte ptr [rip + registry_mode], 5
 /* Command entry: global argv cursor follows the command name. Parses options
  * before filesystem/network work. Owns the global registry_* buffers for the
  * process lifetime. Commands terminate the process; no caller stack survives. */
@@ -41,6 +45,10 @@ registry_command:
     lea rax, [rip + registry_host]
     mov [rip + registry_target], rax
     lea rax, [rip + registry_source_kind]
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lregistry_kind_default
+    lea rax, [rip + registry_executable_kind]
+.Lregistry_kind_default:
     mov [rip + registry_kind], rax
     lea rax, [rip + registry_empty]
     mov [rip + registry_query], rax
@@ -167,7 +175,7 @@ registry_command:
     jmp .Lregistry_args
 .Lregistry_args_done:
     cmp byte ptr [rip + registry_mode], 4
-    je .Lregistry_fetch_args
+    jae .Lregistry_fetch_args
     cmp qword ptr [rip + registry_output], 0
     jne registry_bad_args
     cmp qword ptr [rip + registry_local_artifact], 0
@@ -207,6 +215,18 @@ registry_command:
     call registry_valid_package
     test eax, eax
     jz registry_bad_args
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lregistry_load
+    mov rdi, [rip + registry_target]
+    lea rsi, [rip + registry_host]
+    call streq
+    test eax, eax
+    jz registry_install_target_error
+    mov rdi, [rip + registry_kind]
+    lea rsi, [rip + registry_executable_kind]
+    call streq
+    test eax, eax
+    jz registry_bad_args
 .Lregistry_load:
     cmp qword ptr [rip + registry_index_path], 0
     jne .Lregistry_read
@@ -223,7 +243,7 @@ registry_command:
     call registry_read_index
     call registry_parse_index
     cmp byte ptr [rip + registry_mode], 4
-    je registry_fetch
+    jae registry_fetch
     jmp registry_list
 
 /* Input: argv cursor follows a value option. Output: RAX=borrowed nonempty
@@ -376,7 +396,7 @@ registry_read_index:
     push r13
     mov eax, 2
     mov rdi, [rip + registry_index_path]
-    mov esi, O_NOFOLLOW + O_CLOEXEC
+    mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
     xor edx, edx
     syscall
     test rax, rax
@@ -1158,8 +1178,9 @@ registry_json_string:
 
 /* Terminal command: select exact or highest numeric version for package,
  * target and kind. Copy/download into the owned stage, check exact byte size,
- * run fixed sha256sum argv, then renameat2(RENAME_NOREPLACE). The destination
- * never receives execute bits. Existing outputs are retained on all failures.
+ * run fixed sha256sum argv, then renameat2(RENAME_NOREPLACE). fetch retains
+ * non-executable mode; install additionally validates ELF and sets 0755.
+ * Existing outputs are retained on all failures.
  * The index authenticates no publisher; the digest check establishes integrity
  * relative to that selected index. Source archives remain opaque bytes. */
 registry_fetch:
@@ -1270,6 +1291,18 @@ registry_fetch:
     call spawn_wait
     test eax, eax
     jnz registry_integrity_error
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lfetch_default_output
+    lea rdi, [rip + registry_temp_payload]
+    mov rsi, [rip + registry_expected_size]
+    call validate_host_elf
+    test eax, eax
+    jz registry_install_elf_error
+    cmp qword ptr [rip + registry_output], 0
+    jne .Lfetch_output_ready
+    call registry_install_output
+    jmp .Lfetch_output_ready
+.Lfetch_default_output:
     cmp qword ptr [rip + registry_output], 0
     jne .Lfetch_output_ready
     lea rdi, [rip + registry_default_output]
@@ -1306,10 +1339,14 @@ registry_fetch:
     lea rax, [rip + registry_default_output]
     mov [rip + registry_output], rax
 .Lfetch_output_ready:
-    /* fetch never sets an execute bit. Installation is a separate action. */
+    /* Only the explicit install command grants execute permission. */
     mov eax, 90
     lea rdi, [rip + registry_temp_payload]
     mov esi, 420
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lartifact_permissions
+    mov esi, 493
+.Lartifact_permissions:
     syscall
     test rax, rax
     js registry_io_error
@@ -1326,6 +1363,10 @@ registry_fetch:
     cmp byte ptr [rip + json_mode], 0
     jne .Lfetch_json
     lea rdi, [rip + registry_fetched_text]
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lartifact_report
+    lea rdi, [rip + registry_installed_text]
+.Lartifact_report:
     call out
     mov rdi, [rip + registry_output]
     call out
@@ -1361,6 +1402,91 @@ registry_integrity_error:
     mov esi, 1
     jmp registry_fail
 
+registry_install_target_error:
+    lea rdi, [rip + registry_err_install_target]
+    mov esi, 2
+    jmp registry_fail
+registry_install_elf_error:
+    lea rdi, [rip + registry_err_elf]
+    mov esi, 1
+    jmp registry_fail
+
+/* Input: selected registry row in RBX; no explicit output was supplied.
+ * Output: registry_output points to HOME/.local/bin/<unscoped package name>.
+ * HOME is read, never changed. Requires an absolute HOME <=4000 bytes. Creates
+ * only the two local/bin directories with the existing real-directory check.
+ * Buffer capacity=4096. Caller still uses atomic no-overwrite finalization.
+ * No PATH modification occurs. This does not make local directory races safe. */
+registry_install_output:
+    mov r8, [rip + envp]
+.Linstall_env:
+    mov rdi, [r8]
+    test rdi, rdi
+    jz .Linstall_home_error
+    cmp byte ptr [rdi], 'H'
+    jne .Linstall_env_next
+    cmp byte ptr [rdi + 1], 'O'
+    jne .Linstall_env_next
+    cmp byte ptr [rdi + 2], 'M'
+    jne .Linstall_env_next
+    cmp byte ptr [rdi + 3], 'E'
+    jne .Linstall_env_next
+    cmp byte ptr [rdi + 4], '='
+    je .Linstall_home
+.Linstall_env_next:
+    add r8, 8
+    jmp .Linstall_env
+.Linstall_home:
+    add rdi, 5
+    cmp byte ptr [rdi], '/'
+    jne .Linstall_home_error
+    push rdi
+    call strlen
+    pop rsi
+    cmp rax, 4000
+    ja .Linstall_home_error
+    lea rdi, [rip + registry_default_output]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + registry_local_suffix]
+    call copy_string
+    lea rdi, [rip + registry_default_output]
+    call make_safe_dir
+    test rax, rax
+    js registry_io_error
+    lea rdi, [rip + registry_default_output]
+    call strlen
+    lea rdi, [rip + registry_default_output]
+    add rdi, rax
+    lea rsi, [rip + registry_bin_dir_suffix]
+    call copy_string
+    lea rdi, [rip + registry_default_output]
+    call make_safe_dir
+    test rax, rax
+    js registry_io_error
+    lea rdi, [rip + registry_default_output]
+    call strlen
+    lea rdi, [rip + registry_default_output]
+    add rdi, rax
+    mov byte ptr [rdi], '/'
+    inc rdi
+    mov rsi, [rbx]
+.Linstall_name:
+    cmp byte ptr [rsi], '/'
+    je .Linstall_name_start
+    inc rsi
+    jmp .Linstall_name
+.Linstall_name_start:
+    inc rsi
+    call copy_string
+    lea rax, [rip + registry_default_output]
+    mov [rip + registry_output], rax
+    ret
+.Linstall_home_error:
+    lea rdi, [rip + registry_err_home]
+    mov esi, 2
+    jmp registry_fail
+
 /* Input: local_artifact path and expected_size <=64 MiB. Output: private payload
  * file, or fatal error. Opens a regular non-symlink input and exclusive output.
  * Retries short/interrupted reads and writes; checks both initial and copied
@@ -1371,7 +1497,7 @@ registry_copy_local:
     push r14
     mov eax, 2
     mov rdi, [rip + registry_local_artifact]
-    mov esi, O_NOFOLLOW + O_CLOEXEC
+    mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
     xor edx, edx
     syscall
     test rax, rax
@@ -1534,6 +1660,8 @@ registry_payload_suffix: .asciz "/payload"
 registry_checksum_suffix: .asciz "/checksum.txt"
 registry_tar_suffix: .asciz ".tar.gz"
 registry_bin_suffix: .asciz ".bin"
+registry_local_suffix: .asciz "/.local"
+registry_bin_dir_suffix: .asciz "/bin"
 registry_tab: .asciz "\t"
 registry_newline: .asciz "\n"
 registry_two_spaces: .asciz "  "
@@ -1561,6 +1689,7 @@ registry_fetch_json_package: .asciz ",\"package\":"
 registry_fetch_json_version: .asciz ",\"version\":"
 registry_fetch_json_suffix: .asciz ",\"verified\":true}\n"
 registry_fetched_text: .asciz "Fetched "
+registry_installed_text: .asciz "Installed "
 registry_verified_text: .asciz " (size and SHA-256 verified; not executed)\n"
 registry_no_matches: .asciz "No matching packages.\n"
 registry_err_args: .asciz "invalid registry arguments; use asm search --help"
@@ -1572,6 +1701,9 @@ registry_err_curl: .asciz "registry downloads require /usr/bin/curl"
 registry_err_sha: .asciz "artifact verification requires /usr/bin/sha256sum"
 registry_err_integrity: .asciz "artifact size or SHA-256 verification failed; output was not created"
 registry_err_output: .asciz "cannot create output; the destination must not exist and must be on the same filesystem"
+registry_err_install_target: .asciz "installation requires x86_64-linux; use fetch to inspect another target"
+registry_err_elf: .asciz "artifact is not a supported x86-64 ELF executable; check its target and format"
+registry_err_home: .asciz "HOME must be an absolute directory; set an explicit destination with --output"
 registry_help_text:
     .ascii "Usage:\n"
     .ascii "  asm search [query] [--json]\n"
@@ -1579,11 +1711,14 @@ registry_help_text:
     .ascii "  asm versions owner/name [--json]\n"
     .ascii "  asm fetch owner/name[@version] [--target target] [--kind source|executable]\n"
     .ascii "            [--output path] [--artifact local-file] [--json]\n\n"
+    .ascii "  asm install owner/name[@version] [--output path] [--artifact local-file]\n\n"
     .ascii "Use --index path for a local index or --registry https://... for an index URL.\n"
     .ascii "The default index is https://asm.build/registry/v1/index.tsv.\n"
     .ascii "fetch selects the highest numeric version if you omit @version.\n"
     .ascii "fetch defaults to source and x86_64-linux. It verifies bytes and SHA-256.\n"
     .ascii "fetch does not overwrite, extract, install, or run package contents.\n"
+    .ascii "install accepts host ELF executables. Its default path is ~/.local/bin/<name>.\n"
+    .ascii "install does not overwrite a file, run the program, or change PATH.\n"
     .byte 0
 
 .section .data
@@ -1622,7 +1757,7 @@ registry_temp_payload: .skip 96
 registry_temp_checksum: .skip 96
 registry_checksum_contents: .skip 256
 registry_selector: .skip 170
-registry_default_output: .skip 256
+registry_default_output: .skip 4096
 registry_json_buffer: .skip 24576
 registry_copy_buffer: .skip 65536
 registry_rows: .skip ROW_LIMIT * 64
