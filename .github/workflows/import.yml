@@ -1,0 +1,61 @@
+name: Import reviewed history
+
+# Temporary bootstrap transport. It imports a locally reviewed Git history.
+# It cannot rewrite main or change workflow files. Remove after setup.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Draft release that contains the Git bundle'
+        required: true
+        default: bootstrap-20261031
+        type: string
+      asset:
+        description: 'Bundle asset name'
+        required: true
+        default: asm-source.bundle
+        type: string
+      sha256:
+        description: 'Expected SHA-256 of the reviewed bundle'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Verify and import the bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASM_IMPORT_TAG: ${{ inputs.release_tag }}
+          ASM_IMPORT_ASSET: ${{ inputs.asset }}
+          ASM_IMPORT_SHA256: ${{ inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$ASM_IMPORT_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ "$ASM_IMPORT_ASSET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.bundle$ ]]
+          [[ "$ASM_IMPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          ASM_IMPORT_DIR="$RUNNER_TEMP/asm-import"
+          mkdir -m 700 "$ASM_IMPORT_DIR"
+          gh release download "$ASM_IMPORT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$ASM_IMPORT_ASSET" --dir "$ASM_IMPORT_DIR"
+          ASM_BUNDLE="$ASM_IMPORT_DIR/$ASM_IMPORT_ASSET"
+          printf '%s  %s\n' "$ASM_IMPORT_SHA256" "$ASM_BUNDLE" | sha256sum --check --strict
+          git bundle verify "$ASM_BUNDLE"
+          git fetch "$ASM_BUNDLE" main
+          git merge-base --is-ancestor HEAD FETCH_HEAD
+          git diff --exit-code HEAD FETCH_HEAD -- .github/workflows
+          git merge --ff-only FETCH_HEAD
+          git push origin HEAD:main
