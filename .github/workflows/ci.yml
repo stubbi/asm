@@ -1,0 +1,36 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Test the release contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run behavior and format checks
+        run: make check
+      - name: Check published version immutability
+        if: github.event_name == 'pull_request'
+        env:
+          ASM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 tools/registry.py validate --base-ref "$ASM_BASE_SHA"
+      - name: Build the static site
+        run: python3 tools/build_site.py --output .pages
+      - name: Build release files
+        run: python3 tools/release.py --output dist
