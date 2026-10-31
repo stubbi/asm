@@ -23,7 +23,7 @@ The AArch64 and RISC-V examples use cross tools and QEMU user-mode tests. Native
 
 ## Direct dependencies
 
-The native dependency commands use exact versions and a project lockfile. The cache retains the locked archive and extracted source files.
+The native dependency commands use exact versions and a project lock file. The cache retains the locked archive and extracted source files.
 
 **Acceptance gate:** add a library and call its exported routine. Rebuild from the lock without network access. Restore missing cache data with sync. Reject changed archives, changed source files, and unexpected cache entries. Preserve the previous lock after a failed update.
 

@@ -24,7 +24,7 @@ Treat package contents, manifests, documentation, proof projects, build output, 
 
 | Threat | Required control |
 | --- | --- |
-| A download differs from the selected release | Verify its size and SHA-256 before use; bind the digest into the lockfile |
+| A download differs from the selected release | Verify its size and SHA-256 before use; bind the digest into the lock file |
 | A release is silently replaced | Immutable version records and artifacts; append a new version instead |
 | A stale or compromised mirror changes the index | Authenticate registry metadata, check expiry and monotonic versions, and retain trusted client state |
 | Someone publishes under another maintainer's name | Explicit namespace ownership and a narrowly authorized publisher identity |
@@ -88,7 +88,9 @@ Yanking removes a version from the v1 native index without changing its recorded
 
 The proposed Kraken integration is [AeneasVerif/kraken](https://github.com/AeneasVerif/kraken), the assembly-semantics project associated with Lean. This is the researched interpretation of the requested “Kraken,” not an installed dependency or completed integration.
 
-Its current README describes x64 and AArch64 support, with RISC-V planned. It reasons at an abstraction above assembly and linking. Its documented x64 scope covers sequential computation and excludes operating-system and concurrency features, among other limitations. ASM must pin a reviewed commit and publish the exact supported subset. Coverage must identify the supported instructions and targets.
+Its README, checked on 2026-10-31, describes x64 and AArch64 support. RISC-V is planned. It reasons at an abstraction above assembly and linking. Its documented x64 scope covers sequential computation and excludes operating-system and concurrency features, among other limitations.
+
+ASM must pin a reviewed commit and publish the exact supported subset. Coverage must identify the supported instructions and targets.
 
 Start with small routines and explicit contracts: arithmetic results, bounds on memory access, preserved registers, and preconditions. A proof about a mathematical model has a defined scope. It does not automatically cover toolchains, loaders, operating systems, timing, or final executables. Reproducible builds and provenance help connect inputs and outputs; they do not prove that translation preserves semantics.
 

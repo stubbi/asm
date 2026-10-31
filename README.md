@@ -19,7 +19,7 @@ Our working assumptions come from LeAm:
 1. **User experience and total cost matter.** Software must work reliably, respond quickly, and use resources well. Development and maintenance count too.
 2. **AI can change the economics of assembly.** We expect more useful implementations for more machines. We will measure the effort required to make them dependable.
 3. **Machine control can improve selected workloads.** Instructions, layout, algorithms, and CPU features are all possible sources of improvement.
-4. **Portability still needs evidence.** Each target needs a clear interface, suitable tools, tests, and applicable proofs.
+4. **Cheaper generation may make more targets practical.** We will measure the cost of specifications, tools, proofs, integration, and maintenance.
 5. **Generation requires verification.** People and agents use the same checks. A proof must state its model, assumptions, and connection to the released bytes.
 6. **Performance claims must be reproducible.** Publish the workload, baseline, hardware, tools, raw results, and regressions.
 
@@ -35,6 +35,9 @@ Read [the full motivation](docs/why-asm.md).
 The current CLI runs on **Linux x86-64**.
 To build from source, install Git, GNU Make, and GNU Binutils.
 On Debian or Ubuntu, the Binutils package supplies `as` and `ld`.
+Registry commands also use curl and SHA-256 from GNU Coreutils.
+Source dependencies use gzip.
+`asm doctor` checks the tools that the CLI needs.
 
 ```sh
 git clone https://github.com/stubbi/asm.git
@@ -68,12 +71,15 @@ From the ASM repository, run:
 
 ```sh
 make install PREFIX="$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+asm version
 ```
 
-Add `$HOME/.local/bin` to your `PATH` if your shell does not include it.
+The `export` command applies to the current shell.
+Add it to your shell configuration to keep this setting.
 The installer refuses to replace a different existing `asm` command.
 To replace that command deliberately, add `REPLACE=1`.
-`make uninstall` removes the command only when its bytes match this build.
+`make uninstall PREFIX="$HOME/.local"` removes the command only when its bytes match this build.
 
 [Release downloads](https://github.com/stubbi/asm/releases) include the native binary, source archives, checksums, and build metadata.
 Check the supported target and the checksum before you run a downloaded file.
@@ -109,6 +115,50 @@ It refuses to overwrite an existing destination.
 Fetch does not extract or execute the artifact.
 Use `asm --help` for the current command syntax.
 
+### Use a source dependency
+
+From a project directory, add an exact version:
+
+```sh
+asm add stubbi/math@0.1.0 --target x86_64-linux
+asm lock
+```
+
+ASM records the selection in `asm.lock`.
+It checks and extracts the source under `.asm/packages`.
+The build makes that directory available to the assembler.
+Include the library explicitly in your source:
+
+```asm
+.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+```
+
+Follow [the complete package example](docs/use-a-package.md) for a program that calls the function.
+
+The library exports `asm_u64_min`.
+Its [contract and tests](examples/math) describe the arguments, result, and register changes.
+
+Commit `asm.lock` with your project.
+Use `asm sync` to restore its exact source artifacts on another machine.
+Use `asm build --locked` when a missing lock file must be an error.
+Builds check existing locked dependencies before assembly.
+
+`asm update owner/name@X.Y.Z` selects an explicit replacement version.
+`asm remove owner/name` removes a selection and retains cached files.
+Version ranges and transitive dependencies are future work.
+A lock file checks declared packages; it does not sandbox other assembler inputs.
+
+### Install a program
+
+```sh
+asm install stubbi/hello@0.1.0
+```
+
+ASM selects a host executable and checks its size, digest, and ELF structure.
+It installs to `$HOME/.local/bin/hello` without running the program.
+An existing destination causes an error.
+Use `--output PATH` to choose another new file.
+
 ## Status
 
 ASM is an early alpha.
@@ -119,12 +169,13 @@ The table below describes the implemented release boundary.
 | --- | --- |
 | Native CLI | Linux x86-64 assembly, with direct Linux system calls. |
 | Project workflow | Create, inspect, build, run, test, and clean projects. |
-| Registry client | Search packages, inspect versions, and fetch checked artifacts. |
+| Registry client | Search packages, inspect versions, fetch artifacts, and install checked host executables. |
+| Dependencies | Add, update, remove, check, and restore exact direct source dependencies. |
 | Package identity | Explicit `owner/name` namespaces and exact numeric versions. |
 | Target metadata | Separate x86-64, AArch64, and RISC-V Linux artifacts. |
 | Registry website | Package search, target filters, versions, artifacts, and evidence states. |
 | Download counts | GitHub release-asset counts, with their observation time. |
-| Source publication | Commit-bound archives and reviewed registry submissions. |
+| Source publication | Commit-bound archives, native submission preparation, and reviewed registry records. |
 | Artifact checks | Bounded metadata, size and digest checks, archive inspection, and ELF target checks. |
 | Formal verification | Defined evidence model. No hosted proof service yet. |
 
@@ -132,19 +183,26 @@ The native CLI host and a package target are separate concepts.
 The x86-64 client can fetch a package for another target.
 It can build and run local projects only for its supported host target.
 
-Full dependency resolution, automatic public publication, account recovery, and isolated public build workers remain release gates.
+Transitive dependency resolution, automatic public publication, account recovery, and isolated public build workers remain release gates.
 The current service does not claim feature parity with npm, PyPI, or crates.io.
 
 ## Publish from source
 
 A release record identifies a public source repository and an exact Git commit.
 Each artifact has its own target, kind, size, URL, and digest.
-The registry keeps the bytes of a published version immutable.
+A published version fixes its artifact digests.
+Clients reject different bytes.
 
 The initial publication path uses a reviewed pull request.
 [The registry specification](docs/specs/registry.md) gives the format and commands.
-Python tools prepare and validate registry records.
-They are service and release tools, separate from the assembly CLI implementation.
+`asm publish` validates actual artifact bytes and writes a local submission record.
+It does not upload files or reserve a package name.
+Follow the [publishing guide](registry/README.md) to prepare archives and submit the record.
+
+The CLI's project, registry, dependency, archive, and publication logic is assembly.
+It uses mature system tools for assembly, linking, HTTPS, SHA-256, and gzip.
+Python handles registry operations and release automation.
+JavaScript supports the website.
 
 ## Security evidence
 

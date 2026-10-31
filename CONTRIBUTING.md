@@ -8,6 +8,7 @@ Use [the writing guide](docs/writing.md) for documentation and messages.
 
 Use Linux x86-64 for the native CLI checks.
 Install Git, GNU Make, GNU Binutils, Python 3.11 or later, and Node.js 18 or later.
+Also install curl, GNU Coreutils, and gzip.
 Clone the repository.
 Run `make check`.
 
