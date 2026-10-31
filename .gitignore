@@ -1,4 +1,5 @@
-/build/
+build/
+.asm/
 /dist/
 /.pages/
 __pycache__/

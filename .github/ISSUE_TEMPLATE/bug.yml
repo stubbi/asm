@@ -1,0 +1,41 @@
+name: Report a defect
+description: Help us reproduce a problem.
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: "Use private vulnerability reporting for security defects. Remove secrets and private data from examples."
+  - type: input
+    id: version
+    attributes:
+      label: ASM version
+      description: "Run asm version."
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host system and architecture
+      placeholder: "Ubuntu 24.04, x86-64"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: "Give the command and the smallest relevant source or manifest."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: "Include the exit code and error text, if available."
+    validations:
+      required: true
