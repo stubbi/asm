@@ -15,12 +15,15 @@
     "test",
     "clean",
     "targets",
-    "status"
+    "status",
+    "search",
+    "info",
+    "versions",
+    "fetch"
   ],
   "unimplemented": [
     "add",
     "remove",
-    "search",
     "install",
     "update",
     "lock",

@@ -1,0 +1,7 @@
+[package]
+name = "asm"
+version = "0.1.0"
+
+[build]
+source = "cli/asm.s"
+target = "x86_64-linux"

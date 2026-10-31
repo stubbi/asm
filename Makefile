@@ -11,16 +11,18 @@ all: build/asm
 build:
 	mkdir -p build
 
-build/asm.o: cli/asm.s | build
+build/asm.o: cli/asm.s cli/registry.s | build
 	$(AS) --64 --fatal-warnings -o $@ $<
 
 build/asm: build/asm.o
-	$(LD) -z noexecstack -z relro -z now --build-id=none -o $@ $<
+	$(LD) -z noexecstack -z relro -z now --build-id=none -o $@ $^
 
 test: build/asm
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v
 
 check: test
+	$(PYTHON) -m unittest discover -s tests/registry -p 'test_*.py' -v
+	node --test tests/site.test.cjs
 
 install: build/asm
 	sh cli/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
@@ -29,4 +31,4 @@ uninstall: build/asm
 	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
-	rm -f build/asm build/asm.o
+	rm -f build/asm build/asm.o build/registry.o

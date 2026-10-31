@@ -1,8 +1,17 @@
 .intel_syntax noprefix
 .global _start
+.global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
+.global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
+.global create_exclusive_file, json_mode
+.extern cmd_search, cmd_info, cmd_versions, cmd_fetch
 
 /* asm's CLI is native x86-64 assembly. No C runtime or shell is involved.
  * Calls use the System V register convention; Linux syscalls use r10 for arg4.
+ * Returning routines preserve RBX, RBP and R12-R15. Unless stated otherwise,
+ * RAX, RCX, RDX, RSI, RDI and R8-R11 are scratch registers. No routine uses SSE.
+ * Command and fatal-error labels do not return and can change all registers.
+ * String inputs must have a NUL terminator in accessible memory. Constants and
+ * kernel argv strings meet this rule; file strings require bounded parsing.
  */
 .equ SYS_read, 0
 .equ SYS_write, 1
@@ -89,7 +98,9 @@ _start:
     mov byte ptr [rip + json_mode], 1
     jmp .Lglobals
 
-/* Return next argument or zero. */
+/* Input: global argc/argv/argi from the initial Linux stack. Output: RAX is the
+ * next borrowed argv pointer, or zero. Advances argi only for an existing arg.
+ * Stack: none. Bounds: argi is checked against argc before the pointer load. */
 next_arg:
     mov rax, [rip + argi]
     cmp rax, [rip + argc]
@@ -102,6 +113,8 @@ next_arg:
     xor eax, eax
     ret
 
+/* Input: RDI, RSI are valid strings. Output: EAX=1 if equal, otherwise zero.
+ * Scratch: RAX, RCX. Stack: none. Does not modify either input. */
 streq:
     xor ecx, ecx
 .Leq_loop:
@@ -117,6 +130,8 @@ streq:
     xor eax, eax
     ret
 
+/* Input: RDI is a valid string. Output: RAX excludes its NUL terminator.
+ * Scratch: RAX. Stack: none. Callers must establish accessible termination. */
 strlen:
     xor eax, eax
 .Llen_loop:
@@ -127,7 +142,9 @@ strlen:
 .Llen_done:
     ret
 
-/* copy NUL-terminated string; return pointer to destination NUL. */
+/* Input: RDI=destination, RSI=source. Caller owns both buffers and proves
+ * destination capacity >= strlen(source)+1; overlapping buffers are unsupported.
+ * Output: RAX points to the copied NUL. Scratch: RAX, RCX, RSI. Stack: none. */
 copy_string:
     mov rax, rdi
 .Lcopy_loop:
@@ -141,7 +158,9 @@ copy_string:
 .Lcopy_done:
     ret
 
-/* write_cstr(fd=rdi, string=rsi), retry EINTR and short writes. */
+/* Input: RDI=file descriptor; RSI=valid string. Output: zero or negative errno.
+ * write_all instead takes an explicit byte count in RDX. Both retry EINTR and
+ * short writes. Scratch: syscall registers and RSI/RDX. Stack: none. */
 write_cstr:
     xor edx, edx
 .Lwrite_len:
@@ -170,14 +189,17 @@ out:
     mov edi, 1
     jmp write_cstr
 
-/* report(text=rdi, json=rsi). All text passed here includes a newline. */
+/* Input: RDI=text, RSI=JSON, both static strings with a trailing LF. Selects the
+ * global output mode and writes stdout. Returns write_cstr status. Stack: none. */
 report:
     cmp byte ptr [rip + json_mode], 0
     je out
     mov rdi, rsi
     jmp out
 
-/* Fail with a static, JSON-safe one-line error (without a trailing newline). */
+/* Input: RDI=static JSON-safe error string without LF; ESI=exit status 1..255.
+ * Writes stderr and exits. Does not return. JSON escaping is not performed;
+ * callers must not supply untrusted text, quotes, backslashes or controls. */
 die:
     mov r12d, esi
     mov r13, rdi
@@ -225,8 +247,9 @@ unsupported_target:
     mov esi, 2
     jmp die
 
-/* Shared trailing options. rax=argument. Returns 1 if consumed, 0 otherwise.
- * --target accepts only the supported host and its documented alias. */
+/* Input: RAX=current argv string. Output: EAX=1 if consumed, otherwise zero.
+ * --target consumes one more argument and accepts the host or its alias.
+ * Malformed options exit. Stack: 8 saved bytes plus nested calls. */
 common_option:
     push rbx
     mov rbx, rax
@@ -274,6 +297,8 @@ common_option:
     jz unsupported_target
     jmp .Lopt_yes
 
+/* Input: RDI=target string. Output: EAX=1 for the host or alias, else zero.
+ * Stack: 8 saved bytes. Strings are borrowed; no memory is changed. */
 validate_target:
     push rdi
     lea rsi, [rip + host_target]
@@ -286,6 +311,8 @@ validate_target:
 .Ltarget_done:
     ret
 
+/* Input: global argv cursor. Accepts common options until EOF. Returns with the
+ * cursor at argc; any operand or unknown option exits with status 2. */
 parse_options_only:
     call next_arg
     test rax, rax
@@ -328,6 +355,8 @@ cmd_doctor:
     call report
     jmp exit_ok
 
+/* Check execute access to fixed GNU tool paths. No files are changed. Returns
+ * on success; exits 127 with a recovery message if a tool is unavailable. */
 check_tools:
     mov eax, SYS_access
     lea rdi, [rip + as_path]
@@ -512,6 +541,9 @@ cmd_init:
     mov esi, 1
     jmp die
 
+/* Input: RDI=initialization output path. Returns only for ENOENT from lstat.
+ * Every other result triggers initialization rollback. Scratch: stat_buffer
+ * (144 bytes), syscall registers. No symlink is followed for the final path. */
 require_absent:
     mov eax, SYS_lstat
     lea rsi, [rip + stat_buffer]
@@ -520,7 +552,9 @@ require_absent:
     jne init_rollback
     ret
 
-/* make_safe_dir(path): 1 created, 0 existing real directory, -1 failure. */
+/* Input: RDI=directory path. Output: RAX=1 created, 0 existing real directory,
+ * or -1 on failure. Uses lstat after EEXIST; this is not a race-free sandbox.
+ * Scratch: stat_buffer (144 bytes), caller-saved registers. Stack: 8 bytes. */
 make_safe_dir:
     push rbx
     mov rbx, rdi
@@ -553,6 +587,10 @@ make_safe_dir:
     pop rbx
     ret
 
+/* Input: RDI=path, RSI=content string, RDX=owned one-byte creation flag.
+ * Creates mode 0644 with O_EXCL|O_NOFOLLOW and sets the flag only after open.
+ * Output: zero or negative errno from open/write/close. Caller rolls back a
+ * partially written file. Stack: 24 saved bytes plus nested calls. */
 create_exclusive_file:
     push rbx
     push r12
@@ -585,6 +623,9 @@ create_exclusive_file:
     pop rbx
     ret
 
+/* No return. Uses creation flags to remove only this invocation's outputs.
+ * A new project directory is removed only after restoring the original cwd.
+ * Existing files and directories have zero creation flags and are retained. */
 init_rollback:
     cmp byte ptr [rip + made_test], 0
     je .Lrollback_main
@@ -633,7 +674,15 @@ init_rollback:
 
 /* Strict, documented TOML subset. Sections and string fields are parsed, not
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
+/* Input: cwd is the project. Output: package_* buffers contain validated fields.
+ * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
+ * include NUL: name/version/target=64, source=256. Failure exits without build
+ * changes. Stack: 32 saved bytes plus nested calls; all callee-saved restored. */
 read_manifest:
+    push r12
+    push r13
+    push r14
+    push r15
     mov eax, SYS_open
     lea rdi, [rip + manifest_path]
     mov esi, O_NOFOLLOW + O_CLOEXEC
@@ -898,6 +947,10 @@ read_manifest:
     call validate_target
     test eax, eax
     jz unsupported_target
+    pop r15
+    pop r14
+    pop r13
+    pop r12
     ret
 .Lmanifest_close_error:
     mov eax, SYS_close
@@ -908,6 +961,8 @@ manifest_error:
     mov esi, 1
     jmp die
 
+/* Input/output: R12 is the bounded manifest parser cursor. Advances over SP,
+ * TAB and CR. Scratch: RAX. This parser helper intentionally updates R12. */
 skip_horizontal:
     mov al, [r12]
     cmp al, ' '
@@ -922,6 +977,8 @@ skip_horizontal:
 .Lhorizontal_end:
     ret
 
+/* Input: RDI=project name. Output: EAX=1 for [a-z][a-z0-9-]{0,62}, else zero.
+ * Scratch: RAX/RCX. Registry namespace validation is a separate stricter rule. */
 valid_name:
     mov al, [rdi]
     cmp al, 'a'
@@ -948,7 +1005,9 @@ valid_name:
 .Lname_next:
     inc ecx
     jmp .Lname_loop
-/* v0.1 accepts numeric major.minor.patch, without leading zeroes. */
+/* Input: RDI=bounded manifest version (at most 63 chars). Output: EAX=1 for
+ * numeric major.minor.patch without leading zeroes, else zero. No integer
+ * conversion occurs here. Registry versions impose a separate numeric limit. */
 valid_version:
     xor ecx, ecx
     xor edx, edx
@@ -988,7 +1047,9 @@ valid_version:
     je .Lvalid
     jmp .Linvalid
 
-/* Relative source paths, no empty/. /.. segments, no option-like basename. */
+/* Input: RDI=source path already bounded to 255 chars. Output: EAX=1 for a
+ * relative path with no empty/. /.. or option-like segments, else zero. This
+ * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     cmp byte ptr [rdi], '/'
     je .Linvalid
@@ -1096,7 +1157,13 @@ cmd_test:
     lea rdi, [rip + err_test]
     jmp die
 
+/* Input: cwd is a trusted local project; package_source was parsed and bounded.
+ * test_mode selects tests/main.s. Output: build/app or build/test, plus object.
+ * Object rename occurs first; binary rename is the final publication step.
+ * Returns on success. On failure, removes this process's stage and exits with
+ * the child status or 1. Stage paths have capacities 64/96/96. Stack: 8 bytes. */
 build_project:
+    push r12
     call check_tools
     lea rdi, [rip + build_dir]
     call make_safe_dir
@@ -1171,16 +1238,6 @@ build_project:
     test eax, eax
     jnz build_child_error
     mov eax, SYS_rename
-    lea rdi, [rip + stage_binary]
-    lea rsi, [rip + app_output]
-    cmp byte ptr [rip + test_mode], 0
-    je .Lrename_binary
-    lea rsi, [rip + test_output]
-.Lrename_binary:
-    syscall
-    test rax, rax
-    js build_io_error
-    mov eax, SYS_rename
     lea rdi, [rip + stage_object]
     lea rsi, [rip + object_output]
     cmp byte ptr [rip + test_mode], 0
@@ -1190,7 +1247,18 @@ build_project:
     syscall
     test rax, rax
     js build_io_error
+    mov eax, SYS_rename
+    lea rdi, [rip + stage_binary]
+    lea rsi, [rip + app_output]
+    cmp byte ptr [rip + test_mode], 0
+    je .Lrename_binary
+    lea rsi, [rip + test_output]
+.Lrename_binary:
+    syscall
+    test rax, rax
+    js build_io_error
     call cleanup_stage
+    pop r12
     ret
 build_child_error:
     mov r15d, eax
@@ -1204,6 +1272,9 @@ build_directory_error:
     lea rdi, [rip + err_build_io]
     mov esi, 1
     jmp die
+/* Input: stage paths refer to the directory this process created. Removes only
+ * its two known files and then its empty directory. Scratch: syscall registers.
+ * Cleanup errors do not replace the original failure status. Stack: none. */
 cleanup_stage:
     mov eax, SYS_unlink
     lea rdi, [rip + stage_object]
@@ -1216,6 +1287,9 @@ cleanup_stage:
     syscall
     ret
 
+/* Input: RDI=unsigned 64-bit value; RSI=last byte of a writable >=21-byte buffer.
+ * Output: RAX points to the decimal string within that buffer. Writes backward
+ * from RSI, including its NUL terminator. Scratch: RAX/RDX/RSI/R8. Stack: none. */
 unsigned_decimal:
     mov byte ptr [rsi], 0
     mov rax, rdi
@@ -1233,6 +1307,9 @@ unsigned_decimal:
 
 /* Spawn a fixed executable with explicit argv, inherit env and file streams.
  * Return child's exit code, or 128+signal; never turn a failed exec into success. */
+/* Input: RDI=executable path, RSI=NUL-terminated argv pointer array. All pointers
+ * remain owned by the parent. Output: EAX=0..255; fork/wait/exec failure is 127.
+ * Retries interrupted waits. Stack: 24 saved bytes. No shell is involved. */
 spawn_wait:
     push rbx
     push r12
@@ -1323,6 +1400,8 @@ cmd_clean:
     lea rdi, [rip + err_clean]
     mov esi, 1
     jmp die
+/* Input: RDI=one fixed asm artifact path. Unlinks the final entry, not its
+ * symlink target. Returns for success or ENOENT; other errors exit. */
 clean_file:
     mov eax, SYS_unlink
     syscall
@@ -1342,7 +1421,9 @@ commands:
     .quad command_clean, cmd_clean, command_target, cmd_targets
     .quad command_targets, cmd_targets, command_status, cmd_status
     .quad command_add, cmd_unimplemented, command_remove, cmd_unimplemented
-    .quad command_search, cmd_unimplemented, command_publish, cmd_unimplemented
+    .quad command_search, cmd_search, command_publish, cmd_unimplemented
+    .quad command_info, cmd_info, command_versions, cmd_versions
+    .quad command_fetch, cmd_fetch
     .quad command_install, cmd_unimplemented, command_update, cmd_unimplemented
     .quad command_lock, cmd_unimplemented, command_login, cmd_unimplemented
     .quad command_yank, cmd_unimplemented, 0, 0
@@ -1361,6 +1442,9 @@ command_status: .asciz "status"
 command_add: .asciz "add"
 command_remove: .asciz "remove"
 command_search: .asciz "search"
+command_info: .asciz "info"
+command_versions: .asciz "versions"
+command_fetch: .asciz "fetch"
 command_publish: .asciz "publish"
 command_install: .asciz "install"
 command_update: .asciz "update"
@@ -1412,7 +1496,7 @@ err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
 err_target: .asciz "unsupported target; this release supports x86_64-linux only"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
-err_unimplemented: .asciz "registry operations are not implemented in this build; use asm status"
+err_unimplemented: .asciz "this command is not implemented; run asm status to see command support"
 err_init_path: .asciz "cannot create project directory; new requires a path that does not exist"
 err_init_conflict: .asciz "cannot initialize project; existing files and symlink directories are never overwritten"
 err_manifest: .asciz "invalid or missing asm.toml; expected package name/version and build source/target"
@@ -1444,6 +1528,10 @@ help_text:
     .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
     .ascii "  test             Assemble and execute tests/main.s\n"
     .ascii "  clean            Remove only asm's named build artifacts\n"
+    .ascii "  search [query]   Search the package registry\n"
+    .ascii "  info <package>   Show registry package metadata\n"
+    .ascii "  versions <pkg>   List published package versions\n"
+    .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
     .ascii "  doctor           Check the local GNU assembler and linker\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
@@ -1452,12 +1540,13 @@ help_text:
     .ascii "Options: --target x86_64-linux, --json, --no-color, --help\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
     .ascii "JSON describes asm's own output; child output is passed through.\n"
-    .ascii "Registry commands currently fail explicitly with exit status 69.\n"
+    .ascii "For registry options, use asm search --help.\n"
+    .ascii "Unimplemented commands fail with exit status 69; use asm status.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"doctor\",\"targets\",\"status\",\"version\",\"help\"]}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"doctor\",\"targets\",\"status\",\"version\",\"help\"]}\n"
 status_json:
-    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\"],\"unimplemented\":[\"add\",\"remove\",\"search\",\"install\",\"update\",\"lock\",\"publish\",\"login\",\"yank\"]}\n"
+    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\"],\"unimplemented\":[\"add\",\"remove\",\"install\",\"update\",\"lock\",\"publish\",\"login\",\"yank\"]}\n"
 manifest_prefix: .asciz "[package]\nname = \""
 manifest_suffix: .asciz "\"\nversion = \"0.1.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
 main_template:
@@ -1509,3 +1598,7 @@ made_manifest: .skip 1
 made_main: .skip 1
 made_test: .skip 1
 .section .note.GNU-stack,"",@progbits
+
+/* Keep one assembler translation unit so the CLI can build itself with the
+ * standard single-source asm.toml. GNU as resolves .include from project cwd. */
+.include "cli/registry.s"

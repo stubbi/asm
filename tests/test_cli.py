@@ -118,6 +118,17 @@ class NativeCliTests(unittest.TestCase):
         self.cli("build", cwd=project, code=1)
         self.assertFalse((project / "build/app").exists())
 
+    def test_output_obstruction_preserves_previous_binary(self):
+        project = self.project()
+        self.cli("build", cwd=project)
+        previous = (project / "build/app").read_bytes()
+        (project / "src/main.s").write_text(self.exit_program(7))
+        (project / "build/main.o").unlink()
+        (project / "build/main.o").mkdir()
+        self.cli("build", cwd=project, code=1)
+        self.assertEqual((project / "build/app").read_bytes(), previous)
+        self.assertEqual(list((project / "build").glob(".asm-*")), [])
+
     def test_new_never_overwrites_directory(self):
         project = self.project()
         manifest = (project / "asm.toml").read_bytes()
@@ -224,7 +235,7 @@ class NativeCliTests(unittest.TestCase):
         self.assertTrue((self.work / "-literal/asm.toml").is_file())
 
     def test_registry_commands_fail_honestly(self):
-        for command in ["search", "add", "remove", "install", "update", "lock", "publish", "login", "yank"]:
+        for command in ["add", "remove", "install", "update", "lock", "publish", "login", "yank"]:
             with self.subTest(command=command):
                 result = self.cli(command, "example", "--json", code=69)
                 self.assertFalse(json.loads(result.stderr)["ok"])
@@ -237,6 +248,19 @@ class NativeCliTests(unittest.TestCase):
         header = subprocess.run(["readelf", "-l", ASM], capture_output=True, text=True, check=True)
         self.assertNotIn("INTERP", header.stdout)
         self.assertNotIn("RWE", header.stdout)
+
+    def test_cli_builds_its_own_assembly_sources(self):
+        shutil.copytree(ROOT / "cli", self.work / "cli")
+        (self.work / "asm.toml").write_text(
+            '[package]\nname = "asm"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n'
+        )
+        self.cli("build")
+        result = subprocess.run(
+            [str(self.work / "build/app"), "status"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        self.assertIn("fetch", json.loads(result.stdout)["implemented"])
 
 
 if __name__ == "__main__":
