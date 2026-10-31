@@ -20,14 +20,15 @@
     "info",
     "versions",
     "fetch",
-    "install"
+    "install",
+    "add",
+    "update",
+    "remove",
+    "lock",
+    "sync",
+    "publish"
   ],
   "unimplemented": [
-    "add",
-    "remove",
-    "update",
-    "lock",
-    "publish",
     "login",
     "yank"
   ]

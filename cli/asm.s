@@ -39,6 +39,7 @@
 
 .section .text
 _start:
+    cld
     mov rax, [rsp]
     mov [rip + argc], rax
     lea rax, [rsp + 8]
@@ -177,13 +178,17 @@ write_all:
     cmp rax, -4
     je write_all
     test rax, rax
-    jle .Lwrite_done
+    js .Lwrite_done
+    jz .Lwrite_zero
     add rsi, rax
     sub rdx, rax
     jmp write_all
 .Lwrite_ok:
     xor eax, eax
 .Lwrite_done:
+    ret
+.Lwrite_zero:
+    mov rax, -5
     ret
 out:
     mov rsi, rdi
@@ -270,6 +275,11 @@ common_option:
     test eax, eax
     jnz .Lopt_target
     mov rdi, rbx
+    lea rsi, [rip + opt_locked]
+    call streq
+    test eax, eax
+    jnz .Lopt_locked
+    mov rdi, rbx
     lea rsi, [rip + opt_help]
     call streq
     test eax, eax
@@ -296,6 +306,11 @@ common_option:
     call validate_target
     test eax, eax
     jz unsupported_target
+    jmp .Lopt_yes
+.Lopt_locked:
+    cmp byte ptr [rip + allow_locked], 0
+    je bad_args
+    mov byte ptr [rip + require_lock], 1
     jmp .Lopt_yes
 
 /* Input: RDI=target string. Output: EAX=1 for the host or alias, else zero.
@@ -351,10 +366,32 @@ cmd_status:
 cmd_doctor:
     call parse_options_only
     call check_tools
+    mov eax, SYS_access
+    lea rdi, [rip + registry_curl]
+    mov esi, 1
+    syscall
+    test rax, rax
+    js .Ldoctor_registry_missing
+    mov eax, SYS_access
+    lea rdi, [rip + registry_sha256sum]
+    mov esi, 1
+    syscall
+    test rax, rax
+    js .Ldoctor_registry_missing
+    mov eax, SYS_access
+    lea rdi, [rip + doctor_gzip_path]
+    mov esi, 1
+    syscall
+    test rax, rax
+    js .Ldoctor_registry_missing
     lea rdi, [rip + doctor_text]
     lea rsi, [rip + doctor_json]
     call report
     jmp exit_ok
+.Ldoctor_registry_missing:
+    lea rdi, [rip + err_registry_tools]
+    mov esi, 127
+    jmp die
 
 /* Check execute access to fixed GNU tool paths. No files are changed. Returns
  * on success; exits 127 with a recovery message if a tool is unavailable. */
@@ -677,7 +714,7 @@ init_rollback:
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
 /* Input: cwd is the project. Output: package_* buffers contain validated fields.
  * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name/version/target=64, source=256. Failure exits without build
+ * include NUL: name=65, version/target=64, source=256. Failure exits without build
  * changes. Stack: 32 saved bytes plus nested calls; all callee-saved restored. */
 read_manifest:
     push r12
@@ -818,7 +855,7 @@ read_manifest:
     cmp r13d, 1
     jne manifest_error
     lea rdi, [rip + package_name]
-    mov esi, 63
+    mov esi, 64
     mov edx, 1
     jmp .Lfield_read
 .Lfield_version:
@@ -978,7 +1015,7 @@ skip_horizontal:
 .Lhorizontal_end:
     ret
 
-/* Input: RDI=project name. Output: EAX=1 for [a-z][a-z0-9-]{0,62}, else zero.
+/* Input: RDI=project name. Output: EAX=1 for [a-z][a-z0-9-]{0,63}, else zero.
  * Scratch: RAX/RCX. Registry namespace validation is a separate stricter rule. */
 valid_name:
     mov al, [rdi]
@@ -991,7 +1028,7 @@ valid_name:
     mov al, [rdi + rcx]
     test al, al
     jz .Lvalid
-    cmp ecx, 63
+    cmp ecx, 64
     jae .Linvalid
     cmp al, '-'
     je .Lname_next
@@ -1098,6 +1135,7 @@ valid_source:
 /* Build outputs in a fresh process-specific staging directory, then rename
  * completed artifacts into place. Never pass project paths through a shell. */
 cmd_build:
+    mov byte ptr [rip + allow_locked], 1
     call parse_options_only
     call read_manifest
     call build_project
@@ -1106,6 +1144,7 @@ cmd_build:
     call report
     jmp exit_ok
 cmd_run:
+    mov byte ptr [rip + allow_locked], 1
     mov byte ptr [rip + run_mode], 1
 .Lrun_options:
     call next_arg
@@ -1138,6 +1177,7 @@ cmd_run:
     mov edi, eax
     jmp exit_code
 cmd_test:
+    mov byte ptr [rip + allow_locked], 1
     call parse_options_only
     call read_manifest
     mov byte ptr [rip + test_mode], 1
@@ -1166,6 +1206,7 @@ cmd_test:
 build_project:
     push r12
     call check_tools
+    call verify_project_dependencies
     lea rdi, [rip + build_dir]
     call make_safe_dir
     test rax, rax
@@ -1204,17 +1245,21 @@ build_project:
     mov [rip + child_argv], rax
     lea rax, [rip + as_64]
     mov [rip + child_argv + 8], rax
-    lea rax, [rip + arg_o]
+    lea rax, [rip + arg_I]
     mov [rip + child_argv + 16], rax
-    lea rax, [rip + stage_object]
+    lea rax, [rip + dependency_packages_root]
     mov [rip + child_argv + 24], rax
+    lea rax, [rip + arg_o]
+    mov [rip + child_argv + 32], rax
+    lea rax, [rip + stage_object]
+    mov [rip + child_argv + 40], rax
     lea rax, [rip + package_source]
     cmp byte ptr [rip + test_mode], 0
     je .Lbuild_source_set
     lea rax, [rip + test_source]
 .Lbuild_source_set:
-    mov [rip + child_argv + 32], rax
-    mov qword ptr [rip + child_argv + 40], 0
+    mov [rip + child_argv + 48], rax
+    mov qword ptr [rip + child_argv + 56], 0
     lea rdi, [rip + as_path]
     lea rsi, [rip + child_argv]
     call spawn_wait
@@ -1259,6 +1304,7 @@ build_project:
     test rax, rax
     js build_io_error
     call cleanup_stage
+    call release_dependency_lock
     pop r12
     ret
 build_child_error:
@@ -1421,12 +1467,13 @@ commands:
     .quad command_run, cmd_run, command_test, cmd_test
     .quad command_clean, cmd_clean, command_target, cmd_targets
     .quad command_targets, cmd_targets, command_status, cmd_status
-    .quad command_add, cmd_unimplemented, command_remove, cmd_unimplemented
-    .quad command_search, cmd_search, command_publish, cmd_unimplemented
+    .quad command_add, cmd_add, command_remove, cmd_remove
+    .quad command_search, cmd_search, command_publish, cmd_publish
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
-    .quad command_install, cmd_install, command_update, cmd_unimplemented
-    .quad command_lock, cmd_unimplemented, command_login, cmd_unimplemented
+    .quad command_install, cmd_install, command_update, cmd_update
+    .quad command_lock, cmd_lock, command_login, cmd_unimplemented
+    .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
 command_help: .asciz "help"
 command_version: .asciz "version"
@@ -1450,6 +1497,7 @@ command_publish: .asciz "publish"
 command_install: .asciz "install"
 command_update: .asciz "update"
 command_lock: .asciz "lock"
+command_sync: .asciz "sync"
 command_login: .asciz "login"
 command_yank: .asciz "yank"
 opt_json: .asciz "--json"
@@ -1459,6 +1507,7 @@ opt_h: .asciz "-h"
 opt_version: .asciz "--version"
 opt_V: .asciz "-V"
 opt_target: .asciz "--target"
+opt_locked: .asciz "--locked"
 opt_separator: .asciz "--"
 host_target: .asciz "x86_64-linux"
 host_target_alias: .asciz "x86_64-unknown-linux-gnu"
@@ -1466,6 +1515,7 @@ as_path: .asciz "/usr/bin/as"
 ld_path: .asciz "/usr/bin/ld"
 as_64: .asciz "--64"
 arg_o: .asciz "-o"
+arg_I: .asciz "-I"
 arg_z: .asciz "-z"
 noexecstack: .asciz "noexecstack"
 dot: .asciz "."
@@ -1497,6 +1547,7 @@ err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
 err_target: .asciz "unsupported target; this release supports x86_64-linux only"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
+err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"
 err_unimplemented: .asciz "this command is not implemented; run asm status to see command support"
 err_init_path: .asciz "cannot create project directory; new requires a path that does not exist"
 err_init_conflict: .asciz "cannot initialize project; existing files and symlink directories are never overwritten"
@@ -1510,8 +1561,9 @@ version_text: .asciz "asm 0.1.0 (x86_64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"host\":\"x86_64-linux\"}\n"
 targets_text: .asciz "x86_64-linux (host; GNU as + ld)\n"
 targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\"]}\n"
-doctor_text: .asciz "Host: x86_64-linux\nAssembler: /usr/bin/as\nLinker: /usr/bin/ld\nReady to build.\n"
-doctor_json: .asciz "{\"ok\":true,\"host\":\"x86_64-linux\",\"assembler\":\"/usr/bin/as\",\"linker\":\"/usr/bin/ld\"}\n"
+doctor_gzip_path: .asciz "/usr/bin/gzip"
+doctor_text: .asciz "Host: x86_64-linux\nBuild: /usr/bin/as and /usr/bin/ld\nRegistry: /usr/bin/curl and /usr/bin/sha256sum\nSource archives: /usr/bin/gzip\nRequired tools are available.\n"
+doctor_json: .asciz "{\"ok\":true,\"host\":\"x86_64-linux\",\"assembler\":\"/usr/bin/as\",\"linker\":\"/usr/bin/ld\",\"curl\":\"/usr/bin/curl\",\"sha256sum\":\"/usr/bin/sha256sum\",\"gzip\":\"/usr/bin/gzip\"}\n"
 init_text: .asciz "Created asm.toml, src/main.s and tests/main.s.\nNext: asm run\n"
 init_json: .asciz "{\"ok\":true,\"created\":[\"asm.toml\",\"src/main.s\",\"tests/main.s\"]}\n"
 build_text: .asciz "Built build/app\n"
@@ -1534,21 +1586,28 @@ help_text:
     .ascii "  versions <pkg>   List published package versions\n"
     .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
     .ascii "  install <pkg>    Install a host ELF executable without running it\n"
-    .ascii "  doctor           Check the local GNU assembler and linker\n"
+    .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
+    .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
+    .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
+    .ascii "  lock             Check every locked archive and source file\n"
+    .ascii "  sync             Fetch and extract exact locked source artifacts\n"
+    .ascii "  publish          Prepare a release record for review; do not upload\n"
+    .ascii "  doctor           Check required tools\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
     .ascii "  version          Print the CLI version\n"
     .ascii "  help             Show this help\n\n"
     .ascii "Options: --target x86_64-linux, --json, --no-color, --help\n"
+    .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
     .ascii "JSON describes asm's own output; child output is passed through.\n"
     .ascii "For registry options, use asm search --help.\n"
     .ascii "Unimplemented commands fail with exit status 69; use asm status.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"doctor\",\"targets\",\"status\",\"version\",\"help\"]}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\"]}\n"
 status_json:
-    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\"],\"unimplemented\":[\"add\",\"remove\",\"update\",\"lock\",\"publish\",\"login\",\"yank\"]}\n"
+    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\"],\"unimplemented\":[\"login\",\"yank\"]}\n"
 manifest_prefix: .asciz "[package]\nname = \""
 manifest_suffix: .asciz "\"\nversion = \"0.1.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
 main_template:
@@ -1582,12 +1641,14 @@ stage_dir: .skip 64
 stage_object: .skip 96
 stage_binary: .skip 96
 key_buffer: .skip 64
-package_name: .skip 64
+package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
 package_target: .skip 64
 manifest_buffer: .skip 8192
 json_mode: .skip 1
+allow_locked: .skip 1
+require_lock: .skip 1
 new_mode: .skip 1
 run_mode: .skip 1
 test_mode: .skip 1
@@ -1605,3 +1666,6 @@ made_test: .skip 1
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
 .include "cli/registry.s"
 .include "cli/elf.s"
+.include "cli/archive.s"
+.include "cli/dependencies.s"
+.include "cli/publish.s"

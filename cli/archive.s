@@ -1,5 +1,6 @@
 .intel_syntax noprefix
 .global extract_source_archive, verify_source_archive
+.global validate_source_archive, source_archive_member
 
 /* Source archive boundary. Linux x86-64, SysV callee-saved registers preserved.
  * extract_source_archive(gzip_path, new_directory) returns 0 or 1.
@@ -7,6 +8,8 @@
  * Callers verify the compressed artifact digest before either operation.
  * Both paths are NUL-terminated. The destination parent must already exist.
  * Calls are serial: bounded buffers belong to this module, not the stack.
+ * Public calls preserve RBX/RBP/R12-R15. Other integer registers and flags are
+ * scratch. All nested calls use the same rule unless a parser cursor is noted.
  * All TAR parsing, path checks, file comparison and extraction are assembly.
  * A fixed /usr/bin/gzip process receives an already opened file on stdin and
  * an empty environment. Its output is capped before any filesystem mutation.
@@ -20,11 +23,66 @@
 .equ ARC_CREATE, 655553        /* O_CLOEXEC | O_NOFOLLOW | O_WRONLY | O_CREAT | O_EXCL */
 
 .section .text
+/* Read-only validation. A successful call leaves a bounded member table for
+ * source_archive_member. No file is created. RDI is the gzip path; EAX=0/1. */
+validate_source_archive:
+    push rbx
+    mov [rip + arc_input_path], rdi
+    mov qword ptr [rip + arc_entry_count], 0
+    mov qword ptr [rip + arc_file_count], 0
+    cld
+    call arc_decompress
+    test eax, eax
+    jnz .Larc_validate_only_done
+    call arc_validate
+.Larc_validate_only_done:
+    pop rbx
+    ret
+
+/* Lookup after successful validation. RDI=name. RAX=borrowed content pointer,
+ * RDX=byte count, ECX=0 for a file or 1 for a directory. RAX=0 means absent.
+ * Pointers remain valid until the next archive operation. */
+source_archive_member:
+    xor r8d, r8d
+.Larc_member_lookup:
+    cmp r8, [rip + arc_entry_count]
+    jae .Larc_member_absent
+    mov rax, r8
+    shl rax, 8
+    lea rsi, [rip + arc_paths]
+    add rsi, rax
+    xor ecx, ecx
+.Larc_lookup_compare:
+    mov al, [rdi + rcx]
+    cmp al, [rsi + rcx]
+    jne .Larc_lookup_next
+    test al, al
+    jz .Larc_lookup_found
+    inc ecx
+    jmp .Larc_lookup_compare
+.Larc_lookup_next:
+    inc r8
+    jmp .Larc_member_lookup
+.Larc_lookup_found:
+    shl r8, 5
+    lea rsi, [rip + arc_entries]
+    add rsi, r8
+    lea rax, [rip + arc_data]
+    add rax, [rsi]
+    mov rdx, [rsi + 8]
+    mov ecx, [rsi + 20]
+    ret
+.Larc_member_absent:
+    xor eax, eax
+    ret
+
 extract_source_archive:
     xor edx, edx
     jmp arc_operation_start
 verify_source_archive:
     mov edx, 1
+/* Shared terminal operation body. EDX selects extraction (0) or comparison
+ * (1). Owns the root/parent descriptors and stage flag. Stack frame: 56 bytes. */
 arc_operation_start:
     push rbx
     push rbp
@@ -251,6 +309,9 @@ arc_promote_fd:
     mov rax, rdi
     ret
 
+/* Input: arc_input_path. Output: EAX=0/1, arc_data[0..arc_raw_size) on success.
+ * Capacity: 64 MiB + one overflow byte. Owns source/pipe descriptors and child.
+ * Retries EINTR, reaps the child, and caps output before validation. Frame:56. */
 arc_decompress:
     push rbx
     push rbp
@@ -635,6 +696,9 @@ arc_check_conflicts:
     mov eax, 1
     ret
 
+/* Input: bounded arc_data/raw_size. Output: EAX=0/1, paths and member table.
+ * Table bounds: 4096 records, 256 bytes/path, 32 bytes/record. No file writes.
+ * Scratch stack: 72 bytes including callee-saved registers. */
 arc_validate:
     push rbx
     push rbp
@@ -952,6 +1016,9 @@ arc_open_parent:
     pop rbx
     ret
 
+/* Input: owned arc_parent_fd. Output: EAX=0/1, root fd and stage ownership flag.
+ * Creates mode-0700 random sibling with mkdirat, then opens without following
+ * a link. Stage-name capacity is 45 bytes; random input is 16 bytes. Frame:8. */
 arc_create_stage:
     push rbx
     mov eax, 318

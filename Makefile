@@ -11,7 +11,7 @@ all: build/asm
 build:
 	mkdir -p build
 
-build/asm.o: cli/asm.s cli/registry.s cli/elf.s | build
+build/asm.o: cli/asm.s cli/registry.s cli/elf.s cli/archive.s cli/dependencies.s cli/publish.s | build
 	$(AS) --64 --fatal-warnings -o $@ $<
 
 build/asm: build/asm.o
@@ -22,6 +22,7 @@ test: build/asm
 
 check: test
 	$(PYTHON) -m unittest discover -s tests/registry -p 'test_*.py' -v
+	$(PYTHON) -m unittest discover -s tests/release -p 'test_*.py' -v
 	node --test tests/site.test.cjs
 
 install: build/asm

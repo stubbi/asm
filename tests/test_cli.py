@@ -55,7 +55,7 @@ class NativeCliTests(unittest.TestCase):
         self.assertEqual(json.loads(self.cli("targets", "--json").stdout)["targets"], ["x86_64-linux"])
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
-        self.assertIn("publish", status["unimplemented"])
+        self.assertIn("yank", status["unimplemented"])
 
     def test_new_run_test_clean_vertical_slice(self):
         project = self.project()
@@ -238,8 +238,13 @@ class NativeCliTests(unittest.TestCase):
         self.cli("new", "--", "-literal")
         self.assertTrue((self.work / "-literal/asm.toml").is_file())
 
+    def test_registry_length_package_name_builds_locally(self):
+        project = self.project("a" * 64)
+        self.assertIn('name = "' + "a" * 64 + '"', (project / "asm.toml").read_text())
+        self.cli("build", cwd=project)
+
     def test_registry_commands_fail_honestly(self):
-        for command in ["add", "remove", "update", "lock", "publish", "login", "yank"]:
+        for command in ["login", "yank"]:
             with self.subTest(command=command):
                 result = self.cli(command, "example", "--json", code=69)
                 self.assertFalse(json.loads(result.stderr)["ok"])

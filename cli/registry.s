@@ -132,6 +132,7 @@ registry_command:
     jne registry_bad_args
     call registry_arg_value
     mov [rip + registry_index_path], rax
+    mov byte ptr [rip + registry_local_index], 1
     mov byte ptr [rip + registry_origin_seen], 1
     jmp .Lregistry_args
 .Lregistry_arg_registry:
@@ -215,6 +216,8 @@ registry_command:
     call registry_valid_package
     test eax, eax
     jz registry_bad_args
+    cmp byte ptr [rip + registry_mode], 6
+    jae .Ldependency_args
     cmp byte ptr [rip + registry_mode], 5
     jne .Lregistry_load
     mov rdi, [rip + registry_target]
@@ -227,6 +230,23 @@ registry_command:
     call streq
     test eax, eax
     jz registry_bad_args
+    jmp .Lregistry_load
+.Ldependency_args:
+    cmp qword ptr [rip + registry_exact_version], 0
+    je registry_bad_args
+    cmp qword ptr [rip + registry_output], 0
+    jne registry_bad_args
+    mov rdi, [rip + registry_target]
+    lea rsi, [rip + registry_host]
+    call streq
+    test eax, eax
+    jz registry_install_target_error
+    mov rdi, [rip + registry_kind]
+    lea rsi, [rip + registry_source_kind]
+    call streq
+    test eax, eax
+    jz registry_bad_args
+    call read_manifest
 .Lregistry_load:
     cmp qword ptr [rip + registry_index_path], 0
     jne .Lregistry_read
@@ -349,6 +369,13 @@ registry_workspace:
 registry_cleanup:
     cmp byte ptr [rip + registry_has_workspace], 0
     je .Lcleanup_done
+    mov rdi, [rip + registry_extra_temp]
+    test rdi, rdi
+    jz .Lcleanup_fixed_files
+    mov eax, 87
+    syscall
+    mov qword ptr [rip + registry_extra_temp], 0
+.Lcleanup_fixed_files:
     mov eax, 87
     lea rdi, [rip + registry_temp_index]
     syscall
@@ -471,7 +498,25 @@ registry_parse_index:
     inc ecx
     jmp .Lindex_header
 .Lindex_header_done:
-    add r12, rcx
+    lea rdi, [r12 + rcx]
+    mov rsi, [rip + registry_index_end]
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    jmp registry_parse_records
+
+/* Input: RDI=start of bounded TSV records, RSI=exclusive end. Shared by index
+ * and lock parsers after their headers. Output: registry_rows/count. Replaces
+ * delimiters with NUL; validates every record before returning. Stack:32 bytes. */
+registry_parse_records:
+    push r12
+    push r13
+    push r14
+    push r15
+    mov r12, rdi
+    mov [rip + registry_index_end], rsi
+    mov qword ptr [rip + registry_row_count], 0
 .Lindex_row:
     cmp r12, [rip + registry_index_end]
     je .Lindex_parsed
@@ -571,6 +616,19 @@ registry_validate_row:
     call registry_release_url
     test eax, eax
     jz registry_bad_index
+    mov rax, [rbx + 24]
+    cmp byte ptr [rax], 's'
+    jne .Lrow_artifact_suffix
+    mov rdi, [rbx + 40]
+    call strlen
+    cmp rax, 7
+    jb registry_bad_index
+    lea rdi, [rdi + rax - 7]
+    lea rsi, [rip + registry_tar_suffix]
+    call streq
+    test eax, eax
+    jz registry_bad_index
+.Lrow_artifact_suffix:
     mov rdi, [rbx + 48]
     call registry_size_value
     test rax, rax
@@ -581,6 +639,10 @@ registry_validate_row:
     jz registry_bad_index
     cmp rax, 160
     ja registry_bad_index
+    cmp byte ptr [rdi], ' '
+    je registry_bad_index
+    cmp byte ptr [rdi + rax - 1], ' '
+    je registry_bad_index
     /* A duplicate artifact identity must never choose an arbitrary digest. */
     push r12
     push r13
@@ -824,6 +886,9 @@ registry_https_url:
 /* Input: RDI=bounded artifact URL. Output: EAX=1 or zero. Read-only validation;
  * the release URL does not establish namespace ownership. Stack: none. */
 registry_release_url:
+    call strlen
+    cmp rax, 768
+    ja registry_invalid
     lea rsi, [rip + registry_github_prefix]
     xor ecx, ecx
 .Lrelease_prefix:
@@ -839,6 +904,20 @@ registry_release_url:
     xor r8d, r8d
     mov r9, rdi
     xor ecx, ecx
+.Lrelease_segment_start:
+    mov al, [r9]
+    cmp al, '0'
+    jb registry_invalid
+    cmp al, '9'
+    jbe .Lrelease_char
+    cmp al, 'A'
+    jb registry_invalid
+    cmp al, 'Z'
+    jbe .Lrelease_char
+    cmp al, 'a'
+    jb registry_invalid
+    cmp al, 'z'
+    ja registry_invalid
 .Lrelease_char:
     mov al, [rdi + rcx]
     test al, al
@@ -847,12 +926,13 @@ registry_release_url:
     je .Lrelease_segment
     cmp al, '-'
     je .Lrelease_next
+    test r8d, r8d
+    jz .Lrelease_alphanumeric
     cmp al, '_'
     je .Lrelease_next
     cmp al, '.'
     je .Lrelease_next
-    cmp al, '+'
-    je .Lrelease_next
+.Lrelease_alphanumeric:
     cmp al, '0'
     jb registry_invalid
     cmp al, '9'
@@ -867,8 +947,6 @@ registry_release_url:
     ja registry_invalid
 .Lrelease_next:
     inc ecx
-    cmp ecx, 2048
-    ja registry_invalid
     jmp .Lrelease_char
 .Lrelease_segment:
     lea r10, [rdi + rcx]
@@ -876,20 +954,29 @@ registry_release_url:
     sub r11, r9
     test r11, r11
     jz registry_invalid
-    cmp byte ptr [r9], '.'
-    jne .Lrelease_check_label
-    cmp r11, 1
-    je registry_invalid
-    cmp r11, 2
-    jne .Lrelease_check_label
-    cmp byte ptr [r9 + 1], '.'
-    je registry_invalid
-.Lrelease_check_label:
     inc r8d
+    cmp r8d, 1
+    je .Lrelease_owner
+    cmp r8d, 2
+    je .Lrelease_repository
     cmp r8d, 3
     je .Lrelease_label_releases
     cmp r8d, 4
     je .Lrelease_label_download
+    cmp r11, 128
+    ja registry_invalid
+    jmp .Lrelease_delimiter
+.Lrelease_owner:
+    cmp r11, 39
+    ja registry_invalid
+    jmp .Lrelease_delimiter
+.Lrelease_repository:
+    cmp r11, 100
+    ja registry_invalid
+    cmp r11, 4
+    jb .Lrelease_delimiter
+    cmp dword ptr [r10 - 4], 0x7469672e
+    je registry_invalid
     jmp .Lrelease_delimiter
 .Lrelease_label_releases:
     cmp r11, 8
@@ -911,7 +998,7 @@ registry_release_url:
     jae registry_invalid
     lea r9, [r10 + 1]
     inc ecx
-    jmp .Lrelease_char
+    jmp .Lrelease_segment_start
 .Lrelease_end:
     cmp r8d, 6
     jne registry_invalid
@@ -1231,6 +1318,11 @@ registry_fetch:
     mov rbx, [rip + registry_selected]
     test rbx, rbx
     jz registry_not_found
+    cmp byte ptr [rip + registry_mode], 6
+    jb .Lfetch_selection_ready
+    call dependency_prepare_selection
+    mov rbx, [rip + registry_selected]
+.Lfetch_selection_ready:
     mov rdi, [rbx + 48]
     call registry_size_value
     mov [rip + registry_expected_size], rax
@@ -1247,50 +1339,9 @@ registry_fetch:
 .Lfetch_local:
     call registry_copy_local
 .Lfetch_verify:
-    mov eax, 6
-    lea rdi, [rip + registry_temp_payload]
-    lea rsi, [rip + registry_stat]
-    syscall
-    test rax, rax
-    js registry_io_error
-    mov eax, [rip + registry_stat + 24]
-    and eax, 61440
-    cmp eax, 32768
-    jne registry_io_error
-    mov rax, [rip + registry_stat + 48]
-    cmp rax, [rip + registry_expected_size]
-    jne registry_integrity_error
-    lea rdi, [rip + registry_checksum_contents]
-    mov rsi, [rbx + 32]
-    call copy_string
-    mov rdi, rax
-    lea rsi, [rip + registry_two_spaces]
-    call copy_string
-    mov rdi, rax
-    lea rsi, [rip + registry_temp_payload]
-    call copy_string
-    mov rdi, rax
-    lea rsi, [rip + registry_newline]
-    call copy_string
-    lea rdi, [rip + registry_temp_checksum]
-    lea rsi, [rip + registry_checksum_contents]
-    lea rdx, [rip + registry_checksum_created]
-    call create_exclusive_file
-    test rax, rax
-    js registry_io_error
-    mov eax, 21
-    lea rdi, [rip + registry_sha256sum]
-    mov esi, 1
-    syscall
-    test rax, rax
-    js .Lsha_missing
-    lea rax, [rip + registry_temp_checksum]
-    mov [rip + registry_sha_argv + 24], rax
-    lea rdi, [rip + registry_sha256sum]
-    lea rsi, [rip + registry_sha_argv]
-    call spawn_wait
-    test eax, eax
-    jnz registry_integrity_error
+    call registry_verify_payload
+    cmp byte ptr [rip + registry_mode], 6
+    jae dependency_finish_add
     cmp byte ptr [rip + registry_mode], 5
     jne .Lfetch_default_output
     lea rdi, [rip + registry_temp_payload]
@@ -1486,6 +1537,60 @@ registry_install_output:
     lea rdi, [rip + registry_err_home]
     mov esi, 2
     jmp registry_fail
+
+/* Input: registry_selected and expected_size describe the private payload.
+ * Check its regular-file type and exact length, then run sha256sum with fixed
+ * arguments. Returns only on success; failure cleans the private workspace.
+ * Stack: 8 saved bytes. Each workspace has one exclusive checksum file. */
+registry_verify_payload:
+    push rbx
+    mov rbx, [rip + registry_selected]
+    mov eax, 6
+    lea rdi, [rip + registry_temp_payload]
+    lea rsi, [rip + registry_stat]
+    syscall
+    test rax, rax
+    js registry_io_error
+    mov eax, [rip + registry_stat + 24]
+    and eax, 61440
+    cmp eax, 32768
+    jne registry_io_error
+    mov rax, [rip + registry_stat + 48]
+    cmp rax, [rip + registry_expected_size]
+    jne registry_integrity_error
+    lea rdi, [rip + registry_checksum_contents]
+    mov rsi, [rbx + 32]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + registry_two_spaces]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + registry_temp_payload]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + registry_newline]
+    call copy_string
+    lea rdi, [rip + registry_temp_checksum]
+    lea rsi, [rip + registry_checksum_contents]
+    lea rdx, [rip + registry_checksum_created]
+    call create_exclusive_file
+    test rax, rax
+    js registry_io_error
+    mov eax, 21
+    lea rdi, [rip + registry_sha256sum]
+    mov esi, 1
+    syscall
+    test rax, rax
+    js .Lsha_missing
+    lea rax, [rip + registry_temp_checksum]
+    mov [rip + registry_sha_argv + 24], rax
+    lea rdi, [rip + registry_sha256sum]
+    lea rsi, [rip + registry_sha_argv]
+    call spawn_wait
+    test eax, eax
+    jnz registry_integrity_error
+    pop rbx
+    ret
 
 /* Input: local_artifact path and expected_size <=64 MiB. Output: private payload
  * file, or fatal error. Opens a regular non-symlink input and exclusive output.
@@ -1712,6 +1817,11 @@ registry_help_text:
     .ascii "  asm fetch owner/name[@version] [--target target] [--kind source|executable]\n"
     .ascii "            [--output path] [--artifact local-file] [--json]\n\n"
     .ascii "  asm install owner/name[@version] [--output path] [--artifact local-file]\n\n"
+    .ascii "  asm add owner/name@version [--artifact local-file] [--json]\n"
+    .ascii "  asm update owner/name@version [--artifact local-file] [--json]\n"
+    .ascii "  asm remove owner/name [--json]\n"
+    .ascii "  asm lock [--json]\n"
+    .ascii "  asm sync [--artifact local-file] [--json]\n\n"
     .ascii "Use --index path for a local index or --registry https://... for an index URL.\n"
     .ascii "The default index is https://asm.build/registry/v1/index.tsv.\n"
     .ascii "fetch selects the highest numeric version if you omit @version.\n"
@@ -1719,6 +1829,9 @@ registry_help_text:
     .ascii "fetch does not overwrite, extract, install, or run package contents.\n"
     .ascii "install accepts host ELF executables. Its default path is ~/.local/bin/<name>.\n"
     .ascii "install does not overwrite a file, run the program, or change PATH.\n"
+    .ascii "add and update require an exact source version and an existing project.\n"
+    .ascii "Imports use owner/name/version/target paths under .asm/packages.\n"
+    .ascii "Build commands check locked archives and source bytes before assembly.\n"
     .byte 0
 
 .section .data
@@ -1743,6 +1856,7 @@ registry_kind: .skip 8
 registry_query: .skip 8
 registry_exact_version: .skip 8
 registry_output: .skip 8
+registry_extra_temp: .skip 8
 registry_local_artifact: .skip 8
 registry_row_count: .skip 8
 registry_index_end: .skip 8
@@ -1765,6 +1879,7 @@ registry_index: .skip INDEX_LIMIT + 2
 registry_mode: .skip 1
 registry_has_query: .skip 1
 registry_origin_seen: .skip 1
+registry_local_index: .skip 1
 registry_literal: .skip 1
 registry_has_workspace: .skip 1
 registry_checksum_created: .skip 1

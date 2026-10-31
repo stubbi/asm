@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import random
 from pathlib import Path
 import stat
 import struct
@@ -215,6 +216,7 @@ class RegistryCliTests(unittest.TestCase):
             {"sha256": "A" * 64}, {"sha256": "0" * 63}, {"sha256": "g" * 64},
             {"size": "0"}, {"size": "01"}, {"size": "67108865"}, {"size": "-1"},
             {"summary": ""}, {"summary": "a" * 161}, {"summary": "non-ASCII é"},
+            {"summary": " leading"}, {"summary": "trailing "},
             {"url": "http://github.com/stubbi/asm/releases/download/v1/a"},
             {"url": "https://github.com.evil.test/stubbi/asm/releases/download/v1/a"},
             {"url": "https://evil.test/stubbi/asm/releases/download/v1/a"},
@@ -225,6 +227,10 @@ class RegistryCliTests(unittest.TestCase):
             {"url": "https://github.com/stubbi/asm/releases/download/v1/%2e%2e"},
             {"url": "https://github.com/stubbi/asm/releases/download/v1/a#fragment"},
             {"url": "https://github.com/stubbi/asm/releases/download/v1/a/extra"},
+            {"url": "https://github.com/stubbi/asm.git/releases/download/v1/a.tar.gz"},
+            {"url": "https://github.com/stubbi/asm/releases/download/v1/a+b.tar.gz"},
+            {"url": "https://github.com/stubbi/asm/releases/download/-v1/a.tar.gz"},
+            {"url": "https://github.com/stubbi/asm/releases/download/v1/a.bin"},
         ]
         for changes in mutations:
             with self.subTest(changes=changes):
@@ -256,6 +262,30 @@ class RegistryCliTests(unittest.TestCase):
     def test_https_network_failure_is_nonzero_and_cleans_workspace(self):
         # A closed local port gives a bounded transport failure without external traffic.
         self.cli("search", "--registry", "https://127.0.0.1:9/index.tsv", code=1, local_index=False)
+
+    def test_deterministic_parser_corpus_has_bounded_failures(self):
+        generator = random.Random(20261031)
+        valid = (HEADER + self.row()).encode()
+        corpus = [b"", valid, valid[:1], valid[:-1], b"\x00" * 2048]
+        corpus += [generator.randbytes(generator.randrange(0, 3073)) for _ in range(60)]
+        for _ in range(60):
+            data = bytearray(valid)
+            for _ in range(generator.randrange(1, 5)):
+                data[generator.randrange(len(data))] = generator.randrange(256)
+            corpus.append(bytes(data))
+        for number, data in enumerate(corpus):
+            with self.subTest(case=number, length=len(data)):
+                self.index.write_bytes(data)
+                result = subprocess.run(
+                    [str(ASM), "search", "--index", str(self.index), "--json"],
+                    cwd=self.work, capture_output=True, timeout=4,
+                )
+                self.assertIn(result.returncode, (0, 1), (number, result.stderr))
+                if result.returncode == 0:
+                    self.assertIn("results", json.loads(result.stdout))
+                else:
+                    self.assertEqual(result.stdout, b"")
+                    self.assertFalse(json.loads(result.stderr)["ok"])
 
 
 if __name__ == "__main__":
