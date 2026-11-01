@@ -263,6 +263,9 @@ It can build and run local projects only for its supported host target.
 Transitive dependency resolution, automatic public publication, account recovery, and isolated public build workers remain release gates.
 The current service does not claim feature parity with npm, PyPI, or crates.io.
 
+The [assembly server experiment](experiments/assembly-server/README.md) includes published source, build instructions, and local HTTP and PostgreSQL tests.
+It is not deployed at `asm.build`.
+
 ## Publish from source
 
 A release record identifies a public source repository and an exact Git commit.
