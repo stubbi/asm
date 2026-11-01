@@ -10,16 +10,18 @@ Keep required notices and identify the origin of imported material.
 
 ## Set up the project
 
-Use Linux x86-64 for the native CLI checks.
+Use Linux x86-64 or ARM64 for the native CLI checks.
 Install Git, GNU Make, GNU Binutils, Python 3.11 or later, and Node.js 18 or later.
 Also install curl, GNU Coreutils, and gzip.
+On x86-64, install AArch64 and RISC-V GNU cross-binutils and QEMU user emulation for release checks.
 Clone the repository.
 Run `make check`.
 
 The tests use temporary directories.
 Registry tests do not need publisher credentials.
-ARM and RISC-V examples need the corresponding GNU tools and QEMU for local execution.
+Cross-target examples need the corresponding GNU tools and QEMU for local execution.
 The release workflow installs those tools from Ubuntu packages.
+CI checks both native CLI hosts before it permits a release.
 
 ## Make a change
 

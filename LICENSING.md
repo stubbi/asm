@@ -20,7 +20,7 @@ ASM is provided without warranty, as that license states.
 | Material | License |
 | --- | --- |
 | ASM CLI, registry tools, website, tests, and project documentation | AGPL-3.0-or-later |
-| `cli/templates.s` and the starter text that it emits | MIT |
+| `cli/templates.s`, `cli/aarch64/templates.s`, and their emitted starter text | MIT |
 | Each package under `examples/` | Its included MIT license |
 | Independently published packages | The license declared by that package version |
 | Earlier published versions | The license included with that version |
