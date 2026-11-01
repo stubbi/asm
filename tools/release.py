@@ -21,7 +21,7 @@ import registry
 SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
-    "SECURITY.md", "CODE_OF_CONDUCT.md", "cli", "docs", "examples",
+    "SECURITY.md", "CODE_OF_CONDUCT.md", "LICENSING.md", "LICENSES", "cli", "docs", "examples",
     "registry", "site", "tests", "tools",
 ]
 HELLO_TARGETS = {
@@ -152,6 +152,37 @@ def artifact(data: bytes, filename: str, target: str, kind: str, base: str) -> d
             "url": base + "/" + filename, "bytes": len(data)}
 
 
+def core_license(files: dict[str, tuple[bytes, int]], commands: dict) -> str:
+    """Read the declaration from the packaged source, preserving legacy MIT.
+
+    These checks enforce the two supported ASM source layouts. They do not
+    determine copyright ownership or replace a review of license scope.
+    """
+    text = files.get("LICENSE", (b"", 0))[0]
+    declared = commands.get("license")
+    if declared is None:
+        registry.require(commands.get("version") == "0.1.0" and text.startswith(b"MIT License\n"),
+                         "source command metadata must declare the ASM license")
+        return "MIT"
+    registry.require(declared in ("MIT", "AGPL-3.0-or-later"), "unsupported ASM source license declaration")
+    if declared == "MIT":
+        registry.require(text.startswith(b"MIT License\n"), "MIT declaration differs from the source license file")
+    else:
+        registry.require(text.lstrip().startswith(b"GNU AFFERO GENERAL PUBLIC LICENSE\n")
+                         and b"Version 3, 19 November 2007" in text[:512],
+                         "AGPL declaration differs from the source license file")
+        registry.require(commands.get("template_license") == "MIT", "starter templates must retain their MIT declaration")
+        registry.require("LICENSING.md" in files, "source archive needs its licensing scope document")
+        template_text = files.get("LICENSES/MIT.txt", (b"", 0))[0]
+        registry.require(template_text.startswith(b"MIT License\n"), "source archive needs the MIT template license")
+    return declared
+
+
+def require_mit_example(files: dict[str, tuple[bytes, int]], name: str) -> None:
+    registry.require(files.get("LICENSE", (b"", 0))[0].startswith(b"MIT License\n"),
+                     f"{name} must retain its separate MIT license file")
+
+
 def build_release(repo: Path, output: Path, reference: str = "HEAD", version: str | None = None,
                   repository: str = "https://github.com/stubbi/asm",
                   hello_targets: list[str] | None = None) -> dict:
@@ -164,6 +195,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     registry.require(isinstance(commands, dict), "CLI command metadata must be an object")
     source_version = commands.get("version")
     registry.version_tuple(source_version)
+    license_id = core_license(files, commands)
     version = version or source_version
     registry.version_tuple(version)
     registry.require(version == source_version, "release version differs from the source CLI version")
@@ -202,7 +234,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         }
         cli_record = {"schema": 1, "name": owner + "/asm", "version": version,
                       "summary": "A native assembly CLI for assembly projects and package records.",
-                      "license": "MIT", "source": {"repository": repository, "commit": commit, "path": "."},
+                      "license": license_id, "source": {"repository": repository, "commit": commit, "path": "."},
                       "yanked": False, "artifacts": [
                           artifact(cli, f"asm-{version}-x86_64-linux", "x86_64-linux", "executable", base),
                           artifact(cli_archive, f"asm-{version}-source.tar.gz", "x86_64-linux", "source", base),
@@ -225,6 +257,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
             repeated_binary, _ = compile_hello(second, target, env)
             registry.require(binary == repeated_binary, f"the two hello builds do not match for {target}")
             sources = registry.git_files(repo, commit, source_path)
+            require_mit_example(sources, "hello")
             archive = registry.make_archive(sources)
             registry.validate_project(registry.read_archive(archive), owner + "/hello", version, target)
             registry.require(archive == registry.make_archive(dict(reversed(list(sources.items())))),
@@ -242,6 +275,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         records = [cli_record, hello_record]
         if "examples/math/asm.toml" in files:
             math_sources = registry.git_files(repo, commit, "examples/math")
+            require_mit_example(math_sources, "math")
             math_archive = registry.make_archive(math_sources)
             registry.validate_project(registry.read_archive(math_archive), owner + "/math", version, "x86_64-linux")
             registry.require(math_archive == registry.make_archive(dict(reversed(list(math_sources.items())))),
@@ -276,6 +310,8 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
             assets.append({"file": filename, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
         release = {"schema": 1, "project": "asm", "version": version, "tag": tag,
                    "repository": repository, "source_commit": commit,
+                   "license": license_id, "template_license": "MIT",
+                   "package_licenses": {record["name"]: record["license"] for record in records},
                    "cli_hosts": ["x86_64-linux"], "hello_targets": targets,
                    "tool_versions": tools, "builds": builds, "assets": assets,
                    "archive_format": "USTAR + gzip; sorted paths; zero timestamps; normalized ownership",

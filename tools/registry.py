@@ -37,7 +37,7 @@ MAX_ROWS = 4096
 MAX_ROW_BYTES = 2048
 MAX_PATH_BYTES = 240
 LICENSES = {
-    "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "GPL-2.0-only",
+    "AGPL-3.0-only", "AGPL-3.0-or-later", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "GPL-2.0-only",
     "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "ISC",
     "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only",
     "LGPL-3.0-or-later", "MIT", "MPL-2.0", "Unlicense", "Zlib",
@@ -521,7 +521,7 @@ def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = Non
             "license": record["license"], "repository": record["source"]["repository"],
             "latest": None, "targets": [], "versions": []})
         artifacts = sorted(record["artifacts"], key=lambda item: (item["target"], item["kind"]))
-        release = {"version": record["version"], "source": record["source"],
+        release = {"version": record["version"], "license": record["license"], "source": record["source"],
             "yanked": record["yanked"], "artifacts": artifacts,
             "evidence": {"metadata": "validated", "artifacts": "validated" if (name, record["version"]) in checked else "not-run",
                          "provenance": "not-run", "formal": "not-run", "agent_review": "not-run"}}
