@@ -14,7 +14,7 @@ We expect AI to make useful assembly cheaper to write and maintain.
 If that happens, assembly needs an ecosystem that makes the results easy to use.
 Every project should not need to invent its own package format, target selection, and release checks.
 
-Our working assumptions come from LeAm:
+Our working assumptions:
 
 1. **User experience and total cost matter.** Software must work reliably, respond quickly, and use resources well. Development and maintenance count too.
 2. **AI can change the economics of assembly.** We expect more useful implementations for more machines. We will measure the effort required to make them dependable.

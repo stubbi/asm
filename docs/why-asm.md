@@ -83,5 +83,4 @@ We build those capabilities in tested steps.
 [The security model](specs/security.md) states the trust boundaries.
 The [asmwc evidence record](evidence.md) shows one measured implementation comparison and the limits of its conclusions.
 
-This motivation adapts the working assumptions from LeAm, with the project owner's permission.
 It is a research position, not a claim that assembly always improves performance or cost.
