@@ -49,26 +49,27 @@ ASM needs to make this kind of evidence available beside the exact target artifa
 
 ## Quick start
 
-The current CLI runs on **Linux x86-64 and ARM64**.
+Version 0.4.0 runs on **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 Install ASM once with the bootstrap installer.
 Use `asm self update` for later updates from the hub.
 
-Version 0.3.0 remains Linux-only.
-The [native macOS port](docs/macos.md) is qualification work for Apple Silicon and macOS 15 or later.
-Its native checks and publication of an attested release remain required before macOS becomes a supported download.
 Intel macOS is unsupported.
+The [macOS contract](docs/macos.md) describes native qualification and signing limits.
 
 ### Install the command
 
-The installer requires curl and GNU Coreutils in `/usr/bin`.
-Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) at `/usr/bin/gh` before you start.
+Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) before you start.
+On Linux, use `/usr/bin/gh` and install curl and GNU Coreutils in `/usr/bin`.
+On Apple Silicon, use `/opt/homebrew/bin/gh`.
+The macOS installer uses system tools and requires protected local APFS with ownership enabled.
+ACL allow entries are refused; normal deny-only home ACLs are supported.
 The ASM installer does not use administrator access or a GitHub login.
 
 ```sh
 curl -qfsS -m120 https://asm.build/install.sh | sh
 ```
 
-The same command works on both supported hosts.
+The same command selects each supported operating system and architecture.
 The installer reads the operating system and CPU architecture with `uname`.
 It selects the matching executable before downloading it.
 An unsupported host stops installation before any files change.
@@ -85,7 +86,7 @@ Then check the installed version:
 asm version
 ```
 
-Version 0.3.0 prints `asm 0.3.0 (x86_64-linux)` or `asm 0.3.0 (aarch64-linux)` for your host.
+Version 0.4.0 reports its version and host, such as `asm 0.4.0 (aarch64-macos)`.
 Use `asm self update` for later updates.
 
 <details>
@@ -154,7 +155,8 @@ The [update contract](docs/self-update.md) explains the verification policy and 
 
 ### Run your first project
 
-Install GNU Binutils before building a project.
+On Linux, install GNU Binutils before building a project.
+On macOS, install Apple's Xcode Command Line Tools with `xcode-select --install`.
 On Debian or Ubuntu, the `binutils` package supplies `/usr/bin/as` and `/usr/bin/ld`.
 Source dependencies also need `/usr/bin/gzip`.
 `asm doctor` checks the project and registry tools.
@@ -180,7 +182,7 @@ Your project contains an `asm.toml` manifest, `src/main.s`, and `tests/main.s`.
 `asm test` builds and runs the test program.
 A test succeeds when it exits with code zero.
 
-The hello examples show complete projects for [x86-64](examples/hello) and [ARM64](examples/hello-aarch64).
+The hello examples show complete Linux projects for [x86-64](examples/hello) and [ARM64](examples/hello-aarch64).
 Read the CLI source for [x86-64](cli/asm.s) or [ARM64](cli/aarch64/asm.s) to follow the implementation.
 Each implementation includes native project, registry, dependency, and self-update commands.
 
@@ -215,10 +217,10 @@ Read [the security model](docs/specs/security.md#bootstrap-and-manual-self-updat
 
 ### Build from source
 
-The source build needs Git, GNU Make, and GNU Binutils.
-Registry commands also need curl and GNU sha256sum.
-These instructions describe the released Linux CLI.
-For the experimental Apple Silicon source build, read [the macOS qualification guide](docs/macos.md).
+The source build needs Git, Make, and Python 3.11 or later.
+Linux also needs GNU Binutils; registry commands need curl and GNU sha256sum.
+Apple Silicon macOS needs Xcode Command Line Tools and uses system curl, shasum, and gzip.
+Read [the macOS qualification guide](docs/macos.md) for its ABI and release evidence.
 
 ```sh
 git clone https://github.com/stubbi/asm.git &&
@@ -234,8 +236,8 @@ To replace that command deliberately, add `REPLACE=1` to the installation comman
 `make uninstall PREFIX="$HOME/.local"` removes the command only when its bytes match this build.
 
 `make` selects the native implementation from the build host.
-The source archive contains both implementations.
-Its root `asm.toml` describes the x86-64 reference project; use Make to build the CLI on ARM64.
+The source archive contains the Linux implementations and Darwin assembly adapters.
+Its root `asm.toml` describes the x86-64 reference project; use Make to build the CLI on ARM64 or macOS.
 
 To cross-assemble the ARM64 CLI on Linux x86-64, install AArch64 GNU cross-binutils and run:
 
@@ -247,7 +249,7 @@ This creates `build/asm-aarch64-linux`.
 Run it on Linux ARM64, or use QEMU for limited behavior checks.
 Read the [ARM64 implementation notes](cli/aarch64/README.md) for its instruction baseline, ABI, and test boundary.
 
-The [current release](https://github.com/stubbi/asm/releases/tag/v0.3.0) contains both executables, source, checksums, build metadata, and signed provenance.
+The [current release](https://github.com/stubbi/asm/releases/tag/v0.4.0) contains all three CLI executables, source, checksums, build metadata, and signed provenance.
 The bootstrap installer performs the binary installation checks.
 
 ### Describe a project
@@ -263,11 +265,11 @@ target = "x86_64-linux"
 ```
 
 `asm new` writes your native host target into this manifest.
-The example above declares an x86-64 project; an ARM64 project uses `aarch64-linux`.
+The example declares Linux x86-64. Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 The initial manifest format accepts these four string fields.
 It rejects unknown fields, duplicate fields, invalid paths, and unsupported build targets.
 It does not accept arbitrary build scripts.
-The build uses GNU assembler syntax and writes the program to `build/app`.
+The build uses the native assembler syntax and writes the program to `build/app`.
 
 ### Find a package
 
@@ -275,7 +277,8 @@ The build uses GNU assembler syntax and writes the program to `build/app`.
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.3.0 --kind source
+# The curated hello package supplies Linux artifacts.
+asm fetch stubbi/hello@0.4.0 --target x86_64-linux --kind source
 ```
 
 The client checks the downloaded size and SHA-256 digest.
@@ -289,7 +292,7 @@ This example requires Linux x86-64 and uses the System V ABI.
 From a project directory, add an exact version:
 
 ```sh
-asm add stubbi/math@0.3.0 --target x86_64-linux
+asm add stubbi/math@0.4.0 --target x86_64-linux
 asm lock
 ```
 
@@ -299,7 +302,7 @@ The build makes that directory available to the assembler.
 Include the library explicitly in your source:
 
 ```asm
-.include "stubbi/math/0.3.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.4.0/x86_64-linux/src/min.s"
 ```
 
 Follow [the complete package example](docs/use-a-package.md) on Linux x86-64 for a program that calls the function.
@@ -319,11 +322,14 @@ A lock file checks declared packages; it does not sandbox other assembler inputs
 
 ### Install a program
 
+The curated hello executable is available on Linux.
+On a supported Linux host, run:
+
 ```sh
-asm install stubbi/hello@0.3.0
+asm install stubbi/hello@0.4.0
 ```
 
-ASM selects a host executable and checks its size, digest, and ELF structure.
+For this Linux example, ASM checks the host executable's size, digest, and ELF structure.
 It installs to `$HOME/.local/bin/hello` without running the program.
 An existing destination causes an error.
 Use `--output PATH` to choose another new file.
@@ -336,26 +342,26 @@ The table below describes the implemented release boundary.
 
 | Area | Current implementation |
 | --- | --- |
-| Native CLI | Separate Linux x86-64 and ARM64 assembly implementations, with direct Linux system calls. |
+| Native CLI | Linux x86-64 and ARM64 assembly; Apple Silicon macOS assembly with Darwin adapters and libSystem. |
 | Installation and updates | Bootstrap installation and manual `asm self update` with signed release provenance. |
 | Project workflow | Create, inspect, build, run, test, and clean projects. |
 | Registry client | Search packages, inspect versions, fetch artifacts, and install checked host executables. |
 | Dependencies | Add, update, remove, check, and restore exact direct source dependencies. |
 | Package identity | Explicit `owner/name` namespaces and exact numeric versions. |
-| Target metadata | Separate x86-64, AArch64, and RISC-V Linux artifacts. |
+| Target metadata | Separate x86-64, AArch64, and RISC-V Linux artifacts, plus AArch64 macOS. |
 | Registry website | Package search, target filters, versions, artifacts, and evidence states. |
 | Download counts | GitHub release-asset counts, with their observation time. |
 | Source publication | Commit-bound archives, native submission preparation, and reviewed registry records. |
-| Artifact checks | Bounded metadata, size and digest checks, archive inspection, and ELF target checks. |
+| Artifact checks | Bounded metadata, size and digest checks, archive inspection, ELF checks, and native Mach-O/signature checks. |
 | Formal verification | Defined evidence model. No hosted proof service yet. |
 
 The native CLI host and a package target are separate concepts.
-Either client can fetch a package for another target.
+Each client can fetch a package for another supported registry target.
 Each client builds and runs local projects for its native host target.
 `asm targets` lists that build target.
 The RISC-V hello package does not imply a RISC-V CLI.
-The [Apple Silicon macOS port](docs/macos.md) has separate native qualification and release gates.
-Version 0.3.0 has no macOS executable in the published catalog.
+The [Apple Silicon macOS implementation](docs/macos.md) passes separate native qualification and release gates.
+ASM's macOS CLI executable has an ad-hoc code signature and verified GitHub release provenance; Developer ID signing and notarization are not provided.
 Intel macOS, Windows, and general cross-build commands remain unsupported.
 
 The [local registry benchmark](docs/performance-registry.md) measures the native x86-64 search implementation.
@@ -410,15 +416,17 @@ The [maintenance guide](docs/maintaining.md) defines review, release, and incide
 
 To run all local checks, install Python 3.11 or later and Node.js 18 or later.
 On Linux x86-64, release checks also need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
-Then run:
+On Linux, run:
 
 ```sh
 make check
 ```
 
+On macOS, run `make test` for native qualification.
+
 Tests cover user-visible behavior and rejection paths.
-CI runs the complete CLI contract suite on native x86-64 and ARM64 runners.
-Both jobs must pass before a release can proceed.
+CI requires native Linux x86-64, Linux ARM64, and macOS qualification.
+All three host checks must pass before a release can proceed.
 Keep each commit focused.
 Include the reason for the change and the relevant validation in your pull request.
 Report a defect through [GitHub Issues](https://github.com/stubbi/asm/issues).

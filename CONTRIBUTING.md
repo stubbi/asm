@@ -10,18 +10,20 @@ Keep required notices and identify the origin of imported material.
 
 ## Set up the project
 
-Use Linux x86-64 or ARM64 for the native CLI checks.
-Install Git, GNU Make, GNU Binutils, Python 3.11 or later, and Node.js 18 or later.
-Also install curl, GNU Coreutils, and gzip.
-On x86-64, install AArch64 and RISC-V GNU cross-binutils and QEMU user emulation for release checks.
+Use Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later for native CLI checks.
+Install Git, Make, Python 3.11 or later, and Node.js 18 or later.
+Linux also needs GNU Binutils, curl, GNU Coreutils, and gzip.
+Linux x86-64 release checks need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
+On macOS, install Xcode Command Line Tools. The OS supplies the other native tools.
 Clone the repository.
-Run `make check`.
+Run `make test` on macOS.
+Run `make check` on Linux for the complete cross-target release suite.
 
 The tests use temporary directories.
 Registry tests do not need publisher credentials.
 Cross-target examples need the corresponding GNU tools and QEMU for local execution.
 The release workflow installs those tools from Ubuntu packages.
-CI checks both native CLI hosts before it permits a release.
+CI requires Linux x86-64, Linux ARM64, and native macOS qualification before a release.
 
 ## Make a change
 
