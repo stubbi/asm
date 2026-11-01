@@ -15,6 +15,16 @@
       "error": "Startup options used form-encoded + characters; libpq URI decoding preserves them.",
       "correction": "Use percent-encoded spaces; verify effective timeout settings.",
       "log_sha256": "ad54f2a2a75f6784e2ef4cf4275d954457d69c36ee6fffaf63797069d1ad4dfe"
+    },
+    {
+      "stage": "First public CodeQL scan",
+      "source_commit": "25793199b178c1a38e533304f2311f90af49811c",
+      "alert_url": "https://github.com/stubbi/asm/security/code-scanning/1",
+      "severity": "high",
+      "location": "experiments/assembly-server/local_postgres.py:194",
+      "error": "The fixture wrote its temporary administrator password to a regular file.",
+      "correction": "Pass the password through a private subprocess input pipe; initdb reads /dev/stdin.",
+      "updated_public_codeql_result": "not-yet-observed"
     }
   ],
   "review_corrections": [
