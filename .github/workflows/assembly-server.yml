@@ -1,0 +1,82 @@
+name: Assembly server
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assembly-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test the assembly server reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch and check the pinned source archives
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          mkdir -m 700 "$ASM_DEPS"
+          mkdir "$ASM_DEPS/downloads" "$ASM_DEPS/tmp"
+
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_DEPS/downloads/libmicrohttpd-1.0.3.tar.gz" \
+            https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz
+          printf '%s  %s\n' \
+            7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a \
+            "$ASM_DEPS/downloads/libmicrohttpd-1.0.3.tar.gz" | sha256sum --check --strict
+
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_DEPS/downloads/postgresql-16.15.tar.bz2" \
+            https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2
+          printf '%s  %s\n' \
+            c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed \
+            "$ASM_DEPS/downloads/postgresql-16.15.tar.bz2" | sha256sum --check --strict
+
+          tar -xzf "$ASM_DEPS/downloads/libmicrohttpd-1.0.3.tar.gz" -C "$ASM_DEPS"
+          tar -xjf "$ASM_DEPS/downloads/postgresql-16.15.tar.bz2" -C "$ASM_DEPS"
+      - name: Build libmicrohttpd
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          cd "$ASM_DEPS/libmicrohttpd-1.0.3"
+          TMPDIR="$ASM_DEPS/tmp" ./configure --prefix="$ASM_DEPS/mhd" \
+            --disable-https --disable-examples --disable-doc --disable-tools \
+            --disable-curl --disable-static
+          make -j2
+          make install
+      - name: Build PostgreSQL and libpq
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          cd "$ASM_DEPS/postgresql-16.15"
+          TMPDIR="$ASM_DEPS/tmp" ./configure --prefix="$ASM_DEPS/postgres" \
+            --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
+          make -j2
+          make install
+      - name: Run the assembly server tests
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          make -C experiments/assembly-server test \
+            MHD_PREFIX="$ASM_DEPS/mhd" \
+            PG_PREFIX="$ASM_DEPS/postgres"
