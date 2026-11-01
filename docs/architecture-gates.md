@@ -7,11 +7,11 @@ It is not a claim that the proposed platform exists.
 The deployed public alpha is the static Pages site and generated v1 registry.
 Rows labeled "reference" describe a local, unpublished Rust server experiment.
 Its PostgreSQL tests cover functional contracts, not public service availability or the proposed global workload.
-The separate local assembly experiment has narrower HTTP and database coverage.
+The [published assembly source experiment](../experiments/assembly-server/README.md) has narrower local HTTP and database coverage.
 
 | Boundary | Current evidence or gap | Required acceptance result |
 | --- | --- | --- |
-| Application language | Public native CLI uses assembly; unpublished server experiments establish limited contracts | Assembly server passes reviewed domain, database, HTTP, deadline, and failure assertions |
+| Application language | Public CLI and published local source experiment use assembly; Rust reference remains unpublished | Assembly server passes reviewed domain, database, HTTP, deadline, and failure assertions |
 | Discovery query | Public browser filters a JSON catalog; reference scans authoritative package data | Indexed projection meets relevance, query-plan, latency, and isolation targets under a declared workload |
 | Search pagination | Reference keyset cursor does not freeze concurrent updates | Qualified snapshots have aggregate retention and creation limits; expiry and generation changes never silently mix views |
 | Search eligibility | Reference supports a target filter and per-version licenses | Target, license, and evidence facets match the same release and applicable artifact |

@@ -1,0 +1,65 @@
+{
+  "binary_sha256": "c0cc45dd930eff6c49c09bb9fe183a89f48c3f48aee74ca0ecfba528e2504b53",
+  "libpq_version": 160015,
+  "database_version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+  "reference_commit": "286a75c9d806aaed3e91bd54785db2ac60f5310a",
+  "measurements": {
+    "stalled_database_seconds": 2.003004033002071,
+    "liveness_during_stall_seconds": 0.0017875030025606975,
+    "threads_at_connection_cap": 18,
+    "connection_cap_recovery_seconds": 0.011732527003914583,
+    "shutdown_during_stall_seconds": 1.9894318359947647
+  },
+  "date": "2026-11-01",
+  "public_base_commit": "aa27c26abfb8e177531c14b3ed6d124e98339a66",
+  "result": "passed",
+  "tests": 13,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "suite_seconds": 9.546,
+  "binary_bytes": 29712,
+  "http_library_version": "1.0.3",
+  "comparative_benchmark": false,
+  "total_memory_measurement": false,
+  "public_deployment": false,
+  "elf": {
+    "format": "ELF64 PIE x86-64",
+    "non_executable_stack": true,
+    "relro": true,
+    "bind_now": true,
+    "direct_dependencies": [
+      "libmicrohttpd.so.12",
+      "libpq.so.5",
+      "libc.so.6"
+    ]
+  },
+  "toolchain": {
+    "gcc": "13.3.0-6ubuntu2~24.04",
+    "binutils": "2.42",
+    "linux": "6.18.57",
+    "architecture": "x86_64",
+    "glibc": "2.39"
+  },
+  "inputs_sha256": {
+    "libmicrohttpd-1.0.3.tar.gz": "7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a",
+    "libpq5_16.15-0ubuntu0.24.04.1_amd64.deb": "3f96dd36bcd7841172c1ead4965da20a193bb9ccf9a93a3f5a3ac7f56369dbb1"
+  },
+  "source_sha256": {
+    "Makefile": "410f7ae7df2fcbbf897ac82f0ef0a4cf6fe0f5201c2191166a58ea51a7c0df76",
+    "README.md": "e2fcf9f48682c3d02ef33012904d4db4f6fd20c48656714884c4d022e8755e5e",
+    "RESULTS.md": "2696af25bb1ed853a3f8fa6638f62162a680e5d62330dc9d4f2e6283c3b31263",
+    "abi-check.c": "8677021496aca67c806fa571d0b313dba589cce22026f3bc741e3d18335e6a5b",
+    "guard.sql": "13ffe1db36ca022262ffba85aae9690815423edce82661a70f3ee8549ebd680d",
+    "search.sql": "5cd15a09fa823567a83b4042b799a33e9bd379ec3cd346b96371c02ebd234b0d",
+    "server.s": "bd2bc8afc1a3e1c123d9fe2346b8fb2f494f052894327384fc273b288d52016c",
+    "test_server.py": "97487c0afe33d057895c0afb6659f6107e12ea58d06ef6e77a87cffc26d83694"
+  },
+  "test_output_sha256": "1fece70dc629f2487c076abd97b55367df9f7daa456011b47798c6242bdc3678",
+  "retained_failed_runs": [
+    "mhd-configure-initial-failure.log",
+    "initial-http-test.log",
+    "final-http-test.log",
+    "final-http-test-verified.log"
+  ]
+}

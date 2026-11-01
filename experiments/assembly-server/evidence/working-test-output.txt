@@ -1,0 +1,21 @@
+test_changed_schema_and_unsupported_version_fail_before_startup (test_fixture.FixtureTests.test_changed_schema_and_unsupported_version_fail_before_startup) ... ok
+test_identity_failure_during_start_removes_owned_process_listener_and_directory (test_fixture.FixtureTests.test_identity_failure_during_start_removes_owned_process_listener_and_directory) ... ok
+test_a_stalled_database_does_not_stall_liveness (test_server.ServerTests.test_a_stalled_database_does_not_stall_liveness) ... ok
+test_configuration_rejects_nonregular_public_and_malformed_files (test_server.ServerTests.test_configuration_rejects_nonregular_public_and_malformed_files) ... ok
+test_connection_cap_bounds_http_threads_and_recovers (test_server.ServerTests.test_connection_cap_bounds_http_threads_and_recovers) ... ok
+test_fixture_retains_reference_records_and_query_limits (test_server.ServerTests.test_fixture_retains_reference_records_and_query_limits) ... ok
+test_health_and_declared_dependency_boundary (test_server.ServerTests.test_health_and_declared_dependency_boundary) ... ok
+test_query_rejects_duplicates_unknown_fields_controls_and_oversize (test_server.ServerTests.test_query_rejects_duplicates_unknown_fields_controls_and_oversize) ... ok
+test_readiness_loses_permissions_and_recovers (test_server.ServerTests.test_readiness_loses_permissions_and_recovers) ... ok
+test_real_pagination_does_not_drop_or_repeat_packages (test_server.ServerTests.test_real_pagination_does_not_drop_or_repeat_packages) ... ok
+test_search_uses_parameters_and_literal_matching (test_server.ServerTests.test_search_uses_parameters_and_literal_matching) ... ok
+test_shutdown_is_bounded_with_a_stalled_database (test_server.ServerTests.test_shutdown_is_bounded_with_a_stalled_database) ... ok
+test_simultaneous_searches_keep_request_data_separate (test_server.ServerTests.test_simultaneous_searches_keep_request_data_separate) ... ok
+test_startup_rejects_migrator_and_missing_grants (test_server.ServerTests.test_startup_rejects_migrator_and_missing_grants) ... ok
+test_unknown_route_method_and_body_fail_without_database_writes (test_server.ServerTests.test_unknown_route_method_and_body_fail_without_database_writes) ... ok
+test_uri_and_header_limits (test_server.ServerTests.test_uri_and_header_limits) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 8.875s
+
+OK

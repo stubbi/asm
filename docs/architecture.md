@@ -38,10 +38,11 @@ The alpha package index also lacks an independent signature, expiry, and rollbac
 HTTPS and artifact hashes do not establish package ownership by themselves.
 The [security specification](specs/security.md) already records this limitation.
 
-### Unpublished local experiments
+### Local server experiments
 
 Two local server experiments inform this proposal.
-Their source and test records are not part of the deployed public alpha.
+The [assembly server experiment](../experiments/assembly-server/README.md) is a published source reference for local HTTP and PostgreSQL tests.
+The Rust behavioral reference remains unpublished.
 Neither server is deployed at `asm.build`.
 
 A local Rust behavioral reference exercises metadata transactions, publication seals, scoped database roles, and bounded HTTP behavior.
@@ -51,7 +52,7 @@ It has no full-text index or separate search projection.
 
 Its response limit bounds returned rows.
 It does not bound rows examined, database work, or discovery capacity.
-A local assembly prototype exercises a narrower HTTP and PostgreSQL boundary with mature protocol libraries.
+The published assembly experiment exercises a narrower HTTP and PostgreSQL boundary with mature protocol libraries.
 It does not establish full reference parity, public TLS, HTML delivery, or indexed production search.
 
 These local tests inform proposed contracts, not public feature or performance claims.
