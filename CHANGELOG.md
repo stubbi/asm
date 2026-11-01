@@ -1,5 +1,18 @@
 # Change log
 
+## 0.3.0
+
+- Add a native ARM64 Linux CLI with the same command and verification contracts.
+- Select a published x86-64 or ARM64 executable with one bootstrap command.
+- Keep unsupported hosts and wrong-architecture artifacts out of the installation path.
+- Build separate architecture artifacts and compare two clean builds for each release executable.
+- Require the CLI contract suite on native x86-64 and ARM64 CI runners.
+- Replace quadratic catalog identity checks with bounded heap sort.
+- Buffer registry output and return failure when the output cannot be written.
+- Publish the x86-64 benchmark inputs, raw measurements, regressions, and reproduction steps.
+
+See the [release notes](docs/releases/0.3.0.md) and [performance record](docs/performance-registry.md).
+
 ## 0.2.0
 
 - Install the CLI with a bounded bootstrap script and signed release verification.

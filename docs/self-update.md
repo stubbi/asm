@@ -16,7 +16,7 @@ ASM does not start an update in the background.
 
 ## Supported installation
 
-Self-update supports the direct `$HOME/.local/bin/asm` file on Linux x86-64.
+Self-update supports the direct `$HOME/.local/bin/asm` file on Linux x86-64 and ARM64.
 Use the package manager for an installation that it owns.
 Self-update does not run `sudo` or change `PATH`.
 
@@ -62,7 +62,8 @@ The package is fixed to `stubbi/asm`.
 The index is fixed to `https://asm.build/registry/v1/index.tsv`.
 No registry, local artifact, or installation path override is accepted.
 
-ASM selects an executable for `x86_64-linux`.
+ASM selects an executable for its own host: `x86_64-linux` or `aarch64-linux`.
+It does not install an executable for another architecture.
 Without an explicit version, it selects the highest numeric version in the index.
 An older version is refused.
 An equal version leaves the executable unchanged.
@@ -70,7 +71,9 @@ That result means no newer version was selected; it does not prove registry fres
 
 The candidate URL must use this exact pattern:
 
-    https://github.com/stubbi/asm/releases/download/vX.Y.Z/asm-X.Y.Z-x86_64-linux
+    https://github.com/stubbi/asm/releases/download/vX.Y.Z/asm-X.Y.Z-TARGET
+
+`TARGET` must equal the running CLI's host target.
 
 The same release must contain `release.json` and `release-attestation.sigstore.json`.
 Each file is limited to 1 MiB.

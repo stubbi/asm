@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check:
-    name: Test the release contract
+    name: Check the x86_64 release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -23,6 +23,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install cross-architecture verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user
       - name: Run behavior and format checks
         run: make check
       - name: Check installation boundaries between users
@@ -40,3 +44,37 @@ jobs:
         run: python3 tools/build_site.py --output .pages
       - name: Build release files
         run: python3 tools/release.py --output dist
+
+  arm64:
+    name: Check the native ARM64 CLI
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test native commands, parsers, and installation boundaries
+        run: make check
+      - name: Check installation boundaries between users
+        run: |
+          sudo env PYTHONPATH=tests python3 -m unittest -v \
+            test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
+            test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor \
+            test_bootstrap.BootstrapUserFlowTests.test_readonly_home_allows_non_root_install_and_exact_rerun
+
+  qualification:
+    name: Test the release contract
+    needs: [check, arm64]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require both native host checks
+        env:
+          ASM_X86_RESULT: ${{ needs.check.result }}
+          ASM_ARM_RESULT: ${{ needs.arm64.result }}
+        run: |
+          test "$ASM_X86_RESULT" = success
+          test "$ASM_ARM_RESULT" = success

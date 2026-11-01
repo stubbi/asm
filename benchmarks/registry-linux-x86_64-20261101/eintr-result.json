@@ -1,0 +1,27 @@
+{
+  "command": [
+    "strace",
+    "-qq",
+    "-e",
+    "trace=write",
+    "-e",
+    "inject=write:error=EINTR:when=1",
+    "-o",
+    "candidate-eintr-strace.txt",
+    "--",
+    "artifacts/candidate/asm",
+    "search",
+    "--json",
+    "--index",
+    "fixtures/paired/index-4096.tsv"
+  ],
+  "returncode": 0,
+  "stdout_bytes": 1199420,
+  "stdout_sha256": "4a4262f17ca838307ea64bf0b921b7991e9b33ff07055df140498ea7ea2f5114",
+  "stderr": "",
+  "expected_stdout_sha256": "4a4262f17ca838307ea64bf0b921b7991e9b33ff07055df140498ea7ea2f5114",
+  "expected_stdout_bytes": 1199420,
+  "scope": "strace injects EINTR before the first write; retry must emit the complete exact output",
+  "status": "pass",
+  "publication_note": "Public edition: executor-local absolute paths are replaced with logical labels. Numeric observations, output checks, technical metadata, and recorded digests are unchanged. See public-redaction.json for field substitutions and original/public file hashes."
+}

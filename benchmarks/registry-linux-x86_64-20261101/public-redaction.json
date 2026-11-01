@@ -1,0 +1,428 @@
+{
+  "schema": 1,
+  "edition": "Public benchmark evidence with local identifiers removed",
+  "original_scope": "Byte-exact copies of the files immediately before this redaction are retained outside the public repository. The exploratory hostname was already omitted in that preserved input.",
+  "path_labels": "artifacts/, fixtures/, and traces/exploratory/ labels identify roles in the recorded experiment. They do not assert that those files are bundled. The EINTR trace label names the included trace.",
+  "redaction_scope": "Only executor-local absolute paths and publication-scope notes changed in JSON. The descriptive CPU model, kernel, toolchain, complete sample objects, numeric values, recorded digests, syscall counts, failures, and regressions are retained.",
+  "files": [
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/README.md",
+      "original_bytes": 891,
+      "original_sha256": "6d61d995f78fc77ed2283a9779b37aaf288e2f603611dc1316b43acc45846b31",
+      "public_bytes": 2068,
+      "public_sha256": "ef5894d927a68bf97c69c9e95e74d00b3e10944fdac41360387163fd68fcb5dd",
+      "documentation_change": "Explain the public redaction, original/public hash scope, retained measurements, and logical path labels."
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/baseline-search-4096-json-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "8694be1d20c406d38b191581a05cb0b4d5492305ef05b1cbef913e1d0769504d",
+      "public_bytes": 593,
+      "public_sha256": "8694be1d20c406d38b191581a05cb0b4d5492305ef05b1cbef913e1d0769504d"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/baseline-search-4096-no-match-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+      "public_bytes": 593,
+      "public_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/baseline-search-4096-text-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "af83291341e7890c6cd6856f91a5de85405bf6948f7a05942d80613d08a303e0",
+      "public_bytes": 593,
+      "public_sha256": "af83291341e7890c6cd6856f91a5de85405bf6948f7a05942d80613d08a303e0"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/baseline-search-6-json-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "cdef8054d74afb7475977feb9f9f26f8fffd5ba0fec53563d398c223dbcb7ed4",
+      "public_bytes": 593,
+      "public_sha256": "cdef8054d74afb7475977feb9f9f26f8fffd5ba0fec53563d398c223dbcb7ed4"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/baseline-search-6-text-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "b3a2644966576c6cf889472ca840636d4aa156db5ca8ed987f75e70bc8b3c408",
+      "public_bytes": 593,
+      "public_sha256": "b3a2644966576c6cf889472ca840636d4aa156db5ca8ed987f75e70bc8b3c408"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-eintr-strace.txt",
+      "original_bytes": 1369,
+      "original_sha256": "08660e8bff390971729216ec9e0001b291ebeddf6d675bc318a3a8af6306a5d1",
+      "public_bytes": 1369,
+      "public_sha256": "08660e8bff390971729216ec9e0001b291ebeddf6d675bc318a3a8af6306a5d1"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-search-4096-json-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "5935630292381f96d1bdebda3057841c066bd2b22ffc53f927892c28a45c102a",
+      "public_bytes": 593,
+      "public_sha256": "5935630292381f96d1bdebda3057841c066bd2b22ffc53f927892c28a45c102a"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-search-4096-no-match-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+      "public_bytes": 593,
+      "public_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-search-4096-text-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "b8688251691db987c96b0b390eb01637a85f9d7ef09c232df27fc80aefafd636",
+      "public_bytes": 593,
+      "public_sha256": "b8688251691db987c96b0b390eb01637a85f9d7ef09c232df27fc80aefafd636"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-search-6-json-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+      "public_bytes": 593,
+      "public_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/candidate-search-6-text-strace.txt",
+      "original_bytes": 593,
+      "original_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+      "public_bytes": 593,
+      "public_sha256": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/eintr-result.json",
+      "original_bytes": 887,
+      "original_sha256": "ddaeb3ab03b9934459dd3b05fd8295250ffdf994384c4a09de9884c8507a12dd",
+      "public_bytes": 974,
+      "public_sha256": "7bd8ee937f4849f6a30b76320c1dbef171af6c4e6dca80e13e2b796e9bbfd667",
+      "field_substitutions": [
+        {
+          "json_pointer": "/command/7",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/command/9",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/command/13",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/publication_note",
+          "operation": "add",
+          "redaction_type": "publication-scope disclosure"
+        }
+      ]
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/exploratory-baseline.json",
+      "original_bytes": 33316,
+      "original_sha256": "cfcb927de026d907a0327a54aa28e281fc3f48d443cefaae7038029f5f20ddf0",
+      "public_bytes": 32717,
+      "public_sha256": "0a966cd30408717305ea408baa140bf0583e4ff6e6a69189a61928846520725f",
+      "field_substitutions": [
+        {
+          "json_pointer": "/baseline_binary",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-text/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-text/argv/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-json/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-json/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-no-match/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-no-match/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-text/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-text/argv/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-json/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-json/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-no-match/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-no-match/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-text/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-text/argv/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-json/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-json/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-no-match/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-no-match/argv/4",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/version/argv/0",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/syscall_counts/search-6-text/trace_path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/syscall_counts/search-6-json/trace_path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/syscall_counts/search-4096-text/trace_path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/syscall_counts/search-4096-json/trace_path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/syscall_counts/search-4096-no-match/trace_path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/publication_note",
+          "operation": "replace",
+          "redaction_type": "earlier publication-scope note"
+        }
+      ]
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/paired-benchmark.py",
+      "original_bytes": 10916,
+      "original_sha256": "e3aaf48f03eeac9978b55a08edb75bbad8a94a96b74077f7a42f7013ea9b656c",
+      "public_bytes": 10916,
+      "public_sha256": "e3aaf48f03eeac9978b55a08edb75bbad8a94a96b74077f7a42f7013ea9b656c"
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/paired-results.json",
+      "original_bytes": 100552,
+      "original_sha256": "418883520165cb5a4e9605edd7e27da045841484807b0d16886435d8aecf5c42",
+      "public_bytes": 100317,
+      "public_sha256": "5b35e2757ceb0a6e189d837db79b1e51642a26a443035c3d15c661c01a3af523",
+      "field_substitutions": [
+        {
+          "json_pointer": "/binaries/baseline/path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/binaries/candidate/path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-text/arguments/2",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-json/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-no-match/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-text/arguments/2",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-json/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-no-match/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-text/arguments/2",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-json/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-4096-no-match/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/publication_note",
+          "operation": "add",
+          "redaction_type": "publication-scope disclosure"
+        }
+      ]
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/registry-comment-correction.json",
+      "original_bytes": 5397,
+      "original_sha256": "93e92a4c80cdfd8843c09adb87453fb77268e047ca623a2cdd7f26169bb7b5aa",
+      "public_bytes": 5701,
+      "public_sha256": "fd60278867b36b30d9cd71cc0fc81ae1f3c7c01d81496f2fd9899cd6b5f7ddac",
+      "field_substitutions": [
+        {
+          "json_pointer": "/publication_note",
+          "operation": "add",
+          "redaction_type": "publication-scope disclosure"
+        }
+      ]
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/small-results.json",
+      "original_bytes": 601649,
+      "original_sha256": "82767f1019e8b6834838c2634a31eb640447f4d56caab800d03efeb58fac4be7",
+      "public_bytes": 601652,
+      "public_sha256": "0a3b642410f369565e5d4a79e994dea9b1a5e08f1869b5b7695a7989e25bae82",
+      "field_substitutions": [
+        {
+          "json_pointer": "/binaries/baseline/path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/binaries/candidate/path",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-text/arguments/2",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-json/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-6-no-match/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/workloads/search-256-no-match/arguments/3",
+          "operation": "replace",
+          "redaction_type": "executor-local absolute path"
+        },
+        {
+          "json_pointer": "/publication_note",
+          "operation": "add",
+          "redaction_type": "publication-scope disclosure"
+        }
+      ]
+    },
+    {
+      "path": "benchmarks/registry-linux-x86_64-20261101/source-manifest.json",
+      "original_bytes": 4314,
+      "original_sha256": "1c70e8dc72d4a07de15126931653522940f22f9a08058bb59b673980f27f4243",
+      "public_bytes": 4314,
+      "public_sha256": "1c70e8dc72d4a07de15126931653522940f22f9a08058bb59b673980f27f4243"
+    },
+    {
+      "path": "docs/performance-registry.md",
+      "original_bytes": 11149,
+      "original_sha256": "38e7d47cb557628cb2abeb59b0950a254285f5b0518746a7c456c3e5f7e17764",
+      "public_bytes": 12420,
+      "public_sha256": "e3cefbe371d987b196f7fbce36ea56e8b537a004fcd3a985f37e7826dc2b8417",
+      "documentation_change": "Explain the public redaction, original/public hash scope, retained measurements, and logical path labels."
+    }
+  ],
+  "verification": {
+    "all_original_numeric_and_boolean_leaves_equal": true,
+    "numeric_and_boolean_leaves_checked": 16957,
+    "all_original_source_executable_harness_and_other_digest_values_equal": true,
+    "digest_values_checked": 121,
+    "complete_sample_objects_equal": true,
+    "sample_counts": {
+      "exploratory-baseline.json": 210,
+      "paired-results.json": 558,
+      "small-results.json": 1812
+    },
+    "descriptive_environment_fields_equal": true,
+    "trace_files_byte_equal": 11,
+    "original_harness_byte_equal": true,
+    "original_source_manifest_byte_equal": true,
+    "no_new_performance_measurements": true
+  }
+}

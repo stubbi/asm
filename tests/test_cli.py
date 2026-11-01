@@ -8,6 +8,9 @@ import subprocess
 import tempfile
 import unittest
 
+from host import TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE
+from host import exit_source, argc_source, illegal_source, undefined_symbol_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build" / "asm"
@@ -40,19 +43,15 @@ class NativeCliTests(unittest.TestCase):
         path.write_text(path.read_text().replace(before, after))
 
     def exit_program(self, code):
-        return (
-            ".intel_syntax noprefix\n.global _start\n.text\n_start:\n"
-            f"    mov eax, 60\n    mov edi, {code}\n    syscall\n"
-            '.section .note.GNU-stack,"",@progbits\n'
-        )
+        return exit_source(code)
 
     def test_version_help_doctor_and_status_json(self):
-        self.assertIn("asm 0.2.0", self.cli("--version").stdout)
+        self.assertIn(f"asm {VERSION}", self.cli("--version").stdout)
         self.assertIn("Usage:", self.cli().stdout)
-        self.assertEqual(json.loads(self.cli("version", "--json").stdout)["version"], "0.2.0")
+        self.assertEqual(json.loads(self.cli("version", "--json").stdout)["version"], VERSION)
         self.assertTrue(json.loads(self.cli("doctor", "--json").stdout)["ok"])
         self.assertIn("new", json.loads(self.cli("help", "--json").stdout)["commands"])
-        self.assertEqual(json.loads(self.cli("targets", "--json").stdout)["targets"], ["x86_64-linux"])
+        self.assertEqual(json.loads(self.cli("targets", "--json").stdout), {"host": TARGET, "targets": [TARGET]})
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
         self.assertIn("yank", status["unimplemented"])
@@ -98,10 +97,7 @@ class NativeCliTests(unittest.TestCase):
 
     def test_argument_forwarding_and_exit_status(self):
         project = self.project()
-        (project / "src/main.s").write_text(
-            ".intel_syntax noprefix\n.global _start\n.text\n_start:\n"
-            "mov rdi, [rsp]\nmov eax, 60\nsyscall\n"
-        )
+        (project / "src/main.s").write_text(argc_source())
         self.cli("run", "--", "first argument", "$(touch never)", cwd=project, code=3)
         self.assertFalse((project / "never").exists())
 
@@ -114,9 +110,7 @@ class NativeCliTests(unittest.TestCase):
 
     def test_child_signal_is_propagated(self):
         project = self.project()
-        (project / "src/main.s").write_text(
-            ".intel_syntax noprefix\n.global _start\n.text\n_start:\nud2\n"
-        )
+        (project / "src/main.s").write_text(illegal_source())
         self.cli("run", cwd=project, code=132)
 
     def test_failed_build_preserves_previous_binary_and_cleans_staging(self):
@@ -131,9 +125,7 @@ class NativeCliTests(unittest.TestCase):
 
     def test_link_failure_is_propagated(self):
         project = self.project()
-        (project / "src/main.s").write_text(
-            ".intel_syntax noprefix\n.global _start\n.text\n_start:\ncall missing_symbol\n"
-        )
+        (project / "src/main.s").write_text(undefined_symbol_source())
         self.cli("build", cwd=project, code=1)
         self.assertFalse((project / "build/app").exists())
 
@@ -240,9 +232,9 @@ class NativeCliTests(unittest.TestCase):
 
     def test_options_and_unsupported_targets(self):
         project = self.project()
-        self.cli("build", "--target", "x86_64-linux", "--no-color", cwd=project)
-        self.cli("build", "--target", "x86_64-unknown-linux-gnu", cwd=project)
-        self.cli("build", "--target", "aarch64-linux", cwd=project, code=2)
+        self.cli("build", "--target", TARGET, "--no-color", cwd=project)
+        self.cli("build", "--target", TRIPLE, cwd=project)
+        self.cli("build", "--target", OTHER_TARGET, cwd=project, code=2)
         self.cli("build", "--target", cwd=project, code=2)
         self.cli("build", "--mystery", cwd=project, code=2)
         self.cli("new", code=2)
@@ -250,7 +242,7 @@ class NativeCliTests(unittest.TestCase):
         self.cli("new", "one", "two", code=2)
         self.cli("run", "not-forwarded-without-separator", cwd=project, code=2)
         self.cli("nosuchcommand", code=2)
-        self.replace_manifest(project, "x86_64-linux", "aarch64-linux")
+        self.replace_manifest(project, TARGET, OTHER_TARGET)
         self.cli("build", cwd=project, code=2)
 
     def test_leading_dash_path_with_separator(self):
@@ -281,7 +273,7 @@ class NativeCliTests(unittest.TestCase):
         shutil.copytree(ROOT / "cli", self.work / "cli")
         (self.work / "asm.toml").write_text(
             '[package]\nname = "asm"\nversion = "0.1.0"\n\n'
-            '[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n'
+            f'[build]\nsource = "{CLI_SOURCE}"\ntarget = "{TARGET}"\n'
         )
         self.cli("build")
         result = subprocess.run(

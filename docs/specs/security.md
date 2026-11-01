@@ -64,7 +64,7 @@ Never silently downgrade verification after an unavailable service, expired meta
 
 ## Bootstrap and manual self-update
 
-The bootstrap installer installs the CLI for Linux x86-64. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
+The bootstrap installer installs the CLI for Linux x86-64 or ARM64 when the checked release supplies that executable. It detects the host locally with `uname`. Each target has a separate fixed URL, size, and digest. An unsupported host fails before downloads or file changes. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
 
 The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy.
 

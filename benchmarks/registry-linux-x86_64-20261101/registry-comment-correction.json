@@ -1,0 +1,125 @@
+{
+  "recorded_at_utc": "2026-11-01T09:02:02.240383+00:00",
+  "purpose": "Qualify the registry_emit comment to cover returned write errors. Default SIGPIPE can terminate the process before cleanup. No instructions, runtime behavior, or performance samples changed.",
+  "base_commit": "eea8498f6d49c26c7112f6510f12528861886e87",
+  "original_candidate_source_manifest_sha256": "8fed51a66ccc0e0a606c395024f0bbdc2f28cca4fd71d8367b80fedd5fb12782",
+  "original_candidate_registry_sha256": "e9de264490fe5d1558d541ab71fb76e09e72020d17237812464b10bb3dbeccbb",
+  "corrected_candidate_registry_sha256": "4fe271d95054828da7d1066edb141adfe22a8602fdcba69bd23bde763ad88225",
+  "comment_before": " * plus calls. A write failure is fatal and cleans the registry workspace. */",
+  "comment_after": " * plus calls. A returned write error is fatal and cleans the registry workspace. */",
+  "correction_is_exact_single_replacement": true,
+  "corrected_source_files": [
+    {
+      "path": "cli/archive.s",
+      "bytes": 33936,
+      "sha256": "2b84d0b2c3bc23b48dd2a629ce47ba6705a08aaa530070e0bd375c713ba1eab6"
+    },
+    {
+      "path": "cli/asm.s",
+      "bytes": 45975,
+      "sha256": "791e4d87270bfcd0aecfe8bb92a72eef5a51d05b3d6e1acc50e19205b5c737bd"
+    },
+    {
+      "path": "cli/dependencies.s",
+      "bytes": 30555,
+      "sha256": "c713523f2bf6b094ee88f8a0bfaedb4796380353a84f5b5c150d8cddfd7d6630"
+    },
+    {
+      "path": "cli/elf.s",
+      "bytes": 5220,
+      "sha256": "52312e6f405c8c1abee9678a86b9bec880dfb43957131ab19a9779de9fab2e72"
+    },
+    {
+      "path": "cli/publish.s",
+      "bytes": 36190,
+      "sha256": "4784fd44a79c0b06c18e69a3d7ca9c3158ceaf1f3762e97982ea90d725180d3a"
+    },
+    {
+      "path": "cli/registry.s",
+      "bytes": 61673,
+      "sha256": "4fe271d95054828da7d1066edb141adfe22a8602fdcba69bd23bde763ad88225"
+    },
+    {
+      "path": "cli/self_update.s",
+      "bytes": 26731,
+      "sha256": "34e3c6713246ecd90d3dc1d8e9a5de94751f34351782880513729a85c305164e"
+    },
+    {
+      "path": "cli/self_update_metadata.s",
+      "bytes": 29837,
+      "sha256": "c4f80ff5fbf2d718cf4661f14e25d5650abf58e2c4f8becab35356e2a283d1b9"
+    },
+    {
+      "path": "cli/self_update_verify.s",
+      "bytes": 19930,
+      "sha256": "98be79def2f73f3d27579d82c69dc50cca710b36e8f7628db5bb9c005ed725df"
+    },
+    {
+      "path": "cli/templates.s",
+      "bytes": 4131,
+      "sha256": "d418e9b35373c462d4bd663d5caa583236d8fd4b62a61d698a45ebbe31bca4f2"
+    }
+  ],
+  "build_commands": [
+    {
+      "argv": [
+        "/usr/bin/as",
+        "--64",
+        "--fatal-warnings",
+        "-o",
+        "asm.o",
+        "cli/asm.s"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/usr/bin/ld",
+        "-z",
+        "noexecstack",
+        "-z",
+        "relro",
+        "-z",
+        "now",
+        "--build-id=none",
+        "-o",
+        "asm",
+        "asm.o"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "assembler_version": "GNU assembler (GNU Binutils for Ubuntu) 2.42",
+  "linker_version": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+  "measured_candidate_binary_sha256": "35ebf937e811791769a83b972e2e8ad891dd589feaf0b360c2fdbf5f0b839521",
+  "corrected_candidate_binary_sha256": "35ebf937e811791769a83b972e2e8ad891dd589feaf0b360c2fdbf5f0b839521",
+  "corrected_candidate_binary_bytes": 97448,
+  "executable_byte_comparison_equal": true,
+  "object_byte_comparison_equal": true,
+  "no_new_timing_samples": true,
+  "preserved_evidence_files_sha256": {
+    "paired-results.json": "418883520165cb5a4e9605edd7e27da045841484807b0d16886435d8aecf5c42",
+    "baseline-search-4096-no-match-strace.txt": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+    "candidate-search-4096-json-strace.txt": "5935630292381f96d1bdebda3057841c066bd2b22ffc53f927892c28a45c102a",
+    "exploratory-baseline.json": "cfcb927de026d907a0327a54aa28e281fc3f48d443cefaae7038029f5f20ddf0",
+    "baseline-search-4096-json-strace.txt": "8694be1d20c406d38b191581a05cb0b4d5492305ef05b1cbef913e1d0769504d",
+    "baseline-search-6-json-strace.txt": "cdef8054d74afb7475977feb9f9f26f8fffd5ba0fec53563d398c223dbcb7ed4",
+    "paired-benchmark.py": "e3aaf48f03eeac9978b55a08edb75bbad8a94a96b74077f7a42f7013ea9b656c",
+    "baseline-search-4096-text-strace.txt": "af83291341e7890c6cd6856f91a5de85405bf6948f7a05942d80613d08a303e0",
+    "small-results.json": "82767f1019e8b6834838c2634a31eb640447f4d56caab800d03efeb58fac4be7",
+    "candidate-search-4096-no-match-strace.txt": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+    "candidate-search-6-json-strace.txt": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+    "baseline-search-6-text-strace.txt": "b3a2644966576c6cf889472ca840636d4aa156db5ca8ed987f75e70bc8b3c408",
+    "candidate-search-6-text-strace.txt": "a492aa774d7247f47ccf2a1f7dd49cd848542a159f0626da29d4a88957a911d2",
+    "candidate-search-4096-text-strace.txt": "b8688251691db987c96b0b390eb01637a85f9d7ef09c232df27fc80aefafd636",
+    "source-manifest.json": "1c70e8dc72d4a07de15126931653522940f22f9a08058bb59b673980f27f4243",
+    "candidate-eintr-strace.txt": "08660e8bff390971729216ec9e0001b291ebeddf6d675bc318a3a8af6306a5d1",
+    "eintr-result.json": "ddaeb3ab03b9934459dd3b05fd8295250ffdf994384c4a09de9884c8507a12dd"
+  },
+  "all_preserved_evidence_unchanged": true,
+  "publication_note": "The preserved_evidence_files_sha256 map and all_preserved_evidence_unchanged flag describe the originals checked when this comment correction was recorded. Current public copies can have local identifiers redacted. See public-redaction.json for their original and public hashes."
+}

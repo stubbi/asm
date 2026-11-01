@@ -44,7 +44,7 @@ ASM needs to make this kind of evidence available beside the exact target artifa
 
 ## Quick start
 
-The current CLI runs on **Linux x86-64**.
+The current CLI runs on **Linux x86-64 and ARM64**.
 Install ASM once with the bootstrap installer.
 Use `asm self update` for later updates from the hub.
 
@@ -55,8 +55,13 @@ Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) at `/usr/bin/gh` b
 The ASM installer does not use administrator access or a GitHub login.
 
 ```sh
-curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh | sh
+curl -qfsS -m120 https://asm.build/install.sh | sh
 ```
+
+The same command works on both supported hosts.
+The installer reads the operating system and CPU architecture with `uname`.
+It selects the matching executable before downloading it.
+An unsupported host stops installation before any files change.
 
 The installer writes `$HOME/.local/bin/asm`.
 It checks the executable's size, digest, and signed release attestation before installation.
@@ -70,7 +75,7 @@ Then check the installed version:
 asm version
 ```
 
-For the current release, this prints `asm 0.2.0 (x86_64-linux)`.
+Version 0.3.0 prints `asm 0.3.0 (x86_64-linux)` or `asm 0.3.0 (aarch64-linux)` for your host.
 Use `asm self update` for later updates.
 
 <details>
@@ -165,9 +170,9 @@ Your project contains an `asm.toml` manifest, `src/main.s`, and `tests/main.s`.
 `asm test` builds and runs the test program.
 A test succeeds when it exits with code zero.
 
-The [hello example](examples/hello) shows the complete project.
-Read [the CLI source](cli/asm.s) to follow the implementation.
-The [registry module](cli/registry.s) contains the native registry client.
+The hello examples show complete projects for [x86-64](examples/hello) and [ARM64](examples/hello-aarch64).
+Read the CLI source for [x86-64](cli/asm.s) or [ARM64](cli/aarch64/asm.s) to follow the implementation.
+Each implementation includes native project, registry, dependency, and self-update commands.
 
 ### Update ASM
 
@@ -216,7 +221,21 @@ The source installer refuses to replace a different existing `asm` command.
 To replace that command deliberately, add `REPLACE=1` to the installation command.
 `make uninstall PREFIX="$HOME/.local"` removes the command only when its bytes match this build.
 
-The [current release](https://github.com/stubbi/asm/releases/tag/v0.2.0) contains the executable, source, checksums, build metadata, and signed provenance bundle.
+`make` selects the native implementation from the build host.
+The source archive contains both implementations.
+Its root `asm.toml` describes the x86-64 reference project; use Make to build the CLI on ARM64.
+
+To cross-assemble the ARM64 CLI on Linux x86-64, install AArch64 GNU cross-binutils and run:
+
+```sh
+make ARCH=aarch64 build/asm-aarch64-linux
+```
+
+This creates `build/asm-aarch64-linux`.
+Run it on Linux ARM64, or use QEMU for limited behavior checks.
+Read the [ARM64 implementation notes](cli/aarch64/README.md) for its instruction baseline, ABI, and test boundary.
+
+The [current release](https://github.com/stubbi/asm/releases/tag/v0.3.0) contains both executables, source, checksums, build metadata, and signed provenance.
 The bootstrap installer performs the binary installation checks.
 
 ### Describe a project
@@ -231,6 +250,8 @@ source = "src/main.s"
 target = "x86_64-linux"
 ```
 
+`asm new` writes your native host target into this manifest.
+The example above declares an x86-64 project; an ARM64 project uses `aarch64-linux`.
 The initial manifest format accepts these four string fields.
 It rejects unknown fields, duplicate fields, invalid paths, and unsupported build targets.
 It does not accept arbitrary build scripts.
@@ -242,7 +263,7 @@ The build uses GNU assembler syntax and writes the program to `build/app`.
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source
+asm fetch stubbi/hello@0.3.0 --kind source
 ```
 
 The client checks the downloaded size and SHA-256 digest.
@@ -252,10 +273,11 @@ Use `asm --help` for the current command syntax.
 
 ### Use a source dependency
 
+This example requires Linux x86-64 and uses the System V ABI.
 From a project directory, add an exact version:
 
 ```sh
-asm add stubbi/math@0.2.0 --target x86_64-linux
+asm add stubbi/math@0.3.0 --target x86_64-linux
 asm lock
 ```
 
@@ -265,16 +287,16 @@ The build makes that directory available to the assembler.
 Include the library explicitly in your source:
 
 ```asm
-.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.3.0/x86_64-linux/src/min.s"
 ```
 
-Follow [the complete package example](docs/use-a-package.md) for a program that calls the function.
+Follow [the complete package example](docs/use-a-package.md) on Linux x86-64 for a program that calls the function.
 
 The library exports `asm_u64_min`.
 Its [contract and tests](examples/math) describe the arguments, result, and register changes.
 
 Commit `asm.lock` with your project.
-Use `asm sync` to restore its exact source artifacts on another machine.
+Use `asm sync` to restore its exact source artifacts on another machine with the same target.
 Use `asm build --locked` when a missing lock file must be an error.
 Builds check existing locked dependencies before assembly.
 
@@ -286,7 +308,7 @@ A lock file checks declared packages; it does not sandbox other assembler inputs
 ### Install a program
 
 ```sh
-asm install stubbi/hello@0.2.0
+asm install stubbi/hello@0.3.0
 ```
 
 ASM selects a host executable and checks its size, digest, and ELF structure.
@@ -302,7 +324,7 @@ The table below describes the implemented release boundary.
 
 | Area | Current implementation |
 | --- | --- |
-| Native CLI | Linux x86-64 assembly, with direct Linux system calls. |
+| Native CLI | Separate Linux x86-64 and ARM64 assembly implementations, with direct Linux system calls. |
 | Installation and updates | Bootstrap installation and manual `asm self update` with signed release provenance. |
 | Project workflow | Create, inspect, build, run, test, and clean projects. |
 | Registry client | Search packages, inspect versions, fetch artifacts, and install checked host executables. |
@@ -316,8 +338,16 @@ The table below describes the implemented release boundary.
 | Formal verification | Defined evidence model. No hosted proof service yet. |
 
 The native CLI host and a package target are separate concepts.
-The x86-64 client can fetch a package for another target.
-It can build and run local projects only for its supported host target.
+Either client can fetch a package for another target.
+Each client builds and runs local projects for its native host target.
+`asm targets` lists that build target.
+The RISC-V hello package does not imply a RISC-V CLI.
+macOS, Windows, and general cross-build commands remain future work.
+
+The [local registry benchmark](docs/performance-registry.md) measures the native x86-64 search implementation.
+At 4,096 records, median elapsed time decreased by approximately 19–21 times on the measured host.
+Small-catalog wall-time results were inconclusive, and some tail latencies increased.
+These results do not measure ARM64, network installation, or hosted search capacity.
 
 Transitive dependency resolution, automatic public publication, account recovery, and isolated public build workers remain release gates.
 The current service does not claim feature parity with npm, PyPI, or crates.io.
@@ -365,6 +395,7 @@ Follow the [code of conduct](CODE_OF_CONDUCT.md) in project discussions.
 The [maintenance guide](docs/maintaining.md) defines review, release, and incident procedures.
 
 To run all local checks, install Python 3.11 or later and Node.js 18 or later.
+On Linux x86-64, release checks also need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
 Then run:
 
 ```sh
@@ -372,6 +403,8 @@ make check
 ```
 
 Tests cover user-visible behavior and rejection paths.
+CI runs the complete CLI contract suite on native x86-64 and ARM64 runners.
+Both jobs must pass before a release can proceed.
 Keep each commit focused.
 Include the reason for the change and the relevant validation in your pull request.
 Report a defect through [GitHub Issues](https://github.com/stubbi/asm/issues).

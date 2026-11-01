@@ -16,7 +16,11 @@ import registry
 
 REPOSITORY = "https://github.com/stubbi/asm"
 REPOSITORY_ID = 1441332955
-TARGET = "x86_64-linux"
+TARGETS = {
+    "x86_64-linux": ("x86_64|amd64", "x86_64"),
+    "aarch64-linux": ("aarch64|arm64", "ARM64"),
+}
+INSTALL_COMMAND = "curl -qfsS -m120 https://asm.build/install.sh | sh"
 MINIMUM_VERSION = (0, 2, 0)
 MAX_BUNDLE_BYTES = 1024 * 1024
 TEMPLATE = Path(__file__).with_name("install.sh.in")
@@ -44,49 +48,75 @@ def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dic
                      "installer source must be the canonical ASM repository root")
     registry.require(re.fullmatch(r"[0-9a-f]{40}", source["commit"]) is not None,
                      "installer source needs a full Git commit")
-    artifacts = [artifact for artifact in record["artifacts"]
-                 if artifact["kind"] == "executable" and artifact["target"] == TARGET]
-    registry.require(len(artifacts) == 1, "installer needs exactly one Linux x86_64 executable")
-    artifact = artifacts[0]
-    base = f"{REPOSITORY}/releases/download/v{version}"
-    registry.require(artifact["url"] == f"{base}/asm-{version}-{TARGET}",
-                     "installer executable URL must use the canonical release asset")
-    registry.require(type(artifact["bytes"]) is int and 0 < artifact["bytes"] <= registry.MAX_ARTIFACT_BYTES,
-                     "installer executable size is invalid")
-    registry.require(re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]) is not None,
-                     "installer needs a full lowercase SHA-256 digest")
-    return {"version": version, "sha256": artifact["sha256"], "bytes": artifact["bytes"],
-            "source_commit": source["commit"], "repository_id": REPOSITORY_ID,
-            "artifact_url": artifact["url"], "bundle_url": f"{base}/release-attestation.sigstore.json"}
+    artifacts = [{key: artifact[key] for key in ("target", "sha256", "bytes", "url")}
+                 for artifact in record["artifacts"] if artifact["kind"] == "executable"]
+    release = {"version": version, "artifacts": sorted(artifacts, key=lambda item: item["target"]),
+               "source_commit": source["commit"], "repository_id": REPOSITORY_ID,
+               "bundle_url": f"{REPOSITORY}/releases/download/v{version}/release-attestation.sigstore.json"}
+    validate_release(release)
+    return release
 
 
-def render_installer(release: dict) -> bytes:
-    """Only installer_release output is accepted; validate again before shell interpolation."""
+def validate_release(release: dict) -> None:
+    """Check every field used in the shell, including each architecture's identity."""
+    registry.require(set(release) == {"version", "artifacts", "source_commit", "repository_id", "bundle_url"},
+                     "invalid installer release fields")
     version = release.get("version")
     registry.require(registry.version_tuple(version) >= MINIMUM_VERSION,
                      "installer release predates signed bootstrap support")
     base = f"{REPOSITORY}/releases/download/v{version}"
-    registry.require(release.get("artifact_url") == f"{base}/asm-{version}-{TARGET}" and
-                     release.get("bundle_url") == f"{base}/release-attestation.sigstore.json",
-                     "invalid installer asset URLs")
+    registry.require(release.get("bundle_url") == f"{base}/release-attestation.sigstore.json",
+                     "invalid installer bundle URL")
     registry.require(release.get("repository_id") == REPOSITORY_ID, "invalid installer repository identity")
-    for key, length in (("sha256", 64), ("source_commit", 40)):
-        registry.require(isinstance(release.get(key), str) and re.fullmatch(rf"[0-9a-f]{{{length}}}", release[key]) is not None,
-                         f"invalid installer {key}")
+    registry.require(isinstance(release.get("source_commit"), str) and
+                     re.fullmatch(r"[0-9a-f]{40}", release["source_commit"]) is not None,
+                     "invalid installer source commit")
     registry.require(release["source_commit"] != "0" * 40, "invalid installer source commit")
-    registry.require(type(release.get("bytes")) is int and 0 < release["bytes"] <= registry.MAX_ARTIFACT_BYTES,
-                     "invalid installer byte size")
+    artifacts = release.get("artifacts")
+    registry.require(isinstance(artifacts, list) and 0 < len(artifacts) <= len(TARGETS),
+                     "installer needs supported executable artifacts")
+    seen = set()
+    for artifact in artifacts:
+        registry.require(isinstance(artifact, dict) and set(artifact) == {"target", "sha256", "bytes", "url"},
+                         "invalid installer artifact fields")
+        target = artifact["target"]
+        registry.require(isinstance(target, str) and target in TARGETS and target not in seen,
+                         "unsupported or duplicate installer target")
+        seen.add(target)
+        registry.require(artifact["url"] == f"{base}/asm-{version}-{target}",
+                         "installer executable URL must use its canonical target asset")
+        registry.require(type(artifact["bytes"]) is int and 0 < artifact["bytes"] <= registry.MAX_ARTIFACT_BYTES,
+                         "invalid installer byte size")
+        registry.require(isinstance(artifact["sha256"], str) and
+                         re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]) is not None,
+                         "invalid installer digest")
+
+
+def render_installer(release: dict) -> bytes:
+    """Validate all selected artifacts before generating a local architecture switch."""
+    validate_release(release)
+    cases = []
+    for artifact in release["artifacts"]:
+        target = artifact["target"]
+        cases.append(f"        {TARGETS[target][0]})\n"
+                     f"            asm_target='{target}'\n"
+                     f"            asm_sha256='{artifact['sha256']}'\n"
+                     f"            asm_bytes='{artifact['bytes']}'\n"
+                     f"            asm_url='{artifact['url']}'\n"
+                     "            ;;")
     script = TEMPLATE.read_text(encoding="utf-8")
-    for key in ("version", "sha256", "bytes", "source_commit", "artifact_url", "bundle_url"):
+    for key in ("version", "source_commit", "bundle_url"):
         script = script.replace(f"@@{key.upper()}@@", str(release[key]))
+    script = script.replace("@@TARGET_CASES@@", "\n".join(cases))
     registry.require("@@" not in script, "unexpanded installer template field")
     return script.encode("utf-8")
 
 
 def installer_markup(release: dict) -> str:
-    # Values have passed render_installer's strict validation before this runs.
+    validate_release(release)
     version = escape(release["version"])
-    commands = "curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh | sh"
+    hosts = "Linux " + " and ".join(TARGETS[artifact["target"]][1] for artifact in release["artifacts"])
+    commands = INSTALL_COMMAND
     download_commands = '''asm_installer=$(mktemp) &&
 curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
 cat "$asm_installer"'''
@@ -97,11 +127,11 @@ cat "$asm_installer"'''
   sh "$installer"
 )'''
     return f'''<div class="bootstrap-panel">
-<p class="section-footnote">Requires Linux x86_64. The installer uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
+<p class="section-footnote">Requires {hosts}. The installer selects the matching build on your machine. It uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation command">Copy</button></div>
 <pre><code id="bootstrap-commands">{escape(commands)}</code></pre>
-<div class="terminal-footer"><span>Linux x86_64</span><a href="install.sh">Read the installer ↗</a></div>
+<div class="terminal-footer"><span>{hosts}</span><a href="install.sh">Read the installer ↗</a></div>
 </div>
 <p class="section-footnote">The ASM installer does not use sudo or a GitHub login. It checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves a different existing asm file.</p>
 <p class="section-footnote">Apply the PATH command shown by the installer. Then run <code>asm version</code>. For later updates, run <code>asm self update</code>.</p>
