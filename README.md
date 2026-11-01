@@ -50,32 +50,91 @@ Use `asm self update` for later updates from the hub.
 
 ### Install the command
 
-The installer needs curl and GNU Coreutils in `/usr/bin`.
-Use the [official GitHub CLI instructions](https://cli.github.com/) to install version 2.93.0 or later at `/usr/bin/gh`.
-No GitHub login is required.
-The installer checks the executable's size, digest, and signed release attestation before installation.
-The attestation connects the executable to the required release workflow.
-The installer writes `$HOME/.local/bin/asm` without administrator access.
+The installer requires curl and GNU Coreutils in `/usr/bin`.
+Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) at `/usr/bin/gh` before you start.
+The ASM installer does not use administrator access or a GitHub login.
 
-[Read the installer](https://asm.build/install.sh) before running it.
+```sh
+curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh | sh
+```
+
+The installer writes `$HOME/.local/bin/asm`.
+It checks the executable's size, digest, and signed release attestation before installation.
+The attestation connects the executable to the required release workflow.
+A different existing `asm` file remains unchanged.
+
+Apply the PATH command shown by the installer.
+Then check the installed version:
+
+```sh
+asm version
+```
+
+For the current release, this prints `asm 0.2.0 (x86_64-linux)`.
+Use `asm self update` for later updates.
+
+<details>
+<summary>Set PATH for this terminal</summary>
+
+Put the installation directory first in PATH for this terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add the same command to your shell configuration to keep this setting.
+Run `asm version` again.
+
+</details>
+
+<details>
+<summary>Inspect the installer first</summary>
+
+You can [read the installer](https://asm.build/install.sh) without running it.
+To inspect a local copy, download it to a temporary file:
+
+```sh
+asm_installer=$(mktemp) &&
+curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
+cat "$asm_installer"
+```
+
+If the download succeeds, review the displayed script.
+After your review, run this separate command in the same terminal:
+
+```sh
+sh "$asm_installer"
+```
+
+Remove the temporary file after installation:
+
+```sh
+rm -f "$asm_installer"
+unset asm_installer
+```
+
+</details>
+
+<details>
+<summary>Use in scripts and CI</summary>
+
+For scripts and CI, use the complete-download commands below.
+The script runs only if the download succeeds.
 
 ```sh
 (
   installer=$(mktemp) || exit
   trap 'rm -f "$installer"' 0
-  curl -q --proto '=https' --tlsv1.2 --fail --silent --show-error --max-time 120 https://asm.build/install.sh -o "$installer" || exit
+  curl -q --proto '=https' --tlsv1.2 -fsSL --max-time 120 https://asm.build/install.sh -o "$installer" || exit
   sh "$installer"
-) &&
-export PATH="$HOME/.local/bin:$PATH" &&
-asm version
+)
 ```
 
-For the current release, `asm version` prints `asm 0.2.0 (x86_64-linux)`.
-The installer preserves a different existing `asm` command.
 Running it again accepts only the same release bytes with the required ownership and permissions.
+The installer does not change PATH or run the downloaded command.
 
-The `export` command applies to the current shell.
-Add it to your shell configuration to keep this setting.
+</details>
+
 The [update contract](docs/self-update.md) explains the verification policy and supported installation paths.
 
 ### Run your first project
