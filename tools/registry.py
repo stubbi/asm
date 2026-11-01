@@ -574,6 +574,12 @@ def baseline_from_git(repository: Path, commit: str, registry_path: str = "regis
             continue
         metadata, path = item.split(b"\t", 1)
         mode, kind, blob = metadata.decode("ascii").split()
+        if path == (prefix + ".gitkeep").encode("ascii"):
+            require(kind == "blob" and mode == "100644",
+                    "registry root .gitkeep must be an empty regular file")
+            require(git_output(repository, "cat-file", "-s", blob).strip() == b"0",
+                    "registry root .gitkeep must be an empty regular file")
+            continue
         require(kind == "blob" and mode == "100644" and path.endswith(b".json"), "invalid baseline metadata file")
         records.append(validate_manifest(strict_json(git_output(repository, "cat-file", "blob", blob))))
     return check_records(records)
