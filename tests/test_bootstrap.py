@@ -232,10 +232,10 @@ class BootstrapGenerationTests(unittest.TestCase):
                 self.assertFalse((stage / "install.sh").exists())
                 self.assertNotIn('id="bootstrap-commands"', (stage / "index.html").read_text())
 
-    def test_website_instructions_stop_before_running_asm_when_installation_fails(self):
+    def test_complete_download_instructions_stop_before_execution_on_failure(self):
         release = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
         markup = bootstrap.installer_markup(release)
-        commands = unescape(markup.split('<code id="bootstrap-commands">', 1)[1].split('</code>', 1)[0])
+        commands = unescape(markup.split('<code id="bootstrap-ci-commands">', 1)[1].split('</code>', 1)[0])
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
             tools = base / "tools"
@@ -244,13 +244,46 @@ class BootstrapGenerationTests(unittest.TestCase):
             asm = tools / "asm"
             asm.write_text('#!/bin/sh\nprintf "must not run\\n" > "$HOME/unexpected-asm"\n')
             asm.chmod(0o755)
-            for curl_body in ('exit 22\n', 'while [ "$1" != -o ]; do shift; done\nprintf "exit 1\\n" > "$2"\n'):
+            for curl_body in (
+                'exit 22\n',
+                'while [ "$1" != -o ]; do shift; done\nprintf \'printf executed > "$HOME/unexpected-installer"\\n\' > "$2"\nexit 22\n',
+                'while [ "$1" != -o ]; do shift; done\nprintf "exit 1\\n" > "$2"\n',
+            ):
                 with self.subTest(curl_body=curl_body):
                     curl.write_text('#!/bin/sh\n' + curl_body)
                     curl.chmod(0o755)
                     result = subprocess.run(['/bin/sh', '-c', commands], env={"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(base)},
                                             capture_output=True, timeout=5)
                     self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse((base / "unexpected-asm").exists())
+                    self.assertFalse((base / "unexpected-installer").exists())
+
+    def test_interactive_pipeline_reports_failure_without_running_asm(self):
+        release = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
+        markup = bootstrap.installer_markup(release)
+        commands = unescape(markup.split('<code id="bootstrap-commands">', 1)[1].split('</code>', 1)[0])
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            tools = base / "tools"
+            tools.mkdir()
+            asm = tools / "asm"
+            asm.write_text('#!/bin/sh\nprintf "must not run\\n" > "$HOME/unexpected-asm"\n')
+            asm.chmod(0o755)
+            cases = (
+                # POSIX pipelines return the shell status. An empty script is a
+                # no-op, even when curl failed. Keep that limitation explicit.
+                ('printf "fixture download failed\\n" >&2\nexit 22\n', 0),
+                ('printf \'printf "fixture install failed\\n" >&2; exit 1\\n\'\n', 1),
+            )
+            for curl_body, expected_status in cases:
+                with self.subTest(curl_body=curl_body):
+                    curl = tools / "curl"
+                    curl.write_text('#!/bin/sh\n' + curl_body)
+                    curl.chmod(0o755)
+                    result = subprocess.run(['/bin/sh', '-c', commands], env={"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(base)},
+                                            capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, expected_status)
+                    self.assertIn(b"failed", result.stderr)
                     self.assertFalse((base / "unexpected-asm").exists())
 
 
@@ -303,10 +336,12 @@ class BootstrapUserFlowTests(unittest.TestCase):
     def save_config(self):
         (self.tools / "config.json").write_text(json.dumps(self.config))
 
-    def run_installer(self, *, timeout=15, **changes):
+    def run_installer(self, *, timeout=15, streamed=False, **changes):
         self.config.update(changes)
         self.save_config()
-        return subprocess.run(["/bin/sh", str(self.script)], env=self.env, cwd=self.base,
+        command = ["/bin/sh"] if streamed else ["/bin/sh", str(self.script)]
+        script_input = self.script.read_bytes() if streamed else None
+        return subprocess.run(command, input=script_input, env=self.env, cwd=self.base,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
 
     def calls(self, name):
@@ -351,6 +386,62 @@ class BootstrapUserFlowTests(unittest.TestCase):
         self.assertEqual(self.destination.stat().st_ino, inode)
         self.assertEqual(self.destination.stat().st_nlink, 1)
         self.assertEqual(len(self.calls("curl")), downloads)
+
+    def test_streamed_install_and_rerun_preserve_the_verification_contract(self):
+        first = self.run_installer(streamed=True)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(self.destination.read_bytes(), PAYLOAD)
+        self.assertEqual(self.destination.stat().st_mode & 0o7777, 0o755)
+        self.assertEqual(self.destination.stat().st_nlink, 1)
+        self.assertEqual(len(self.calls("curl")), 2)
+        self.assertEqual(self.calls("gh")[-1]["args"][:2], ["attestation", "verify"])
+        self.assertIn(b"asm self update", first.stdout)
+        inode = self.destination.stat().st_ino
+        calls = sorted(path.name for path in (self.tools / "logs").iterdir())
+
+        second = self.run_installer(streamed=True)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn(b"already installed", second.stdout)
+        self.assertEqual(self.destination.stat().st_ino, inode)
+        # Host detection may run again. No download, verifier, or link may run.
+        new_calls = [path for path in (self.tools / "logs").iterdir() if path.name not in calls]
+        self.assertTrue(all(path.name.startswith("uname-") for path in new_calls))
+        self.assertEqual(list(self.destination.parent.glob(".asm-bootstrap.*")), [])
+
+    def test_incomplete_stream_never_starts_installation(self):
+        script = self.script.read_bytes()
+        entry = script.rindex(b'    asm_bootstrap_main "$@"')
+        cuts = (script.index(b"set -eu") + 4, script.index(b"Downloading ASM") + 7,
+                script.index(b"/usr/bin/chmod 755") + 8,
+                entry, entry + len(b"    asm_bootstrap_main"),
+                entry + len(b'    asm_bootstrap_main "$@"'), script.rindex(b"}"))
+        self.save_config()
+        for cut in cuts:
+            with self.subTest(bytes_received=cut):
+                result = subprocess.run(["/bin/sh"], input=script[:cut], env=self.env, cwd=self.base,
+                                        capture_output=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(list(self.home.iterdir()), [])
+                self.assertEqual(list((self.tools / "logs").iterdir()), [])
+
+    def test_streamed_install_rejects_corrupt_or_unattested_artifacts(self):
+        for changes in ({"corrupt": True}, {"verification_error": True}):
+            with self.subTest(changes=changes):
+                self.config.update(corrupt=False, verification_error=False)
+                result = self.run_installer(streamed=True, **changes)
+                self.assert_no_install(result)
+
+    def test_streamed_install_preserves_a_different_existing_command(self):
+        self.destination.parent.mkdir(parents=True, mode=0o700)
+        original = b"An unrelated command.\n"
+        self.destination.write_bytes(original)
+        before = self.destination.stat()
+        result = self.run_installer(streamed=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.destination.read_bytes(), original)
+        self.assertEqual(self.destination.stat().st_ino, before.st_ino)
+        self.assertEqual(self.calls("curl"), [])
+        self.assertEqual(self.calls("gh"), [])
 
     def test_version_probe_has_a_private_home_before_creating_install_directories(self):
         result = self.run_installer(inspect_version_home=True, expected_install_home=str(self.home))
