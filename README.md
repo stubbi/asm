@@ -10,6 +10,11 @@ The CLI itself is written in assembly.
 
 ## Why we are building this
 
+Software should serve people exceptionally well and use resources with care.
+We are building a foundation that helps people and AI create better software and makes the results practical to share and assess.
+Our [brand foundation](docs/brand/foundation.md) defines this vision, story, and decision principles.
+The [messaging guide](docs/brand/messaging.md) shows how to apply them.
+
 We expect AI to make useful assembly cheaper to write and maintain.
 If that happens, assembly needs an ecosystem that makes the results easy to use.
 Every project should not need to invent its own package format, target selection, and release checks.
