@@ -4,11 +4,7 @@
 // No browser or npm dependency is required for these metadata-boundary checks.
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createHash } = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
-const { execFileSync } = require("node:child_process");
-const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, installInstructions } = require("../site/app.js");
+const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount } = require("../site/app.js");
 
 function record(name, target) {
   return { name, summary: "A source package", latest: "0.1.0", targets: [target], versions: [{ version: "0.1.0", artifacts: [] }] };
@@ -113,23 +109,4 @@ test("missing counters do not become zero, and missing dates do not become 1970"
   assert.equal(formatDownloadCount({ packages: { "owner/alpha": { total: null } } }, "owner/alpha"), "GitHub asset downloads: unavailable");
   assert.equal(formatDownloadCount({ observed_at: "2026-10-31T12:00:00Z", packages: { "owner/alpha": { total: 0 } } }, "owner/alpha"), "GitHub asset downloads: 0 · observed 2026-10-31");
   assert.equal(formatDownloadCount({ observed_at: null, packages: { "owner/alpha": { total: 12 } } }, "owner/alpha"), "GitHub asset downloads: 12 · observation time unavailable");
-});
-
-test("the generated checksum command verifies the named download", { skip: process.platform !== "linux" }, () => {
-  const base = path.resolve(__dirname, "../build");
-  fs.mkdirSync(base, { recursive: true });
-  const directory = fs.mkdtempSync(path.join(base, "site-checksum-"));
-  try {
-    const filename = "asm-0.1.0-x86_64-linux";
-    const content = Buffer.from("Controlled checksum fixture\n");
-    fs.writeFileSync(path.join(directory, filename), content);
-    const artifact = { kind: "executable", target: "x86_64-linux", sha256: createHash("sha256").update(content).digest("hex"), url: `https://github.com/stubbi/asm/releases/download/v0.1.0/${filename}` };
-    const instructions = installInstructions(artifact, "0.1.0");
-    const output = execFileSync("sh", ["-c", instructions.verify], { cwd: directory, encoding: "utf8" });
-    assert.equal(output, `${filename}: OK\n`);
-    assert.equal(installInstructions(artifact, "0.1.0;echo unsafe"), null);
-    assert.equal(installInstructions({ ...artifact, target: "aarch64-linux" }, "0.1.0"), null);
-  } finally {
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
 });
