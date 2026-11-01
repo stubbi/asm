@@ -55,7 +55,7 @@ An artifact has exactly these fields:
 
 | Field | Meaning |
 | --- | --- |
-| `target` | `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` |
+| `target` | `x86_64-linux`, `aarch64-linux`, `riscv64-linux`, or `aarch64-macos` |
 | `kind` | `source` or `executable` |
 | `sha256` | 64 lowercase hexadecimal characters |
 | `url` | Absolute HTTPS GitHub release-asset URL |
@@ -84,10 +84,10 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 
 ## Targets
 
-The registry can describe three Linux targets.
-ASM 0.3 has native CLIs for x86-64 and AArch64 Linux.
+The registry describes three Linux targets and Apple Silicon macOS.
+ASM 0.4 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
 Each CLI builds projects for its own host target.
-Either CLI can fetch artifacts for the other registry targets.
+Each CLI can fetch artifacts for other registry targets.
 The example README files give the commands for GNU cross assemblers and linkers.
 
 Target names do not yet encode every ISA extension, ABI revision, dialect, or linker option. A package must state these requirements in its documentation. An ELF header check verifies the architecture and basic segment bounds. It does not prove that the program will work on every machine with that architecture.
@@ -96,19 +96,30 @@ The AArch64 and RISC-V examples have been assembled, linked, and run under QEMU 
 That result is distinct from a test on physical hardware.
 A native RISC-V CLI, general cross-build support, library ABI selection, and transitive dependency resolution remain future work.
 
+macOS executables use thin arm64 Mach-O, the Apple ABI, PIE, and a non-executable stack.
+Native validation checks bounded commands, segment protections, entry points, deployment requirements, and the code signature.
+Linux executable publication rejects a macOS declaration; prepare macOS executables on the qualified Mac host.
+These format checks do not establish publisher identity or program behavior.
+
 ## Static layout
 
 ```text
 registry/
   packages/<owner>/<name>/<version>.json
   v1/index.tsv
+  v1/index-macos.tsv
   v1/index.json
   v1/downloads.json
 ```
 
-The default CLI endpoint is `https://asm.build/registry/v1/index.tsv`. The website uses `index.json` and `downloads.json` in the same directory. Both indexes are generated; do not edit them by hand.
+Linux uses `https://asm.build/registry/v1/index.tsv`. macOS uses `https://asm.build/registry/v1/index-macos.tsv`. The website uses `index.json` and `downloads.json`. These indexes are generated; do not edit them by hand.
 
 GitHub Pages serves the index and website. It does not accept uploads or run checks. The publication route uses repository review and CI. Artifact storage is separate from Pages. Capacity planning must follow [GitHub Pages' limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
+
+The primary `index.tsv` retains Linux rows for released 0.3 clients.
+`index-macos.tsv` includes the additional macOS target.
+The JSON index describes all published targets.
+Both native feeds use the same format below.
 
 ### Native index
 

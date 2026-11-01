@@ -1,9 +1,7 @@
 # Native macOS CLI qualification
 
-Version 0.3.0 remains a Linux-only release.
-Version 0.4.0 is the Apple Silicon macOS candidate.
-Do not use the current bootstrap command as a macOS installation instruction.
-A new signed release and checked catalog entry must precede macOS download support.
+Version 0.4.0 provides the independently qualified Apple Silicon macOS CLI.
+The checked catalog supplies its native executable and release-workflow provenance.
 Intel macOS is unsupported and has no native qualification job.
 
 ## Target contract
@@ -24,7 +22,7 @@ Apple reserves register x18.
 Calls must use aligned stacks and Apple's argument conventions, including variadic functions.
 A missing security operation must stop the command.
 
-## Experimental source build
+## Source build
 
 Use an Apple Silicon Mac with macOS 15 or later.
 Install Apple's Xcode Command Line Tools before building.
@@ -64,7 +62,7 @@ Every ACL allow entry is refused, including harmless owner-only grants.
 Normal macOS deny-only home ACLs remain supported.
 The canonical sticky temporary directory is `/private/tmp`, with a protected user-owned child.
 The `/tmp` symlink is not accepted as an installation-path ancestor.
-The [update contract](self-update.md) retains the current Linux boundary until macOS release qualification completes.
+The [update contract](self-update.md) defines the shared provenance policy and platform-specific installation boundaries.
 Neither a test of Linux behavior nor an agent review qualifies the Darwin implementation.
 
 ## Catalog compatibility
@@ -72,7 +70,7 @@ Neither a test of Linux behavior nor an agent review qualifies the Darwin implem
 Released 0.3.0 Linux clients reject unknown target rows before package or update selection.
 Adding macOS rows to their existing TSV feed would prevent those clients from selecting an upgrade.
 The primary `/registry/v1/index.tsv` feed therefore retains Linux targets.
-The macOS candidate uses `/registry/v1/index-macos.tsv`, which also includes the macOS target.
+The macOS CLI uses `/registry/v1/index-macos.tsv`, which also includes the macOS target.
 The JSON catalog and website continue to describe all published artifacts.
 Each feed retains exact artifact digests and the existing release-provenance policy.
 Neither feed has independently signed expiry or rollback protection.
@@ -136,3 +134,25 @@ Reviewed 2026-11-01:
 
 Darwin constants and structure layouts come from the selected Xcode Command Line Tools SDK headers.
 Retain the actual host, SDK, test results, and released digest with qualification evidence.
+
+## Published 0.4.0 evidence
+
+The [release workflow](https://github.com/stubbi/asm/actions/runs/41339727993) qualified and published source commit `1dbe731fbe19d1e6201afd662699382e4983655a`.
+The [immutable release](https://github.com/stubbi/asm/releases/tag/v0.4.0) includes the executable, source, checksums, metadata, and provenance bundle.
+
+| Item | Result |
+| --- | --- |
+| Native release host | arm64, macOS 15.8.2 |
+| Toolchain | Apple clang 17.0.0, SDK 15.5, Python 3.15.2 |
+| Native tests | 166 passed, zero skipped |
+| Clean builds | Two builds produced identical bytes |
+| macOS asset | `asm-0.4.0-aarch64-macos`, 245296 bytes |
+| SHA-256 | `6b349be8a43daf23d05c1cdae2a50caa38faec85d6ff41a7ed93cbdc5820ba1f` |
+| Code signature | Ad-hoc; `codesign --verify --strict` passed |
+| Publisher provenance | Downloaded payloads and metadata passed the required workflow, repository ID, source, and signer checks |
+| Local application check | The published command created, built, ran, tested, and cleaned a native project on macOS 15.6.1 |
+
+The program printed `Hello from asm!`.
+The generated bootstrap also installed the real attested macOS asset into a fresh protected home.
+Transport/verifier fixture tests remain distinct from these real release-verification checks.
+Developer ID signing and Apple notarization were not run.

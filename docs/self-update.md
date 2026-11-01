@@ -16,16 +16,14 @@ ASM does not start an update in the background.
 
 ## Supported installation
 
-Self-update supports the direct `$HOME/.local/bin/asm` file on Linux x86-64 and ARM64.
+Self-update supports the direct `$HOME/.local/bin/asm` file on Linux x86-64, Linux ARM64, and Apple Silicon macOS 15 or later.
 Use the package manager for an installation that it owns.
 Self-update does not run `sudo` or change `PATH`.
 
-This contract describes published version 0.3.0, which remains Linux-only.
-The [Apple Silicon macOS port](macos.md) requires native qualification and a new signed release before it becomes supported.
-Its proposed installation contract uses local APFS on macOS 15 or later.
-Its verifier path is `/opt/homebrew/bin/gh`, and its SHA-256 tool is `/usr/bin/shasum`.
-The required repository, workflow identity, source commit, and verification policy remain the same.
-An ad-hoc Mach-O signature does not replace release-workflow provenance, Developer ID signing, or notarization.
+Version 0.4.0 adds the independently qualified macOS host.
+The [macOS contract](macos.md) defines its ABI, APFS, ACL, and signing requirements.
+Publisher authentication uses verified GitHub release provenance.
+Developer ID signing and Apple notarization are not provided.
 
 The executable must be a regular file with one hard link.
 It must belong to the calling user.
@@ -38,13 +36,15 @@ No installation path component can be a symbolic link.
 Every directory from `/` through the installation path must belong to root or the calling user.
 These directories cannot allow group or other writes.
 The home, local, and bin directories must belong to the calling user.
-The only writable ancestor exception is exact root-owned `/tmp` with its sticky bit set.
+The writable ancestor exception is exact root-owned `/tmp` on Linux, or `/private/tmp` on macOS, with its sticky bit set.
 Its immediate child must belong to the calling user and deny group or other writes.
 The sticky bit protects that child from removal or renaming by another user.
 An arbitrary sticky directory does not qualify for this exception.
 ASM rejects an installation that does not meet these conditions.
 
-The supported local filesystems are ext4, XFS, Btrfs, tmpfs, OverlayFS, and F2FS.
+Linux supports ext4, XFS, Btrfs, tmpfs, OverlayFS, and F2FS.
+macOS requires local APFS with ownership enabled and empty or deny-only ACLs.
+All ACL allow entries are refused, including harmless owner-only grants.
 Other filesystems require a manual installation or a package manager.
 The command preserves the installed executable's permission bits.
 
@@ -52,11 +52,12 @@ The command preserves the installed executable's permission bits.
 
 The command uses fixed executable paths:
 
-| Tool | Path | Purpose |
-| --- | --- | --- |
-| curl | `/usr/bin/curl` | HTTPS downloads |
-| GNU sha256sum | `/usr/bin/sha256sum` | Artifact integrity |
-| GitHub CLI, version 2.93.0 or later | `/usr/bin/gh` | Sigstore attestation verification |
+| Tool | Linux path | macOS path | Purpose |
+| --- | --- | --- | --- |
+| curl | `/usr/bin/curl` | `/usr/bin/curl` | HTTPS downloads |
+| SHA-256 | `/usr/bin/sha256sum` | `/usr/bin/shasum` | Artifact integrity |
+| GitHub CLI, 2.93.0+ | `/usr/bin/gh` | `/opt/homebrew/bin/gh` | Attestation verification |
+| Code signature | ELF container checks | `/usr/bin/codesign` | Mach-O signature checks |
 
 Install GitHub CLI from its [official installation instructions](https://cli.github.com/).
 No GitHub login is required for this bundle-based verification route.
@@ -69,14 +70,14 @@ The package is fixed to `stubbi/asm`.
 The released Linux index is fixed to `https://asm.build/registry/v1/index.tsv`.
 No registry, local artifact, or installation path override is accepted.
 
-The macOS candidate uses the separate `https://asm.build/registry/v1/index-macos.tsv` feed.
+The macOS CLI uses the separate `https://asm.build/registry/v1/index-macos.tsv` feed.
 Released 0.3.0 Linux clients reject an unfamiliar target row before selecting a package or update.
 The primary feed therefore retains Linux targets so those clients can still select an upgrade.
 The macOS feed includes the new target; the JSON catalog continues to describe all published artifacts.
 Both feeds retain exact version, target, size, and digest bindings.
 This compatibility split does not authenticate either index or add freshness protection.
 
-ASM selects an executable for its own host: `x86_64-linux` or `aarch64-linux`.
+ASM selects an executable for its own host: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
 It does not install an executable for another architecture.
 Without an explicit version, it selects the highest numeric version in the index.
 An older version is refused.
@@ -102,7 +103,7 @@ Before replacement, ASM performs these checks:
 
 1. Check the index format and selected target.
 2. Check the candidate's exact size and SHA-256.
-3. Check the host ELF format and segment bounds.
+3. Check the host executable format and segment bounds. macOS also verifies the Mach-O signature.
 4. Verify the release manifest's attestation.
 5. Parse the complete manifest with bounded native JSON validation.
 6. Match the version, tag, repository, source commit, and selected asset.
@@ -137,7 +138,8 @@ A failed signal setup stops the update before the verifier runs.
 
 ## Replacement and recovery
 
-ASM opens the running executable through `/proc/self/exe`.
+Linux opens the running executable through `/proc/self/exe`.
+macOS uses kernel vnode information for the executing text region before accepting its open descriptor.
 It checks that the destination is the same device and inode.
 Before each verifier call, ASM checks every absolute path ancestor again.
 It requires the absolute installation directory and executable to match the held descriptors.

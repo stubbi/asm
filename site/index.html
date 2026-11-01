@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f5f0">
-    <meta name="description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux.">
+    <meta name="description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux and Apple Silicon macOS.">
     <meta property="og:type" content="website">
     <meta property="og:title" content="asm — Packages for assembly">
-    <meta property="og:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux.">
+    <meta property="og:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux and Apple Silicon macOS.">
     <meta property="og:url" content="https://asm.build/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
     <meta property="og:image:type" content="image/png">
@@ -16,7 +16,7 @@
     <meta property="og:image:alt" content="ASM — Packages for assembly. asm.build.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="asm — Packages for assembly">
-    <meta name="twitter:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux.">
+    <meta name="twitter:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux and Apple Silicon macOS.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
     <meta name="twitter:image:alt" content="ASM — Packages for assembly. asm.build.">
     <link rel="canonical" href="https://asm.build/">
@@ -47,24 +47,24 @@
           <p class="eyebrow"><span class="signal" aria-hidden="true"></span> AN OPEN SOURCE PROJECT</p>
           <h1 id="hero-heading">Packages for<br><span>assembly.</span></h1>
           <p class="hero-description">Build assembly projects with the target and interface spelled out.</p>
-          <p class="hero-detail">The CLI is written in assembly and runs on Linux. It checks locked package files before each build.</p>
+          <p class="hero-detail">The CLI is written in assembly and runs on Linux and Apple Silicon macOS 15 or later. It checks locked package files before each build.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#start">Install ASM <span aria-hidden="true">↗</span></a>
             <a class="text-link" href="#catalog">Browse packages <span aria-hidden="true">↓</span></a>
           </div>
-          <div class="release-note"><span class="small-tag">EARLY ALPHA</span><span>Native Linux CLI · exact package versions</span></div>
+          <div class="release-note"><span class="small-tag">EARLY ALPHA</span><span>Native Linux and macOS CLI · exact package versions</span></div>
         </div>
 
         <div class="hero-visual">
-          <div class="visual-coordinate">Linux / GNU assembler</div>
+          <div class="visual-coordinate">Native host / assembly</div>
           <section class="package-preview workflow-preview" aria-labelledby="preview-heading">
             <div class="preview-topline"><h2 id="preview-heading">YOUR FIRST PROJECT</h2><span class="preview-marker">01</span></div>
             <div class="workflow-step"><span class="workflow-step-number">01</span><div><p>Create a project</p><code>asm new hello</code></div></div>
             <div class="workflow-step"><span class="workflow-step-number">02</span><div><p>Build the program</p><code>cd hello<br>asm build</code></div></div>
             <div class="workflow-step"><span class="workflow-step-number">03</span><div><p>Run it</p><code>asm run</code><samp>Hello from asm!</samp></div></div>
-            <div class="preview-foot"><span class="example-dot" aria-hidden="true"></span>Install ASM and GNU binutils before you start.</div>
+            <div class="preview-foot"><span class="example-dot" aria-hidden="true"></span>Install ASM and native build tools before you start.</div>
           </section>
-          <div class="visual-caption">Read the example source: <a href="https://github.com/stubbi/asm/tree/main/examples/hello">x86-64 <span aria-hidden="true">↗</span></a> · <a href="https://github.com/stubbi/asm/tree/main/examples/hello-aarch64">ARM64 <span aria-hidden="true">↗</span></a></div>
+          <div class="visual-caption">Read the example source: <a href="https://github.com/stubbi/asm/tree/main/examples/hello">Linux x86-64 <span aria-hidden="true">↗</span></a> · <a href="https://github.com/stubbi/asm/tree/main/examples/hello-aarch64">Linux ARM64 <span aria-hidden="true">↗</span></a></div>
         </div>
       </section>
 
@@ -80,8 +80,8 @@
         <div class="section-intro">
           <p class="eyebrow">GET STARTED</p>
           <h2 id="start-heading">Install ASM.</h2>
-          <p>The installer selects a published executable for your Linux host. Install it for your user account, then run the first-project commands above.</p>
-          <p>Version 0.3.0 supports Linux x86-64 and ARM64. <a href="https://github.com/stubbi/asm/blob/main/docs/macos.md">Apple Silicon macOS qualification</a> is in progress. Intel macOS is unsupported.</p>
+          <p>The installer selects a published executable for your operating system and CPU. Install it for your user account, then run the first-project commands above.</p>
+          <p>Version 0.4.0 supports Linux x86-64, Linux ARM64, and <a href="https://github.com/stubbi/asm/blob/main/docs/macos.md">Apple Silicon macOS 15 or later</a>. Intel macOS is unsupported.</p>
         </div>
         <div class="start-grid">
           <div>
@@ -90,10 +90,10 @@
             <!-- ASM_BOOTSTRAP_END -->
             <details class="source-fallback" open>
               <summary>Build from source</summary>
-              <p>Install Git, GNU Make, and GNU binutils. These commands build and install ASM for your user account.</p>
+              <p>Install Git, Make, and Python 3.11 or later. Linux needs GNU binutils; macOS needs Xcode Command Line Tools. These commands install ASM for your user account.</p>
               <div class="terminal">
             <div class="terminal-header"><div class="terminal-label"><span class="terminal-prompt" aria-hidden="true">&gt;_</span> BUILD FROM SOURCE</div><button class="copy-button" type="button" data-copy="build-commands" aria-label="Copy source build commands">Copy <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M5 1H1v8h4M5 4h7v8H5V4Z" stroke="currentColor"/></svg></button></div>
-            <pre><code id="build-commands"><span class="code-comment"># Linux x86_64 or ARM64 · Git, Make, and GNU binutils</span>
+            <pre><code id="build-commands"><span class="code-comment"># Linux or Apple Silicon macOS · native build tools</span>
 git clone https://github.com/stubbi/asm.git &amp;&amp;
 cd asm &amp;&amp;
 make &amp;&amp;
@@ -116,7 +116,7 @@ asm version</code></pre>
             </ul>
           </aside>
         </div>
-        <p class="section-footnote">Projects need GNU binutils. Registry commands need /usr/bin/curl and /usr/bin/sha256sum; source dependencies also need /usr/bin/gzip.</p>
+        <p class="section-footnote">Linux projects need GNU binutils. macOS projects need Xcode Command Line Tools. Registry commands use curl, SHA-256 tools, and gzip from the host.</p>
         <a class="text-link" href="https://github.com/stubbi/asm#quick-start">Read the installation guide <span aria-hidden="true">↗</span></a>
       </section>
 

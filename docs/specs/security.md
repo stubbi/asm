@@ -6,7 +6,7 @@ ASM distributes executable code. A package can be correctly signed, build succes
 
 ## Current implementation
 
-The registry tools validate metadata, artifact size, and SHA-256. They compare immutable history when a baseline is supplied. They also check source archives and ELF architecture and segment bounds. Source packaging can read a pinned Git commit.
+The registry tools validate metadata, artifact size, and SHA-256. They compare immutable history when a baseline is supplied. They also check source archives and target-specific executable containers and segment bounds. Source packaging can read a pinned Git commit.
 
 The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
 
@@ -64,7 +64,7 @@ Never silently downgrade verification after an unavailable service, expired meta
 
 ## Bootstrap and manual self-update
 
-The bootstrap installer installs the CLI for Linux x86-64 or ARM64 when the checked release supplies that executable. It detects the host locally with `uname`. Each target has a separate fixed URL, size, and digest. An unsupported host fails before downloads or file changes. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
+The bootstrap installer installs the CLI for Linux x86-64, Linux ARM64, or Apple Silicon macOS 15+ when the checked release supplies that executable. It detects the host locally with `uname`. Each target has a separate fixed URL, size, and digest. An unsupported host fails before downloads or file changes. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
 
 The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy.
 
@@ -82,7 +82,7 @@ The site offers the bootstrap only for checked CLI releases from 0.2.0 onward. I
 
 The native updater also downloads and verifies `release.json`, with the same size limit. Its bounded assembly parser rejects malformed JSON and duplicate keys. The signed manifest must match the version, tag, repository, source commit, and selected executable's name, size, and digest. Both the manifest and executable must satisfy the same provenance policy.
 
-Both installation routes check the byte size and SHA-256 digest before exposing the file. The site checks the executable format before it generates the bootstrap script. The native updater also checks the downloaded ELF format and segment bounds. Bootstrap finalization refuses an existing different destination. Self-update checks the running executable's device and inode before staging and again before replacement. It uses a private stage and an advisory directory lock. It syncs the candidate before the final atomic rename. The candidate is not executed during installation or updating.
+Both installation routes check the byte size and SHA-256 digest before exposing the file. The site checks the executable format before it generates the bootstrap script. The native updater also checks the downloaded ELF or Mach-O format and segment bounds. macOS also verifies the code signature and rejects ACL allow entries or ownership-disabled APFS. Bootstrap finalization refuses an existing different destination. Self-update checks the running executable's device and inode before staging and again before replacement. It uses a private stage and an advisory directory lock. It syncs the candidate before the final atomic rename. The candidate is not executed during installation or updating.
 
 The bootstrap accepts an existing file only if its ownership, link count, permissions, size, and digest match the installation contract.
 This no-op creates no temporary files and does not download files or run the provenance verifier.

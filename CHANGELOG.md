@@ -1,6 +1,6 @@
 # Change log
 
-## 0.4.0 candidate
+## 0.4.0
 
 - Add an Apple Silicon macOS 15 CLI using native assembly, Mach-O, and libSystem adapters.
 - Qualify project, registry, archive, dependency, publication, installer, and updater behavior on native macOS.
@@ -10,7 +10,7 @@
 - Require native final-byte qualification and exact-commit artifact transfer before release provenance signing.
 - Keep Intel macOS unsupported. Developer ID signing and notarization are not provided.
 
-See the [candidate release notes](docs/releases/0.4.0.md) and [qualification contract](docs/macos.md).
+See the [release notes](docs/releases/0.4.0.md) and [qualification contract](docs/macos.md).
 
 ## 0.3.0
 
