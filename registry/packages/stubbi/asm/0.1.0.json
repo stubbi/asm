@@ -1,0 +1,29 @@
+{
+  "artifacts": [
+    {
+      "bytes": 67376,
+      "kind": "executable",
+      "sha256": "253afb8c1bf7aee128f978e60740221f8a9460e570bdbeaad44e1b1deefc3498",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.1.0/asm-0.1.0-x86_64-linux"
+    },
+    {
+      "bytes": 189511,
+      "kind": "source",
+      "sha256": "af4ecf7df6ec5a9f74c1a14404c90a314106f0bb8b9c8c8d12b05633026a892f",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.1.0/asm-0.1.0-source.tar.gz"
+    }
+  ],
+  "license": "MIT",
+  "name": "stubbi/asm",
+  "schema": 1,
+  "source": {
+    "commit": "72b6b4764780272c48dc421ef2008a79e175a299",
+    "path": ".",
+    "repository": "https://github.com/stubbi/asm"
+  },
+  "summary": "A native assembly CLI for assembly projects and package records.",
+  "version": "0.1.0",
+  "yanked": false
+}
