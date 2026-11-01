@@ -88,10 +88,7 @@ class ReleaseTests(unittest.TestCase):
         cls.base = Path(cls.temporary.name)
         cls.repo = cls.base / "repo"
         cls.repo.mkdir()
-        (cls.repo / "cli").mkdir()
-        for path in (ROOT / "cli").glob("*.s"):
-            shutil.copyfile(path, cls.repo / "cli" / path.name)
-        shutil.copyfile(ROOT / "cli/commands.json", cls.repo / "cli/commands.json")
+        shutil.copytree(ROOT / "cli", cls.repo / "cli")
         cls.version = json.loads((cls.repo / "cli/commands.json").read_text())["version"]
         shutil.copytree(ROOT / "examples/hello", cls.repo / "examples/hello", ignore=shutil.ignore_patterns("build"))
         if (ROOT / "examples/math").is_dir():
@@ -107,7 +104,7 @@ class ReleaseTests(unittest.TestCase):
         if (ROOT / "LICENSES").is_dir():
             shutil.copytree(ROOT / "LICENSES", cls.repo / "LICENSES")
         (cls.repo / "asm.toml").write_text(f'[package]\nname = "asm"\nversion = "{cls.version}"\n\n[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n')
-        (cls.repo / "Makefile").write_text('build/asm: cli/asm.s cli/registry.s\n\tmkdir -p build\n\t$(AS) --64 --fatal-warnings -o build/asm.o cli/asm.s\n\t$(LD) -z noexecstack --build-id=none -o build/asm build/asm.o\n')
+        shutil.copyfile(ROOT / "Makefile", cls.repo / "Makefile")
         git(cls.repo, "init", "-q")
         git(cls.repo, "config", "user.name", "Release test fixture")
         git(cls.repo, "config", "user.email", "fixture@example.invalid")
@@ -155,6 +152,11 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.metadata["source_commit"], self.commit)
         self.assertEqual(self.metadata["builds"]["hello"]["x86_64-linux"]["runtime"]["status"], "pass")
         self.assertEqual(self.metadata["builds"]["asm"]["version_check"]["status"], "pass")
+        self.assertEqual(self.metadata["builds"]["asm_targets"]["aarch64-linux"]["version_check"]["status"], "pass")
+        self.assertEqual(self.metadata["cli_hosts"], ["x86_64-linux", "aarch64-linux"])
+        cli = next(record for record in self.records if record["name"] == "stubbi/asm")
+        self.assertEqual({item["target"] for item in cli["artifacts"] if item["kind"] == "executable"},
+                         {"x86_64-linux", "aarch64-linux"})
         self.assertEqual(registry.validate_local_artifacts(self.records, self.first),
                          {(item["name"], item["version"]) for item in self.records})
 
@@ -169,6 +171,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(source["LICENSES/MIT.txt"], (ROOT / "LICENSES/MIT.txt").read_bytes())
         self.assertEqual(source["LICENSING.md"], (ROOT / "LICENSING.md").read_bytes())
         self.assertEqual(source["cli/templates.s"], (ROOT / "cli/templates.s").read_bytes())
+        self.assertEqual(source["cli/aarch64/templates.s"], (ROOT / "cli/aarch64/templates.s").read_bytes())
 
     def test_version_mismatch_leaves_no_output(self):
         output = self.case_dir / "wrong-version"
@@ -205,7 +208,7 @@ class ReleaseTests(unittest.TestCase):
     def test_requested_cross_targets_are_built_and_run(self):
         output = self.case_dir / "cross-release"
         result = release.build_release(self.repo, output, hello_targets=list(release.HELLO_TARGETS))
-        self.assertEqual(result["cli_hosts"], ["x86_64-linux"])
+        self.assertEqual(result["cli_hosts"], ["x86_64-linux", "aarch64-linux"])
         for target in release.HELLO_TARGETS:
             self.assertEqual(result["builds"]["hello"][target]["runtime"]["status"], "pass")
         records = registry.read_records(output / "registry")
