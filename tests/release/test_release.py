@@ -125,8 +125,11 @@ class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.case_dir = Path(tempfile.mkdtemp(prefix="case-", dir=self.base))
 
-    def artifact_reader(self, url, limit, hosts, *, expected_size):
+    def artifact_reader(self, url, limit, hosts, *, expected_size=None):
         filename = registry.artifact_url(url)[2]
+        if filename == "release-attestation.sigstore.json":
+            # The site checks bundle availability and shape, not signatures.
+            return b'{"dsseEnvelope": {"payload": "unsigned test fixture"}}'
         return (self.first / filename).read_bytes()
 
     def test_two_releases_match_and_ignore_uncommitted_source(self):
@@ -217,6 +220,8 @@ class ReleaseTests(unittest.TestCase):
         result = build_site.build_site(self.repo, self.first / "registry", output,
                                       artifact_reader=forbidden, metrics_fetcher=forbidden)
         self.assertEqual(result["artifact_checked_releases"], 0)
+        self.assertIsNone(result["bootstrap_version"])
+        self.assertFalse((output / "install.sh").exists())
         index = json.loads((output / "registry/v1/index.json").read_text())
         for package in index["packages"]:
             self.assertTrue(all(version["evidence"]["artifacts"] == "not-run" for version in package["versions"]))
@@ -230,6 +235,8 @@ class ReleaseTests(unittest.TestCase):
         result = build_site.build_site(self.repo, self.first / "registry", output,
                                       verify=True, artifact_reader=self.artifact_reader)
         self.assertEqual(result["artifact_checked_releases"], len(self.records))
+        self.assertEqual(result["bootstrap_version"], self.version)
+        self.assertTrue((output / "install.sh").is_file())
         index = json.loads((output / "registry/v1/index.json").read_text())
         self.assertTrue(all(v["evidence"]["artifacts"] == "validated" for p in index["packages"] for v in p["versions"]))
         failed = self.case_dir / "failed-site"
@@ -237,6 +244,20 @@ class ReleaseTests(unittest.TestCase):
             build_site.build_site(self.repo, self.first / "registry", failed, verify=True,
                                   artifact_reader=lambda *args, **kwargs: b"tampered")
         self.assertFalse(failed.exists())
+
+    def test_missing_release_bundle_preserves_the_unpublished_site(self):
+        requests = []
+        def missing_bundle(url, limit, hosts, *, expected_size=None):
+            requests.append(url)
+            if url.endswith("/release-attestation.sigstore.json"):
+                raise URLError("release bundle does not exist")
+            return self.artifact_reader(url, limit, hosts, expected_size=expected_size)
+        output = self.case_dir / "missing-bundle-site"
+        with self.assertRaises(URLError):
+            build_site.build_site(self.repo, self.first / "registry", output,
+                                  verify=True, artifact_reader=missing_bundle)
+        self.assertFalse(output.exists())
+        self.assertTrue(requests[-1].endswith("/release-attestation.sigstore.json"))
 
     def test_metrics_failure_does_not_become_success_or_zero(self):
         def unavailable(url):
