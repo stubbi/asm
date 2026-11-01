@@ -1,0 +1,45 @@
+name: Propose a feature
+description: Describe a user problem and a change that would solve it.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the task you need to complete.
+        Use the [security policy](https://github.com/stubbi/asm/security/policy) for a vulnerability report.
+        Remove secrets and private data from examples.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Explain what you cannot do with the current behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the result that a user should see.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How to check the result
+      description: Give an example that would show the change works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Describe any existing command, workaround, or other approach you considered.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Targets and compatibility
+      description: Identify relevant architectures, operating systems, interfaces, or existing behavior that the change could affect.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting evidence
+      description: Link relevant source, measurements, or specifications, if available.

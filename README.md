@@ -234,6 +234,8 @@ Read [the security design](docs/specs/security.md) for the required gates and cu
 
 Read [AGENTS.md](AGENTS.md), [design.md](design.md), and [the writing guide](docs/writing.md).
 The same contribution rules apply to people and agents.
+Follow the [code of conduct](CODE_OF_CONDUCT.md) in project discussions.
+The [maintenance guide](docs/maintaining.md) defines review, release, and incident procedures.
 
 To run all local checks, install Python 3.11 or later and Node.js 18 or later.
 Then run:

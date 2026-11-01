@@ -19,3 +19,4 @@ The maintainers will record a defined policy before a stable release.
 
 Read [the security model](docs/specs/security.md) for the implemented checks and planned controls.
 A package's checksum, signature, test result, or proof does not establish that the whole package is safe.
+The [maintenance guide](docs/maintaining.md#respond-to-an-incident) describes incident response and recovery.

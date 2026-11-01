@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/stubbi/asm/security/policy
+    about: Use the private reporting route in the security policy. Keep vulnerability details out of public issues.
