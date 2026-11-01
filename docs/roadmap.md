@@ -4,6 +4,16 @@ ASM is a project tool and package registry for assembly. The CLI is written in a
 
 These are delivery gates. A gate closes when its behavior is implemented, tested, and available through the documented route.
 
+## Global distribution
+
+ASM aims to support software distribution at global scope, with assembly as its current package focus.
+Substantial discovery traffic is a core requirement.
+Known-package installation must remain independent of search availability.
+
+The [architecture proposal](architecture.md) defines authenticated delivery, authoritative publication, and a rebuildable search projection.
+Its [acceptance gates](architecture-gates.md) separate the deployed static alpha from unpublished server experiments and proposed production behavior.
+The proposed latency and workload targets are not measured capacity.
+
 ## Current release
 
 The code now contains:
