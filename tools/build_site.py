@@ -110,7 +110,10 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
         rows.append(f'<li><a href="{escape(name, quote=True)}">{escape(name)}</a><code>{hashlib.sha256(data).hexdigest()}</code></li>')
     page = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CLI source reference — asm</title><link rel="stylesheet" href="../styles.css"></head>
+<title>CLI source reference — asm</title>
+<meta name="description" content="Read the ASM CLI source for Linux x86-64 and ARM64. Inspect the source commit and SHA-256 file digests.">
+<link rel="canonical" href="https://asm.build/reference/">
+<link rel="stylesheet" href="../styles.css"></head>
 <body class="reference-page"><main class="container section"><a href="../">← asm.build</a>
 <p class="eyebrow">SOURCE REFERENCE</p><h1>Read the CLI.</h1>
 <p>These files come from commit <code>{commit}</code>.</p>

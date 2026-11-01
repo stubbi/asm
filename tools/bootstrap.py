@@ -115,7 +115,7 @@ def render_installer(release: dict) -> bytes:
 def installer_markup(release: dict) -> str:
     validate_release(release)
     version = escape(release["version"])
-    hosts = "Linux " + " and ".join(TARGETS[artifact["target"]][1] for artifact in release["artifacts"])
+    hosts = " and ".join("Linux " + TARGETS[artifact["target"]][1] for artifact in release["artifacts"])
     commands = INSTALL_COMMAND
     download_commands = '''asm_installer=$(mktemp) &&
 curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
@@ -127,7 +127,7 @@ cat "$asm_installer"'''
   sh "$installer"
 )'''
     return f'''<div class="bootstrap-panel">
-<p class="section-footnote">Requires {hosts}. The installer selects the matching build on your machine. It uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
+<p class="section-footnote">The installer supports {hosts}. It selects the matching build on your machine. It uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation command">Copy</button></div>
 <pre><code id="bootstrap-commands">{escape(commands)}</code></pre>
