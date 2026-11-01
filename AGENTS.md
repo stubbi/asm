@@ -1,5 +1,26 @@
 # Work on ASM
 
+## Mandatory brand context
+
+Before every task, read [the brand foundation](docs/brand/foundation.md) and [the messaging guide](docs/brand/messaging.md) in full.
+Keep both documents in context throughout the work.
+Re-read them after context loss, a handoff, or a change to either document.
+Pass their paths and the relevant principles to every delegated agent.
+
+Derive all work from this foundation: product choices, architecture, code, interfaces, documentation, messages, and priorities.
+Use the messaging guide to express the same story at the depth that each audience needs.
+For each meaningful change, identify the user outcome, relevant brand principle, and evidence needed to support its claims.
+Record material trade-offs in the pull request.
+Do not add marketing language to technical flows where it does not help the user.
+
+The brand foundation governs intent; specifications, implementation, and evidence establish technical behavior.
+Preserve the security, architecture, design, writing, testing, and release requirements below.
+Never weaken a check or invent a capability to make the brand story appear true.
+If evidence or an explicit user direction conflicts with the foundation, state the conflict and update the affected documents within the authorized scope.
+Keep downstream messaging consistent when the foundation changes.
+
+## Project purpose
+
 ASM helps people build, share, and check assembly software.
 The user must be able to trust the result and understand its limits.
 ASM aims to support software distribution at global scope, with assembly as its current package focus.
