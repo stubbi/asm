@@ -29,7 +29,8 @@ The code now contains:
 - Download counts from GitHub release assets, with unavailable values marked explicitly.
 - GNU assembly examples for x86-64, AArch64, and RISC-V Linux.
 
-The AArch64 and RISC-V examples use cross tools and QEMU user-mode tests. Native CLI ports for those hosts remain future work.
+The release checks build the AArch64 and RISC-V examples with cross tools and run them under QEMU user-mode emulation.
+A native RISC-V CLI remains future work.
 
 **Release gate:** build from a clean checkout. Run the documented package workflow. Verify published artifacts through the public registry. Reject changed artifacts and malformed records.
 

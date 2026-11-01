@@ -84,11 +84,17 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 
 ## Targets
 
-The registry can describe three Linux targets. The current CLI host and native build target are x86-64 Linux. It can fetch artifacts for the other targets. Their examples use GNU cross assemblers and linkers; their README files give the commands.
+The registry can describe three Linux targets.
+ASM 0.3 has native CLIs for x86-64 and AArch64 Linux.
+Each CLI builds projects for its own host target.
+Either CLI can fetch artifacts for the other registry targets.
+The example README files give the commands for GNU cross assemblers and linkers.
 
 Target names do not yet encode every ISA extension, ABI revision, dialect, or linker option. A package must state these requirements in its documentation. An ELF header check verifies the architecture and basic segment bounds. It does not prove that the program will work on every machine with that architecture.
 
-The AArch64 and RISC-V examples have been assembled, linked, and run under QEMU user-mode emulation. That result is distinct from a test on physical hardware. Native CLI ports, general cross-build support, library ABI selection, and dependency resolution remain separate work.
+The AArch64 and RISC-V examples have been assembled, linked, and run under QEMU user-mode emulation.
+That result is distinct from a test on physical hardware.
+A native RISC-V CLI, general cross-build support, library ABI selection, and transitive dependency resolution remain future work.
 
 ## Static layout
 
@@ -180,13 +186,18 @@ asm versions stubbi/hello
 asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source --output hello.tar.gz
 ```
 
-Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind. The defaults are `x86_64-linux` and `source`. Use exact versions in reproducible instructions.
+Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind.
+The default target is the CLI host: `x86_64-linux` or `aarch64-linux`.
+The default kind is `source`.
+Use exact versions in reproducible instructions.
 
 Fetch checks byte size and SHA-256 before it exposes the output. It does not overwrite an existing destination, set an execute bit, extract, install, or run package contents. A download failure or hash mismatch is an error. Source review, extraction, and building are separate user actions. The digest is checked against the HTTPS index. V1 has no separate signing key for that index. A compromised registry origin can replace both metadata and artifacts.
 
 `--index PATH` uses a local index. `--registry HTTPS_URL` selects another index URL. `--artifact PATH` lets fetch check a local artifact for offline tests. The same metadata and digest rules apply.
 
 ## Direct dependencies and locks
+
+This example requires Linux x86-64 because `stubbi/math` uses the System V AMD64 ABI.
 
 Use an exact version to add a source dependency:
 
@@ -196,7 +207,9 @@ asm lock
 asm build --locked
 ```
 
-Add accepts source packages for the current build target, `x86_64-linux`. It checks the artifact before extraction and writes `asm.lock` after extraction succeeds. It runs no package code.
+Add accepts source packages for the CLI's native build target: `x86_64-linux` or `aarch64-linux`.
+It checks the artifact before extraction and writes `asm.lock` after extraction succeeds.
+It runs no package code.
 
 The lock starts with `# asm-lock-v1` and a `# registry ORIGIN` line. Its remaining rows use the eight native-index fields. One row identifies each direct dependency. A lock uses one registry origin. Local test indexes use the origin `local`.
 
