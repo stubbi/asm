@@ -8,7 +8,7 @@ const { createHash } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions } = require("../site/app.js");
+const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, installInstructions } = require("../site/app.js");
 
 function record(name, target) {
   return { name, summary: "A source package", latest: "0.1.0", targets: [target], versions: [{ version: "0.1.0", artifacts: [] }] };
@@ -50,6 +50,22 @@ test("packages remain visible when every release has been yanked", () => {
   pkg.latest = null;
   pkg.versions[0].yanked = true;
   assert.equal(normalizeIndex({ schema: 1, packages: [pkg] }).length, 1);
+});
+
+test("each release displays its own license without borrowing the current package license", () => {
+  const pkg = record("stubbi/asm", "x86_64-linux");
+  pkg.license = "AGPL-3.0-or-later";
+  pkg.latest = "0.2.0";
+  pkg.versions = [
+    { version: "0.1.0", license: "MIT", artifacts: [] },
+    { version: "0.2.0", license: "AGPL-3.0-or-later", artifacts: [] },
+    { version: "0.0.1", artifacts: [] }
+  ];
+  const versions = normalizeIndex({ schema: 1, packages: [pkg] })[0].versions;
+  assert.deepEqual(versions.map(versionLicenseText), ["License: MIT", "License: AGPL-3.0-or-later", "License: unavailable"]);
+  for (const license of [null, {}, "", "MIT\nAGPL", "<script>", "a".repeat(101)]) {
+    assert.equal(versionLicenseText({ license }), "License: unavailable");
+  }
 });
 
 test("search combines all terms with an exact target filter", () => {
