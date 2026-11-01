@@ -310,6 +310,89 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             registry.check_immutable([], [old])
 
+    @unittest.skipUnless(shutil.which("git"), "Git is needed for the committed-baseline test")
+    def test_git_baseline_marker_preserves_immutable_release_history(self):
+        def git(*arguments):
+            return subprocess.check_output(["git", "-C", str(self.root), *arguments], stderr=subprocess.DEVNULL)
+
+        def commit():
+            git("add", ".")
+            git("-c", "user.name=Registry Test", "-c", "user.email=registry-test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+            return git("rev-parse", "HEAD").decode().strip()
+
+        git("init", "-q")
+        catalog = self.root / "registry"
+        marker = catalog / "packages" / ".gitkeep"
+        marker.parent.mkdir(parents=True)
+        marker.write_bytes(b"")
+        empty_commit = commit()
+        self.assertEqual(registry.baseline_from_git(self.root, empty_commit), [])
+
+        old, _ = release()
+        self.save_record(catalog, old)
+        self.assertEqual(registry.main(["validate", "--repo", str(self.root),
+            "--registry", str(catalog), "--base-ref", empty_commit]), 0)
+        published_commit = commit()
+        baseline = registry.baseline_from_git(self.root, published_commit)
+        self.assertEqual(baseline, [old])
+
+        # Read the marker from the recorded Git object, not the working tree.
+        marker.write_bytes(b"uncommitted marker change")
+        self.assertEqual(registry.baseline_from_git(self.root, published_commit), [old])
+
+        yanked = copy.deepcopy(old)
+        yanked.update(yanked=True, yank_reason="Broken calling convention.")
+        registry.check_immutable([yanked], baseline)
+        changed = copy.deepcopy(old)
+        changed["artifacts"][0]["sha256"] = "b" * 64
+        with self.assertRaises(registry.RegistryError):
+            registry.check_immutable([changed], baseline)
+        with self.assertRaises(registry.RegistryError):
+            registry.check_immutable([], baseline)
+
+    @unittest.skipUnless(shutil.which("git"), "Git is needed for the committed-baseline test")
+    def test_git_baseline_rejects_other_markers_and_metadata_modes(self):
+        for kind in ("nonempty", "symlink", "nested", "other-name", "executable", "executable-json"):
+            with self.subTest(kind=kind):
+                repository = self.root / kind
+                repository.mkdir()
+
+                def git(*arguments):
+                    return subprocess.check_output(["git", "-C", str(repository), *arguments],
+                                                   stderr=subprocess.DEVNULL)
+
+                git("init", "-q")
+                catalog = repository / "registry"
+                marker = catalog / "packages" / ".gitkeep"
+                marker.parent.mkdir(parents=True)
+                if kind == "nonempty":
+                    marker.write_bytes(b"not empty")
+                elif kind == "symlink":
+                    (repository / "empty").write_bytes(b"")
+                    marker.symlink_to("../../empty")
+                elif kind == "nested":
+                    marker.parent.joinpath("owner").mkdir()
+                    marker.parent.joinpath("owner", ".gitkeep").write_bytes(b"")
+                elif kind == "other-name":
+                    marker.with_name(".keep").write_bytes(b"")
+                else:
+                    marker.write_bytes(b"")
+                git("add", ".")
+                if kind == "executable":
+                    git("update-index", "--chmod=+x", "registry/packages/.gitkeep")
+                elif kind == "executable-json":
+                    old, _ = release()
+                    record_path = self.save_record(catalog, old)
+                    relative = record_path.relative_to(repository).as_posix()
+                    git("add", relative)
+                    git("update-index", "--chmod=+x", relative)
+                git("-c", "user.name=Registry Test", "-c", "user.email=registry-test@example.invalid",
+                    "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+                baseline = git("rev-parse", "HEAD").decode().strip()
+                with self.assertRaises(registry.RegistryError):
+                    registry.baseline_from_git(repository, baseline)
+
     def test_indexes_use_numeric_versions_and_keep_yank_history(self):
         first, _ = release("0.2.0")
         newest, _ = release("0.10.0")

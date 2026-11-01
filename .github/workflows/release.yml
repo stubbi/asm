@@ -54,6 +54,27 @@ jobs:
             dist/math-*
             dist/SHA256SUMS
             dist/release.json
+      - name: Verify release attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s failglob
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          for ASM_ASSET in dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json; do
+            test -f "$ASM_ASSET"
+            test ! -L "$ASM_ASSET"
+            gh attestation verify "$ASM_ASSET" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA" \
+              --signer-digest "$GITHUB_WORKFLOW_SHA" \
+              --deny-self-hosted-runners \
+              --predicate-type https://slsa.dev/provenance/v1
+          done
       - name: Publish a new immutable version
         env:
           GH_TOKEN: ${{ github.token }}

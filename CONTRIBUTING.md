@@ -1,6 +1,7 @@
 # Contribute to ASM
 
 Read [the project purpose](docs/why-asm.md) and [AGENTS.md](AGENTS.md).
+Follow the [code of conduct](CODE_OF_CONDUCT.md) in project spaces.
 Use [design.md](design.md) for interface changes.
 Use [the writing guide](docs/writing.md) for documentation and messages.
 
@@ -19,6 +20,7 @@ The release workflow installs those tools from Ubuntu packages.
 
 ## Make a change
 
+Use the [feature proposal form](https://github.com/stubbi/asm/issues/new?template=feature.yml) for a substantial behavior change.
 Describe the user problem first.
 Keep the change focused on that problem.
 Add a behavioral test when the change affects a meaningful contract or failure path.
@@ -53,3 +55,4 @@ Check the failure paths and file effects.
 Compare claims with the current source and evidence.
 Review a specification change separately from a proof or implementation that depends on it.
 Do not approve a weaker check merely because it passes.
+Use the [maintenance guide](docs/maintaining.md) for repository controls, releases, and incident recovery.

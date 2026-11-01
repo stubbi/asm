@@ -52,6 +52,13 @@
     });
   }
 
+  function packageStatus(total, shown) {
+    if (total === 0) return "The registry has no published packages yet. You can inspect the source examples below.";
+    if (shown === 0) return "No packages match. Try another name or select All targets.";
+    const noun = shown === 1 ? "package" : "packages";
+    return `${shown} ${noun} shown. Open a record to inspect its releases.`;
+  }
+
   function formatBytes(bytes) {
     if (!Number.isSafeInteger(bytes) || bytes < 0) return "Size unavailable";
     if (bytes < 1024) return `${bytes} bytes`;
@@ -94,7 +101,7 @@
 
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions };
+    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions };
   }
   if (typeof document === "undefined") return;
 
@@ -113,22 +120,23 @@
 
   document.addEventListener("click", async (event) => {
       const button = event.target.closest?.("[data-copy]");
-      if (!button || button.disabled) return;
+      if (!button || button.getAttribute("aria-disabled") === "true") return;
       const code = document.getElementById(button.dataset.copy);
       const status = document.getElementById("copy-status");
       if (!code) return;
+      button.setAttribute("aria-disabled", "true");
       try {
         if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
         await navigator.clipboard.writeText(code.textContent.trim());
         const previousContent = Array.from(button.childNodes).map((node) => node.cloneNode(true));
         button.textContent = "Copied";
         status.textContent = "Commands copied to clipboard.";
-        button.disabled = true;
         window.setTimeout(() => {
           button.replaceChildren(...previousContent);
-          button.disabled = false;
+          button.removeAttribute("aria-disabled");
         }, 1800);
       } catch {
+        button.removeAttribute("aria-disabled");
         const selection = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(code);
@@ -235,8 +243,7 @@
   function renderPackages() {
     const filtered = findPackages(packages, search.value, targetSelect.value);
     list.replaceChildren(...filtered.map(renderPackage));
-    const noun = filtered.length === 1 ? "package" : "packages";
-    status.textContent = filtered.length ? `${filtered.length} ${noun} shown. Open a record to inspect its releases.` : "No packages match. Try another name or select All targets.";
+    status.textContent = packageStatus(packages.length, filtered.length);
   }
 
   function renderCliDownload() {

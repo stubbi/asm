@@ -14,7 +14,7 @@ We expect AI to make useful assembly cheaper to write and maintain.
 If that happens, assembly needs an ecosystem that makes the results easy to use.
 Every project should not need to invent its own package format, target selection, and release checks.
 
-Our working assumptions come from LeAm:
+Our working assumptions:
 
 1. **User experience and total cost matter.** Software must work reliably, respond quickly, and use resources well. Development and maintenance count too.
 2. **AI can change the economics of assembly.** We expect more useful implementations for more machines. We will measure the effort required to make them dependable.
@@ -29,6 +29,18 @@ ASM must remain useful when a compiler already produces the best implementation 
 
 The product follows from those assumptions: one workflow for assembly projects, with explicit targets and inspectable evidence.
 Read [the full motivation](docs/why-asm.md).
+
+### An early measured example
+
+Our [asmwc experiment](docs/evidence.md) compares complete assembly and Rust implementations of a word counter.
+On one Apple M3, default counting took 15.234 ms in assembly and 68.468 ms in Rust.
+Those are warm-cache medians for a 128 MiB text file, with 24 samples per implementation.
+The comparison includes differences in algorithms, input scheduling, and startup.
+
+We checked the published record digests and recomputed the selected medians.
+We did not reproduce the macOS experiment during the ASM build.
+The [evidence record](docs/evidence.md) includes the baseline, raw samples, slower cases, and limits.
+ASM needs to make this kind of evidence available beside the exact target artifact.
 
 ## Quick start
 
@@ -222,6 +234,8 @@ Read [the security design](docs/specs/security.md) for the required gates and cu
 
 Read [AGENTS.md](AGENTS.md), [design.md](design.md), and [the writing guide](docs/writing.md).
 The same contribution rules apply to people and agents.
+Follow the [code of conduct](CODE_OF_CONDUCT.md) in project discussions.
+The [maintenance guide](docs/maintaining.md) defines review, release, and incident procedures.
 
 To run all local checks, install Python 3.11 or later and Node.js 18 or later.
 Then run:

@@ -4,11 +4,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f5f0">
-    <meta name="description" content="asm is an assembly-native package ecosystem in early development. Explore the Linux x86_64 CLI, target-aware package design, and verification roadmap.">
+    <meta name="description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux x86_64.">
     <meta property="og:type" content="website">
     <meta property="og:title" content="asm — Packages for assembly">
-    <meta property="og:description" content="Build assembly projects with a native CLI. Follow the work on package targets, a shared registry, and verifiable evidence.">
+    <meta property="og:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux x86_64.">
     <meta property="og:url" content="https://asm.build/">
+    <meta property="og:image" content="https://asm.build/social-preview.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta property="og:image:alt" content="ASM — Packages for assembly. asm.build.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="asm — Packages for assembly">
+    <meta name="twitter:description" content="Build assembly projects, use exact package versions, and inspect release records. ASM is a native assembly CLI for Linux x86_64.">
+    <meta name="twitter:image" content="https://asm.build/social-preview.png">
+    <meta name="twitter:image:alt" content="ASM — Packages for assembly. asm.build.">
     <link rel="canonical" href="https://asm.build/">
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="stylesheet" href="styles.css">
@@ -161,6 +171,11 @@ asm version</code></pre>
             <p>Our working assumption is that AI-assisted development may make assembly practical for more projects. It may also reduce the cost of ports. Both claims need evidence.</p>
             <p>Generated code still needs review and verification. Performance claims need reproducible measurements, including results that show no improvement. ASM is building the shared package, release, and evidence tools for that work.</p>
             <a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/why-asm.md">Read the project motivation <span aria-hidden="true">↗</span></a>
+            <div class="measured-example">
+              <h3>A measured example</h3>
+              <p>An <a href="https://github.com/stubbi/asmwc/tree/13ddc7effea46f3f2aad3f5b69635817e6fd6541">asmwc experiment</a> measured default counting on a 128 MiB text file. On Apple M3 with macOS 15.6.1, median time was 15.234 ms for optimized assembly and 68.468 ms for native Rust. Each implementation had 24 samples with a warm file cache. The comparison includes algorithm, I/O, and startup differences. ASM checked the published records; we have not reproduced the experiment.</p>
+              <a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/evidence.md">Read the experiment and its limits <span aria-hidden="true">↗</span></a>
+            </div>
           </div>
         </div>
       </section>

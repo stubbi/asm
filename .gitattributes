@@ -1,0 +1,9 @@
+# Keep text consistent across source archives and working environments.
+* text=auto eol=lf
+
+# Preserve binary bytes and avoid text diffs for binary formats.
+*.png binary
+*.ico binary
+*.gz binary
+*.zip binary
+*.tar binary

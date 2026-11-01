@@ -8,7 +8,7 @@ const { createHash } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { githubURL, normalizeIndex, findPackages, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions } = require("../site/app.js");
+const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions } = require("../site/app.js");
 
 function record(name, target) {
   return { name, summary: "A source package", latest: "0.1.0", targets: [target], versions: [{ version: "0.1.0", artifacts: [] }] };
@@ -58,6 +58,13 @@ test("search combines all terms with an exact target filter", () => {
   assert.equal(findPackages(records, "alpha", "aarch64-linux").length, 0);
   assert.equal(findPackages(records, ".*", "").length, 0);
   assert.equal(findPackages(records, "", "").length, 2);
+});
+
+test("an empty registry is distinct from a search without matches", () => {
+  assert.match(packageStatus(0, 0), /no published packages yet/);
+  assert.match(packageStatus(3, 0), /No packages match/);
+  assert.match(packageStatus(3, 1), /^1 package shown/);
+  assert.match(packageStatus(3, 3), /^3 packages shown/);
 });
 
 test("artifact downloads need a supported kind, target, and full lowercase SHA-256", () => {

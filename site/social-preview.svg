@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">ASM — Packages for assembly</title>
+  <desc id="description">The asm wordmark and “Packages for assembly.” on a light paper background, with asm.build below.</desc>
+  <rect width="1280" height="640" fill="#f5f5f0"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#232820">
+    <text x="64" y="95" font-size="58" font-weight="700" letter-spacing="-3.5">asm<tspan fill="#3f5633">.</tspan></text>
+    <path d="M64 132H1216M64 524H1216" fill="none" stroke="#d4d8cd" stroke-width="1.5"/>
+    <text x="59" y="292" font-size="112" font-weight="400" letter-spacing="-6">Packages for</text>
+    <text x="59" y="411" font-size="112" font-weight="400" letter-spacing="-6" fill="#3f5633">assembly.</text>
+    <text x="64" y="589" font-size="28" font-weight="400" letter-spacing="-.5">asm.build</text>
+  </g>
+  <path d="M1188 565H1216V593M1216 565L1188 593" fill="none" stroke="#3f5633" stroke-width="3"/>
+</svg>
