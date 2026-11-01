@@ -28,7 +28,7 @@ asm_bootstrap_main() (
 
     asm_cleanup() {
         if [ -n "$asm_stage" ]; then
-            /usr/bin/rm -rf -- "$asm_stage"
+            "$asm_rm" -rf -- "$asm_stage"
         fi
     }
     trap asm_cleanup 0
@@ -37,19 +37,77 @@ asm_bootstrap_main() (
     trap 'exit 143' TERM
 
     [ "$#" -eq 0 ] || asm_fail 'This installer has no options. It installs only to $HOME/.local/bin/asm.'
-    [ -x /usr/bin/uname ] || asm_fail 'This installer requires Linux and /usr/bin/uname.'
-    [ "$(/usr/bin/uname -s)" = Linux ] || asm_fail 'This release supports Linux only.'
+    [ -x /usr/bin/uname ] || asm_fail 'This installer requires /usr/bin/uname.'
+    asm_system=$(/usr/bin/uname -s) || asm_fail 'Cannot identify the host operating system.'
     # Detect locally. Never infer the host from an HTTP header or a download name.
     # Each case binds the target to its own checked size, digest, and release URL.
-    case "$(/usr/bin/uname -m)" in
+    asm_machine=$(/usr/bin/uname -m) || asm_fail 'Cannot identify the host architecture.'
+    case "$asm_system:$asm_machine" in
 @@TARGET_CASES@@
-        *) asm_fail 'This release has no build for your architecture. No command was installed.' ;;
+        *) asm_fail 'This release has no build for your operating system and architecture. No command was installed.' ;;
     esac
     readonly asm_target asm_sha256 asm_bytes asm_url
 
-    for asm_tool in curl gh stat id mktemp mkdir chmod ln rm sha256sum env timeout; do
-        [ -x "/usr/bin/$asm_tool" ] || asm_fail "Install the required /usr/bin/$asm_tool tool, then try again."
-    done
+    case "$asm_system" in
+        Linux)
+            for asm_tool in curl gh stat id mktemp mkdir chmod ln rm sha256sum env timeout; do
+                [ -x "/usr/bin/$asm_tool" ] || asm_fail "Install the required /usr/bin/$asm_tool tool, then try again."
+            done
+            asm_mkdir=/usr/bin/mkdir
+            asm_chmod=/usr/bin/chmod
+            asm_link=/usr/bin/ln
+            asm_rm=/usr/bin/rm
+            asm_gh=/usr/bin/gh
+            asm_stat_directory='%u:%g:%a'
+            asm_stat_ancestor='%u:%a'
+            asm_stat_file='%u:%g:%a:%h:%s'
+            asm_stat_bytes='%s'
+            asm_temporary_root=/tmp
+            ;;
+        Darwin)
+            for asm_tool in /usr/bin/curl /opt/homebrew/bin/gh /usr/bin/stat /usr/bin/id /usr/bin/mktemp \
+                            /bin/mkdir /bin/chmod /bin/link /bin/rm /bin/ls /usr/bin/shasum /usr/bin/env /usr/bin/perl \
+                            /usr/bin/sw_vers /usr/sbin/diskutil /usr/bin/plutil; do
+                [ -x "$asm_tool" ] || asm_fail "Install the required $asm_tool tool, then try again."
+            done
+            asm_macos_version=$(/usr/bin/sw_vers -productVersion) || asm_fail 'Cannot identify the macOS version.'
+            asm_macos_major=${asm_macos_version%%.*}
+            case "$asm_macos_major" in ''|*[!0-9]*) asm_fail 'Cannot identify the macOS version.' ;; esac
+            [ "${#asm_macos_major}" -le 4 ] && [ "$asm_macos_major" -ge 15 ] || asm_fail 'This release requires macOS 15 or later.'
+            asm_mkdir=/bin/mkdir
+            asm_chmod=/bin/chmod
+            asm_link=/bin/link
+            asm_rm=/bin/rm
+            asm_gh=/opt/homebrew/bin/gh
+            # BSD %Lp omits the set-ID and sticky bits. %p retains them.
+            asm_stat_directory='%u:%g:%p'
+            asm_stat_ancestor='%u:%p'
+            asm_stat_file='%u:%g:%p:%l:%z'
+            asm_stat_bytes='%z'
+            asm_temporary_root=/private/tmp
+            ;;
+    esac
+    readonly asm_system asm_mkdir asm_chmod asm_link asm_rm asm_gh \
+             asm_stat_directory asm_stat_ancestor asm_stat_file asm_stat_bytes asm_temporary_root
+
+    asm_stat() {
+        if [ "$asm_system" = Darwin ]; then
+            /usr/bin/stat -f "$1" -- "$2"
+        else
+            /usr/bin/stat --format="$1" -- "$2"
+        fi
+    }
+
+    asm_check_digest() {
+        if [ "$asm_system" = Darwin ]; then
+            # shasum is a system Perl script. Remove interpreter configuration
+            # even for the no-op path, before a verifier home exists.
+            asm_digest=$(/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C /usr/bin/shasum -a 256 -- "$1") || return 1
+            [ "${asm_digest%% *}" = "$asm_sha256" ]
+        else
+            printf '%s  %s\n' "$asm_sha256" "$1" | /usr/bin/sha256sum --check --status
+        fi
+    }
 
     # Preserve only bounded proxy-routing settings. Tokens, host/config settings,
     # CA overrides, and Sigstore/TUF overrides never reach the verifier or curl.
@@ -82,6 +140,12 @@ asm_bootstrap_main() (
         asm_fail 'Real and effective user and group IDs must match.'
 
     asm_clean_env() {
+        # Ancestor ACL checks run before any temporary verifier home exists.
+        # System ls needs no home, configuration, cache, or proxy settings.
+        if [ -z "${asm_verify_home-}" ]; then
+            /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C TERM=dumb NO_COLOR=1 "$@"
+            return "$?"
+        fi
         /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C TERM=dumb NO_COLOR=1 \
             HOME="$asm_verify_home" GH_CONFIG_DIR="$asm_verify_home/gh" \
             XDG_CONFIG_HOME="$asm_verify_home/config" XDG_CACHE_HOME="$asm_verify_home/cache" \
@@ -94,9 +158,118 @@ asm_bootstrap_main() (
             "$@"
     }
 
+    asm_deadline() {
+        # macOS has no system timeout. This bootstrap-only watchdog uses the
+        # system Perl, a clean environment, and direct exec arguments. It caps
+        # stdout without limiting the verifier's private trusted-metadata cache.
+        asm_clean_env /usr/bin/perl -e '
+            use strict;
+            use warnings;
+            use POSIX qw(setpgid sigprocmask SIG_BLOCK SIG_SETMASK SIGALRM SIGHUP SIGINT SIGTERM SIGPIPE);
+            my ($seconds, $limit) = splice @ARGV, 0, 2;
+            # Block termination across fork until the parent owns cleanup.
+            # A caller-blocked alarm must not disable the watchdog deadline.
+            my $blocked = POSIX::SigSet->new(SIGALRM, SIGHUP, SIGINT, SIGTERM, SIGPIPE);
+            my $original = POSIX::SigSet->new();
+            sigprocmask(SIG_BLOCK, $blocked, $original) or exit 1;
+            pipe(my $reader, my $writer) or exit 1;
+            my $pid = fork();
+            defined($pid) or exit 1;
+            if ($pid == 0) {
+                close($reader);
+                setpgid(0, 0) == 0 or exit 1;
+                open(STDOUT, ">&", $writer) or exit 1;
+                close($writer);
+                sigprocmask(SIG_SETMASK, $original) or exit 1;
+                exec { $ARGV[0] } @ARGV;
+                exit 1;
+            }
+            close($writer);
+            my $status;
+            my $ok = eval {
+                local $SIG{ALRM} = sub { die "deadline\n" };
+                local $SIG{HUP} = local $SIG{INT} = local $SIG{TERM} = sub { die "interrupted\n" };
+                local $SIG{PIPE} = sub { die "closed output\n" };
+                alarm($seconds);
+                $original->delset($_) for (SIGALRM, SIGHUP, SIGINT, SIGTERM, SIGPIPE);
+                sigprocmask(SIG_SETMASK, $original) or die "signal mask\n";
+                my $total = 0;
+                while (1) {
+                    my $count = sysread($reader, my $buffer, 4096);
+                    defined($count) or die "read\n";
+                    last if $count == 0;
+                    $total += $count;
+                    $total <= $limit or die "output limit\n";
+                    print STDOUT $buffer or die "write\n";
+                }
+                close($reader);
+                waitpid($pid, 0) == $pid or die "wait\n";
+                $status = $?;
+                alarm(0);
+                1;
+            };
+            alarm(0);
+            if (!$ok) {
+                kill "KILL", -$pid;
+                kill "KILL", $pid;
+                waitpid($pid, 0);
+                exit 1;
+            }
+            exit($status == 0 ? 0 : 1);
+        ' "$@"
+    }
+
+    asm_check_acl() {
+        [ "$asm_system" = Darwin ] || return 0
+        # Mode bits do not account for Darwin ACL grants. Numeric ls output
+        # avoids principal-name lookups. Deny-only ACLs include normal HOME.
+        asm_acl=$(asm_deadline 15 65536 /bin/ls -ldne -- "$1") || asm_fail 'Cannot inspect an installation path ACL.'
+        [ -n "$asm_acl" ] || asm_fail 'The installation path ACL inspection returned no information.'
+        asm_acl_header=yes
+        while IFS= read -r asm_acl_line; do
+            if [ "$asm_acl_header" = yes ]; then
+                asm_acl_header=no
+                continue
+            fi
+            case "$asm_acl_line" in
+                *' allow '*) asm_fail 'An installation path has an ACL allow entry. Use a path without ACL grants.' ;;
+                *' deny '*) ;;
+                *) asm_fail 'Cannot recognize an installation path ACL entry.' ;;
+            esac
+        done <<ASM_ACL_END
+$asm_acl
+ASM_ACL_END
+    }
+
+    asm_volume_value() {
+        # plutil checks both the complete plist and the required field type.
+        # Bounded stdin avoids temporary files, including on an exact rerun.
+        printf '%s' "$asm_volume_info" | asm_deadline 15 128 /usr/bin/plutil \
+            -extract "$1" raw -expect "$2" -o - -
+    }
+
+    asm_check_volume() {
+        [ "$asm_system" = Darwin ] || return 0
+        # Resolve a fixed device node with BSD stat. Do not parse mount text
+        # or use an untrusted volume name to construct a command.
+        asm_volume_device=$(asm_stat '%Sd' "$1") || asm_fail 'Cannot identify the installation volume.'
+        case "$asm_volume_device" in disk[0-9]*) ;; *) asm_fail 'The installation requires a local APFS volume.' ;; esac
+        case "${asm_volume_device#disk}" in *[!0-9s]*) asm_fail 'Cannot recognize the installation volume device.' ;; esac
+        asm_volume_info=$(asm_deadline 15 65536 /usr/sbin/diskutil info -plist "/dev/$asm_volume_device") || \
+            asm_fail 'Cannot inspect the installation volume.'
+        asm_volume_identifier=$(asm_volume_value DeviceIdentifier string) || asm_fail 'Cannot read the installation volume identity.'
+        [ "$asm_volume_identifier" = "$asm_volume_device" ] || asm_fail 'The installation volume identity changed.'
+        asm_volume_type=$(asm_volume_value FilesystemType string) || asm_fail 'Cannot read the installation filesystem type.'
+        [ "$asm_volume_type" = apfs ] || asm_fail 'The installation requires a local APFS volume.'
+        asm_volume_ownership=$(asm_volume_value GlobalPermissionsEnabled bool) || asm_fail 'Cannot read the installation volume ownership policy.'
+        [ "$asm_volume_ownership" = true ] || asm_fail 'Enable ownership on the APFS installation volume, then try again.'
+        [ "$(asm_stat '%Sd' "$1")" = "$asm_volume_device" ] || asm_fail 'The installation volume changed during inspection.'
+    }
+
     asm_check_directory() {
         [ ! -L "$1" ] && [ -d "$1" ] || asm_fail 'An installation directory is missing, a symlink, or not a directory.'
-        asm_stat=$(/usr/bin/stat --format='%u:%g:%a' -- "$1") || asm_fail 'Cannot inspect an installation directory.'
+        asm_check_acl "$1"
+        asm_stat=$(asm_stat "$asm_stat_directory" "$1") || asm_fail 'Cannot inspect an installation directory.'
         asm_owner=${asm_stat%%:*}
         asm_rest=${asm_stat#*:}
         asm_group=${asm_rest%%:*}
@@ -107,18 +280,19 @@ asm_bootstrap_main() (
 
     asm_check_ancestor() {
         [ ! -L "$1" ] && [ -d "$1" ] || asm_fail 'Every HOME path component must be a directory without symlinks.'
-        asm_ancestor_stat=$(/usr/bin/stat --format='%u:%a' -- "$1") || asm_fail 'Cannot inspect a HOME ancestor.'
+        asm_check_acl "$1"
+        asm_ancestor_stat=$(asm_stat "$asm_stat_ancestor" "$1") || asm_fail 'Cannot inspect a HOME ancestor.'
         asm_ancestor_owner=${asm_ancestor_stat%%:*}
         asm_ancestor_mode=${asm_ancestor_stat#*:}
         [ "$asm_ancestor_owner" = 0 ] || [ "$asm_ancestor_owner" = "$asm_uid" ] || asm_fail 'A HOME ancestor is owned by another user.'
         if [ "$asm_tmp_child_required" = yes ]; then
-            [ "$asm_ancestor_owner" = "$asm_uid" ] || asm_fail 'The directory immediately below /tmp must belong to your user.'
+            [ "$asm_ancestor_owner" = "$asm_uid" ] || asm_fail 'The directory below the shared temporary directory must belong to your user.'
         fi
         asm_tmp_child_required=no
         if [ "$((0$asm_ancestor_mode & 0022))" -ne 0 ]; then
-            if [ "$1" = /tmp ] && [ "$asm_ancestor_owner" = 0 ] && [ "$((0$asm_ancestor_mode & 01000))" -ne 0 ]; then
-                # Linux sticky-directory rules protect the next owned entry.
-                # No other writable ancestor, including /var/tmp, is accepted.
+            if [ "$1" = "$asm_temporary_root" ] && [ "$asm_ancestor_owner" = 0 ] && [ "$((0$asm_ancestor_mode & 01000))" -ne 0 ]; then
+                # Sticky-directory rules protect the next owned entry. Only
+                # /tmp on Linux or /private/tmp on macOS qualifies.
                 asm_tmp_child_required=yes
             else
                 asm_fail 'A HOME ancestor allows group or other users to write. Choose a protected home path.'
@@ -138,7 +312,7 @@ asm_bootstrap_main() (
             asm_prefix=$asm_prefix/$asm_component
             asm_check_ancestor "$asm_prefix"
         done
-        [ "$asm_tmp_child_required" = no ] || asm_fail 'HOME cannot be the shared /tmp directory.'
+        [ "$asm_tmp_child_required" = no ] || asm_fail 'HOME cannot be the shared temporary directory.'
     }
 
     asm_check_location() {
@@ -146,14 +320,16 @@ asm_bootstrap_main() (
         asm_check_directory "$asm_home"
         asm_check_directory "$asm_home/.local"
         asm_check_directory "$asm_bin_path"
-        [ "$(/usr/bin/stat --format='%d:%i' -- "$asm_bin_path")" = "$asm_bin_stamp" ] && \
-            [ "$(/usr/bin/stat --format='%d:%i' -- .)" = "$asm_bin_stamp" ] || \
+        asm_check_volume "$asm_bin_path"
+        [ "$(asm_stat '%d:%i' "$asm_bin_path")" = "$asm_bin_stamp" ] && \
+            [ "$(asm_stat '%d:%i' .)" = "$asm_bin_stamp" ] || \
             asm_fail 'The installation directory moved or changed. Inspect the path before trying again.'
     }
 
     asm_check_file() {
         [ ! -L "$1" ] && [ -f "$1" ] || return 1
-        asm_stat=$(/usr/bin/stat --format='%u:%g:%a:%h:%s' -- "$1") || return 1
+        asm_check_acl "$1"
+        asm_stat=$(asm_stat "$asm_stat_file" "$1") || return 1
         asm_owner=${asm_stat%%:*}; asm_rest=${asm_stat#*:}
         asm_group=${asm_rest%%:*}; asm_rest=${asm_rest#*:}
         asm_mode=${asm_rest%%:*}; asm_rest=${asm_rest#*:}
@@ -161,14 +337,18 @@ asm_bootstrap_main() (
         [ "$asm_owner" = "$asm_uid" ] && \
             [ "$asm_links" = 1 ] && [ "$asm_size" = "$asm_bytes" ] && \
             [ "$((0$asm_mode & 06022))" -eq 0 ] && [ "$((0$asm_mode & 0100))" -ne 0 ] || return 1
-        printf '%s  %s\n' "$asm_sha256" "$1" | /usr/bin/sha256sum --check --status
+        asm_check_digest "$1"
     }
 
     asm_next_steps() {
         printf '\n%s\n' 'Run these commands in your terminal:'
         printf '%s\n' '  export PATH="$HOME/.local/bin:$PATH"' '  asm version'
         printf '\n%s\n' 'To update ASM later, run: asm self update'
-        printf '%s\n' 'To build projects, install GNU binutils. Source dependencies also need /usr/bin/gzip.'
+        if [ "$asm_system" = Darwin ]; then
+            printf '%s\n' 'To build macOS projects, install the Xcode Command Line Tools. Source dependencies also need /usr/bin/gzip.'
+        else
+            printf '%s\n' 'To build projects, install GNU binutils. Source dependencies also need /usr/bin/gzip.'
+        fi
     }
 
     asm_check_existing_install() {
@@ -187,7 +367,7 @@ asm_bootstrap_main() (
         asm_stage=$(/usr/bin/mktemp -d './.asm-bootstrap.XXXXXXXXXX') || asm_fail 'Cannot create a private staging directory.'
         asm_check_directory "$asm_stage"
         asm_verify_home=$(pwd -P)/${asm_stage#./}/verifier
-        /usr/bin/mkdir -m 700 -- "$asm_verify_home" "$asm_verify_home/gh" "$asm_verify_home/config" \
+        "$asm_mkdir" -m 700 -- "$asm_verify_home" "$asm_verify_home/gh" "$asm_verify_home/config" \
             "$asm_verify_home/cache" "$asm_verify_home/data" "$asm_verify_home/tmp" || asm_fail 'Cannot create the verifier environment.'
     }
 
@@ -216,7 +396,7 @@ asm_bootstrap_main() (
     done
 
     if [ "$asm_bin_exists" = yes ]; then
-        asm_bin_stamp=$(/usr/bin/stat --format='%d:%i' -- .) || asm_fail 'Cannot identify the installation directory.'
+        asm_bin_stamp=$(asm_stat '%d:%i' .) || asm_fail 'Cannot identify the installation directory.'
         asm_check_location
         # Exact existing bytes need no download, verifier probe, or write.
         asm_check_existing_install
@@ -225,13 +405,18 @@ asm_bootstrap_main() (
     asm_check_directory "$asm_probe_path"
     cd -P -- "$asm_probe_path" || asm_fail 'Cannot enter the verifier staging directory.'
     asm_check_directory .
+    asm_check_volume .
 
     # gh reads configuration before it handles --version. Use a private home
     # here too; a supposedly absent path can exist with inaccessible parents.
     # Reject an unsupported verifier before creating installation directories.
     asm_prepare_verifier
-    # Keep the probe in the caller's process group so an interrupt reaches it.
-    asm_gh_version=$(asm_clean_env /usr/bin/timeout --foreground --signal=TERM --kill-after=5 15 /usr/bin/gh --version) || asm_fail 'Cannot read the GitHub CLI version.'
+    # Keep the watchdog in the caller's process group so an interrupt reaches it.
+    if [ "$asm_system" = Darwin ]; then
+        asm_gh_version=$(asm_deadline 15 4096 "$asm_gh" --version) || asm_fail 'Cannot read the GitHub CLI version.'
+    else
+        asm_gh_version=$(asm_clean_env /usr/bin/timeout --foreground --signal=TERM --kill-after=5 15 "$asm_gh" --version) || asm_fail 'Cannot read the GitHub CLI version.'
+    fi
     set -- $asm_gh_version
     [ "$#" -ge 3 ] && [ "$1" = gh ] && [ "$2" = version ] || asm_fail 'Unrecognized GitHub CLI version output.'
     asm_gh_release=$3
@@ -247,7 +432,7 @@ asm_bootstrap_main() (
     if [ "$asm_major" -lt 2 ] || { [ "$asm_major" -eq 2 ] && [ "$asm_minor" -lt 93 ]; }; then
         asm_fail 'Update GitHub CLI to version 2.93.0 or later. No GitHub login is required.'
     fi
-    /usr/bin/rm -rf -- "$asm_stage" || asm_fail 'Cannot remove the verifier environment.'
+    "$asm_rm" -rf -- "$asm_stage" || asm_fail 'Cannot remove the verifier environment.'
     asm_stage=''
 
     asm_check_ancestors
@@ -256,13 +441,13 @@ asm_bootstrap_main() (
     asm_check_directory .
     for asm_directory in .local bin; do
         if [ ! -e "$asm_directory" ] && [ ! -L "$asm_directory" ]; then
-            /usr/bin/mkdir -m 700 -- "$asm_directory" || asm_fail 'Cannot create an installation directory.'
+            "$asm_mkdir" -m 700 -- "$asm_directory" || asm_fail 'Cannot create an installation directory.'
         fi
         asm_check_directory "$asm_directory"
         cd -P -- "$asm_directory" || asm_fail 'Cannot enter an installation directory.'
         asm_check_directory .
     done
-    asm_bin_stamp=$(/usr/bin/stat --format='%d:%i' -- .) || asm_fail 'Cannot identify the installation directory.'
+    asm_bin_stamp=$(asm_stat '%d:%i' .) || asm_fail 'Cannot identify the installation directory.'
     readonly asm_bin_stamp
     asm_check_location
     asm_check_existing_install
@@ -281,10 +466,10 @@ asm_bootstrap_main() (
 
     printf 'Downloading ASM %s for %s.\n' "$asm_version" "$asm_target"
     asm_fetch "$asm_url" "$asm_bytes" "$asm_stage/asm" || asm_fail 'The executable download failed. No command was installed.'
-    [ "$(/usr/bin/stat --format='%s' -- "$asm_stage/asm")" = "$asm_bytes" ] || asm_fail 'The executable size does not match the release record.'
-    printf '%s  %s\n' "$asm_sha256" "$asm_stage/asm" | /usr/bin/sha256sum --check --status || asm_fail 'The executable checksum does not match the release record.'
+    [ "$(asm_stat "$asm_stat_bytes" "$asm_stage/asm")" = "$asm_bytes" ] || asm_fail 'The executable size does not match the release record.'
+    asm_check_digest "$asm_stage/asm" || asm_fail 'The executable checksum does not match the release record.'
     asm_fetch "$asm_bundle_url" 1048576 "$asm_stage/release-attestation.sigstore.json" || asm_fail 'The signed attestation download failed. No command was installed.'
-    asm_bundle_bytes=$(/usr/bin/stat --format='%s' -- "$asm_stage/release-attestation.sigstore.json")
+    asm_bundle_bytes=$(asm_stat "$asm_stat_bytes" "$asm_stage/release-attestation.sigstore.json")
     [ "$asm_bundle_bytes" -gt 0 ] && [ "$asm_bundle_bytes" -le 1048576 ] || asm_fail 'The signed attestation is empty or exceeds 1 MiB.'
 
     asm_check_location
@@ -292,8 +477,12 @@ asm_bootstrap_main() (
     (
         # gh needs its normal private TUF cache. A process-wide file limit would
         # also truncate that trusted metadata, not just the projected output.
-        asm_clean_env /usr/bin/timeout --signal=TERM --kill-after=5 120 \
-            /usr/bin/gh attestation verify "$asm_stage/asm" \
+        if [ "$asm_system" = Darwin ]; then
+            set -- asm_deadline 120 11
+        else
+            set -- asm_clean_env /usr/bin/timeout --signal=TERM --kill-after=5 120
+        fi
+        "$@" "$asm_gh" attestation verify "$asm_stage/asm" \
             --repo stubbi/asm \
             --cert-identity 'https://github.com/stubbi/asm/.github/workflows/release.yml@refs/heads/main' \
             --cert-oidc-issuer 'https://token.actions.githubusercontent.com' \
@@ -303,17 +492,25 @@ asm_bootstrap_main() (
             --format json --jq '.[].verificationResult.signature.certificate.sourceRepositoryIdentifier' \
             --hostname github.com --source-digest "$asm_commit" --signer-digest "$asm_commit"
     ) >"$asm_stage/verified-repository" || asm_fail 'Release attestation verification failed. No command was installed.'
-    [ "$(/usr/bin/stat --format='%s' -- "$asm_stage/verified-repository")" = 11 ] || asm_fail 'The attestation did not identify exactly one approved repository.'
+    [ "$(asm_stat "$asm_stat_bytes" "$asm_stage/verified-repository")" = 11 ] || asm_fail 'The attestation did not identify exactly one approved repository.'
     IFS= read -r asm_verified_id <"$asm_stage/verified-repository" || asm_fail 'The verified repository identifier is incomplete.'
     [ "$asm_verified_id" = "$asm_repository_id" ] || asm_fail 'The attestation identifies a different repository.'
 
-    /usr/bin/chmod 755 -- "$asm_stage/asm" || asm_fail 'Cannot set executable permissions.'
+    if [ "$asm_system" = Darwin ]; then
+        "$asm_chmod" 755 "$asm_stage/asm" || asm_fail 'Cannot set executable permissions.'
+    else
+        "$asm_chmod" 755 -- "$asm_stage/asm" || asm_fail 'Cannot set executable permissions.'
+    fi
     asm_check_file "$asm_stage/asm" || asm_fail 'The staged executable changed during verification.'
     asm_check_location
-    # GNU ln -T creates one new directory entry. It never replaces an existing
-    # file, symlink, or directory. Both names are on the same filesystem.
-    /usr/bin/ln -T -- "$asm_stage/asm" ./asm || asm_fail 'An asm destination already exists. It was not replaced.'
-    /usr/bin/rm -- "$asm_stage/asm" || asm_fail 'The command was linked, but temporary-file cleanup failed. Check the installation before use.'
+    # Both fixed tools perform an exclusive link to one directory entry. BSD
+    # ln -h would still enter a real destination directory; /bin/link does not.
+    if [ "$asm_system" = Darwin ]; then
+        "$asm_link" "$asm_stage/asm" ./asm || asm_fail 'An asm destination already exists. It was not replaced.'
+    else
+        "$asm_link" -T -- "$asm_stage/asm" ./asm || asm_fail 'An asm destination already exists. It was not replaced.'
+    fi
+    "$asm_rm" -- "$asm_stage/asm" || asm_fail 'The command was linked, but temporary-file cleanup failed. Check the installation before use.'
     asm_check_location
     printf 'Installed ASM %s at %s/.local/bin/asm.\n' "$asm_version" "$asm_home"
     asm_next_steps

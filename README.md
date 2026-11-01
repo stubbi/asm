@@ -53,6 +53,11 @@ The current CLI runs on **Linux x86-64 and ARM64**.
 Install ASM once with the bootstrap installer.
 Use `asm self update` for later updates from the hub.
 
+Version 0.3.0 remains Linux-only.
+The [native macOS port](docs/macos.md) is qualification work for Apple Silicon and macOS 15 or later.
+Its native checks and publication of an attested release remain required before macOS becomes a supported download.
+Intel macOS is unsupported.
+
 ### Install the command
 
 The installer requires curl and GNU Coreutils in `/usr/bin`.
@@ -212,6 +217,8 @@ Read [the security model](docs/specs/security.md#bootstrap-and-manual-self-updat
 
 The source build needs Git, GNU Make, and GNU Binutils.
 Registry commands also need curl and GNU sha256sum.
+These instructions describe the released Linux CLI.
+For the experimental Apple Silicon source build, read [the macOS qualification guide](docs/macos.md).
 
 ```sh
 git clone https://github.com/stubbi/asm.git &&
@@ -347,7 +354,9 @@ Either client can fetch a package for another target.
 Each client builds and runs local projects for its native host target.
 `asm targets` lists that build target.
 The RISC-V hello package does not imply a RISC-V CLI.
-macOS, Windows, and general cross-build commands remain future work.
+The [Apple Silicon macOS port](docs/macos.md) has separate native qualification and release gates.
+Version 0.3.0 has no macOS executable in the published catalog.
+Intel macOS, Windows, and general cross-build commands remain unsupported.
 
 The [local registry benchmark](docs/performance-registry.md) measures the native x86-64 search implementation.
 At 4,096 records, median elapsed time decreased by approximately 19–21 times on the measured host.

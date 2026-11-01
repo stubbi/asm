@@ -1,5 +1,11 @@
-HOST_ARCH := $(shell uname -m)
+HOST_OS := $(shell uname -s)
+HOST_ARCH := $(shell uname -m | sed s/arm64/aarch64/)
 ARCH ?= $(HOST_ARCH)
+ifeq ($(HOST_OS),Darwin)
+ifneq ($(ARCH),aarch64)
+$(error Native macOS qualification currently requires Apple Silicon)
+endif
+endif
 ifeq ($(filter $(ARCH),x86_64 aarch64),)
 $(error Unsupported CLI architecture '$(ARCH)'; use x86_64 or aarch64)
 endif
@@ -48,11 +54,29 @@ build/asm-$(ARCH)-linux: build/$(ARCH)/asm.o
 
 # Keep target artifacts separate. Selecting another ARCH must not reuse the
 # previous host's binary just because its timestamp is newer.
-build/asm: build/asm-$(ARCH)-linux
-	cp -- $< $@
+ifeq ($(HOST_OS),Darwin)
+build/macos/asm.s: $(CLI_INPUTS) tools/macos.py $(wildcard cli/macos/*.s)
+	$(PYTHON) tools/macos.py --output $@
 
+build/asm-aarch64-macos: build/macos/asm.s
+	/usr/bin/clang -arch arm64 -mmacosx-version-min=15.0 -Wl,-no_uuid -o $@ $<
+	/usr/bin/codesign --verify --strict $@
+
+build/asm: build/asm-aarch64-macos
+else
+build/asm: build/asm-$(ARCH)-linux
+endif
+ifeq ($(HOST_OS),Darwin)
+	@asm_copy=$$(mktemp build/.asm-copy.XXXXXXXX) && \
+	trap 'rm -f -- "$$asm_copy"' EXIT HUP INT TERM && \
+	cp -- $< "$$asm_copy" && chmod 755 "$$asm_copy" && mv -f -- "$$asm_copy" $@
+else
+	cp -- $< $@
+endif
+
+TEST_DIRECTORY := $(if $(filter Darwin,$(HOST_OS)),tests/macos,tests)
 test: build/asm
-	$(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v
+	$(PYTHON) -m unittest discover -s $(TEST_DIRECTORY) -p 'test_*.py' -v
 
 check: test
 	$(PYTHON) -m unittest discover -s tests/registry -p 'test_*.py' -v
@@ -66,4 +90,4 @@ uninstall: build/asm
 	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
-	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux
+	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s

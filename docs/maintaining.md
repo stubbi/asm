@@ -63,7 +63,7 @@ Do not weaken a check to obtain a passing result.
 1. Record the complete source commit ID.
 2. Confirm that the release comes from reviewed `main` history.
 3. Check the CLI version and its release notes.
-4. Check that any existing version tag identifies the same commit.
+4. Require a new, unused version tag. Never reuse an existing release version.
 5. Confirm that required checks passed for that source.
 6. Inspect the target list and required build tools.
 7. Dispatch the [Release workflow][release-workflow] from `main`.

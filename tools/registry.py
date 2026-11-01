@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 SCHEMA = 1
 HEADER = "# asm-registry-v1\n"
 TARGETS = {"x86_64-linux": 62, "aarch64-linux": 183, "riscv64-linux": 243}
+TARGETS["aarch64-macos"] = 0x0100000C
 KINDS = {"source", "executable"}
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 16 * 1024 * 1024
@@ -487,13 +488,65 @@ def validate_elf(data: bytes, target: str) -> None:
     require(has_load_segment, "ELF executable needs a load segment")
 
 
+def validate_macho(data: bytes, target: str) -> None:
+    """Check a thin arm64 macOS executable without mapping or executing it.
+
+    Container checks do not authenticate code. Release provenance and the
+    native codesign check are separate qualification gates.
+    """
+    require(target == "aarch64-macos" and len(data) >= 32, "unsupported Mach-O target")
+    magic, cpu, subtype, kind, count, size, flags, reserved = struct.unpack_from("<8I", data)
+    require((magic, cpu, subtype, kind, reserved) == (0xFEEDFACF, 0x100000C, 0, 2, 0),
+            "Mach-O header or target mismatch")
+    require(flags & 0x200000 and not flags & 0x20000, "Mach-O requires PIE and a non-executable stack")
+    require(0 < count <= 128 and 0 < size <= 65536 and 32 + size <= len(data), "invalid Mach-O command bounds")
+    offset, end = 32, 32 + size
+    entry = None
+    platform_seen = False
+    executable_ranges = []
+    for _ in range(count):
+        require(offset + 8 <= end, "truncated Mach-O command")
+        command, length = struct.unpack_from("<II", data, offset)
+        require(length >= 8 and length % 8 == 0 and offset + length <= end, "invalid Mach-O command length")
+        if command == 0x19:  # LC_SEGMENT_64
+            require(length >= 72, "truncated Mach-O segment")
+            _, memory, start, amount, maximum, protection, sections, _ = struct.unpack_from("<QQQQIIII", data, offset + 24)
+            require(length == 72 + sections * 80 and start + amount <= len(data) and amount <= memory,
+                    "invalid Mach-O segment bounds")
+            require(protection & ~7 == 0 and maximum & ~7 == 0 and protection & maximum == protection,
+                    "invalid Mach-O segment protections")
+            require(not (protection & 2 and protection & 4), "writable executable Mach-O segment")
+            if protection & 4 and amount:
+                executable_ranges.append((start, start + amount))
+        elif command == 0x80000028:  # LC_MAIN
+            require(length == 24 and entry is None, "invalid Mach-O entry command")
+            entry = struct.unpack_from("<Q", data, offset + 8)[0]
+        elif command == 0x32:  # LC_BUILD_VERSION
+            require(length >= 24 and not platform_seen, "invalid Mach-O platform command")
+            platform, minimum, _, tools = struct.unpack_from("<4I", data, offset + 8)
+            require(platform == 1 and minimum <= 0xF0000 and length == 24 + tools * 8,
+                    "unsupported Mach-O platform or minimum OS")
+            platform_seen = True
+        offset += length
+    require(offset == end and platform_seen and entry is not None and entry >= end,
+            "incomplete Mach-O commands")
+    require(any(start <= entry < stop for start, stop in executable_ranges), "Mach-O entry is not executable")
+
+
+def validate_executable(data: bytes, target: str) -> None:
+    if target.endswith("-macos"):
+        validate_macho(data, target)
+    else:
+        validate_elf(data, target)
+
+
 def validate_artifact(data: bytes, record: dict, artifact: dict) -> None:
     require(len(data) == artifact["bytes"], "artifact byte size mismatch")
     require(hashlib.sha256(data).hexdigest() == artifact["sha256"], "artifact SHA-256 mismatch")
     if artifact["kind"] == "source":
         validate_project(read_archive(data), record["name"], record["version"], artifact["target"])
     else:
-        validate_elf(data, artifact["target"])
+        validate_executable(data, artifact["target"])
 
 
 def validate_local_artifacts(records: list[dict], directory: Path) -> set[tuple[str, str]]:
@@ -507,6 +560,18 @@ def validate_local_artifacts(records: list[dict], directory: Path) -> set[tuple[
             validate_artifact(path.read_bytes(), record, artifact)
         checked.add((record["name"], record["version"]))
     return checked
+
+
+def legacy_tsv(tsv: str) -> str:
+    """Keep the published v0.3 Linux parser able to discover its next update.
+
+    That parser rejects the entire index when any row has an unknown target.
+    The full feed and JSON retain independently qualified macOS artifacts.
+    Input must be the canonical output of make_indexes.
+    """
+    return "".join(line for line in tsv.splitlines(keepends=True)
+                   if line.startswith("#") or line.split("\t")[2] in
+                   {"x86_64-linux", "aarch64-linux", "riscv64-linux"})
 
 
 def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = None) -> tuple[str, dict]:
@@ -714,7 +779,8 @@ def main(argv: list[str] | None = None) -> int:
             checked = validate_local_artifacts(records, arguments.artifacts_dir) if arguments.artifacts_dir else set()
             tsv, index = make_indexes(records, checked)
             if arguments.command == "build":
-                write_atomic(arguments.output / "index.tsv", tsv.encode("ascii"))
+                write_atomic(arguments.output / "index.tsv", legacy_tsv(tsv).encode("ascii"))
+                write_atomic(arguments.output / "index-macos.tsv", tsv.encode("ascii"))
                 write_atomic(arguments.output / "index.json", json_bytes(index))
             print(f"Validated {len(records)} releases; checked local artifacts for {len(checked)} releases.")
             if not arguments.artifacts_dir:

@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import build_site
 import registry
 import release
+from test_macos_release import minimal_macho, native_evidence
 
 
 def git(repo, *args):
@@ -90,6 +91,11 @@ class ReleaseTests(unittest.TestCase):
         cls.repo.mkdir()
         shutil.copytree(ROOT / "cli", cls.repo / "cli")
         cls.version = json.loads((cls.repo / "cli/commands.json").read_text())["version"]
+        # This fixture qualifies the Linux producer. The separate native
+        # fixture exercises Darwin; the fan-in test below declares that host.
+        command_metadata = json.loads((cls.repo / "cli/commands.json").read_text())
+        command_metadata["hosts"] = ["x86_64-linux", "aarch64-linux"]
+        (cls.repo / "cli/commands.json").write_text(json.dumps(command_metadata) + "\n")
         shutil.copytree(ROOT / "examples/hello", cls.repo / "examples/hello", ignore=shutil.ignore_patterns("build"))
         if (ROOT / "examples/math").is_dir():
             shutil.copytree(ROOT / "examples/math", cls.repo / "examples/math", ignore=shutil.ignore_patterns("build"))
@@ -172,6 +178,41 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(source["LICENSING.md"], (ROOT / "LICENSING.md").read_bytes())
         self.assertEqual(source["cli/templates.s"], (ROOT / "cli/templates.s").read_bytes())
         self.assertEqual(source["cli/aarch64/templates.s"], (ROOT / "cli/aarch64/templates.s").read_bytes())
+
+    def test_mac_fan_in_preserves_exact_native_bytes_and_requires_declaration(self):
+        repo = self.case_dir / "native-fan-in-repo"
+        git(self.repo, "clone", "--quiet", "--no-hardlinks", str(self.repo), str(repo))
+        metadata_path = repo / "cli/commands.json"
+        commands = json.loads(metadata_path.read_text())
+        commands["hosts"].append("aarch64-macos")
+        metadata_path.write_text(json.dumps(commands) + "\n")
+        git(repo, "add", "cli/commands.json")
+        git(repo, "-c", "user.name=Release fixture", "-c", "user.email=fixture@example.invalid",
+            "-c", "commit.gpgsign=false", "commit", "-qm", "Declare synthetic native input for fan-in test")
+        commit = git(repo, "rev-parse", "HEAD")
+        native = self.case_dir / "native-input"
+        native.mkdir()
+        binary = minimal_macho()
+        evidence = native_evidence(commit, self.version, binary)
+        filename = evidence["asset"]["file"]
+        (native / filename).write_bytes(binary)
+        (native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
+        output = self.case_dir / "with-native-host"
+        result = release.build_release(repo, output, native_input=native)
+        self.assertEqual((output / filename).read_bytes(), binary)
+        self.assertIn("aarch64-macos", result["cli_hosts"])
+        self.assertEqual(result["builds"]["asm_targets"]["aarch64-macos"], evidence)
+        self.assertIn(filename, {item["file"] for item in result["assets"]})
+        # The same evidence must not authorize another source commit.
+        with self.assertRaises(registry.RegistryError):
+            release.build_release(self.repo, self.case_dir / "wrong-commit", native_input=native)
+        # A valid optional qualification input does not add an undeclared host.
+        evidence["source_commit"] = self.commit
+        (native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
+        undeclared = self.case_dir / "linux-only"
+        result = release.build_release(self.repo, undeclared, native_input=native)
+        self.assertNotIn("aarch64-macos", result["cli_hosts"])
+        self.assertFalse((undeclared / filename).exists())
 
     def test_version_mismatch_leaves_no_output(self):
         output = self.case_dir / "wrong-version"

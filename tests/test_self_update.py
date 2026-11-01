@@ -21,7 +21,7 @@ import tempfile
 import time
 import unittest
 
-from host import TARGET, OTHER_TARGET, IS_ARM64, ASM_FLAGS, CLI_SOURCE, CLI_DIRECTORY
+from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, ASM_FLAGS, CLI_SOURCE, CLI_DIRECTORY
 from host import SYS_RENAMEAT, SYS_SIGPROCMASK, SYS_GETRLIMIT, SYS_SETRLIMIT, program
 
 
@@ -30,7 +30,7 @@ CURRENT = json.loads((ROOT / "cli/commands.json").read_text())["version"]
 NEXT = f"{int(CURRENT.split('.')[0]) + 1}.10.0"
 OLDER = "0.0.0"
 COMMIT = "a" * 40
-INDEX = "https://asm.build/registry/v1/index.tsv"
+INDEX = "https://asm.build/registry/v1/index-macos.tsv" if IS_MACOS else "https://asm.build/registry/v1/index.tsv"
 IDENTITY = "https://github.com/stubbi/asm/.github/workflows/release.yml@refs/heads/main"
 REPO_ID = "1441332955"
 BUNDLE = "release-attestation.sigstore.json"

@@ -14,7 +14,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import IS_ARM64, ASM_FLAGS
+from host import IS_MACOS, IS_ARM64, ASM_FLAGS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +101,21 @@ class NativeArchiveTests(unittest.TestCase):
         directory = Path(cls.build.name)
         (directory / "harness.s").write_text(
             (ROOT / "tests/aarch64/archive_harness.s").read_text() if IS_ARM64 else HARNESS)
+        if IS_MACOS:
+            import sys
+            sys.path.insert(0, str(ROOT / "tools"))
+            import macos
+            source = macos.prepare(directory / "harness.s")
+            source = source.replace(".global _start", ".global _main").replace("\n_start:\n", "\n_main:\n")
+            source = source.replace("    ldr x10, [sp]\n    cmp x10, #4", "    cmp x0, #4")
+            source = source.replace("    ldr x9, [sp, #16]\n    ldr x0, [sp, #24]\n    ldr x1, [sp, #32]",
+                                    "    ldr x9, [x1, #8]\n    ldr x0, [x1, #16]\n    ldr x1, [x1, #24]")
+            source += '\n.data\nregistry_sha256sum: .asciz "/usr/bin/shasum"\n'
+            (directory / "harness.s").write_text(source)
+            cls.binary = directory / "archive-test"
+            subprocess.run(["/usr/bin/clang", "-arch", "arm64", "-mmacosx-version-min=15.0",
+                            "-o", str(cls.binary), str(directory / "harness.s")], check=True)
+            return
         sources = [(directory / "harness.s", directory / "harness.o")]
         if not IS_ARM64:
             sources.append((ROOT / "cli/archive.s", directory / "archive.o"))

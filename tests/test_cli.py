@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE
+from host import IS_MACOS, TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE
 from host import exit_source, argc_source, illegal_source, undefined_symbol_source
 
 
@@ -265,12 +265,19 @@ class NativeCliTests(unittest.TestCase):
         project = self.project()
         env = dict(os.environ, PATH="")
         self.assertEqual(self.cli("run", cwd=project, env=env).stdout, "Hello from asm!\n")
+        if IS_MACOS:
+            header = subprocess.run(["otool", "-L", ASM], capture_output=True, text=True, check=True)
+            self.assertIn("/usr/lib/libSystem.B.dylib", header.stdout)
+            self.assertNotIn("libpython", header.stdout)
+            return
         header = subprocess.run(["readelf", "-l", ASM], capture_output=True, text=True, check=True)
         self.assertNotIn("INTERP", header.stdout)
         self.assertNotIn("RWE", header.stdout)
 
     def test_cli_builds_its_own_assembly_sources(self):
         shutil.copytree(ROOT / "cli", self.work / "cli")
+        if IS_MACOS:
+            shutil.copyfile(ROOT / "build/macos/asm.s", self.work / CLI_SOURCE)
         (self.work / "asm.toml").write_text(
             '[package]\nname = "asm"\nversion = "0.1.0"\n\n'
             f'[build]\nsource = "{CLI_SOURCE}"\ntarget = "{TARGET}"\n'

@@ -17,8 +17,9 @@ import registry
 REPOSITORY = "https://github.com/stubbi/asm"
 REPOSITORY_ID = 1441332955
 TARGETS = {
-    "x86_64-linux": ("x86_64|amd64", "x86_64"),
-    "aarch64-linux": ("aarch64|arm64", "ARM64"),
+    "x86_64-linux": ("Linux:x86_64|Linux:amd64", "Linux x86_64"),
+    "aarch64-linux": ("Linux:aarch64|Linux:arm64", "Linux ARM64"),
+    "aarch64-macos": ("Darwin:arm64", "macOS 15 or later on ARM64"),
 }
 INSTALL_COMMAND = "curl -qfsS -m120 https://asm.build/install.sh | sh"
 MINIMUM_VERSION = (0, 2, 0)
@@ -93,7 +94,7 @@ def validate_release(release: dict) -> None:
 
 
 def render_installer(release: dict) -> bytes:
-    """Validate all selected artifacts before generating a local architecture switch."""
+    """Bind each checked artifact to its local operating system and ISA."""
     validate_release(release)
     cases = []
     for artifact in release["artifacts"]:
@@ -115,7 +116,17 @@ def render_installer(release: dict) -> bytes:
 def installer_markup(release: dict) -> str:
     validate_release(release)
     version = escape(release["version"])
-    hosts = " and ".join("Linux " + TARGETS[artifact["target"]][1] for artifact in release["artifacts"])
+    hosts = " and ".join(TARGETS[artifact["target"]][1] for artifact in release["artifacts"])
+    targets = {artifact["target"] for artifact in release["artifacts"]}
+    requirements = []
+    if targets & {"x86_64-linux", "aarch64-linux"}:
+        requirements.append("On Linux, it uses curl and GNU Coreutils in /usr/bin. "
+                            "Install GitHub CLI at /usr/bin/gh.")
+    if "aarch64-macos" in targets:
+        requirements.append("On macOS, it uses system tools, including Perl and /usr/bin/shasum. "
+                            "Install GitHub CLI at /opt/homebrew/bin/gh. "
+                            "The installation requires a local APFS volume with ownership enabled.")
+    tools = " ".join(requirements)
     commands = INSTALL_COMMAND
     download_commands = '''asm_installer=$(mktemp) &&
 curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
@@ -127,7 +138,7 @@ cat "$asm_installer"'''
   sh "$installer"
 )'''
     return f'''<div class="bootstrap-panel">
-<p class="section-footnote">The installer supports {hosts}. It selects the matching build on your machine. It uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
+<p class="section-footnote">The installer supports {hosts}. It selects the matching build on your machine. {tools} Use <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> before you start.</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation command">Copy</button></div>
 <pre><code id="bootstrap-commands">{escape(commands)}</code></pre>

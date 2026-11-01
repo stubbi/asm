@@ -1590,6 +1590,11 @@ registry_valid_version:
  * This is artifact selection, not a claim that the host can execute it. */
 registry_valid_target:
     ARM_SAVE x0
+    ARM_ADDR x1, registry_macos
+    ARM_CALL streq
+    ARM_RESTORE x0
+    cbnz w9, registry_valid
+    ARM_SAVE x0
     ARM_ADDR x16, registry_x86_64
     mov x1, x16
     ARM_CALL streq
@@ -3393,6 +3398,7 @@ registry_default_url: .asciz "https://asm.build/registry/v1/index.tsv"
 registry_header: .asciz "# asm-registry-v1\n"
 registry_host: .asciz "aarch64-linux"
 registry_x86_64: .asciz "x86_64-linux"
+registry_macos: .asciz "aarch64-macos"
 registry_aarch64: .asciz "aarch64-linux"
 registry_riscv64: .asciz "riscv64-linux"
 registry_source_kind: .asciz "source"

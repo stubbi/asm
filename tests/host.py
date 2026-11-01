@@ -12,6 +12,7 @@ import platform
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / "cli/commands.json").read_text())["version"]
 MACHINE = platform.machine().lower()
+IS_MACOS = platform.system() == "Darwin"
 IS_ARM64 = MACHINE in {"aarch64", "arm64"}
 if MACHINE not in {"x86_64", "amd64", "aarch64", "arm64"}:
     raise RuntimeError(f"The native CLI tests do not support {MACHINE}.")
@@ -22,6 +23,12 @@ ELF_MACHINE = 183 if IS_ARM64 else 62
 ASM_FLAGS = [] if IS_ARM64 else ["--64"]
 CLI_SOURCE = "cli/aarch64/asm.s" if IS_ARM64 else "cli/asm.s"
 CLI_DIRECTORY = ROOT / ("cli/aarch64" if IS_ARM64 else "cli")
+if IS_MACOS:
+    TARGET = "aarch64-macos"
+    OTHER_TARGET = "aarch64-linux"
+    TRIPLE = "arm64-apple-macos"
+    CLI_SOURCE = "cli/macos/asm.s"
+
 SYS_RENAMEAT = 38 if IS_ARM64 else 264
 SYS_SIGPROCMASK = 135 if IS_ARM64 else 14
 SYS_GETRLIMIT = 163 if IS_ARM64 else 97
@@ -29,16 +36,22 @@ SYS_SETRLIMIT = 164 if IS_ARM64 else 160
 
 
 def program(body: str) -> str:
+    if IS_MACOS:
+        return ".global _main\n.text\n_main:\n" + body + "\n"
     syntax = "" if IS_ARM64 else ".intel_syntax noprefix\n"
     return syntax + ".global _start\n.text\n_start:\n" + body + '\n.section .note.GNU-stack,"",@progbits\n'
 
 
 def exit_source(code: int) -> str:
+    if IS_MACOS:
+        return program(f"mov x0, #{code}\nbl _exit")
     return program(f"mov x0, #{code}\nmov x8, #93\nsvc #0" if IS_ARM64 else
                    f"mov edi, {code}\nmov eax, 60\nsyscall")
 
 
 def argc_source() -> str:
+    if IS_MACOS:
+        return program("bl _exit")
     return program("ldr x0, [sp]\nmov x8, #93\nsvc #0" if IS_ARM64 else
                    "mov rdi, [rsp]\nmov eax, 60\nsyscall")
 

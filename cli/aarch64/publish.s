@@ -1451,6 +1451,17 @@ pub_any_member:
  * x0=validated target, x1=byte size. w9=0/1. Owns fd and 64/56-byte buffers.
  * Stack frame: 112 bytes. Each program header is read separately, at most1024. */
 pub_validate_elf:
+    /* A Mach-O target must never be accepted by the Linux ELF validator. */
+    ARM_SAVE x0
+    ARM_SAVE x1
+    ARM_ADDR x1, registry_macos
+    ARM_CALL streq
+    ARM_RESTORE x1
+    ARM_RESTORE x0
+    cbz w9, .Lpub_linux_executable
+    mov w9, #1
+    ret
+.Lpub_linux_executable:
     ARM_SAVE x19
     ARM_SAVE x20
     ARM_SAVE x21

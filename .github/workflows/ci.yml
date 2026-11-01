@@ -16,6 +16,7 @@ concurrency:
 jobs:
   check:
     name: Check the x86_64 release
+    needs: macos
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -42,8 +43,13 @@ jobs:
         run: python3 tools/registry.py validate --base-ref "$ASM_BASE_SHA"
       - name: Build the static site
         run: python3 tools/build_site.py --output .pages
+      - name: Receive the native macOS qualification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: native-macos-${{ github.sha }}
+          path: native-input
       - name: Build release files
-        run: python3 tools/release.py --output dist
+        run: python3 tools/release.py --output dist --native-input native-input
 
   arm64:
     name: Check the native ARM64 CLI
@@ -63,18 +69,40 @@ jobs:
             test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor \
             test_bootstrap.BootstrapUserFlowTests.test_readonly_home_allows_non_root_install_and_exact_rerun
 
+  macos:
+    name: Check the native macOS CLI
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and test clean native release bytes
+        run: python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist
+      - name: Retain exact native bytes and runtime evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-macos-${{ github.sha }}
+          path: native-dist/*
+          if-no-files-found: error
+          retention-days: 7
+
   qualification:
     name: Test the release contract
-    needs: [check, arm64]
+    needs: [check, arm64, macos]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
-      - name: Require both native host checks
+      - name: Require every native host check
         env:
           ASM_X86_RESULT: ${{ needs.check.result }}
           ASM_ARM_RESULT: ${{ needs.arm64.result }}
+          ASM_MACOS_RESULT: ${{ needs.macos.result }}
         run: |
           test "$ASM_X86_RESULT" = success
           test "$ASM_ARM_RESULT" = success
+          test "$ASM_MACOS_RESULT" = success

@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import TARGET, OTHER_TARGET, ELF_MACHINE, VERSION
+from host import IS_MACOS, TARGET, OTHER_TARGET, ELF_MACHINE, VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -159,14 +159,19 @@ class RegistryCliTests(unittest.TestCase):
 
     def test_install_rejects_wrong_target_and_malformed_elf(self):
         original = ASM.read_bytes()
-        program_offset = struct.unpack_from("<Q", original, 32)[0]
         bad = []
-        for offset, format_, value in [
-            (4, "B", 1), (5, "B", 2), (18, "H", 62 if ELF_MACHINE == 183 else 183), (56, "H", 65535),
-            (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
-            (program_offset + 4, "I", 7),
-            (program_offset + 32, "Q", 2**64 - 1),
-        ]:
+        if IS_MACOS:
+            mutations = [(0, "I", 0x464c457f), (4, "I", 0x1000007), (12, "I", 1),
+                         (16, "I", 129), (20, "I", 0xffffffff), (28, "I", 1), (36, "I", 4)]
+        else:
+            program_offset = struct.unpack_from("<Q", original, 32)[0]
+            mutations = [
+                (4, "B", 1), (5, "B", 2), (18, "H", 62 if ELF_MACHINE == 183 else 183), (56, "H", 65535),
+                (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
+                (program_offset + 4, "I", 7),
+                (program_offset + 32, "Q", 2**64 - 1),
+            ]
+        for offset, format_, value in mutations:
             data = bytearray(original)
             struct.pack_into("<" + format_, data, offset, value)
             bad.append(bytes(data))

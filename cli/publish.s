@@ -856,6 +856,18 @@ pub_any_member:
  * RDI=validated target, RSI=byte size. EAX=0/1. Owns fd and 64/56-byte buffers.
  * Stack frame:56 bytes. Each program header is read separately, at most1024. */
 pub_validate_elf:
+    # macOS executables require native Mach-O qualification on that host.
+    push rdi
+    push rsi
+    lea rsi, [rip + registry_macos]
+    call streq
+    pop rsi
+    pop rdi
+    test eax, eax
+    jz .Lpub_linux_executable
+    mov eax, 1
+    ret
+.Lpub_linux_executable:
     push rbx
     push rbp
     push r12
