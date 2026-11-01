@@ -316,5 +316,7 @@ asm_bootstrap_main() (
     asm_next_steps
 )
 
-# Keep the entry point last so a truncated download cannot run a partial body.
-asm_bootstrap_main "$@"
+# Parse the complete body and entry block before any installation work starts.
+{
+    asm_bootstrap_main "$@"
+}
