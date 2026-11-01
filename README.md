@@ -30,6 +30,18 @@ ASM must remain useful when a compiler already produces the best implementation 
 The product follows from those assumptions: one workflow for assembly projects, with explicit targets and inspectable evidence.
 Read [the full motivation](docs/why-asm.md).
 
+### An early measured example
+
+Our [asmwc experiment](docs/evidence.md) compares complete assembly and Rust implementations of a word counter.
+On one Apple M3, default counting took 15.234 ms in assembly and 68.468 ms in Rust.
+Those are warm-cache medians for a 128 MiB text file, with 24 samples per implementation.
+The comparison includes differences in algorithms, input scheduling, and startup.
+
+We checked the published record digests and recomputed the selected medians.
+We did not reproduce the macOS experiment during the ASM build.
+The [evidence record](docs/evidence.md) includes the baseline, raw samples, slower cases, and limits.
+ASM needs to make this kind of evidence available beside the exact target artifact.
+
 ## Quick start
 
 The current CLI runs on **Linux x86-64**.
