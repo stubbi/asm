@@ -93,21 +93,9 @@
     return `GitHub asset downloads: ${record.total.toLocaleString("en-US")}${observed}`;
   }
 
-  function installInstructions(artifact, version) {
-    if (!validArtifact(artifact) || artifact.kind !== "executable" || artifact.target !== "x86_64-linux") return null;
-    if (typeof version !== "string" || !/^(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})$/.test(version)) return null;
-    const filename = new URL(artifact.url).pathname.split("/").pop();
-    return {
-      filename,
-      verify: `printf '%s  %s\\n' '${artifact.sha256}' '${filename}' | sha256sum --check`,
-      run: `chmod u+x ./${filename}\n./${filename} version`,
-      install: `./${filename} install stubbi/asm@${version}\nexport PATH="$HOME/.local/bin:$PATH"\nasm version`
-    };
-  }
-
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, installInstructions };
+    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount };
   }
   if (typeof document === "undefined") return;
 
@@ -257,26 +245,13 @@
     const artifacts = version?.artifacts.filter((artifact) => validArtifact(artifact) && artifact.kind === "executable") || [];
     const panel = document.getElementById("cli-download");
     if (!panel || !artifacts.length) return;
-    panel.append(element("h3", "", `Download asm ${version.version}`));
-    panel.append(element("p", "", "Choose the artifact for your system. Check its SHA-256 before you run it."));
+    panel.append(element("h3", "", `ASM ${version.version} release files`));
+    panel.append(element("p", "", "Use the installer above to check the signed release and install ASM. These links provide the raw artifacts for inspection."));
+    panel.append(link("Install ASM ↑", "#start", "text-link"));
     artifacts.forEach((artifact) => {
-      panel.append(link(`Download for ${artifact.target} ↗`, githubURL(artifact.url, true), "button button-primary"));
+      panel.append(link(`Raw executable for ${artifact.target} ↗`, githubURL(artifact.url, true), "text-link"));
       panel.append(element("p", "checksum-label", `${formatBytes(artifact.bytes)} · SHA-256`));
       panel.append(element("code", "", artifact.sha256));
-      const instructions = installInstructions(artifact, version.version);
-      if (instructions) {
-        const guide = element("details", "install-guide");
-        guide.append(element("summary", "", "Verify and install this CLI"));
-        guide.append(element("p", "", "Open a terminal in the directory that contains the download. Check its checksum first."));
-        guide.append(commandBlock("binary-checksum-command", "Check the download", instructions.verify));
-        guide.append(element("p", "", `If the check reports “${instructions.filename}: OK”, make the file executable.`));
-        guide.append(commandBlock("binary-version-command", "Check the CLI version", instructions.run));
-        guide.append(element("p", "", "Install the command for your user account. The installer refuses an existing destination."));
-        guide.append(commandBlock("binary-install-command", "Install asm", instructions.install));
-        guide.append(element("p", "", "The command is installed at $HOME/.local/bin/asm. The PATH change applies to this terminal."));
-        guide.append(element("p", "", "Registry commands require /usr/bin/curl and /usr/bin/sha256sum. Source dependencies also require /usr/bin/gzip."));
-        panel.append(guide);
-      }
     });
     panel.append(element("p", "", "Release records above list the checks performed on each artifact."));
     panel.hidden = false;
