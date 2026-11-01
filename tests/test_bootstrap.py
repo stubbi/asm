@@ -52,7 +52,7 @@ def release_record(version="0.2.0"):
 
 
 TOOL_DOUBLE = r'''#!/usr/bin/python3
-import json, os, pathlib, signal, sys, time
+import json, os, pathlib, signal, stat, sys, time
 base = pathlib.Path(__file__).parent
 cfg = json.loads((base / "config.json").read_text())
 tool = pathlib.Path(__file__).name
@@ -60,13 +60,41 @@ args = sys.argv[1:]
 log = {"tool": tool, "args": args, "env_keys": sorted(os.environ),
        "home": os.environ.get("HOME"), "config": os.environ.get("GH_CONFIG_DIR"),
        "proxy": os.environ.get("https_proxy"), "time": time.monotonic_ns()}
-(base / "logs" / (tool + "-" + str(os.getpid()) + ".json")).write_text(json.dumps(log))
+log_path = base / "logs" / (tool + "-" + str(os.getpid()) + ".json")
+log_path.write_text(json.dumps(log))
 if tool == "uname":
     print(cfg.get("system", "Linux") if args == ["-s"] else cfg.get("machine", "x86_64"))
 elif tool == "gh":
     if args == ["--version"]:
+        if cfg.get("inspect_version_home"):
+            for key in ("HOME", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR"):
+                directory = pathlib.Path(os.environ[key])
+                info = directory.lstat()
+                assert stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700, key
+                assert info.st_uid == os.geteuid(), key
+            config = pathlib.Path(os.environ["GH_CONFIG_DIR"])
+            assert list(config.iterdir()) == []
+            probe = config / "config.yml"
+            with probe.open("x") as output:
+                output.write("# Controlled version-probe configuration.\n")
+            assert probe.read_text() == "# Controlled version-probe configuration.\n"
+            log["private_config_checked"] = True
+            log["install_directory_existed"] = (pathlib.Path(cfg["expected_install_home"]) / ".local").exists()
+            log["bin_directory_existed"] = (pathlib.Path(cfg["expected_install_home"]) / ".local/bin").exists()
+            log_path.write_text(json.dumps(log))
+        if cfg.get("interrupt_version"):
+            pathlib.Path(cfg["interrupt_marker"]).write_text("ready")
+            time.sleep(60)
+        if cfg.get("stall_version"):
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            time.sleep(60)
+        if cfg.get("version_error"):
+            print("Controlled verifier startup failure", file=sys.stderr)
+            sys.exit(1)
         print("gh version " + cfg.get("gh_version", "2.93.0") + " (fixture)")
         sys.exit(0)
+    if cfg.get("inspect_version_home"):
+        assert list(pathlib.Path(os.environ["GH_CONFIG_DIR"]).iterdir()) == []
     required = {
         "--repo": "stubbi/asm",
         "--cert-identity": "https://github.com/stubbi/asm/.github/workflows/release.yml@refs/heads/main",
@@ -275,11 +303,11 @@ class BootstrapUserFlowTests(unittest.TestCase):
     def save_config(self):
         (self.tools / "config.json").write_text(json.dumps(self.config))
 
-    def run_installer(self, **changes):
+    def run_installer(self, *, timeout=15, **changes):
         self.config.update(changes)
         self.save_config()
         return subprocess.run(["/bin/sh", str(self.script)], env=self.env, cwd=self.base,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
 
     def calls(self, name):
         result = [json.loads(path.read_text()) for path in (self.tools / "logs").glob(name + "-*.json")]
@@ -288,6 +316,8 @@ class BootstrapUserFlowTests(unittest.TestCase):
     def assert_no_install(self, result):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertFalse(self.destination.exists())
+        self.assertEqual(list(self.home.glob(".asm-bootstrap.*")), [])
+        self.assertEqual(list((self.home / ".local").glob(".asm-bootstrap.*")), [])
         self.assertEqual(list((self.home / ".local/bin").glob(".asm-bootstrap.*")), [])
 
     def test_install_verifies_then_creates_one_owned_executable_without_running_it(self):
@@ -321,6 +351,37 @@ class BootstrapUserFlowTests(unittest.TestCase):
         self.assertEqual(self.destination.stat().st_ino, inode)
         self.assertEqual(self.destination.stat().st_nlink, 1)
         self.assertEqual(len(self.calls("curl")), downloads)
+
+    def test_version_probe_has_a_private_home_before_creating_install_directories(self):
+        result = self.run_installer(inspect_version_home=True, expected_install_home=str(self.home))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        version, verification = self.calls("gh")
+        self.assertEqual(version["args"], ["--version"])
+        self.assertTrue(version["private_config_checked"])
+        self.assertFalse(version["install_directory_existed"])
+        self.assertNotEqual(version["home"], verification["home"])
+        self.assertNotEqual(version["home"], str(self.home))
+        self.assertNotEqual(version["config"], self.env["GH_CONFIG_DIR"])
+        self.assertFalse(Path(version["home"]).parent.exists())
+        self.assertEqual(list(self.home.glob(".asm-bootstrap.*")), [])
+        for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "SIGSTORE_ROOT_FILE", "TUF_ROOT"):
+            self.assertNotIn(name, version["env_keys"])
+
+    def test_verifier_startup_failure_cleans_probe_without_creating_install_directories(self):
+        result = self.run_installer(version_error=True, inspect_version_home=True,
+                                    expected_install_home=str(self.home))
+        self.assert_no_install(result)
+        self.assertIn(b"Cannot read the GitHub CLI version", result.stderr)
+        self.assertFalse((self.home / ".local").exists())
+        self.assertEqual(self.calls("curl"), [])
+
+    def test_stalled_version_probe_reaches_deadline_and_cleans_home(self):
+        result = self.run_installer(timeout=30, stall_version=True, inspect_version_home=True,
+                                    expected_install_home=str(self.home))
+        self.assert_no_install(result)
+        self.assertIn(b"Cannot read the GitHub CLI version", result.stderr)
+        self.assertFalse((self.home / ".local").exists())
+        self.assertEqual(self.calls("curl"), [])
 
     def test_old_or_prerelease_verifier_fails_before_creating_install_directories(self):
         for version in ("2.92.9", "1.99.0", "2.93.0-pre", "2.93", "999999999.0.0"):
@@ -490,6 +551,104 @@ class BootstrapUserFlowTests(unittest.TestCase):
                         "download_was_not_started": True}
             (ROOT / "build/bootstrap-cross-uid-result.json").write_text(json.dumps(evidence, indent=2) + "\n")
 
+    @unittest.skipUnless(os.geteuid() == 0 and Path("/tmp").is_dir(), "real non-root permission check requires a root test process and /tmp")
+    def test_readonly_home_allows_non_root_install_and_exact_rerun(self):
+        uid = 65532
+        evidence = []
+        for existing_bin in (False, True):
+            with self.subTest(existing_bin=existing_bin), tempfile.TemporaryDirectory(prefix="asm-bootstrap-readonly-", dir="/tmp") as temp:
+                base = Path(temp)
+                os.chown(base, uid, uid)
+                base.chmod(0o755)
+                tools = base / "tools"
+                shutil.copytree(self.tools, tools)
+                for path in [tools, *tools.rglob("*")]:
+                    os.chown(path, uid, uid)
+                home = base / "home"
+                local = home / ".local"
+                bin_path = local / "bin"
+                local.mkdir(parents=True)
+                directories = [home, local]
+                if existing_bin:
+                    bin_path.mkdir()
+                    directories.append(bin_path)
+                for directory in directories:
+                    os.chown(directory, uid, uid)
+                    directory.chmod(0o500 if directory == home or (existing_bin and directory == local) else 0o700)
+                original_modes = {str(path): path.stat().st_mode & 0o7777 for path in directories}
+                payload = base / "payload"
+                payload.write_bytes(PAYLOAD)
+                payload.chmod(0o644)
+                config = {**self.config, "payload_path": str(payload), "inspect_version_home": True,
+                          "expected_install_home": str(home), "gh_version": "2.92.9"}
+                config_path = tools / "config.json"
+                config_path.write_text(json.dumps(config))
+                config_path.chmod(0o644)
+                script = base / "install.sh"
+                script.write_text(self.script.read_text().replace(str(self.tools), str(tools)))
+                script.chmod(0o644)
+                env = {**self.env, "HOME": str(home)}
+
+                def run():
+                    return subprocess.run(["/bin/sh", str(script)], env=env, cwd=base, user=uid,
+                                          group=uid, extra_groups=[], capture_output=True, timeout=15)
+
+                def assert_clean_stages():
+                    for directory in (home, local, bin_path):
+                        self.assertEqual(list(directory.glob(".asm-bootstrap.*")), [])
+
+                rejected = run()
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(b"Update GitHub CLI", rejected.stderr)
+                self.assertEqual(bin_path.exists(), existing_bin)
+                self.assertEqual(original_modes, {str(path): path.stat().st_mode & 0o7777 for path in directories})
+                self.assertEqual(list((tools / "logs").glob("curl-*.json")), [])
+                assert_clean_stages()
+                probe = json.loads(next((tools / "logs").glob("gh-*.json")).read_text())
+                expected_parent = bin_path if existing_bin else local
+                self.assertEqual(Path(probe["home"]).parent.parent, expected_parent)
+                self.assertEqual(probe["bin_directory_existed"], existing_bin)
+
+                config["gh_version"] = "2.93.0"
+                config_path.write_text(json.dumps(config))
+                installed = run()
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+                command = bin_path / "asm"
+                self.assertEqual(command.read_bytes(), PAYLOAD)
+                self.assertEqual(command.stat().st_uid, uid)
+                self.assertEqual(command.stat().st_nlink, 1)
+                self.assertEqual(original_modes, {str(path): path.stat().st_mode & 0o7777 for path in directories})
+                assert_clean_stages()
+
+                for directory in (home, local, bin_path):
+                    directory.chmod(0o500)
+                inode = command.stat().st_ino
+                calls = sorted(path.name for name in ("gh", "curl") for path in (tools / "logs").glob(name + "-*.json"))
+                rerun = run()
+                self.assertEqual(rerun.returncode, 0, rerun.stderr)
+                self.assertIn(b"already installed", rerun.stdout)
+                self.assertEqual(command.stat().st_ino, inode)
+                self.assertEqual(command.read_bytes(), PAYLOAD)
+                self.assertEqual(calls, sorted(path.name for name in ("gh", "curl") for path in (tools / "logs").glob(name + "-*.json")))
+                self.assertTrue(all(path.stat().st_mode & 0o7777 == 0o500 for path in (home, local, bin_path)))
+                assert_clean_stages()
+
+                changed_bytes = PAYLOAD[:-1] + b"!"
+                command.write_bytes(changed_bytes)
+                refused = run()
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn(b"An existing asm file differs", refused.stderr)
+                self.assertEqual(command.stat().st_ino, inode)
+                self.assertEqual(command.read_bytes(), changed_bytes)
+                self.assertEqual(calls, sorted(path.name for name in ("gh", "curl") for path in (tools / "logs").glob(name + "-*.json")))
+                assert_clean_stages()
+                evidence.append({"uid": uid, "initial_modes": original_modes, "bin_existed": existing_bin,
+                                 "probe_parent": str(expected_parent), "old_verifier_rejected_before_creation": True,
+                                 "installation_passed": True, "readonly_rerun_preserved_inode": True,
+                                 "readonly_rerun_called_no_verifier_or_network_tool": True,
+                                 "different_bytes_preserved_and_rejected": True})
+        (ROOT / "build/bootstrap-readonly-home-result.json").write_text(json.dumps(evidence, indent=2) + "\n")
+
     def test_destination_created_after_validation_is_not_overwritten(self):
         result = self.run_installer(destination_race=True)
         self.assertNotEqual(result.returncode, 0)
@@ -520,6 +679,28 @@ class BootstrapUserFlowTests(unittest.TestCase):
             os.killpg(process.pid, signal.SIGTERM)
             stdout, stderr = process.communicate(timeout=5)
             self.assert_no_install(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+
+    def test_interrupted_version_probe_cleans_home_without_creating_install_directories(self):
+        self.config.update(interrupt_version=True, inspect_version_home=True,
+                           expected_install_home=str(self.home))
+        self.save_config()
+        process = subprocess.Popen(["/bin/sh", str(self.script)], cwd=self.base, env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            deadline = time.monotonic() + 5
+            marker = Path(self.config["interrupt_marker"])
+            while not marker.exists() and time.monotonic() < deadline and process.poll() is None:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists(), "Installer did not reach the controlled version probe")
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=5)
+            self.assert_no_install(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
+            self.assertFalse((self.home / ".local").exists())
+            self.assertEqual(self.calls("curl"), [])
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)

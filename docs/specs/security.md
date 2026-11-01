@@ -80,6 +80,10 @@ The native updater also downloads and verifies `release.json`, with the same siz
 
 Both installation routes check the byte size and SHA-256 digest before exposing the file. The site checks the executable format before it generates the bootstrap script. The native updater also checks the downloaded ELF format and segment bounds. Bootstrap finalization refuses an existing different destination. Self-update checks the running executable's device and inode before staging and again before replacement. It uses a private stage and an advisory directory lock. It syncs the candidate before the final atomic rename. The candidate is not executed during installation or updating.
 
+The bootstrap accepts an existing file only if its ownership, link count, permissions, size, and digest match the installation contract.
+This no-op creates no temporary files and does not download files or run the provenance verifier.
+It can succeed when the existing installation directories permit no writes.
+
 The manual command refuses a downgrade. An equal selected version is a no-op; it does not reverify the installed file or establish registry freshness. A stale index can hide a newer release. The protocol has no independently signed expiry, emergency revocation record, or durable metadata-version history. GitHub CLI's root refresh does not supply those missing ASM release guarantees.
 
 This protocol is not an audited TUF client for ASM metadata. It does not enable unattended updates. The repository, release workflow, GitHub identity service, verifier, and trusted roots remain trusted. Same-account processes can ignore advisory locks. Atomic replacement does not promise directory durability after power loss.
