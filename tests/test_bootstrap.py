@@ -241,6 +241,19 @@ class BootstrapGenerationTests(unittest.TestCase):
                 self.assertFalse((stage / "install.sh").exists())
                 self.assertNotIn('id="bootstrap-commands"', (stage / "index.html").read_text())
 
+    def test_installer_host_description_matches_available_artifacts(self):
+        record = release_record("0.3.0")
+        selected = bootstrap.installer_release([record], {("stubbi/asm", "0.3.0")})
+        markup = bootstrap.installer_markup(selected)
+        self.assertIn("The installer supports Linux x86_64.", markup)
+        self.assertNotIn("Linux ARM64", markup)
+        arm = {**record["artifacts"][0], "target": "aarch64-linux",
+               "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/asm-0.3.0-aarch64-linux"}
+        record["artifacts"].append(arm)
+        selected = bootstrap.installer_release([record], {("stubbi/asm", "0.3.0")})
+        markup = bootstrap.installer_markup(selected)
+        self.assertIn("The installer supports Linux ARM64 and Linux x86_64.", markup)
+
     def test_complete_download_instructions_stop_before_execution_on_failure(self):
         release = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
         markup = bootstrap.installer_markup(release)

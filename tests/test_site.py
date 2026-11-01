@@ -2,11 +2,21 @@
 
 from html.parser import HTMLParser
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
+from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
+sys.path.insert(0, str(ROOT / "tools"))
+import build_site
 
 
 class SiteParser(HTMLParser):
@@ -19,6 +29,9 @@ class SiteParser(HTMLParser):
         self.labels = []
         self.headings = []
         self.scripts = []
+        self.canonicals = []
+        self.descriptions = []
+        self.robots = []
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -40,6 +53,14 @@ class SiteParser(HTMLParser):
             self.headings.append(tag)
         if tag == "script":
             self.scripts.append(attrs.get("src", ""))
+        if tag == "link" and attrs.get("rel") == "canonical":
+            self.canonicals.append(attrs.get("href", ""))
+        if tag == "meta":
+            name = attrs.get("name", "").lower()
+            if name == "description":
+                self.descriptions.append(attrs.get("content", ""))
+            if name in ("robots", "googlebot", "bingbot"):
+                self.robots.extend(re.split(r"[,\s]+", attrs.get("content", "").lower()))
 
 
 class SiteTests(unittest.TestCase):
@@ -65,6 +86,64 @@ class SiteTests(unittest.TestCase):
         self.assertTrue(self.page.scripts)
         for script in self.page.scripts:
             self.assertFalse(script.startswith(("http:", "https:", "//")))
+
+
+class SearchDiscoveryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory(prefix="asm-search-tests-")
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.output = Path(cls.temporary.name) / "site"
+        repo = Path(cls.temporary.name) / "repo"
+        repo.mkdir()
+        shutil.copytree(SITE, repo / "site")
+        shutil.copytree(ROOT / "cli", repo / "cli")
+        # Source archives have no Git metadata. Record an isolated fixture so
+        # the generated reference uses the same exact-commit path in either form.
+        for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
+                          ("commit", "-qm", "Record source reference fixture")):
+            subprocess.run(["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null",
+                            "-c", "commit.gpgSign=false", "-c", "user.name=ASM site test fixture",
+                            "-c", "user.email=fixture@example.invalid", *arguments],
+                           check=True, capture_output=True, timeout=10)
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("Search discovery checks must not use the network")
+
+        build_site.build_site(repo, ROOT / "registry", cls.output,
+                              artifact_reader=forbidden, metrics_fetcher=forbidden)
+
+    def test_sitemap_urls_have_html_metadata_and_allow_crawling(self):
+        sitemap = ElementTree.parse(self.output / "sitemap.xml")
+        namespace = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+        self.assertEqual(sitemap.getroot().tag, namespace + "urlset")
+        locations = [item.text for item in sitemap.findall(f"{namespace}url/{namespace}loc")]
+        self.assertEqual(locations, ["https://asm.build/", "https://asm.build/reference/"])
+        robots = RobotFileParser()
+        robots.parse((self.output / "robots.txt").read_text(encoding="utf-8").splitlines())
+        self.assertEqual(robots.site_maps(), ["https://asm.build/sitemap.xml"])
+        for location in locations:
+            with self.subTest(url=location):
+                url = urlsplit(location)
+                self.assertEqual((url.scheme, url.netloc, url.query, url.fragment),
+                                 ("https", "asm.build", "", ""))
+                page = SiteParser()
+                page.feed((self.output / url.path.lstrip("/") / "index.html").read_text(encoding="utf-8"))
+                self.assertEqual(page.canonicals, [location])
+                self.assertEqual(len(page.descriptions), 1)
+                self.assertTrue(page.descriptions[0].strip())
+                self.assertTrue({"noindex", "none", "nofollow"}.isdisjoint(page.robots))
+                for crawler in ("Googlebot", "bingbot", "*"):
+                    self.assertTrue(robots.can_fetch(crawler, location))
+        for path in ("/styles.css", "/app.js", "/registry/v1/index.json"):
+            self.assertTrue(robots.can_fetch("Googlebot", "https://asm.build" + path))
+
+    def test_indexnow_ownership_file_is_published_with_exact_utf8_content(self):
+        keys = [path for path in SITE.iterdir() if re.fullmatch(r"[0-9a-f]{32}\.txt", path.name)]
+        self.assertEqual(len(keys), 1)
+        key_file = keys[0]
+        self.assertEqual(key_file.read_bytes(), key_file.stem.encode("utf-8"))
+        self.assertEqual((self.output / key_file.name).read_bytes(), key_file.read_bytes())
 
 
 if __name__ == "__main__":
