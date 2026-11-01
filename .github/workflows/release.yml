@@ -41,48 +41,102 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user
+      - name: Install the provenance verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_GH_ROOT="$RUNNER_TEMP/asm-gh"
+          mkdir -m 700 "$ASM_GH_ROOT"
+          curl -q --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 \
+            --max-filesize 15031972 \
+            https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz \
+            --output "$ASM_GH_ROOT/gh.tar.gz"
+          test "$(stat -c %s "$ASM_GH_ROOT/gh.tar.gz")" = 15031972
+          printf '%s  %s\n' \
+            4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d \
+            "$ASM_GH_ROOT/gh.tar.gz" | sha256sum --check --status
+          tar --extract --gzip --file "$ASM_GH_ROOT/gh.tar.gz" \
+            --directory "$ASM_GH_ROOT" gh_2.103.3_linux_amd64/bin/gh
+          chmod 755 "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin/gh"
+          "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin/gh" version
+          printf '%s\n' "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin" >> "$GITHUB_PATH"
       - name: Check and build the release
         run: |
           make check
           python3 tools/release.py --output dist --hello-target x86_64-linux --hello-target aarch64-linux --hello-target riscv64-linux
+          test "$(stat -c %s dist/release.json)" -le 1048576
+      - name: Check installation boundaries between users
+        run: |
+          sudo env PYTHONPATH=tests python3 -m unittest -v \
+            test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
+            test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor
       - name: Attest the build
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
+          create-storage-record: false
           subject-path: |
             dist/asm-*
             dist/hello-*
             dist/math-*
             dist/SHA256SUMS
             dist/release.json
-      - name: Verify release attestations
-        shell: bash
+      - name: Retain the signed bundle
         env:
-          GH_TOKEN: ${{ github.token }}
+          ASM_BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -f "$ASM_BUNDLE_PATH"
+          test ! -L "$ASM_BUNDLE_PATH"
+          test "$(stat -c %s "$ASM_BUNDLE_PATH")" -le 1048576
+          python3 -c 'import json, os; b=json.load(open(os.environ["ASM_BUNDLE_PATH"])); assert isinstance(b, dict) and isinstance(b.get("dsseEnvelope"), dict)'
+          install -m 644 "$ASM_BUNDLE_PATH" dist/release-attestation.sigstore.json
+      - name: Verify release attestations without an account
+        shell: bash
         run: |
           set -euo pipefail
           shopt -s failglob
           test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REPOSITORY" = stubbi/asm
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          ASM_VERIFY_HOME="$RUNNER_TEMP/asm-release-verifier"
+          mkdir -m 700 "$ASM_VERIFY_HOME"
           for ASM_ASSET in dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json; do
             test -f "$ASM_ASSET"
             test ! -L "$ASM_ASSET"
-            gh attestation verify "$ASM_ASSET" \
-              --repo "$GITHUB_REPOSITORY" \
-              --cert-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
+            ASM_VERIFIED_ID=$(env -i \
+              HOME="$ASM_VERIFY_HOME" \
+              GH_CONFIG_DIR="$ASM_VERIFY_HOME/config" \
+              XDG_CACHE_HOME="$ASM_VERIFY_HOME/cache" \
+              GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 \
+              GH_NO_EXTENSION_UPDATE_NOTIFIER=1 PATH=/usr/bin:/bin \
+              "$RUNNER_TEMP/asm-gh/gh_2.103.3_linux_amd64/bin/gh" \
+              attestation verify "$ASM_ASSET" \
+              --bundle dist/release-attestation.sigstore.json \
+              --repo stubbi/asm \
+              --cert-identity https://github.com/stubbi/asm/.github/workflows/release.yml@refs/heads/main \
+              --cert-oidc-issuer https://token.actions.githubusercontent.com \
               --source-ref refs/heads/main \
               --source-digest "$GITHUB_SHA" \
-              --signer-digest "$GITHUB_WORKFLOW_SHA" \
+              --signer-digest "$GITHUB_SHA" \
               --deny-self-hosted-runners \
-              --predicate-type https://slsa.dev/provenance/v1
+              --predicate-type https://slsa.dev/provenance/v1 \
+              --hostname github.com \
+              --format json \
+              --jq '.[].verificationResult.signature.certificate.sourceRepositoryIdentifier')
+            test "$ASM_VERIFIED_ID" = 1441332955
           done
       - name: Publish a new immutable version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           ASM_VERSION=$(python3 -c 'import json; print(json.load(open("cli/commands.json"))["version"])')
           ASM_COMMIT=$(git rev-parse HEAD)
           test -f "docs/releases/$ASM_VERSION.md"
-          gh release create "v$ASM_VERSION" dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json \
+          gh release create "v$ASM_VERSION" dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json dist/release-attestation.sigstore.json \
             --repo "$GITHUB_REPOSITORY" \
             --target "$ASM_COMMIT" \
             --title "ASM $ASM_VERSION" \
