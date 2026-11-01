@@ -102,7 +102,7 @@ def unknown_counts(records: list[dict]) -> dict:
 
 def write_reference(repo: Path, commit: str, output: Path) -> None:
     files = registry.git_files(repo, commit, "cli")
-    selected = {name: data for name, data in files.items() if name.endswith(".s") or name == "commands.json"}
+    selected = {name: data for name, data in files.items() if name.endswith((".s", ".inc")) or name == "commands.json"}
     registry.require(selected, "source commit has no CLI reference files")
     materialize(selected, output)
     rows = []

@@ -15,10 +15,7 @@ asm_bootstrap_main() (
     IFS=$asm_default_ifs
 
     readonly asm_version='@@VERSION@@'
-    readonly asm_sha256='@@SHA256@@'
-    readonly asm_bytes='@@BYTES@@'
     readonly asm_commit='@@SOURCE_COMMIT@@'
-    readonly asm_url='@@ARTIFACT_URL@@'
     readonly asm_bundle_url='@@BUNDLE_URL@@'
     readonly asm_repository_id='1441332955'
     asm_stage=''
@@ -40,9 +37,15 @@ asm_bootstrap_main() (
     trap 'exit 143' TERM
 
     [ "$#" -eq 0 ] || asm_fail 'This installer has no options. It installs only to $HOME/.local/bin/asm.'
-    [ -x /usr/bin/uname ] || asm_fail 'This installer requires Linux x86_64 and /usr/bin/uname.'
-    [ "$(/usr/bin/uname -s)" = Linux ] || asm_fail 'This release supports Linux x86_64 only.'
-    [ "$(/usr/bin/uname -m)" = x86_64 ] || asm_fail 'This release supports Linux x86_64 only.'
+    [ -x /usr/bin/uname ] || asm_fail 'This installer requires Linux and /usr/bin/uname.'
+    [ "$(/usr/bin/uname -s)" = Linux ] || asm_fail 'This release supports Linux only.'
+    # Detect locally. Never infer the host from an HTTP header or a download name.
+    # Each case binds the target to its own checked size, digest, and release URL.
+    case "$(/usr/bin/uname -m)" in
+@@TARGET_CASES@@
+        *) asm_fail 'This release has no build for your architecture. No command was installed.' ;;
+    esac
+    readonly asm_target asm_sha256 asm_bytes asm_url
 
     for asm_tool in curl gh stat id mktemp mkdir chmod ln rm sha256sum env timeout; do
         [ -x "/usr/bin/$asm_tool" ] || asm_fail "Install the required /usr/bin/$asm_tool tool, then try again."
@@ -276,7 +279,7 @@ asm_bootstrap_main() (
             --output "$3" --url "$1"
     )
 
-    printf 'Downloading ASM %s for Linux x86_64.\n' "$asm_version"
+    printf 'Downloading ASM %s for %s.\n' "$asm_version" "$asm_target"
     asm_fetch "$asm_url" "$asm_bytes" "$asm_stage/asm" || asm_fail 'The executable download failed. No command was installed.'
     [ "$(/usr/bin/stat --format='%s' -- "$asm_stage/asm")" = "$asm_bytes" ] || asm_fail 'The executable size does not match the release record.'
     printf '%s  %s\n' "$asm_sha256" "$asm_stage/asm" | /usr/bin/sha256sum --check --status || asm_fail 'The executable checksum does not match the release record.'

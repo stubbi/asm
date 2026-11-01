@@ -22,12 +22,16 @@ SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
     "SECURITY.md", "CODE_OF_CONDUCT.md", "LICENSING.md", "LICENSES", "cli", "docs", "examples",
-    "registry", "site", "tests", "tools",
+    "registry", "site", "tests", "tools", "benchmarks",
 ]
 HELLO_TARGETS = {
     "x86_64-linux": ("examples/hello", "as", "ld", ["--64"], None),
     "aarch64-linux": ("examples/hello-aarch64", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", [], "qemu-aarch64"),
     "riscv64-linux": ("examples/hello-riscv64", "riscv64-linux-gnu-as", "riscv64-linux-gnu-ld", ["-march=rv64i", "-mabi=lp64"], "qemu-riscv64"),
+}
+CLI_TARGETS = {
+    "x86_64-linux": ("x86_64", "as", "ld", None),
+    "aarch64-linux": ("aarch64", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", "qemu-aarch64"),
 }
 
 
@@ -114,9 +118,25 @@ def target_runner(name: str | None, env: dict[str, str]) -> str | None:
     return None
 
 
-def build_cli(snapshot: Path, env: dict[str, str]) -> bytes:
-    command(["make", "build/asm", "AS=as", "LD=ld"], snapshot, env)
-    return read_binary(snapshot / "build/asm", "x86_64-linux")
+def build_cli(snapshot: Path, env: dict[str, str], target: str = "x86_64-linux") -> bytes:
+    architecture, assembler, linker, _ = CLI_TARGETS[target]
+    command(["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"], snapshot, env)
+    return read_binary(snapshot / "build/asm", target)
+
+
+def check_cli(snapshot: Path, env: dict[str, str], target: str, version: str) -> dict:
+    emulator_name = CLI_TARGETS[target][3]
+    emulator = target_runner(emulator_name, env)
+    registry.require(emulator_name is None or emulator is not None,
+                     f"a runtime check is required before releasing the {target} CLI")
+    runner = ([emulator] if emulator else []) + [str(snapshot / "build/asm")]
+    actual = command([*runner, "version"], snapshot, env, 15)
+    registry.require(actual == f"asm {version} ({target})\n".encode("ascii"),
+                     "the built CLI reports an unexpected version or host")
+    targets = registry.strict_json(command([*runner, "targets", "--json"], snapshot, env, 15))
+    registry.require(targets == {"host": target, "targets": [target]},
+                     "the built CLI reports unexpected native build targets")
+    return {"status": "pass", "runner": emulator or "native", "stdout": actual.decode("ascii"), "exit_code": 0}
 
 
 def compile_hello(snapshot: Path, target: str, env: dict[str, str]) -> tuple[bytes, dict]:
@@ -203,6 +223,11 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                      "the release builder currently requires Linux x86_64")
     targets = sorted(set(hello_targets or ["x86_64-linux"]))
     registry.require(all(target in HELLO_TARGETS for target in targets), "unsupported hello target")
+    cli_hosts = commands.get("hosts", ["x86_64-linux"])
+    registry.require(isinstance(cli_hosts, list) and all(isinstance(target, str) for target in cli_hosts) and
+                     len(cli_hosts) == len(set(cli_hosts)) and
+                     "x86_64-linux" in cli_hosts and all(target in CLI_TARGETS for target in cli_hosts),
+                     "source command metadata declares unsupported or duplicate CLI hosts")
     owner = repository.split("/")[-2].lower()
     tag = "v" + version
     base = repository + "/releases/download/" + tag
@@ -219,6 +244,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         tools["python"] = platform.python_version()
         cli = build_cli(first, env)
         registry.require(cli == build_cli(second, env), "the two clean CLI builds do not match")
+        # Older fixture/release sources expose only version; retain their format.
         cli_version_output = command([str(first / "build/asm"), "version"], first, env, 15)
         registry.require(cli_version_output == f"asm {version} (x86_64-linux)\n".encode("ascii"),
                          "the built CLI reports an unexpected version or host")
@@ -243,7 +269,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                         "summary": "A small Linux assembly program that writes a greeting.",
                         "license": "MIT", "source": {"repository": repository, "commit": commit, "path": "examples"},
                         "yanked": False, "artifacts": []}
-        builds = {"asm": {"target": "x86_64-linux", "command": ["make", "build/asm", "AS=as", "LD=ld"],
+        builds = {"asm": {"target": "x86_64-linux", "command": ["make", "build/asm", "ARCH=x86_64", "AS=as", "LD=ld"],
                            "reproducibility": "Two clean builds produced identical bytes.",
                            "version_check": {"status": "pass", "stdout": cli_version_output.decode("ascii"), "exit_code": 0}}, "hello": {}}
         for target in targets:
@@ -295,6 +321,31 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                                            "commands": [["asm", "run"], ["asm", "test"]],
                                            "stdout": math_output.decode("ascii"),
                                            "test_stdout": math_test_output.decode("utf-8"), "exit_code": 0}}
+        # Build additional native implementations only after x86-only examples.
+        # The source archive contains both implementations; its root project
+        # manifest still declares the x86 reference build.
+        builds["asm_targets"] = {"x86_64-linux": builds["asm"]}
+        for target in cli_hosts:
+            if target == "x86_64-linux":
+                continue
+            architecture, assembler, linker, emulator_name = CLI_TARGETS[target]
+            for name in (assembler, linker):
+                tools[name] = tool_version(name, first, env)
+            emulator = target_runner(emulator_name, env)
+            registry.require(emulator is not None, f"missing runtime checker for {target}")
+            tools[emulator] = tool_version(emulator, first, env)
+            binary = build_cli(first, env, target)
+            registry.require(binary == build_cli(second, env, target), f"the two clean CLI builds do not match for {target}")
+            runtime = check_cli(first, env, target, version)
+            filename = f"asm-{version}-{target}"
+            payloads[filename] = binary
+            cli_record["artifacts"].append(artifact(binary, filename, target, "executable", base))
+            builds["asm_targets"][target] = {
+                "target": target,
+                "command": ["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"],
+                "reproducibility": "Two clean builds produced identical bytes.",
+                "version_check": runtime,
+            }
         records = registry.check_records(records)
         for record in records:
             for item in record["artifacts"]:
@@ -312,7 +363,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                    "repository": repository, "source_commit": commit,
                    "license": license_id, "template_license": "MIT",
                    "package_licenses": {record["name"]: record["license"] for record in records},
-                   "cli_hosts": ["x86_64-linux"], "hello_targets": targets,
+                   "cli_hosts": cli_hosts, "hello_targets": targets,
                    "tool_versions": tools, "builds": builds, "assets": assets,
                    "archive_format": "USTAR + gzip; sorted paths; zero timestamps; normalized ownership",
                    "provenance": "not-run", "formal_proofs": "not-run"}
