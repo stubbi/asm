@@ -11,7 +11,9 @@ Substantial discovery traffic is a core requirement.
 Known-package installation must remain independent of search availability.
 
 The [architecture proposal](architecture.md) defines authenticated delivery, authoritative publication, and a rebuildable search projection.
-Its [acceptance gates](architecture-gates.md) separate the deployed static alpha from unpublished server experiments and proposed production behavior.
+Its [acceptance gates](architecture-gates.md) distinguish the deployed static alpha, local experiments, and proposed production behavior.
+The [assembly server experiment](../experiments/assembly-server/README.md) is published for local builds and tests.
+The Rust behavioral reference remains unpublished.
 The proposed latency and workload targets are not measured capacity.
 
 ## Current release
