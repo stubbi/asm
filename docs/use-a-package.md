@@ -1,6 +1,6 @@
 # Use a source package
 
-This example calls a function from `stubbi/math@0.1.0`.
+This example calls a function from `stubbi/math@0.2.0`.
 It runs on Linux x86-64.
 Install ASM and run `asm doctor` before you start.
 
@@ -9,12 +9,12 @@ Install ASM and run `asm doctor` before you start.
 ```sh
 asm new minimum
 cd minimum
-asm add stubbi/math@0.1.0 --target x86_64-linux
+asm add stubbi/math@0.2.0 --target x86_64-linux
 ```
 
 ASM checks the archive and extracts its source.
 It writes the exact version, target, URL, size, and digest to `asm.lock`.
-The source is under `.asm/packages/stubbi/math/0.1.0/x86_64-linux`.
+The source is under `.asm/packages/stubbi/math/0.2.0/x86_64-linux`.
 
 ## Call the function
 
@@ -22,7 +22,7 @@ Replace `src/main.s` with this complete program:
 
 ```asm
 .intel_syntax noprefix
-.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
 
 .section .text
 .global _start
