@@ -119,7 +119,7 @@ The build uses GNU assembler syntax and writes the program to `build/app`.
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.1.0 --target x86_64-linux --kind source
+asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source
 ```
 
 The client checks the downloaded size and SHA-256 digest.
@@ -132,7 +132,7 @@ Use `asm --help` for the current command syntax.
 From a project directory, add an exact version:
 
 ```sh
-asm add stubbi/math@0.1.0 --target x86_64-linux
+asm add stubbi/math@0.2.0 --target x86_64-linux
 asm lock
 ```
 
@@ -142,7 +142,7 @@ The build makes that directory available to the assembler.
 Include the library explicitly in your source:
 
 ```asm
-.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
 ```
 
 Follow [the complete package example](docs/use-a-package.md) for a program that calls the function.
@@ -163,7 +163,7 @@ A lock file checks declared packages; it does not sandbox other assembler inputs
 ### Install a program
 
 ```sh
-asm install stubbi/hello@0.1.0
+asm install stubbi/hello@0.2.0
 ```
 
 ASM selects a host executable and checks its size, digest, and ELF structure.
@@ -251,5 +251,8 @@ Report a defect through [GitHub Issues](https://github.com/stubbi/asm/issues).
 
 ## License
 
-ASM uses the [MIT license](LICENSE).
-Packages in the registry retain their own declared licenses.
+ASM uses [AGPL-3.0-or-later](LICENSE).
+Changes to the platform should remain available to its users, including users of modified hosted versions.
+Starter code and reference examples use MIT.
+Packages retain the license declared for each version.
+Read the [license scope](LICENSING.md), or run `asm license`.

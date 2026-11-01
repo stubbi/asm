@@ -4,6 +4,9 @@ Read [the project purpose](docs/why-asm.md) and [AGENTS.md](AGENTS.md).
 Follow the [code of conduct](CODE_OF_CONDUCT.md) in project spaces.
 Use [design.md](design.md) for interface changes.
 Use [the writing guide](docs/writing.md) for documentation and messages.
+Read [the license scope](LICENSING.md) before contributing code or other material.
+Contributions use the license that applies to the affected files.
+Keep required notices and identify the origin of imported material.
 
 ## Set up the project
 

@@ -77,6 +77,12 @@
     return value === "not-run" ? "Not run" : value.charAt(0).toUpperCase() + value.slice(1);
   }
 
+  function versionLicenseText(version) {
+    const value = version?.license;
+    return typeof value === "string" && /^[A-Za-z0-9+.-]{1,100}$/.test(value)
+      ? `License: ${value}` : "License: unavailable";
+  }
+
   function formatDownloadCount(records, name) {
     const record = records?.packages?.[name];
     if (!record || !Number.isSafeInteger(record.total) || record.total < 0) return "GitHub asset downloads: unavailable";
@@ -101,7 +107,7 @@
 
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, formatDownloadCount, installInstructions };
+    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, installInstructions };
   }
   if (typeof document === "undefined") return;
 
@@ -181,7 +187,7 @@
     section.open = version.version === latest;
     const summary = element("summary", "", `Version ${version.version}`);
     if (version.yanked) summary.append(element("span", "release-state", "Yanked"));
-    section.append(summary);
+    section.append(summary, element("p", "", versionLicenseText(version)));
 
     const artifacts = version.artifacts.filter(validArtifact);
     if (artifacts.length) {
@@ -232,7 +238,6 @@
     const meta = element("div", "package-meta");
     const source = githubURL(pkg.repository);
     if (source) meta.append(link("Source repository ↗", source));
-    meta.append(element("span", "", `License: ${typeof pkg.license === "string" ? pkg.license : "Unavailable"}`));
     details.append(meta);
     pkg.versions.forEach((version) => details.append(renderVersion(version, pkg.latest)));
     details.append(element("p", "package-downloads", downloadCount(pkg)));

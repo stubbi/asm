@@ -102,6 +102,17 @@ class RegistryTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(registry.RegistryError):
                 registry.artifact_url(value)
 
+    def test_agpl_and_permissive_package_declarations_are_independent(self):
+        record, _ = release()
+        for license_id in ("MIT", "Apache-2.0", "AGPL-3.0-only", "AGPL-3.0-or-later"):
+            with self.subTest(license=license_id):
+                record["license"] = license_id
+                self.assertEqual(registry.validate_manifest(record)["license"], license_id)
+        for license_id in ("AGPL", "AGPL-3.0-or-later OR MIT", "Proprietary"):
+            record["license"] = license_id
+            with self.subTest(license=license_id), self.assertRaises(registry.RegistryError):
+                registry.validate_manifest(record)
+
     def test_invalid_manifest_types_and_unknown_fields_fail(self):
         record, _ = release()
         mutations = [lambda r: r.update(extra=True), lambda r: r.update(license=[]),
@@ -302,6 +313,7 @@ class RegistryTests(unittest.TestCase):
         registry.check_immutable([yanked], [old])
         for mutate in (lambda r: r["source"].update(commit="b" * 40),
                        lambda r: r["artifacts"][0].update(sha256="b" * 64),
+                       lambda r: r.update(license="AGPL-3.0-or-later"),
                        lambda r: r.update(summary="A replacement.")):
             changed = copy.deepcopy(old)
             mutate(changed)
@@ -406,6 +418,20 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(len(package["versions"]), 3)
         self.assertEqual(package["versions"][1]["evidence"]["artifacts"], "validated")
         self.assertEqual(package["versions"][1]["evidence"]["formal"], "not-run")
+
+    def test_indexes_preserve_each_version_license(self):
+        legacy, _ = release("0.1.0")
+        current, _ = release("0.2.0")
+        current["license"] = "AGPL-3.0-or-later"
+        _, index = registry.make_indexes([current, legacy])
+        package = index["packages"][0]
+        self.assertEqual(package["license"], "AGPL-3.0-or-later")
+        self.assertEqual([(item["version"], item["license"]) for item in package["versions"]],
+                         [("0.1.0", "MIT"), ("0.2.0", "AGPL-3.0-or-later")])
+        current.update(yanked=True, yank_reason="A test failure.")
+        _, index = registry.make_indexes([current, legacy])
+        self.assertEqual(index["packages"][0]["license"], "MIT")
+        self.assertEqual(index["packages"][0]["versions"][1]["license"], "AGPL-3.0-or-later")
 
     def test_download_zero_is_distinct_from_unavailable(self):
         record, _ = release()

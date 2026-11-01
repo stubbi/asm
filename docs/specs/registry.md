@@ -44,7 +44,7 @@ The canonical path is `registry/packages/<owner>/<name>/<version>.json`.
 | `schema` | Integer `1` |
 | `name`, `version` | Exact registry identity |
 | `summary` | 1 to 160 printable ASCII characters, with no outer whitespace |
-| `license` | One supported SPDX license identifier |
+| `license` | One supported SPDX license identifier for this exact version |
 | `source.repository` | Canonical `https://github.com/<owner>/<repo>` URL, without `.git` |
 | `source.commit` | Full 40-character lowercase Git commit ID; an all-zero ID is rejected |
 | `source.path` | Relative source directory within that commit, or `.` |
@@ -70,6 +70,15 @@ https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>
 Tags and asset names use simple ASCII path segments. Percent escapes, credentials, alternate ports, queries, fragments, backslashes, and dot segments are rejected. Source assets end in `.tar.gz`. A release URL does not establish the publisher's identity. The URL owner can differ from the package owner.
 
 Duplicate JSON keys, unknown fields, invalid types, and non-finite numbers are rejected. A manifest can be at most 64 KiB. The validator has a fixed set of supported open-source SPDX identifiers in `tools/registry.py`; v1 does not accept arbitrary license expressions. The license field is a declaration. The presence of a license file does not prove the right to distribute every included file.
+
+The supported identifiers include `AGPL-3.0-only`, `AGPL-3.0-or-later`, `MIT`, and `Apache-2.0`.
+The ASM platform's license does not replace a package's declared license.
+Packages with separately licensed components must retain their notices and explain their scope.
+The [licensing guide](../../LICENSING.md) defines ASM's own core, template, and example boundaries.
+
+Published license declarations are immutable with the rest of the release record.
+A later version can declare a different supported license.
+The index must retain each version's declaration.
 
 A valid commit string alone does not prove that the source exists. `pack-git` reads a real local Git commit and packages its recorded files. Publication review must also establish that the stated public repository contains that commit.
 
@@ -114,11 +123,23 @@ Every line ends in LF, including the last line. Blank data rows, CR, NUL, and ot
 
 Rows sort by ASCII package name, numeric version, target, then kind. Yanked releases are excluded. Clients must parse the entire bounded index before they trust a selected row.
 
+The native TSV index does not contain a license field.
+Use the JSON release record or website version details to inspect a license declaration.
+
 ### Website index
 
-`index.json` has `schema: 1` and a `packages` array. Each package contains `name`, `summary`, `license`, `repository`, `latest`, `targets`, and `versions`. `latest` is the highest non-yanked numeric version, or `null`.
+`index.json` has `schema: 1` and a `packages` array.
+Each package contains `name`, `summary`, `license`, `repository`, `latest`, `targets`, and `versions`.
+`latest` is the highest non-yanked numeric version, or `null`.
+The package-level `license` is a convenience field for that latest active version.
+When no version is active, consumers must use each version's own license field.
 
-Each version contains `version`, `source`, `yanked`, `artifacts`, and `evidence`. A yanked version includes its reason. The artifact and source fields use the release-record shapes above. The website keeps all versions visible, including yanked versions.
+Each version contains `version`, `license`, `source`, `yanked`, `artifacts`, and `evidence`.
+Its `license` comes from that exact release record, including for a yanked version.
+A yanked version also includes its reason.
+The artifact and source fields use the release-record shapes above.
+The website keeps all versions visible, including yanked versions.
+An absent version license is unavailable; consumers must not substitute the latest version's declaration.
 
 Current evidence has `metadata`, `artifacts`, `provenance`, `formal`, and `agent_review` keys. Metadata is `validated` after schema checks. Artifacts are `validated` only after the tool checks the actual bytes, including archive or ELF structure. Without that step, artifacts are `not-run`. The other three fields are `not-run` until their separate verification services exist. None of these fields is a safety rating.
 
@@ -156,7 +177,7 @@ The native commands are:
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.1.0 --target x86_64-linux --kind source --output hello.tar.gz
+asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source --output hello.tar.gz
 ```
 
 Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind. The defaults are `x86_64-linux` and `source`. Use exact versions in reproducible instructions.
@@ -170,7 +191,7 @@ Fetch checks byte size and SHA-256 before it exposes the output. It does not ove
 Use an exact version to add a source dependency:
 
 ```sh
-asm add stubbi/math@0.1.0
+asm add stubbi/math@0.2.0
 asm lock
 asm build --locked
 ```
@@ -190,7 +211,7 @@ Normal builds verify dependencies when a lock exists. `--locked` also rejects a 
 The assembler receives `.asm/packages` as an include directory. For the math example, use:
 
 ```asm
-.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
 ```
 
 Lock checks cover declared dependencies. Assembly source can also select other local files through includes or data directives. This is not a hermetic build sandbox. Source caches should remain unchanged; copy a package elsewhere before editing it.

@@ -49,9 +49,9 @@ class DependencyCliTests(unittest.TestCase):
                 path = ROOT / "examples/math" / relative
                 data = path.read_bytes()
                 if relative == "asm.toml":
-                    data = data.replace(b'"0.1.0"', f'"{version}"'.encode())
-                    data = data.replace(b'"math"', f'"{name}"'.encode())
-                    data = data.replace(b'"x86_64-linux"', f'"{target}"'.encode())
+                    # Fixture versions must not depend on the current example release.
+                    data = (f'[package]\nname = "{name}"\nversion = "{version}"\n\n'
+                            f'[build]\nsource = "src/main.s"\ntarget = "{target}"\n').encode()
                 member = tarfile.TarInfo(relative)
                 member.mode = 0o644
                 member.size = len(data)
