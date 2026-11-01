@@ -1,0 +1,57 @@
+{
+  "artifacts": [
+    {
+      "bytes": 1064,
+      "kind": "executable",
+      "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9",
+      "target": "aarch64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-aarch64-linux"
+    },
+    {
+      "bytes": 1646,
+      "kind": "source",
+      "sha256": "4626dc3722def1c173dbeba73e9a645d5bfc6fbc7760990f630622bea9670941",
+      "target": "aarch64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-aarch64-linux.tar.gz"
+    },
+    {
+      "bytes": 1296,
+      "kind": "executable",
+      "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92",
+      "target": "riscv64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-riscv64-linux"
+    },
+    {
+      "bytes": 1666,
+      "kind": "source",
+      "sha256": "30744c497a5c31016c3ee07d8ca953b6bd0a860ebaabda5e7a51cf213137b04d",
+      "target": "riscv64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-riscv64-linux.tar.gz"
+    },
+    {
+      "bytes": 8880,
+      "kind": "executable",
+      "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-x86_64-linux"
+    },
+    {
+      "bytes": 1567,
+      "kind": "source",
+      "sha256": "980baea420f73935d61406c133206a3f592d2d29d22a1e1cc4fca7aabc9912af",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/hello-0.3.0-x86_64-linux.tar.gz"
+    }
+  ],
+  "license": "MIT",
+  "name": "stubbi/hello",
+  "schema": 1,
+  "source": {
+    "commit": "566701967d38d2f2a984fc9acb31e4d95c266f81",
+    "path": "examples",
+    "repository": "https://github.com/stubbi/asm"
+  },
+  "summary": "A small Linux assembly program that writes a greeting.",
+  "version": "0.3.0",
+  "yanked": false
+}
