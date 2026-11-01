@@ -86,23 +86,53 @@ def render_installer(release: dict) -> bytes:
 def installer_markup(release: dict) -> str:
     # Values have passed render_installer's strict validation before this runs.
     version = escape(release["version"])
-    commands = '''(
+    commands = "curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh | sh"
+    download_commands = '''asm_installer=$(mktemp) &&
+curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
+cat "$asm_installer"'''
+    ci_commands = '''(
   installer=$(mktemp) || exit
   trap 'rm -f "$installer"' 0
-  curl -q --proto '=https' --tlsv1.2 --fail --silent --show-error --max-time 120 https://asm.build/install.sh -o "$installer" || exit
+  curl -q --proto '=https' --tlsv1.2 -fsSL --max-time 120 https://asm.build/install.sh -o "$installer" || exit
   sh "$installer"
-) &&
-export PATH="$HOME/.local/bin:$PATH" &&
-asm version'''
+)'''
     return f'''<div class="bootstrap-panel">
+<p class="section-footnote">Requires Linux x86_64. The installer uses curl and GNU Coreutils in /usr/bin. Install <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> at /usr/bin/gh before you start.</p>
 <div class="terminal">
-<div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation commands">Copy</button></div>
+<div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation command">Copy</button></div>
 <pre><code id="bootstrap-commands">{escape(commands)}</code></pre>
 <div class="terminal-footer"><span>Linux x86_64</span><a href="install.sh">Read the installer ↗</a></div>
 </div>
-<p class="section-footnote">Requires curl, GNU coreutils, and GitHub CLI 2.93.0 or later at /usr/bin/gh. No GitHub login or sudo is needed.</p>
-<p class="section-footnote">The installer checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves existing commands.</p>
-<p class="section-footnote">The PATH change applies to this terminal. To update ASM later, run <code>asm self update</code>.</p>
+<p class="section-footnote">The ASM installer does not use sudo or a GitHub login. It checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves a different existing asm file.</p>
+<p class="section-footnote">Apply the PATH command shown by the installer. Then run <code>asm version</code>. For later updates, run <code>asm self update</code>.</p>
+<details class="source-fallback">
+<summary>Set PATH for this terminal</summary>
+<p>Put the installation directory first in PATH for this terminal:</p>
+<div class="terminal"><pre><code>export PATH="$HOME/.local/bin:$PATH"</code></pre></div>
+<p>Add the same command to your shell configuration to keep this setting. Run <code>asm version</code> again.</p>
+</details>
+<details class="source-fallback">
+<summary>Inspect the installer first</summary>
+<p>Download the script to a temporary file:</p>
+<div class="terminal">
+<div class="terminal-header"><div class="terminal-label">DOWNLOAD FOR REVIEW</div><button class="copy-button" type="button" data-copy="bootstrap-download-commands" aria-label="Copy installer download commands">Copy</button></div>
+<pre><code id="bootstrap-download-commands">{escape(download_commands)}</code></pre>
+</div>
+<p>If the download succeeds, review the displayed script. After your review, run this separate command in the same terminal:</p>
+<div class="terminal"><pre><code>sh "$asm_installer"</code></pre></div>
+<p>Remove the temporary file after installation:</p>
+<div class="terminal"><pre><code>rm -f "$asm_installer"
+unset asm_installer</code></pre></div>
+</details>
+<details class="source-fallback">
+<summary>Use in scripts and CI</summary>
+<p>For scripts and CI, use the complete-download commands below. The script runs only if the download succeeds.</p>
+<div class="terminal">
+<div class="terminal-header"><div class="terminal-label">INSTALL FROM FILE</div><button class="copy-button" type="button" data-copy="bootstrap-ci-commands" aria-label="Copy installation commands for scripts and CI">Copy</button></div>
+<pre><code id="bootstrap-ci-commands">{escape(ci_commands)}</code></pre>
+</div>
+<p>Running it again accepts only the same release bytes with the required ownership and permissions. The installer does not change PATH or run the downloaded command.</p>
+</details>
 </div>'''
 
 
