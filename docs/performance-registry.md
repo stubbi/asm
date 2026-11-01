@@ -34,6 +34,21 @@ That signal path does not run registry cleanup.
 The catalog size limit, record limit, field validation, URL rules, and artifact verification remain in place.
 No result is emitted before the complete catalog passes validation.
 
+## Public evidence
+
+The linked reports are public copies with local identifiers removed.
+Exact copies were preserved outside the public repository before this redaction.
+Local executable paths use `artifacts/` labels, fixture paths use `fixtures/` labels, and exploratory trace paths use `traces/exploratory/` labels.
+These labels identify the roles of files in the experiment; they do not mean that those files are bundled here.
+The EINTR command now names its included trace with a relative path.
+The exploratory hostname was already omitted before this edition.
+
+All numeric samples, complete sample objects, CPU model, kernel and toolchain descriptions, recorded digests, system-call counts, failures, and regressions are retained.
+All 11 trace files were inspected and required no redaction.
+The original benchmark harness and assembly source manifest also remain byte for byte unchanged.
+The [redaction manifest](../benchmarks/registry-linux-x86_64-20261101/public-redaction.json) identifies each changed JSON field and gives original and public file hashes.
+It contains no removed local identifiers.
+
 ## Exact inputs
 
 The baseline source is commit `eea8498f6d49c26c7112f6510f12528861886e87`.
@@ -56,7 +71,9 @@ The corrected x86-64 registry source has SHA-256 `4fe271d95054828da7d1066edb141a
 Rebuilt within the original v0.2 source snapshot, its object and executable match the measured candidate byte for byte.
 The [comment-correction record](../benchmarks/registry-linux-x86_64-20261101/registry-comment-correction.json) contains the source hashes, build commands, and equality checks.
 No runtime code changed, and no new timing samples were collected.
-The original source manifest and raw evidence remain unchanged.
+The source manifest remains unchanged.
+Hashes in the comment-correction record identify the original evidence checked at that time.
+For the current public copies, use the hashes in the redaction manifest.
 
 ## Method
 
@@ -90,7 +107,7 @@ Tracing overhead is excluded from the latency measurements.
 
 The table gives median elapsed time in milliseconds.
 A ratio below 1 indicates a slower candidate in that run.
-The [raw report](../benchmarks/registry-linux-x86_64-20261101/paired-results.json) includes every sample, minimum, maximum, and nearest-rank 95th percentile.
+The [public report](../benchmarks/registry-linux-x86_64-20261101/paired-results.json) includes every sample, minimum, maximum, and nearest-rank 95th percentile.
 
 | Records | Output | Baseline | Candidate | Baseline / candidate |
 | ---: | --- | ---: | ---: | ---: |
@@ -163,7 +180,7 @@ Both failed before performance measurements or source compilation began.
 The recorded experiment used the system environment with those read paths available.
 
 An [exploratory baseline](../benchmarks/registry-linux-x86_64-20261101/exploratory-baseline.json) overlapped possible tool provisioning and was excluded from the comparison.
-Its samples are retained; only the executor hostname is omitted from that public record.
+Its samples are retained; the public record omits the hostname and replaces local paths as described above.
 The two comparison reports retain all measured regressions and outliers.
 
 ## Reproduce the comparison
