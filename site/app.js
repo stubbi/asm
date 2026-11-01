@@ -264,14 +264,14 @@
     if (!version.artifacts.some((item) => validArtifact(item) && item.target === "x86_64-linux" && item.kind === "source")) return;
     const panel = document.getElementById("math-guide");
     if (!panel) return;
-    panel.append(element("h3", "", "Use a source dependency"));
-    panel.append(element("p", "", "From your project directory, add an exact version. ASM records it in asm.lock and checks the extracted source files."));
+    panel.append(element("h3", "", "Use the x86-64 math package"));
+    panel.append(element("p", "", "This example requires Linux x86-64. From your project directory, add an exact version. ASM records it in asm.lock and checks the extracted source files."));
     panel.append(commandBlock("math-add-commands", "Add the math package", `asm add stubbi/math@${version.version} --target x86_64-linux\nasm lock`));
     panel.append(element("p", "", "Add this include at file scope. Call asm_u64_min from your function with the two unsigned values in rdi and rsi."));
     panel.append(commandBlock("math-include-command", "Include the routine", `.include "stubbi/math/${version.version}/x86_64-linux/src/min.s"`));
     panel.append(element("p", "", "The routine returns the smaller value in rax. Read its contract for register and memory requirements."));
     panel.append(commandBlock("math-build-command", "Build with the lock file", "asm build --locked"));
-    panel.append(element("p", "", "Commit asm.lock with your project. Use asm sync to restore its exact packages on another machine."));
+    panel.append(element("p", "", "Commit asm.lock with your project. Use asm sync to restore its exact packages on another machine with the same target."));
     panel.append(link("Read the routine and tests ↗", "https://github.com/stubbi/asm/tree/main/examples/math", "text-link"));
     panel.hidden = false;
   }
