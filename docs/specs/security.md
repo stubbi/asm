@@ -66,7 +66,11 @@ Never silently downgrade verification after an unavailable service, expired meta
 
 The bootstrap installer installs the CLI for Linux x86-64. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
 
-The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy. The documented command downloads a separate file before execution, so the user can inspect or retain the script.
+The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy.
+
+The quick-start command streams the script to a POSIX shell. The shell must parse the complete function and final entry block before installation starts. An incomplete entry block does not download an artifact or change the installation. The installer never runs the downloaded ASM command.
+
+The quick-start pipeline is for interactive use. Its exit status can be zero if curl fails before it sends any script bytes. Curl still reports the download error. For scripts and CI, use the complete-download route in the installation instructions. That route requires a successful download before execution. The separate inspection route keeps the downloaded file for review before execution.
 
 Both routes use GitHub CLI 2.93.0 or later for Sigstore verification. This minimum includes the upstream [TUF mirror authentication-header fix](https://github.com/cli/cli/security/advisories/GHSA-8xvp-7hj6-mcj9). The verifier receives no GitHub credentials or ambient trust-root configuration. It uses a fresh home, configuration directory, and cache. Bounded standard proxy variables can change routing; they cannot change the required identity or trusted roots.
 
