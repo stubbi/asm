@@ -46,6 +46,35 @@ class FakeOpener:
         return FakeResponse(self.data, self.url, self.headers)
 
 
+class LicenseDeclarationTests(unittest.TestCase):
+    def test_legacy_mit_source_keeps_its_license(self):
+        files = {"LICENSE": (b"MIT License\nLegacy fixture.\n", 0o644)}
+        self.assertEqual(release.core_license(files, {"version": "0.1.0"}), "MIT")
+        with self.assertRaises(registry.RegistryError):
+            release.core_license(files, {"version": "0.2.0"})
+
+    def test_agpl_declaration_requires_separate_mit_template_notice(self):
+        # Test source-layout checks, not the legal completeness of a notice.
+        files = {
+            "LICENSE": (b"GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3, 19 November 2007\n", 0o644),
+            "LICENSING.md": (b"Fixture scope declaration.\n", 0o644),
+            "LICENSES/MIT.txt": (b"MIT License\nTemplate fixture.\n", 0o644),
+        }
+        commands = {"version": "0.2.0", "license": "AGPL-3.0-or-later", "template_license": "MIT"}
+        self.assertEqual(release.core_license(files, commands), "AGPL-3.0-or-later")
+        for missing in ("LICENSE", "LICENSING.md", "LICENSES/MIT.txt"):
+            candidate = dict(files)
+            del candidate[missing]
+            with self.subTest(missing=missing), self.assertRaises(registry.RegistryError):
+                release.core_license(candidate, commands)
+        for changes in ({"license": "AGPL-3.0-only"}, {"license": "MIT"}, {"template_license": "AGPL-3.0-or-later"}):
+            with self.subTest(changes=changes), self.assertRaises(registry.RegistryError):
+                release.core_license(files, {**commands, **changes})
+        with self.assertRaises(registry.RegistryError):
+            release.require_mit_example({"LICENSE": files["LICENSE"]}, "hello")
+        release.require_mit_example({"LICENSE": files["LICENSES/MIT.txt"]}, "hello")
+
+
 @unittest.skipUnless(platform.system() == "Linux" and platform.machine() == "x86_64" and
                      all(shutil.which(tool) for tool in ("git", "make", "as", "ld")),
                      "native release checks require Linux x86_64 and GNU build tools")
@@ -63,6 +92,7 @@ class ReleaseTests(unittest.TestCase):
         for path in (ROOT / "cli").glob("*.s"):
             shutil.copyfile(path, cls.repo / "cli" / path.name)
         shutil.copyfile(ROOT / "cli/commands.json", cls.repo / "cli/commands.json")
+        cls.version = json.loads((cls.repo / "cli/commands.json").read_text())["version"]
         shutil.copytree(ROOT / "examples/hello", cls.repo / "examples/hello", ignore=shutil.ignore_patterns("build"))
         if (ROOT / "examples/math").is_dir():
             shutil.copytree(ROOT / "examples/math", cls.repo / "examples/math", ignore=shutil.ignore_patterns("build"))
@@ -72,7 +102,11 @@ class ReleaseTests(unittest.TestCase):
         shutil.copytree(ROOT / "site", cls.repo / "site")
         (cls.repo / "README.md").write_text("# Release test fixture\n\nUses the project's actual assembly sources.\n")
         shutil.copyfile(ROOT / "LICENSE", cls.repo / "LICENSE")
-        (cls.repo / "asm.toml").write_text('[package]\nname = "asm"\nversion = "0.1.0"\n\n[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n')
+        if (ROOT / "LICENSING.md").is_file():
+            shutil.copyfile(ROOT / "LICENSING.md", cls.repo / "LICENSING.md")
+        if (ROOT / "LICENSES").is_dir():
+            shutil.copytree(ROOT / "LICENSES", cls.repo / "LICENSES")
+        (cls.repo / "asm.toml").write_text(f'[package]\nname = "asm"\nversion = "{cls.version}"\n\n[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n')
         (cls.repo / "Makefile").write_text('build/asm: cli/asm.s cli/registry.s\n\tmkdir -p build\n\t$(AS) --64 --fatal-warnings -o build/asm.o cli/asm.s\n\t$(LD) -z noexecstack --build-id=none -o build/asm build/asm.o\n')
         git(cls.repo, "init", "-q")
         git(cls.repo, "config", "user.name", "Release test fixture")
@@ -107,7 +141,7 @@ class ReleaseTests(unittest.TestCase):
         first_files = {path.relative_to(self.first): path.read_bytes() for path in self.first.rglob("*") if path.is_file()}
         second_files = {path.relative_to(second): path.read_bytes() for path in second.rglob("*") if path.is_file()}
         self.assertEqual(first_files, second_files)
-        archive = registry.read_archive((second / "asm-0.1.0-source.tar.gz").read_bytes())
+        archive = registry.read_archive((second / f"asm-{self.version}-source.tar.gz").read_bytes())
         self.assertEqual(archive["cli/asm.s"], original)
         self.assertFalse(any(name.startswith((".git/", "build/")) for name in archive))
 
@@ -121,10 +155,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(registry.validate_local_artifacts(self.records, self.first),
                          {(item["name"], item["version"]) for item in self.records})
 
+    def test_release_preserves_core_and_example_license_scopes(self):
+        licenses = {record["name"]: record["license"] for record in self.records}
+        self.assertEqual(licenses, {"stubbi/asm": "AGPL-3.0-or-later", "stubbi/hello": "MIT", "stubbi/math": "MIT"})
+        self.assertEqual(self.metadata["license"], "AGPL-3.0-or-later")
+        self.assertEqual(self.metadata["template_license"], "MIT")
+        self.assertEqual(self.metadata["package_licenses"], licenses)
+        source = registry.read_archive((self.first / f"asm-{self.version}-source.tar.gz").read_bytes())
+        self.assertEqual(source["LICENSE"], (ROOT / "LICENSE").read_bytes())
+        self.assertEqual(source["LICENSES/MIT.txt"], (ROOT / "LICENSES/MIT.txt").read_bytes())
+        self.assertEqual(source["LICENSING.md"], (ROOT / "LICENSING.md").read_bytes())
+        self.assertEqual(source["cli/templates.s"], (ROOT / "cli/templates.s").read_bytes())
+
     def test_version_mismatch_leaves_no_output(self):
         output = self.case_dir / "wrong-version"
         with self.assertRaises(registry.RegistryError):
-            release.build_release(self.repo, output, version="0.2.0")
+            release.build_release(self.repo, output, version="99.0.0")
         self.assertFalse(output.exists())
 
     def test_existing_output_is_preserved(self):
