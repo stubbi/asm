@@ -10,7 +10,9 @@ The registry tools validate metadata, artifact size, and SHA-256. They compare i
 
 The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
 
-The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Provenance verification, advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
+The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
+
+ASM's own bootstrap installer and manual self-update command verify release provenance before installing a binary. This fixed release policy does not apply to general package downloads. A package must not inherit ASM's provenance result.
 
 The controls in the following sections are requirements for those later services. Passing the current validator is not evidence that the later controls have run.
 
@@ -56,9 +58,33 @@ A checksum served beside an archive is useful against accidental corruption. It 
 
 Use GitHub artifact attestations or a Sigstore bundle for release provenance. Verify the artifact digest, certificate identity, OIDC issuer, expected repository/workflow, and the relevant transparency evidence. Verification against any valid signer is insufficient. [GitHub documents artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations); [Sigstore documents identity-bound blob verification](https://docs.sigstore.dev/quickstart/quickstart-cosign/). A valid attestation establishes origin, not code safety, as [PyPI explicitly explains](https://docs.pypi.org/attestations/security-model/).
 
-Before the client supports unattended registry updates or self-updates, implement an audited TUF client or an equivalently reviewed update protocol. Pin the initial root through the CLI release. Separate signing roles. Keep root authority offline. Test key rotation and compromise recovery. Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots. A custom signature over one JSON file is not a substitute for that protocol.
+Before the client supports unattended registry updates or unattended self-updates, implement an audited TUF client or an equivalently reviewed update protocol. Pin the initial root through the CLI release. Separate signing roles. Keep root authority offline. Test key rotation and compromise recovery. Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots. A custom signature over one JSON file is not a substitute for that protocol.
 
 Never silently downgrade verification after an unavailable service, expired metadata, or invalid signature. A future explicit offline mode may use already-verified, locked artifacts; it must show which freshness checks could not be performed.
+
+## Bootstrap and manual self-update
+
+The bootstrap installer installs the CLI for Linux x86-64. The assembly command `asm self update` manages later manual updates. Both routes require a direct, user-owned `$HOME/.local/bin/asm` installation. They do not request administrator access or replace a command owned by another package manager.
+
+The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy. The documented command downloads a separate file before execution, so the user can inspect or retain the script.
+
+Both routes use GitHub CLI 2.93.0 or later for Sigstore verification. This minimum includes the upstream [TUF mirror authentication-header fix](https://github.com/cli/cli/security/advisories/GHSA-8xvp-7hj6-mcj9). The verifier receives no GitHub credentials or ambient trust-root configuration. It uses a fresh home, configuration directory, and cache. Bounded standard proxy variables can change routing; they cannot change the required identity or trusted roots.
+
+The policy fixes the repository name and numeric identity. It also fixes the release workflow, main source ref, OIDC issuer, SLSA predicate, and hosted-runner requirement. The source and signer commits must match the selected release. A valid signature from another repository, workflow, or commit is insufficient. The verifier must return exactly one matching repository identity.
+
+Each release contains the action-produced `release-attestation.sigstore.json` bundle. It is a single JSON object with a 1 MiB limit. The release job verifies every payload against this same published bundle without a GitHub account. The bundle supplies signature evidence, not replacement trust roots.
+
+The site offers the bootstrap only for checked CLI releases from 0.2.0 onward. It also downloads the required bundle before publication. A missing or malformed bundle stops the site build. These site checks establish availability and format; the installer performs signature verification. Earlier releases retain the source-build route.
+
+The native updater also downloads and verifies `release.json`, with the same size limit. Its bounded assembly parser rejects malformed JSON and duplicate keys. The signed manifest must match the version, tag, repository, source commit, and selected executable's name, size, and digest. Both the manifest and executable must satisfy the same provenance policy.
+
+Both installation routes check the byte size and SHA-256 digest before exposing the file. The site checks the executable format before it generates the bootstrap script. The native updater also checks the downloaded ELF format and segment bounds. Bootstrap finalization refuses an existing different destination. Self-update checks the running executable's device and inode before staging and again before replacement. It uses a private stage and an advisory directory lock. It syncs the candidate before the final atomic rename. The candidate is not executed during installation or updating.
+
+The manual command refuses a downgrade. An equal selected version is a no-op; it does not reverify the installed file or establish registry freshness. A stale index can hide a newer release. The protocol has no independently signed expiry, emergency revocation record, or durable metadata-version history. GitHub CLI's root refresh does not supply those missing ASM release guarantees.
+
+This protocol is not an audited TUF client for ASM metadata. It does not enable unattended updates. The repository, release workflow, GitHub identity service, verifier, and trusted roots remain trusted. Same-account processes can ignore advisory locks. Atomic replacement does not promise directory durability after power loss.
+
+Read [the self-update contract](../self-update.md) for exact identities, supported filesystems, permission requirements, and recovery instructions.
 
 ## Archive and execution policy
 

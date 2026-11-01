@@ -2,6 +2,10 @@
 
 ## 0.2.0
 
+- Install the CLI with a bounded bootstrap script and signed release verification.
+- Update the installed command with native `asm self update`.
+- Bind each CLI update to the fixed workflow, repository identity, source commit, and artifact digest.
+- Preserve the installed command on download, signature, permission, or replacement failure.
 - License the ASM platform under AGPL-3.0-or-later.
 - Keep starter text and reference examples under explicit MIT terms.
 - Show license, warranty, and source information with `asm license`.

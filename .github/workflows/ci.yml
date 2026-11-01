@@ -25,6 +25,11 @@ jobs:
           persist-credentials: false
       - name: Run behavior and format checks
         run: make check
+      - name: Check installation boundaries between users
+        run: |
+          sudo env PYTHONPATH=tests python3 -m unittest -v \
+            test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
+            test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor
       - name: Check published version immutability
         if: github.event_name == 'pull_request'
         env:

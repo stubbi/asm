@@ -371,6 +371,8 @@ registry_workspace:
  * and checksum, then removes the empty directory. Clears the ownership flag.
  * Does not replace an original error with a cleanup error. Stack: none. */
 registry_cleanup:
+    cmp byte ptr [rip + self_active], 0
+    jne self_update_cleanup
     cmp byte ptr [rip + registry_has_workspace], 0
     je .Lcleanup_done
     mov rdi, [rip + registry_extra_temp]
@@ -399,8 +401,15 @@ registry_cleanup:
 /* curl's config is disabled before all other options. Protocol and redirects
  * remain HTTPS-only. The caller supplies a validated URL and a bounded size. */
 /* Input: RDI=URL (<=4095 chars), RSI=owned temporary output path (<=95 chars),
- * RDX=decimal maximum bytes (1..67108864). Output: EAX=child status; missing
- * curl exits 127. Writes a fixed 23-pointer argv array. Tail-calls spawn_wait. */
+ * RDX=decimal maximum bytes (1..67108864). Output: EAX=child exit status or
+ * 128+signal; size/fork/wait/limit/exec failure is 127. Missing curl is fatal.
+ * Only the curl child lowers RLIMIT_FSIZE, independently of curl's handling
+ * of Content-Length and streaming responses. Soft and hard values are each
+ * capped without raising a stricter inherited limit. No other resource limit
+ * changes. The parent, verifier, and hashing processes retain their limits.
+ * Retries interrupted waits. Owns fixed 23-pointer argv; stack: 16 saved
+ * bytes and 24 local bytes (16-byte x86-64 rlimit / child status + alignment).
+ * SysV callee-saved registers are preserved. No shell is involved. */
 registry_download:
     mov [rip + registry_curl_argv + 21*8], rdi
     mov [rip + registry_curl_argv + 19*8], rsi
@@ -411,9 +420,77 @@ registry_download:
     syscall
     test rax, rax
     js .Lcurl_missing
+    push rbx
+    push r12
+    sub rsp, 24
+    mov rdi, [rip + registry_curl_argv + 17*8]
+    call registry_size_value
+    test rax, rax
+    jz .Lcurl_failed
+    mov r12, rax
+    mov eax, 57
+    syscall
+    test rax, rax
+    js .Lcurl_failed
+    jz .Lcurl_child
+    mov rbx, rax
+.Lcurl_wait:
+    mov eax, 61
+    mov rdi, rbx
+    mov rsi, rsp
+    xor edx, edx
+    xor r10d, r10d
+    syscall
+    cmp rax, -4
+    je .Lcurl_wait
+    test rax, rax
+    js .Lcurl_failed
+    mov eax, [rsp]
+    mov edx, eax
+    and edx, 127
+    jnz .Lcurl_signaled
+    shr eax, 8
+    and eax, 255
+    jmp .Lcurl_return
+.Lcurl_signaled:
+    lea eax, [rdx + 128]
+    jmp .Lcurl_return
+.Lcurl_child:
+    mov eax, 97 /* getrlimit */
+    mov edi, 1 /* RLIMIT_FSIZE */
+    mov rsi, rsp
+    syscall
+    test rax, rax
+    js .Lcurl_child_failed
+    mov rax, r12
+    cmp rax, [rsp]
+    cmova rax, [rsp]
+    mov [rsp], rax
+    mov rax, r12
+    cmp rax, [rsp + 8]
+    cmova rax, [rsp + 8]
+    mov [rsp + 8], rax
+    mov eax, 160 /* setrlimit */
+    mov edi, 1 /* RLIMIT_FSIZE */
+    mov rsi, rsp
+    syscall
+    test rax, rax
+    js .Lcurl_child_failed
+    mov eax, 59
     lea rdi, [rip + registry_curl]
     lea rsi, [rip + registry_curl_argv]
-    jmp spawn_wait
+    mov rdx, [rip + envp]
+    syscall
+.Lcurl_child_failed:
+    mov edi, 127
+    jmp exit_code
+.Lcurl_failed:
+    mov eax, 127
+.Lcurl_return:
+    add rsp, 24
+    pop r12
+    pop rbx
+    ret
 .Lcurl_missing:
     lea rdi, [rip + registry_err_curl]
     mov esi, 127
@@ -1267,14 +1344,15 @@ registry_json_string:
     lea rdi, [rip + registry_json_buffer]
     jmp out
 
-/* Terminal command: select exact or highest numeric version for package,
- * target and kind. Copy/download into the owned stage, check exact byte size,
- * run fixed sha256sum argv, then renameat2(RENAME_NOREPLACE). fetch retains
- * non-executable mode; install additionally validates ELF and sets 0755.
- * Existing outputs are retained on all failures.
- * The index authenticates no publisher; the digest check establishes integrity
- * relative to that selected index. Source archives remain opaque bytes. */
-registry_fetch:
+/* Input: validated rows plus query/target/kind/exact-version globals.
+ * Output: RAX=selected eight-pointer row, or zero. Stores registry_selected.
+ * Numeric version order is shared by package fetch and self update.
+ * Stack: 16 saved bytes plus 8 alignment bytes. No filesystem changes. */
+registry_select:
+    push r12
+    push r13
+    sub rsp, 8
+    mov qword ptr [rip + registry_selected], 0
     lea r12, [rip + registry_rows]
     xor r13d, r13d
 .Lfetch_select:
@@ -1319,6 +1397,21 @@ registry_fetch:
     inc r13
     jmp .Lfetch_select
 .Lfetch_selected:
+    mov rax, [rip + registry_selected]
+    add rsp, 8
+    pop r13
+    pop r12
+    ret
+
+/* Terminal command: select exact or highest numeric version for package,
+ * target and kind. Copy/download into the owned stage, check exact byte size,
+ * run fixed sha256sum argv, then renameat2(RENAME_NOREPLACE). fetch retains
+ * non-executable mode; install additionally validates ELF and sets 0755.
+ * Existing outputs are retained on all failures.
+ * The index authenticates no publisher; the digest check establishes integrity
+ * relative to that selected index. Source archives remain opaque bytes. */
+registry_fetch:
+    call registry_select
     mov rbx, [rip + registry_selected]
     test rbx, rbx
     jz registry_not_found

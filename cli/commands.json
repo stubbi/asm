@@ -27,7 +27,8 @@
     "lock",
     "sync",
     "publish",
-    "license"
+    "license",
+    "self"
   ],
   "unimplemented": [
     "login",

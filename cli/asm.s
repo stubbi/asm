@@ -1478,6 +1478,7 @@ clean_file:
 commands:
     .quad command_help, cmd_help, command_version, cmd_version
     .quad command_license, cmd_license
+    .quad command_self, cmd_self
     .quad command_doctor, cmd_doctor, command_init, cmd_init
     .quad command_new, cmd_new, command_build, cmd_build
     .quad command_run, cmd_run, command_test, cmd_test
@@ -1494,6 +1495,7 @@ commands:
 command_help: .asciz "help"
 command_version: .asciz "version"
 command_license: .asciz "license"
+command_self: .asciz "self"
 command_doctor: .asciz "doctor"
 command_init: .asciz "init"
 command_new: .asciz "new"
@@ -1617,6 +1619,7 @@ help_text:
     .ascii "  status           Print machine-readable command availability\n"
     .ascii "  version          Print the CLI version\n"
     .ascii "  license          Show the license, warranty, and source\n"
+    .ascii "  self update      Update this user installation from the hub\n"
     .ascii "  help             Show this help\n\n"
     .ascii "Options: --target x86_64-linux, --json, --no-color, --help\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
@@ -1627,9 +1630,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.2.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.2.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.2.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.2.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -1677,3 +1680,6 @@ made_test: .skip 1
 .include "cli/archive.s"
 .include "cli/dependencies.s"
 .include "cli/publish.s"
+.include "cli/self_update.s"
+.include "cli/self_update_verify.s"
+.include "cli/self_update_metadata.s"
