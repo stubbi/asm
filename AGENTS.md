@@ -16,7 +16,8 @@ Do not add marketing language to technical flows where it does not help the user
 The brand foundation governs intent; specifications, implementation, and evidence establish technical behavior.
 Preserve the security, architecture, design, writing, testing, and release requirements below.
 Never weaken a check or invent a capability to make the brand story appear true.
-If evidence or an explicit user direction conflicts with the foundation, state the conflict and update the affected documents within the authorized scope.
+If evidence or an explicit user direction conflicts with the foundation, state the conflict.
+Update the affected documents within the authorized scope.
 Keep downstream messaging consistent when the foundation changes.
 
 ## Project purpose
