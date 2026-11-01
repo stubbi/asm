@@ -1,0 +1,95 @@
+{
+  "date": "2026-11-01",
+  "base_commit": "063d3031bb5467d2cf574be6d7abd82c28d3c063",
+  "tested_git_tree": "22b94bfab71da66e31fae719d80d31dcbcb5dda6",
+  "source_inputs_sha256": {
+    "Makefile": "94f461b3de6bf3cfc1f6e5c1f01d36bce3f4794e42997835a6e6f2394d082bc3",
+    "abi-check.c": "e84fe6c395b53a3e2aeeadb731cb83d5efc01f548485376f56354c06875987c0",
+    "server.s": "bd2bc8afc1a3e1c123d9fe2346b8fb2f494f052894327384fc273b288d52016c",
+    "guard.sql": "13ffe1db36ca022262ffba85aae9690815423edce82661a70f3ee8549ebd680d",
+    "search.sql": "5cd15a09fa823567a83b4042b799a33e9bd379ec3cd346b96371c02ebd234b0d",
+    "local_postgres.py": "79f8b84eb6788389f8b2a1df016273e4bd4022ef372bedaf942d9d693fd1cc80",
+    "test_fixture.py": "08a80b8cce2b97ed35ed04d9b9cd2412dd15559942f38b3b91e5715b87b4ca66",
+    "test_server.py": "8aac45230343691227338b8b567d5b663778bf14d282c0d46a8e3a1942554489",
+    "fixtures/0001_registry.sql": "e787260b106cd729fa024da63b9bd0b751b17bca3faced813546fdb7b11afb90",
+    "fixtures/p00.json": "1634f0039c368ffcc4e776704be51c3f80dce82a39737ef5ad477456a0f8459e"
+  },
+  "runs": [
+    {
+      "binary_sha256": "58013036e02d73f6a00516fdeb3c4dd174c66d5a8173f51b9a7be64dd15edb0d",
+      "libpq_version": 160015,
+      "database_version": "16.15",
+      "schema_sha384": "e9fce69caa758cb9d15a700d92b76aba0fc3ca466a81624733124a742f2211aadae612ab877bd908a6e1d6ab5e803ef2",
+      "fixture": "owned-local-cluster",
+      "measurements": {
+        "stalled_database_seconds": 2.0047113859982346,
+        "liveness_during_stall_seconds": 0.0008623929970781319,
+        "threads_at_connection_cap": 18,
+        "connection_cap_recovery_seconds": 0.013569049006036948,
+        "shutdown_during_stall_seconds": 1.9707038439955795
+      },
+      "label": "working",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "suite_seconds": 8.875,
+      "binary_bytes": 29728,
+      "test_output_sha256": "b424bbf5b7745cf09d1faf56f8faf65e4bcb699811ccaffbd9f7899db4a1782c",
+      "effective_uid": 65534
+    },
+    {
+      "binary_sha256": "20e70adc518a222024e0e02e45354adcafb88205faa4f7c25aabecb7a67f3c58",
+      "libpq_version": 160015,
+      "database_version": "16.15",
+      "schema_sha384": "e9fce69caa758cb9d15a700d92b76aba0fc3ca466a81624733124a742f2211aadae612ab877bd908a6e1d6ab5e803ef2",
+      "fixture": "owned-local-cluster",
+      "measurements": {
+        "stalled_database_seconds": 2.008236460002081,
+        "liveness_during_stall_seconds": 0.0010262439973303117,
+        "threads_at_connection_cap": 18,
+        "connection_cap_recovery_seconds": 0.01129045500420034,
+        "shutdown_during_stall_seconds": 1.9706698049994884
+      },
+      "label": "clean",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "suite_seconds": 9.283,
+      "binary_bytes": 29720,
+      "test_output_sha256": "14388b2f9e61fe0d9512dc0c4c949ec471a9705aa605bd1bb65819fd976d1d86",
+      "effective_uid": 65534
+    }
+  ],
+  "independent_checkout": true,
+  "legacy_fixture_inputs_unavailable": true,
+  "native_application_inputs_unchanged": true,
+  "shared_host": true,
+  "performance_comparison": false,
+  "release_binary_reproducibility_claim": false,
+  "public_deployment": false,
+  "dependencies": {
+    "libmicrohttpd": {
+      "version": "1.0.3",
+      "source_sha256": "7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a",
+      "url": "https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz",
+      "https_enabled": false
+    },
+    "postgresql": {
+      "version": "16.15",
+      "source_sha256": "c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed",
+      "url": "https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2",
+      "build_jobs": 2,
+      "tls_enabled": false
+    }
+  },
+  "toolchain": {
+    "gcc": "13.3.0-6ubuntu2~24.04",
+    "binutils": "2.42",
+    "python": "3.12.14",
+    "linux": "6.18.57",
+    "glibc": "2.39",
+    "architecture": "x86_64"
+  }
+}
