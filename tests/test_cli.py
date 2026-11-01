@@ -47,15 +47,34 @@ class NativeCliTests(unittest.TestCase):
         )
 
     def test_version_help_doctor_and_status_json(self):
-        self.assertIn("asm 0.1.0", self.cli("--version").stdout)
+        self.assertIn("asm 0.2.0", self.cli("--version").stdout)
         self.assertIn("Usage:", self.cli().stdout)
-        self.assertEqual(json.loads(self.cli("version", "--json").stdout)["version"], "0.1.0")
+        self.assertEqual(json.loads(self.cli("version", "--json").stdout)["version"], "0.2.0")
         self.assertTrue(json.loads(self.cli("doctor", "--json").stdout)["ok"])
         self.assertIn("new", json.loads(self.cli("help", "--json").stdout)["commands"])
         self.assertEqual(json.loads(self.cli("targets", "--json").stdout)["targets"], ["x86_64-linux"])
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
         self.assertIn("yank", status["unimplemented"])
+
+    def test_license_and_starter_grants_have_distinct_scopes(self):
+        report = json.loads(self.cli("license", "--json").stdout)
+        self.assertEqual(report["license"], "AGPL-3.0-or-later")
+        self.assertEqual(report["template_license"], "MIT")
+        self.assertFalse(report["warranty"])
+        self.assertEqual(self.cli("--license").stdout, self.cli("license").stdout)
+        self.assertIn("AGPL-3.0-or-later", self.cli("help").stdout)
+        self.cli("license", "unexpected", code=2)
+        project = self.project()
+        notice = (ROOT / "LICENSES/MIT.txt").read_text()
+        for relative in ("src/main.s", "tests/main.s"):
+            source = (project / relative).read_text()
+            self.assertIn("SPDX-License-Identifier: MIT", source)
+            uncommented = "\n".join(line[2:] if line.startswith("# ") else ""
+                                     for line in source.splitlines())
+            self.assertIn(notice.strip(), uncommented)
+        self.assertEqual(self.cli("run", cwd=project).stdout, "Hello from asm!\n")
+        self.cli("test", cwd=project)
 
     def test_new_run_test_clean_vertical_slice(self):
         project = self.project()

@@ -152,7 +152,7 @@ class RegistryCliTests(unittest.TestCase):
         self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
         # This explicit test invocation, separate from installation, checks the result.
         version = subprocess.run([str(destination), "--version"], capture_output=True, text=True, check=True)
-        self.assertIn("asm 0.1.0", version.stdout)
+        self.assertIn("asm 0.2.0", version.stdout)
         self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", destination, code=1)
 
     def test_install_rejects_wrong_target_and_malformed_elf(self):

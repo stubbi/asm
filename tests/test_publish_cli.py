@@ -83,6 +83,14 @@ class NativePublishTests(unittest.TestCase):
         self.cli(self.arguments({"summary": summary}))
         self.assertEqual(json.loads(self.output.read_bytes())["summary"], summary)
 
+    def test_accepts_each_agpl_identifier_without_relabeling_it(self):
+        for license_id in ("AGPL-3.0-only", "AGPL-3.0-or-later"):
+            with self.subTest(license=license_id):
+                self.cli(self.arguments({"license": license_id}))
+                record = registry.validate_manifest(json.loads(self.output.read_bytes()))
+                self.assertEqual(record["license"], license_id)
+                self.output.unlink()
+
     def test_six_target_kind_artifacts_have_distinct_validated_records(self):
         artifacts = []
         for target, machine in registry.TARGETS.items():
