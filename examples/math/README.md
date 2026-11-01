@@ -27,13 +27,13 @@ This package makes no performance claim.
 From a consuming project, add the exact version:
 
 ```sh
-asm add stubbi/math@0.1.0 --target x86_64-linux
+asm add stubbi/math@0.2.0 --target x86_64-linux
 ```
 
 Include the source in your GNU assembler file:
 
 ```asm
-.include "stubbi/math/0.1.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
 ```
 
 ASM adds `.asm/packages` to the assembler's include path.
