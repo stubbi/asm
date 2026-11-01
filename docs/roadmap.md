@@ -20,7 +20,7 @@ The proposed latency and workload targets are not measured capacity.
 
 The code now contains:
 
-- A native x86-64 Linux CLI with project creation, build, run, test, and diagnostics.
+- Native x86-64 and ARM64 Linux CLIs with project creation, build, run, test, and diagnostics.
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
 - Native source-archive validation, extraction, and cache comparison.
 - Native preparation of publication records for reviewed pull requests.
@@ -53,7 +53,7 @@ Transitive resolution, version ranges, feature selection, and solver diagnostics
 
 ## More hosts and package interfaces
 
-- Add native CLI ports beyond x86-64 Linux.
+- Add native CLI ports beyond x86-64 and ARM64 Linux.
 - Add general cross-build support.
 - Describe ABI, object format, assembler dialect, and required ISA extensions in metadata.
 - Separate host tools from target libraries.
