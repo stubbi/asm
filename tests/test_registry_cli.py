@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import unittest
 
+from host import TARGET, OTHER_TARGET, ELF_MACHINE, VERSION
+
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
 HEADER = "# asm-registry-v1\n"
@@ -30,7 +32,7 @@ class RegistryCliTests(unittest.TestCase):
 
     def row(self, **changes):
         values = dict(
-            package="stubbi/hello", version="0.1.0", target="x86_64-linux", kind="source",
+            package="stubbi/hello", version="0.1.0", target=TARGET, kind="source",
             sha256=self.digest,
             url="https://github.com/stubbi/asm/releases/download/v0.1.0/hello.tar.gz",
             size=str(self.artifact.stat().st_size), summary="A small assembly example",
@@ -57,7 +59,7 @@ class RegistryCliTests(unittest.TestCase):
         self.write_index(
             self.row(summary=summary),
             self.row(version="0.2.0"),
-            self.row(version="0.2.0", target="aarch64-linux"),
+            self.row(version="0.2.0", target=OTHER_TARGET),
         )
         result = json.loads(self.cli("search", "quoted", "--json").stdout)
         self.assertEqual(len(result["results"]), 1)
@@ -91,12 +93,12 @@ class RegistryCliTests(unittest.TestCase):
     def test_fetch_resolves_numeric_latest_and_respects_target(self):
         self.write_index(
             self.row(version="2.10.0"), self.row(version="2.9.9"),
-            self.row(version="3.0.0", target="aarch64-linux"),
+            self.row(version="3.0.0", target=OTHER_TARGET),
         )
         result = json.loads(self.cli("fetch", "stubbi/hello", "--artifact", self.artifact, "--json").stdout)
         self.assertEqual(result["version"], "2.10.0")
         result = json.loads(self.cli(
-            "fetch", "stubbi/hello", "--target", "aarch64-linux",
+            "fetch", "stubbi/hello", "--target", OTHER_TARGET,
             "--artifact", self.artifact, "--json",
         ).stdout)
         self.assertEqual(result["version"], "3.0.0")
@@ -130,7 +132,7 @@ class RegistryCliTests(unittest.TestCase):
                 self.write_index(self.row(**changes))
                 result = self.cli("fetch", "stubbi/hello", "--artifact", self.artifact, code=1)
                 self.assertIn("verification failed", result.stderr)
-                self.assertFalse((self.work / "stubbi-hello-0.1.0-x86_64-linux.tar.gz").exists())
+                self.assertFalse((self.work / f"stubbi-hello-0.1.0-{TARGET}.tar.gz").exists())
 
     def test_local_artifact_symlink_is_rejected(self):
         self.write_index(self.row())
@@ -152,7 +154,7 @@ class RegistryCliTests(unittest.TestCase):
         self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
         # This explicit test invocation, separate from installation, checks the result.
         version = subprocess.run([str(destination), "--version"], capture_output=True, text=True, check=True)
-        self.assertIn("asm 0.2.0", version.stdout)
+        self.assertIn(f"asm {VERSION}", version.stdout)
         self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", destination, code=1)
 
     def test_install_rejects_wrong_target_and_malformed_elf(self):
@@ -160,7 +162,7 @@ class RegistryCliTests(unittest.TestCase):
         program_offset = struct.unpack_from("<Q", original, 32)[0]
         bad = []
         for offset, format_, value in [
-            (4, "B", 1), (5, "B", 2), (18, "H", 183), (56, "H", 65535),
+            (4, "B", 1), (5, "B", 2), (18, "H", 62 if ELF_MACHINE == 183 else 183), (56, "H", 65535),
             (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
             (program_offset + 4, "I", 7),
             (program_offset + 32, "Q", 2**64 - 1),
@@ -176,8 +178,8 @@ class RegistryCliTests(unittest.TestCase):
                 self.write_index(self.row(kind="executable"))
                 self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
                 self.assertFalse((self.work / "rejected").exists())
-        self.write_index(self.row(kind="executable", target="aarch64-linux"))
-        self.cli("install", "stubbi/hello", "--target", "aarch64-linux", "--output", "rejected", code=2)
+        self.write_index(self.row(kind="executable", target=OTHER_TARGET))
+        self.cli("install", "stubbi/hello", "--target", OTHER_TARGET, "--output", "rejected", code=2)
 
     def test_fifo_inputs_fail_without_blocking(self):
         self.write_index(self.row())

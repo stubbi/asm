@@ -13,6 +13,8 @@ import tarfile
 import tempfile
 import unittest
 
+from host import TARGET, OTHER_TARGET, IS_ARM64, exit_source, program
+
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
 
@@ -40,7 +42,7 @@ class DependencyCliTests(unittest.TestCase):
         self.assertEqual(list((cwd or self.project).glob(".asm-registry-*")), [])
         return result
 
-    def make_archive(self, version, name="math", *, target="x86_64-linux", omit=()):
+    def make_archive(self, version, name="math", *, target=TARGET, omit=()):
         payload = io.BytesIO()
         with tarfile.open(fileobj=payload, mode="w", format=tarfile.USTAR_FORMAT) as archive:
             for relative in ("LICENSE", "README.md", "asm.toml", "src/main.s", "src/min.s", "tests/main.s"):
@@ -52,6 +54,10 @@ class DependencyCliTests(unittest.TestCase):
                     # Fixture versions must not depend on the current example release.
                     data = (f'[package]\nname = "{name}"\nversion = "{version}"\n\n'
                             f'[build]\nsource = "src/main.s"\ntarget = "{target}"\n').encode()
+                elif IS_ARM64 and relative == "src/min.s":
+                    data = b".global asm_u64_min\n.text\nasm_u64_min:\n    cmp x0, x1\n    csel x0, x0, x1, ls\n    ret\n"
+                elif IS_ARM64 and relative in {"src/main.s", "tests/main.s"}:
+                    data = exit_source(0).encode()
                 member = tarfile.TarInfo(relative)
                 member.mode = 0o644
                 member.size = len(data)
@@ -62,7 +68,7 @@ class DependencyCliTests(unittest.TestCase):
 
     def metadata(self, archive, version, name="math", digest=None):
         return "\t".join([
-            f"stubbi/{name}", version, "x86_64-linux", "source",
+            f"stubbi/{name}", version, TARGET, "source",
             digest or hashlib.sha256(archive.read_bytes()).hexdigest(),
             f"https://github.com/stubbi/asm/releases/download/v0.1.0/{name}-{version}.tar.gz",
             str(archive.stat().st_size), "Unsigned minimum function",
@@ -76,17 +82,17 @@ class DependencyCliTests(unittest.TestCase):
 
     def consumer(self, project=None, version="0.1.0", name="math"):
         project = project or self.project
+        body = ('mov x0, #12\nmov x1, #37\nbl asm_u64_min\ncmp x0, #12\n'
+                'b.ne failure\nmov x0, #0\nmov x8, #93\nsvc #0\n'
+                'failure:\nmov x0, #99\nmov x8, #93\nsvc #0\n') if IS_ARM64 else (
+                'mov edi, 12\nmov esi, 37\ncall asm_u64_min\ncmp rax, 12\n'
+                'jne failure\nxor edi, edi\nmov eax, 60\nsyscall\n'
+                'failure:\nmov edi, 99\nmov eax, 60\nsyscall\n')
         (project / "src/main.s").write_text(
-            '.intel_syntax noprefix\n'
-            f'.include "stubbi/{name}/{version}/x86_64-linux/src/min.s"\n'
-            '.section .text\n.global _start\n_start:\n'
-            'mov edi, 12\nmov esi, 37\ncall asm_u64_min\ncmp rax, 12\n'
-            'jne failure\nxor edi, edi\nmov eax, 60\nsyscall\n'
-            'failure:\nmov edi, 99\nmov eax, 60\nsyscall\n'
-        )
+            f'.include "stubbi/{name}/{version}/{TARGET}/src/min.s"\n' + program(body))
 
     def package_cache(self, version="0.1.0", name="math", project=None):
-        return (project or self.project) / f".asm/packages/stubbi/{name}/{version}/x86_64-linux"
+        return (project or self.project) / f".asm/packages/stubbi/{name}/{version}/{TARGET}"
 
     def test_add_lock_and_real_assembly_import(self):
         result = json.loads(self.add().stdout)
@@ -204,7 +210,7 @@ class DependencyCliTests(unittest.TestCase):
             b"", b"# asm-lock-v2\n# registry local\n",
             valid + self.row.encode(),
             valid.replace(b"source\t", b"executable\t"),
-            valid.replace(b"x86_64-linux\t", b"aarch64-linux\t"),
+            valid.replace((TARGET + "\t").encode(), (OTHER_TARGET + "\t").encode()),
             valid.replace(b"# registry local", b"# registry http://invalid"),
             valid + self.metadata(self.archive, "0.2.0").encode(),
         ]
@@ -244,7 +250,7 @@ class DependencyCliTests(unittest.TestCase):
 
     def test_custom_index_cannot_misdeclare_source_package_identity(self):
         cases = [
-            {"version": "0.1.0", "target": "aarch64-linux"},
+            {"version": "0.1.0", "target": OTHER_TARGET},
             {"version": "0.1.0", "name": "another-name"},
             {"version": "0.2.0"},
             {"version": "0.1.0", "omit": ("README.md",)},
@@ -261,7 +267,7 @@ class DependencyCliTests(unittest.TestCase):
 
     def test_locked_build_rejects_a_misdeclared_source_manifest(self):
         self.add()
-        archive = self.make_archive("0.1.0", target="aarch64-linux")
+        archive = self.make_archive("0.1.0", target=OTHER_TARGET)
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         (self.project / ".asm/cache" / f"{digest}.tar.gz").write_bytes(archive.read_bytes())
         (self.project / "asm.lock").write_text(

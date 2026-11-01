@@ -21,6 +21,9 @@ import tempfile
 import time
 import unittest
 
+from host import TARGET, OTHER_TARGET, IS_ARM64, ASM_FLAGS, CLI_SOURCE, CLI_DIRECTORY
+from host import SYS_RENAMEAT, SYS_SIGPROCMASK, SYS_GETRLIMIT, SYS_SETRLIMIT, program
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT = json.loads((ROOT / "cli/commands.json").read_text())["version"]
@@ -57,11 +60,11 @@ def deny_syscall(number):
 
 
 def deny_renameat():
-    deny_syscall(264)  # Linux x86-64 renameat.
+    deny_syscall(SYS_RENAMEAT)
 
 
 def deny_sigprocmask():
-    deny_syscall(14)  # Linux x86-64 rt_sigprocmask.
+    deny_syscall(SYS_SIGPROCMASK)
 
 
 def become(uid):
@@ -244,15 +247,16 @@ class SelfUpdateTests(unittest.TestCase):
             path = cls.fixture / name
             path.write_text(f"#!{sys.executable}\n" + body)
             path.chmod(0o755)
-        registry = cls.source / "cli/registry.s"
+        source_directory = cls.source / CLI_DIRECTORY.relative_to(ROOT)
+        registry = source_directory / "registry.s"
         registry.write_text(registry.read_text().replace(
             'registry_curl: .asciz "/usr/bin/curl"',
             f'registry_curl: .asciz "{cls.fixture}/curl-fixture"'))
-        verifier = cls.source / "cli/self_update_verify.s"
+        verifier = source_directory / "self_update_verify.s"
         verifier.write_text(verifier.read_text().replace(
             'self_gh_path: .asciz "/usr/bin/gh"',
             f'self_gh_path: .asciz "{cls.fixture}/gh-fixture"'))
-        cls.original_source = (cls.source / "cli/asm.s").read_text()
+        cls.original_source = (cls.source / CLI_SOURCE).read_text()
         cls.current_bytes = cls.compile_version(CURRENT)
         cls.next_bytes = cls.compile_version(NEXT)
         # Change only the named deadline in an isolated fixture build. The
@@ -266,7 +270,7 @@ class SelfUpdateTests(unittest.TestCase):
             cls.short_deadline_bytes = cls.compile_version(CURRENT)
         finally:
             verifier.write_text(original_verifier)
-        (cls.source / "cli/asm.s").write_text(cls.original_source)
+        (cls.source / CLI_SOURCE).write_text(cls.original_source)
 
     @classmethod
     def tearDownClass(cls):
@@ -278,8 +282,8 @@ class SelfUpdateTests(unittest.TestCase):
 
     @classmethod
     def compile_version(cls, version):
-        (cls.source / "cli/asm.s").write_text(cls.original_source.replace(CURRENT, version))
-        subprocess.run(["as", "--64", "--fatal-warnings", "-o", "asm.o", "cli/asm.s"],
+        (cls.source / CLI_SOURCE).write_text(cls.original_source.replace(CURRENT, version))
+        subprocess.run(["as", *ASM_FLAGS, "--fatal-warnings", "-o", "asm.o", CLI_SOURCE],
                        cwd=cls.source, check=True, capture_output=True)
         subprocess.run(["ld", "-z", "noexecstack", "-z", "relro", "-z", "now",
                         "--build-id=none", "-o", "asm", "asm.o"],
@@ -306,7 +310,7 @@ class SelfUpdateTests(unittest.TestCase):
                      "continue-verifier", "verifier-delay-finished", "stream-result.json"):
             (self.fixture / name).unlink(missing_ok=True)
         self.release_base = f"https://github.com/stubbi/asm/releases/download/v{NEXT}"
-        self.filename = f"asm-{NEXT}-x86_64-linux"
+        self.filename = f"asm-{NEXT}-{TARGET}"
         self.artifact_url = f"{self.release_base}/{self.filename}"
         self.digest = hashlib.sha256(self.next_bytes).hexdigest()
         self.record = {
@@ -314,7 +318,7 @@ class SelfUpdateTests(unittest.TestCase):
             "repository": "https://github.com/stubbi/asm", "source_commit": COMMIT,
             "license": "AGPL-3.0-or-later", "template_license": "MIT",
             "assets": [{"file": self.filename, "bytes": len(self.next_bytes), "sha256": self.digest}],
-            "tool_versions": {"as": "GNU assembler"}, "builds": {"asm": {"target": "x86_64-linux"}},
+            "tool_versions": {"as": "GNU assembler"}, "builds": {"asm": {"target": TARGET}},
         }
         self.state = {
             "index_url": INDEX, "identity": IDENTITY, "signed_commit": COMMIT,
@@ -333,7 +337,7 @@ class SelfUpdateTests(unittest.TestCase):
         (self.fixture / "state.json").write_text(json.dumps(self.state))
         (self.fixture / "release.json").write_text(json.dumps(self.record, indent=2) + "\n")
 
-    def row(self, version=NEXT, target="x86_64-linux", digest=None, size=None, url=None):
+    def row(self, version=NEXT, target=TARGET, digest=None, size=None, url=None):
         return "\t".join(("stubbi/asm", version, target, "executable", digest or self.digest,
                           url or self.artifact_url, str(size or len(self.next_bytes)), "ASM CLI")) + "\n"
 
@@ -629,7 +633,7 @@ class SelfUpdateTests(unittest.TestCase):
                 self.assertEqual(list(self.bin_dir.glob(".asm-registry-*")), [])
 
     def test_download_limit_setup_errors_stop_before_curl_exec(self):
-        for syscall in (97, 160):  # Linux x86-64 getrlimit and setrlimit.
+        for syscall in (SYS_GETRLIMIT, SYS_SETRLIMIT):
             with self.subTest(syscall=syscall):
                 (self.fixture / "calls.jsonl").unlink(missing_ok=True)
                 result = subprocess.run(
@@ -696,7 +700,7 @@ class SelfUpdateTests(unittest.TestCase):
         self.cli("self", "update", code=1)
         self.unchanged()
         self.save()
-        self.write_index(self.row(target="aarch64-linux"))
+        self.write_index(self.row(target=OTHER_TARGET))
         self.cli("self", "update", code=1)
         self.unchanged()
         self.write_index(self.row(url="https://github.com/another/asm/releases/download/v1/asm"))
@@ -708,20 +712,20 @@ class SelfUpdateTests(unittest.TestCase):
         (self.fixture / "artifact").write_bytes(payload)
         self.write_index(self.row(digest=hashlib.sha256(payload).hexdigest(), size=len(payload)))
         result = self.cli("self", "update", code=1)
-        self.assertIn("artifact is not a supported x86-64 ELF", result.stderr)
+        self.assertIn("artifact is not a supported", result.stderr)
+        self.assertIn("ELF", result.stderr)
         self.unchanged()
         self.assertFalse(any(c["args"][:2] == ["attestation", "verify"] for c in self.calls()))
 
     def test_candidate_is_not_executed_during_update(self):
         marker = self.work / "candidate-ran"
         source = self.work / "candidate.s"
-        source.write_text(
-            ".intel_syntax noprefix\n.global _start\n.text\n_start:\n"
-            "mov eax,257\nmov edi,-100\nlea rsi,[rip+path]\nmov edx,65\n"
-            "mov r10d,384\nsyscall\nmov eax,60\nmov edi,73\nsyscall\n"
-            f'.section .rodata\npath: .asciz "{marker}"\n'
-            '.section .note.GNU-stack,"",@progbits\n')
-        subprocess.run(["as", "--64", "-o", str(self.work / "candidate.o"), str(source)], check=True)
+        body = ("mov x0, #-100\nadr x1, path\nmov x2, #65\nmov x3, #384\n"
+                "mov x8, #56\nsvc #0\nmov x0, #73\nmov x8, #93\nsvc #0\n") if IS_ARM64 else (
+                "mov eax,257\nmov edi,-100\nlea rsi,[rip+path]\nmov edx,65\n"
+                "mov r10d,384\nsyscall\nmov eax,60\nmov edi,73\nsyscall\n")
+        source.write_text(program(body) + f'.section .rodata\npath: .asciz "{marker}"\n')
+        subprocess.run(["as", *ASM_FLAGS, "-o", str(self.work / "candidate.o"), str(source)], check=True)
         subprocess.run(["ld", "-z", "noexecstack", "-o", str(self.work / "candidate"),
                         str(self.work / "candidate.o")], check=True)
         payload = (self.work / "candidate").read_bytes()

@@ -2,11 +2,14 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 import random
 import subprocess
 import tempfile
 import unittest
+
+from host import IS_ARM64, ASM_FLAGS, TARGET, OTHER_TARGET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,7 +188,7 @@ def release():
         "version": VERSION,
         "tag": "v" + VERSION,
         "source_commit": COMMIT,
-        "assets": [{"file": f"asm-{VERSION}-x86_64-linux",
+        "assets": [{"file": f"asm-{VERSION}-{TARGET}",
                     "bytes": SIZE, "sha256": DIGEST}],
     }
 
@@ -201,17 +204,20 @@ class SelfUpdateMetadataTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(
             prefix="self-metadata-", dir=ROOT / "build")
         cls.work = Path(cls.temporary.name)
-        (cls.work / "harness.s").write_text(HARNESS)
+        (cls.work / "harness.s").write_text(
+            (ROOT / "tests/aarch64/self_update_metadata_harness.s").read_text() if IS_ARM64 else HARNESS)
         cls.binary = cls.work / "harness"
-        for source, output in (
-                (cls.work / "harness.s", cls.work / "harness.o"),
-                (ROOT / "cli/self_update_metadata.s", cls.work / "metadata.o")):
-            subprocess.run(["as", "--64", "--fatal-warnings", "-o", str(output),
-                            str(source)], check=True, capture_output=True, timeout=10)
+        sources = [(cls.work / "harness.s", cls.work / "harness.o")]
+        if not IS_ARM64:
+            sources.append((ROOT / "cli/self_update_metadata.s", cls.work / "metadata.o"))
+        for source, output in sources:
+            page_flags = ["--defsym", f"ARM_TEST_PAGE_SIZE={os.sysconf('SC_PAGE_SIZE')}"] if IS_ARM64 else []
+            subprocess.run(["as", *ASM_FLAGS, *page_flags, "--fatal-warnings", "-o", str(output),
+                            str(source)], cwd=ROOT, check=True, capture_output=True, timeout=10)
         subprocess.run(
             ["ld", "-z", "noexecstack", "-z", "relro", "-z", "now",
              "--build-id=none", "-o", str(cls.binary),
-             str(cls.work / "harness.o"), str(cls.work / "metadata.o")],
+             *[str(output) for _, output in sources]],
             check=True, capture_output=True, timeout=10)
 
     @classmethod
@@ -286,8 +292,8 @@ class SelfUpdateMetadataTests(unittest.TestCase):
 
     def test_candidate_filename_digest_and_size_are_bound(self):
         for field, values in (
-            ("file", (f"asm-{VERSION}-aarch64-linux", "other",
-                      f"asm-0.2.0-x86_64-linux", f"asm-{VERSION}-x86_64-linux/")),
+            ("file", (f"asm-{VERSION}-{OTHER_TARGET}", "other",
+                      f"asm-0.2.0-{TARGET}", f"asm-{VERSION}-{TARGET}/")),
             ("sha256", ("f" * 64, "a" * 63, "A" * 64, "g" * 64)),
             ("bytes", (SIZE + 1, SIZE - 1, 0, -1, 67108865, True, str(SIZE),
                        float(SIZE))),

@@ -167,17 +167,26 @@ class BootstrapGenerationTests(unittest.TestCase):
         good = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
         changes = [
             {"version": "0.2.0';touch /tmp/unsafe"}, {"version": "9999999999.0.0"},
-            {"sha256": "A" * 64}, {"source_commit": "0" * 40},
-            {"source_commit": "a" * 39 + "'"}, {"bytes": True}, {"bytes": 0},
-            {"bytes": registry.MAX_ARTIFACT_BYTES + 1}, {"repository_id": 1},
-            {"artifact_url": good["artifact_url"] + "?extra=1"},
+            {"source_commit": "0" * 40}, {"source_commit": "a" * 39 + "'"},
+            {"repository_id": 1},
             {"bundle_url": "https://example.invalid/bundle"},
-            {"version": "0.1.0", "artifact_url": "https://github.com/stubbi/asm/releases/download/v0.1.0/asm-0.1.0-x86_64-linux",
+            {"version": "0.1.0",
              "bundle_url": "https://github.com/stubbi/asm/releases/download/v0.1.0/release-attestation.sigstore.json"},
+            {"artifacts": []}, {"artifacts": None},
+            {"artifacts": good["artifacts"] * 2},
         ]
         for change in changes:
             with self.subTest(change=change), self.assertRaises(registry.RegistryError):
                 bootstrap.render_installer({**good, **change})
+        for change in ({"sha256": "A" * 64}, {"bytes": True}, {"bytes": 0},
+                       {"bytes": registry.MAX_ARTIFACT_BYTES + 1},
+                       {"url": good["artifacts"][0]["url"] + "?extra=1"},
+                       {"target": "aarch64-linux"}, {"target": "x86_64;exit"},
+                       {"target": "riscv64-linux"}, {"extra": "ignored"}):
+            candidate = deepcopy(good)
+            candidate["artifacts"][0].update(change)
+            with self.subTest(artifact_change=change), self.assertRaises(registry.RegistryError):
+                bootstrap.render_installer(candidate)
         for mutation in ("repository", "path", "url"):
             record = release_record()
             if mutation == "repository":
@@ -210,7 +219,7 @@ class BootstrapGenerationTests(unittest.TestCase):
                                                   bundle_reader=read_bundle)
             script = (stage / "install.sh").read_text()
             self.assertIn("readonly asm_version='0.2.0'", script)
-            self.assertIn(selected["sha256"], script)
+            self.assertIn(selected["artifacts"][0]["sha256"], script)
             self.assertIn(selected["source_commit"], script)
             self.assertNotIn("@@", script)
             page = (stage / "index.html").read_text()
@@ -310,8 +319,18 @@ class BootstrapUserFlowTests(unittest.TestCase):
         self.payload.write_bytes(PAYLOAD)
         self.release = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
         self.config = {**self.release, "commit": COMMIT, "payload_path": str(self.payload),
+                       "artifact_url": self.release["artifacts"][0]["url"],
                        "interrupt_marker": str(self.base / "interrupt")}
         self.script = self.base / "install.sh"
+        self.write_script()
+        self.env = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "LANG": "C",
+                    "https_proxy": "http://proxy.example:8080", "GH_TOKEN": "must-not-pass",
+                    "GITHUB_TOKEN": "must-not-pass", "GH_HOST": "untrusted.invalid",
+                    "GH_CONFIG_DIR": str(self.base / "untrusted-config"), "SSL_CERT_FILE": "must-not-pass",
+                    "CURL_CA_BUNDLE": "must-not-pass", "SIGSTORE_ROOT_FILE": "must-not-pass",
+                    "TUF_ROOT": "must-not-pass"}
+
+    def write_script(self):
         script = bootstrap.render_installer(self.release).decode()
         for name in ("curl", "gh", "uname", "ln"):
             script = script.replace("/usr/bin/" + name, str(self.tools / name))
@@ -322,12 +341,6 @@ class BootstrapUserFlowTests(unittest.TestCase):
         checks = '\n'.join(f'[ -x "{self.tools / name}" ] || asm_fail "Missing controlled {name} fixture."' for name in ("curl", "gh", "ln"))
         script = script.replace('    # Preserve only bounded proxy-routing settings.', checks + '\n    # Preserve only bounded proxy-routing settings.')
         self.script.write_text(script)
-        self.env = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "LANG": "C",
-                    "https_proxy": "http://proxy.example:8080", "GH_TOKEN": "must-not-pass",
-                    "GITHUB_TOKEN": "must-not-pass", "GH_HOST": "untrusted.invalid",
-                    "GH_CONFIG_DIR": str(self.base / "untrusted-config"), "SSL_CERT_FILE": "must-not-pass",
-                    "CURL_CA_BUNDLE": "must-not-pass", "SIGSTORE_ROOT_FILE": "must-not-pass",
-                    "TUF_ROOT": "must-not-pass"}
 
     @property
     def destination(self):
@@ -374,6 +387,55 @@ class BootstrapUserFlowTests(unittest.TestCase):
         self.assertEqual(verify["proxy"], "http://proxy.example:8080")
         for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "SIGSTORE_ROOT_FILE", "TUF_ROOT"):
             self.assertNotIn(name, verify["env_keys"])
+
+    def test_same_stream_selects_and_verifies_each_host_without_executing_it(self):
+        record = release_record("0.3.0")
+        arm_payload = b"ARM64 fixture; this must never execute.\n".ljust(9216, b"!")
+        arm = {"kind": "executable", "target": "aarch64-linux", "bytes": len(arm_payload),
+               "sha256": hashlib.sha256(arm_payload).hexdigest(),
+               "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/asm-0.3.0-aarch64-linux"}
+        record["artifacts"].append(arm)
+        self.release = bootstrap.installer_release([record], {("stubbi/asm", "0.3.0")})
+        self.config["bundle_url"] = self.release["bundle_url"]
+        self.write_script()
+        original_script = self.script.read_bytes()
+        for machine, artifact, payload in (("x86_64", record["artifacts"][0], PAYLOAD),
+                                           ("amd64", record["artifacts"][0], PAYLOAD),
+                                           ("aarch64", arm, arm_payload), ("arm64", arm, arm_payload)):
+            with self.subTest(machine=machine):
+                self.payload.write_bytes(payload)
+                result = self.run_installer(streamed=True, machine=machine, artifact_url=artifact["url"])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.script.read_bytes(), original_script)
+                self.assertEqual(self.destination.read_bytes(), payload)
+                self.assertIn(artifact["target"].encode(), result.stdout)
+                self.assertEqual(self.calls("gh")[-1]["args"][:2], ["attestation", "verify"])
+                self.destination.unlink()
+
+    def test_unpublished_host_stops_before_network_or_installation(self):
+        for machine, system in (("aarch64", "Linux"), ("riscv64", "Linux"),
+                                ("i686", "Linux"), ("arm64", "Darwin"),
+                                ("x86_64;echo unsafe", "Linux")):
+            with self.subTest(machine=machine, system=system):
+                result = self.run_installer(machine=machine, system=system)
+                self.assert_no_install(result)
+                self.assertEqual(self.calls("curl"), [])
+                self.assertEqual(self.calls("gh"), [])
+                self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_wrong_target_payload_cannot_replace_the_selected_arm_artifact(self):
+        record = release_record("0.3.0")
+        arm_payload = b"ARM64 fixture".ljust(len(PAYLOAD), b"!")
+        record["artifacts"].append({"kind": "executable", "target": "aarch64-linux", "bytes": len(arm_payload),
+                                    "sha256": hashlib.sha256(arm_payload).hexdigest(),
+                                    "url": "https://github.com/stubbi/asm/releases/download/v0.3.0/asm-0.3.0-aarch64-linux"})
+        self.release = bootstrap.installer_release([record], {("stubbi/asm", "0.3.0")})
+        self.config["bundle_url"] = self.release["bundle_url"]
+        self.write_script()
+        result = self.run_installer(streamed=True, machine="aarch64", artifact_url=record["artifacts"][1]["url"])
+        self.assert_no_install(result)
+        self.assertIn(b"checksum", result.stderr)
+        self.assertEqual(len([call for call in self.calls("gh") if call["args"][:2] == ["attestation", "verify"]]), 0)
 
     def test_exact_rerun_preserves_inode_and_does_not_download_again(self):
         first = self.run_installer()

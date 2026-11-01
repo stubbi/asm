@@ -14,6 +14,8 @@ import tarfile
 import tempfile
 import unittest
 
+from host import IS_ARM64, ASM_FLAGS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r'''
@@ -97,13 +99,17 @@ class NativeArchiveTests(unittest.TestCase):
         (ROOT / "build").mkdir(exist_ok=True)
         cls.build = tempfile.TemporaryDirectory(prefix="archive-harness-", dir=ROOT / "build")
         directory = Path(cls.build.name)
-        (directory / "harness.s").write_text(HARNESS)
-        for source, output in ((directory / "harness.s", directory / "harness.o"),
-                               (ROOT / "cli/archive.s", directory / "archive.o")):
-            subprocess.run(["as", "--64", "--fatal-warnings", "-o", str(output), str(source)], check=True)
+        (directory / "harness.s").write_text(
+            (ROOT / "tests/aarch64/archive_harness.s").read_text() if IS_ARM64 else HARNESS)
+        sources = [(directory / "harness.s", directory / "harness.o")]
+        if not IS_ARM64:
+            sources.append((ROOT / "cli/archive.s", directory / "archive.o"))
+        for source, output in sources:
+            subprocess.run(["as", *ASM_FLAGS, "--fatal-warnings", "-o", str(output), str(source)],
+                           cwd=ROOT, check=True)
         cls.binary = directory / "archive-test"
         subprocess.run(["ld", "-z", "noexecstack", "--build-id=none", "-o", str(cls.binary),
-                        str(directory / "harness.o"), str(directory / "archive.o")], check=True)
+                        *[str(output) for _, output in sources]], check=True)
 
     @classmethod
     def tearDownClass(cls):
