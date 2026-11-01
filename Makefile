@@ -11,7 +11,7 @@ all: build/asm
 build:
 	mkdir -p build
 
-build/asm.o: cli/asm.s cli/registry.s cli/elf.s cli/archive.s cli/dependencies.s cli/publish.s | build
+build/asm.o: cli/asm.s cli/registry.s cli/elf.s cli/archive.s cli/dependencies.s cli/publish.s cli/templates.s | build
 	$(AS) --64 --fatal-warnings -o $@ $<
 
 build/asm: build/asm.o

@@ -180,6 +180,13 @@ Measure maintenance and verification costs when the claim concerns total cost.
 
 ## Keep history useful
 
+Read [the license scope](LICENSING.md) before adding or moving source files.
+The platform uses AGPL-3.0-or-later.
+Starter text and the reference examples have explicit MIT grants.
+Independent packages keep their own version-specific licenses.
+Keep license metadata, source notices, CLI output, and release archives consistent.
+Never relabel the license or bytes of an earlier release.
+
 Make each commit a coherent, reviewable change.
 Use an imperative subject with a specific scope, such as `fix(cli): reject truncated indexes`.
 Explain the user problem and the reason for a non-obvious choice in the body.
