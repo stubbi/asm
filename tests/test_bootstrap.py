@@ -487,7 +487,7 @@ class BootstrapUserFlowTests(unittest.TestCase):
         script = self.script.read_bytes()
         entry = script.rindex(b'    asm_bootstrap_main "$@"')
         cuts = (script.index(b"set -eu") + 4, script.index(b"Downloading ASM") + 7,
-                script.index(b"/usr/bin/chmod 755") + 8,
+                script.index(b"Cannot set executable permissions.") + 8,
                 entry, entry + len(b"    asm_bootstrap_main"),
                 entry + len(b'    asm_bootstrap_main "$@"'), script.rindex(b"}"))
         self.save_config()

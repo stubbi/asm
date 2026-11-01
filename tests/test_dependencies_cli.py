@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import TARGET, OTHER_TARGET, IS_ARM64, exit_source, program
+from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, exit_source, program
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -88,6 +88,8 @@ class DependencyCliTests(unittest.TestCase):
                 'mov edi, 12\nmov esi, 37\ncall asm_u64_min\ncmp rax, 12\n'
                 'jne failure\nxor edi, edi\nmov eax, 60\nsyscall\n'
                 'failure:\nmov edi, 99\nmov eax, 60\nsyscall\n')
+        if IS_MACOS:
+            body = body.replace("mov x8, #93\nsvc #0", "bl _exit")
         (project / "src/main.s").write_text(
             f'.include "stubbi/{name}/{version}/{TARGET}/src/min.s"\n' + program(body))
 

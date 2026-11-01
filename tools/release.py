@@ -9,6 +9,7 @@ import hashlib
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,9 @@ CLI_TARGETS = {
     "x86_64-linux": ("x86_64", "as", "ld", None),
     "aarch64-linux": ("aarch64", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", "qemu-aarch64"),
 }
+NATIVE_CLI_TARGETS = {"aarch64-macos"}
+NATIVE_EVIDENCE = "native-release.json"
+MAX_NATIVE_EVIDENCE = 1024 * 1024
 
 
 def resolve_commit(repo: Path, reference: str) -> str:
@@ -63,13 +67,21 @@ def materialize(files: dict[str, tuple[bytes, int]], destination: Path) -> None:
 
 def publish_directory(stage: Path, output: Path) -> None:
     """Publish a complete directory without replacing any concurrent destination."""
-    registry.require(sys.platform == "linux", "directory publication requires Linux renameat2 support")
     libc = ctypes.CDLL(None, use_errno=True)
-    rename = getattr(libc, "renameat2", None)
-    registry.require(rename is not None, "atomic no-replace publication is unavailable on this system")
-    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    rename.restype = ctypes.c_int
-    result = rename(-100, os.fsencode(stage), -100, os.fsencode(output), 1)
+    if sys.platform == "darwin":
+        rename = getattr(libc, "renamex_np", None)
+        registry.require(rename is not None, "atomic no-replace publication is unavailable on this system")
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        # Darwin SDK sys/stdio.h: RENAME_EXCL refuses an existing destination.
+        result = rename(os.fsencode(stage), os.fsencode(output), 0x00000004)
+    else:
+        registry.require(sys.platform == "linux", "directory publication requires Linux or Darwin")
+        rename = getattr(libc, "renameat2", None)
+        registry.require(rename is not None, "atomic no-replace publication is unavailable on this system")
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(-100, os.fsencode(stage), -100, os.fsencode(output), 1)
     if result:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(output))
@@ -83,7 +95,8 @@ def build_environment() -> dict[str, str]:
     return env
 
 
-def command(arguments: list[str], cwd: Path, env: dict[str, str], timeout: int = 120) -> bytes:
+def command(arguments: list[str], cwd: Path, env: dict[str, str], timeout: int = 120,
+            include_stderr: bool = False) -> bytes:
     try:
         result = subprocess.run(arguments, cwd=cwd, env=env, check=False,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
@@ -92,7 +105,7 @@ def command(arguments: list[str], cwd: Path, env: dict[str, str], timeout: int =
     if result.returncode:
         detail = result.stderr.decode("utf-8", "replace").strip()[-2000:]
         raise registry.RegistryError(f"{arguments[0]} failed with exit {result.returncode}: {detail}")
-    return result.stdout
+    return result.stdout + result.stderr if include_stderr else result.stdout
 
 
 def tool_version(name: str, cwd: Path, env: dict[str, str]) -> str:
@@ -106,8 +119,124 @@ def read_binary(path: Path, target: str) -> bytes:
     registry.require(path.is_file() and not path.is_symlink(), "build did not produce a regular executable")
     registry.require(0 < path.stat().st_size <= registry.MAX_ARTIFACT_BYTES, "executable size is out of range")
     data = path.read_bytes()
-    registry.validate_elf(data, target)
+    registry.validate_executable(data, target)
     return data
+
+
+def native_test_result(output: bytes) -> dict:
+    """Require real, unskipped unittest execution, not an empty successful suite."""
+    matches = re.findall(rb"(?:^|\n)Ran ([1-9][0-9]*) tests? in [0-9.]+s\r?\n", output)
+    registry.require(len(matches) == 1 and output.rstrip().endswith(b"OK"),
+                     "native tests must finish successfully without skips")
+    return {"status": "pass", "command": ["make", "test"], "suite": "tests/macos",
+            "tests_run": int(matches[0]), "skipped": 0, "exit_code": 0,
+            "output_sha256": hashlib.sha256(output).hexdigest()}
+
+
+def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
+                         target: str = "aarch64-macos") -> dict:
+    """Qualify native bytes; declaring a released host remains a separate gate."""
+    registry.require(target in NATIVE_CLI_TARGETS, "unsupported native release target")
+    registry.require(platform.system() == "Darwin" and platform.machine().lower() == "arm64",
+                     "native macOS qualification requires an Apple Silicon macOS host")
+    major = platform.mac_ver()[0].split(".")[0]
+    registry.require(major.isdecimal() and int(major) >= 15, "native macOS qualification requires macOS 15 or later")
+    output = output_path(output)
+    commit = resolve_commit(repo, reference)
+    files = registry.git_files(repo, commit, ".", SOURCE_INCLUDES)
+    commands = registry.strict_json(files["cli/commands.json"][0])
+    version = commands["version"]
+    registry.version_tuple(version)
+    env = build_environment()
+    with tempfile.TemporaryDirectory(prefix=".asm-native-release-", dir=output.parent) as temporary:
+        work = Path(temporary)
+        first, second = work / "first", work / "second"
+        materialize(files, first)
+        materialize(files, second)
+        for snapshot in (first, second):
+            command(["make", "build/asm"], snapshot, env)
+        binary = read_binary(first / "build/asm", target)
+        registry.require(binary == read_binary(second / "build/asm", target),
+                         "the two clean native CLI builds do not match")
+        test_output = command(["make", "test"], first, env, 300, include_stderr=True)
+        tests = native_test_result(test_output)
+        registry.require(binary == read_binary(first / "build/asm", target),
+                         "native tests changed the qualified executable")
+        actual = command([str(first / "build/asm"), "version"], first, env, 15)
+        registry.require(actual == f"asm {version} ({target})\n".encode("ascii"),
+                         "the native CLI reports an unexpected version or host")
+        targets = registry.strict_json(command([str(first / "build/asm"), "targets", "--json"], first, env, 15))
+        registry.require(targets == {"host": target, "targets": [target]},
+                         "the native CLI reports unexpected native build targets")
+        command(["/usr/bin/codesign", "--verify", "--strict", str(first / "build/asm")], first, env, 15)
+        filename = f"asm-{version}-{target}"
+        evidence = {"schema": 1, "source_commit": commit, "version": version, "target": target,
+                    "asset": {"file": filename, "bytes": len(binary), "sha256": hashlib.sha256(binary).hexdigest()},
+                    "platform": {"system": "Darwin", "machine": "arm64", "version": platform.mac_ver()[0], "minimum": "15.0"},
+                    "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
+                    "version_check": {"status": "pass", "runner": "native", "stdout": actual.decode("ascii"), "exit_code": 0},
+                    "targets_check": {"status": "pass", "runner": "native", "result": targets, "exit_code": 0},
+                    "tests": tests, "code_signature": "ad-hoc; verified with codesign --verify --strict",
+                    "developer_id": "not-run", "notarization": "not-run",
+                    "tool_versions": {"clang": command(["/usr/bin/clang", "--version"], first, env, 15).decode().splitlines()[0],
+                                      "sdk": command(["/usr/bin/xcrun", "--show-sdk-version"], first, env, 15).decode().strip(),
+                                      "python": platform.python_version()}}
+        stage = work / "native"
+        stage.mkdir()
+        (stage / filename).write_bytes(binary)
+        (stage / filename).chmod(0o755)
+        (stage / NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
+        publish_directory(stage, output)
+    return evidence
+
+
+def read_native_release(directory: Path, commit: str, version: str, target: str = "aarch64-macos") -> tuple[bytes, dict]:
+    """Validate a same-workflow native job's bytes and recorded runtime evidence."""
+    registry.require(target in NATIVE_CLI_TARGETS, "unsupported native release target")
+    registry.require(directory.is_dir() and not directory.is_symlink(), "native input must be a regular directory")
+    evidence_path = directory / NATIVE_EVIDENCE
+    registry.require(evidence_path.is_file() and not evidence_path.is_symlink() and
+                     0 < evidence_path.stat().st_size <= MAX_NATIVE_EVIDENCE, "native evidence is missing or too large")
+    evidence = registry.strict_json(evidence_path.read_bytes())
+    registry.require(isinstance(evidence, dict) and type(evidence.get("schema")) is int and evidence["schema"] == 1 and
+                     evidence.get("source_commit") == commit and evidence.get("version") == version and
+                     evidence.get("target") == target, "native evidence has a different source, version, or target")
+    filename = f"asm-{version}-{target}"
+    asset = evidence.get("asset")
+    registry.require(isinstance(asset, dict) and asset.get("file") == filename, "native asset name does not match")
+    binary = read_binary(directory / filename, target)
+    registry.require(type(asset.get("bytes")) is int and asset["bytes"] == len(binary) and
+                     asset.get("sha256") == hashlib.sha256(binary).hexdigest(), "native asset digest or size does not match")
+    registry.require(evidence.get("version_check") == {"status": "pass", "runner": "native",
+                     "stdout": f"asm {version} ({target})\n", "exit_code": 0} and
+                     type(evidence["version_check"]["exit_code"]) is int, "native version evidence did not pass")
+    registry.require(evidence.get("targets_check") == {"status": "pass", "runner": "native",
+                     "result": {"host": target, "targets": [target]}, "exit_code": 0} and
+                     type(evidence["targets_check"]["exit_code"]) is int, "native target evidence did not pass")
+    tests = evidence.get("tests")
+    registry.require(isinstance(tests, dict) and tests.get("status") == "pass" and
+                     tests.get("command") == ["make", "test"] and tests.get("suite") == "tests/macos" and
+                     type(tests.get("tests_run")) is int and tests["tests_run"] > 0 and
+                     type(tests.get("skipped")) is int and tests["skipped"] == 0 and
+                     type(tests.get("exit_code")) is int and tests["exit_code"] == 0 and
+                     isinstance(tests.get("output_sha256"), str) and registry.HEX64.fullmatch(tests["output_sha256"]),
+                     "native test evidence is missing, skipped, or failed")
+    host = evidence.get("platform")
+    registry.require(isinstance(host, dict) and host.get("system") == "Darwin" and host.get("machine") == "arm64" and
+                     host.get("minimum") == "15.0" and isinstance(host.get("version"), str) and
+                     host["version"].split(".")[0].isdecimal() and int(host["version"].split(".")[0]) >= 15,
+                     "native evidence did not run on the required macOS host")
+    registry.require(evidence.get("command") == ["make", "build/asm"] and
+                     evidence.get("reproducibility") == "Two clean builds produced identical bytes." and
+                     evidence.get("code_signature") == "ad-hoc; verified with codesign --verify --strict",
+                     "native build evidence is incomplete")
+    tools = evidence.get("tool_versions")
+    registry.require(isinstance(tools, dict) and all(isinstance(tools.get(name), str) and
+                     0 < len(tools[name]) <= 1024 for name in ("clang", "sdk", "python")),
+                     "native tool version evidence is missing")
+    registry.require(evidence.get("developer_id") == "not-run" and evidence.get("notarization") == "not-run",
+                     "native qualification cannot assert Developer ID or notarization")
+    return binary, evidence
 
 
 def target_runner(name: str | None, env: dict[str, str]) -> str | None:
@@ -205,7 +334,7 @@ def require_mit_example(files: dict[str, tuple[bytes, int]], name: str) -> None:
 
 def build_release(repo: Path, output: Path, reference: str = "HEAD", version: str | None = None,
                   repository: str = "https://github.com/stubbi/asm",
-                  hello_targets: list[str] | None = None) -> dict:
+                  hello_targets: list[str] | None = None, native_input: Path | None = None) -> dict:
     registry.repository_url(repository)
     output = output_path(output)
     commit = resolve_commit(repo, reference)
@@ -226,8 +355,11 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     cli_hosts = commands.get("hosts", ["x86_64-linux"])
     registry.require(isinstance(cli_hosts, list) and all(isinstance(target, str) for target in cli_hosts) and
                      len(cli_hosts) == len(set(cli_hosts)) and
-                     "x86_64-linux" in cli_hosts and all(target in CLI_TARGETS for target in cli_hosts),
+                     "x86_64-linux" in cli_hosts and all(target in CLI_TARGETS.keys() | NATIVE_CLI_TARGETS for target in cli_hosts),
                      "source command metadata declares unsupported or duplicate CLI hosts")
+    native = read_native_release(native_input, commit, version) if native_input is not None else None
+    registry.require("aarch64-macos" not in cli_hosts or native is not None,
+                     "a declared macOS CLI requires exact-commit native qualification input")
     owner = repository.split("/")[-2].lower()
     tag = "v" + version
     base = repository + "/releases/download/" + tag
@@ -328,6 +460,14 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         for target in cli_hosts:
             if target == "x86_64-linux":
                 continue
+            if target in NATIVE_CLI_TARGETS:
+                binary, evidence = native
+                filename = f"asm-{version}-{target}"
+                payloads[filename] = binary
+                cli_record["artifacts"].append(artifact(binary, filename, target, "executable", base))
+                builds["asm_targets"][target] = evidence
+                tools["native_" + target] = evidence["tool_versions"]
+                continue
             architecture, assembler, linker, emulator_name = CLI_TARGETS[target]
             for name in (assembler, linker):
                 tools[name] = tool_version(name, first, env)
@@ -384,9 +524,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", default="https://github.com/stubbi/asm")
     parser.add_argument("--output", type=Path, default=Path("dist"), help="new output directory")
     parser.add_argument("--hello-target", choices=sorted(HELLO_TARGETS), action="append", help="repeat for each hello target; default: x86_64-linux")
+    parser.add_argument("--native-target", choices=sorted(NATIVE_CLI_TARGETS), help="build and test native qualification input on its own host")
+    parser.add_argument("--native-input", type=Path, help="native job output from this exact source commit")
     args = parser.parse_args(argv)
     try:
-        release = build_release(args.repo, args.output, args.commit, args.version, args.repository, args.hello_target)
+        if args.native_target:
+            registry.require(args.native_input is None and args.version is None and args.hello_target is None,
+                             "native qualification cannot override the source version or consume another build")
+            evidence = build_native_release(args.repo, args.output, args.commit, args.native_target)
+            print(f"Qualified {evidence['target']} from {evidence['source_commit']}.")
+            print(f"Wrote native bytes and runtime evidence to {args.output}. No files were uploaded.")
+            return 0
+        release = build_release(args.repo, args.output, args.commit, args.version, args.repository,
+                                args.hello_target, args.native_input)
         print(f"Built asm {release['version']} from {release['source_commit']}.")
         print(f"Wrote {len(release['assets'])} artifacts, checksums, release metadata, and proposed registry records to {args.output}.")
         print("No files were uploaded. Review the records before publication.")

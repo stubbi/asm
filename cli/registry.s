@@ -981,6 +981,12 @@ registry_valid_version:
  * This is artifact selection, not a claim that the host can execute it. */
 registry_valid_target:
     push rdi
+    lea rsi, [rip + registry_macos]
+    call streq
+    pop rdi
+    test eax, eax
+    jnz registry_valid
+    push rdi
     lea rsi, [rip + registry_host]
     call streq
     pop rdi
@@ -1996,6 +2002,7 @@ registry_version_compare:
 registry_default_url: .asciz "https://asm.build/registry/v1/index.tsv"
 registry_header: .asciz "# asm-registry-v1\n"
 registry_host: .asciz "x86_64-linux"
+registry_macos: .asciz "aarch64-macos"
 registry_aarch64: .asciz "aarch64-linux"
 registry_riscv64: .asciz "riscv64-linux"
 registry_source_kind: .asciz "source"

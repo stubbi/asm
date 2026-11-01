@@ -20,6 +20,13 @@ Self-update supports the direct `$HOME/.local/bin/asm` file on Linux x86-64 and 
 Use the package manager for an installation that it owns.
 Self-update does not run `sudo` or change `PATH`.
 
+This contract describes published version 0.3.0, which remains Linux-only.
+The [Apple Silicon macOS port](macos.md) requires native qualification and a new signed release before it becomes supported.
+Its proposed installation contract uses local APFS on macOS 15 or later.
+Its verifier path is `/opt/homebrew/bin/gh`, and its SHA-256 tool is `/usr/bin/shasum`.
+The required repository, workflow identity, source commit, and verification policy remain the same.
+An ad-hoc Mach-O signature does not replace release-workflow provenance, Developer ID signing, or notarization.
+
 The executable must be a regular file with one hard link.
 It must belong to the calling user.
 The user ID and effective user ID must match.
@@ -59,8 +66,15 @@ There is no checksum-only fallback.
 ## Verification contract
 
 The package is fixed to `stubbi/asm`.
-The index is fixed to `https://asm.build/registry/v1/index.tsv`.
+The released Linux index is fixed to `https://asm.build/registry/v1/index.tsv`.
 No registry, local artifact, or installation path override is accepted.
+
+The macOS candidate uses the separate `https://asm.build/registry/v1/index-macos.tsv` feed.
+Released 0.3.0 Linux clients reject an unfamiliar target row before selecting a package or update.
+The primary feed therefore retains Linux targets so those clients can still select an upgrade.
+The macOS feed includes the new target; the JSON catalog continues to describe all published artifacts.
+Both feeds retain exact version, target, size, and digest bindings.
+This compatibility split does not authenticate either index or add freshness protection.
 
 ASM selects an executable for its own host: `x86_64-linux` or `aarch64-linux`.
 It does not install an executable for another architecture.

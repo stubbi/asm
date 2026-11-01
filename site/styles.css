@@ -89,6 +89,7 @@ h1 > span { color: var(--accent); }
 .section h2 { margin: 0 0 20px; font-size: 44px; font-weight: 400; line-height: 1.15; letter-spacing: -1.8px; }
 .section-intro > p:last-child { max-width: 465px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.8; }
 .start-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 45px; margin-top: 36px; }
+.start-grid > * { min-width: 0; }
 .terminal { display: flex; flex-direction: column; min-width: 0; background: var(--terminal); color: #f2f4eb; }
 .terminal-header { display: flex; align-items: center; justify-content: space-between; height: 51px; border-bottom: 1px solid #48503f; padding-inline: 21px; }
 .terminal-label { display: flex; align-items: center; gap: 11px; color: #c4ceba; font: 10px/1.5 var(--mono); letter-spacing: .5px; }

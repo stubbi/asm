@@ -1,5 +1,17 @@
 # Change log
 
+## 0.4.0 candidate
+
+- Add an Apple Silicon macOS 15 CLI using native assembly, Mach-O, and libSystem adapters.
+- Qualify project, registry, archive, dependency, publication, installer, and updater behavior on native macOS.
+- Select release artifacts by operating system and ISA; use macOS tools without GNU Coreutils.
+- Bind updates to the running executable vnode, protected APFS paths, ACL policy, and signed release provenance.
+- Preserve the Linux feed for released clients and add a macOS-compatible feed.
+- Require native final-byte qualification and exact-commit artifact transfer before release provenance signing.
+- Keep Intel macOS unsupported. Developer ID signing and notarization are not provided.
+
+See the [candidate release notes](docs/releases/0.4.0.md) and [qualification contract](docs/macos.md).
+
 ## 0.3.0
 
 - Add a native ARM64 Linux CLI with the same command and verification contracts.

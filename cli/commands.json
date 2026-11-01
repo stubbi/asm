@@ -1,14 +1,16 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "implementation": "native assembly",
   "hosts": [
     "x86_64-linux",
-    "aarch64-linux"
+    "aarch64-linux",
+    "aarch64-macos"
   ],
   "build_mode": "native host",
   "targets": [
     "x86_64-linux",
-    "aarch64-linux"
+    "aarch64-linux",
+    "aarch64-macos"
   ],
   "implemented": [
     "help",

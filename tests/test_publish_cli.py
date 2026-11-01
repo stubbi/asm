@@ -13,6 +13,8 @@ import tarfile
 import tempfile
 import unittest
 
+from host import IS_MACOS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -66,6 +68,19 @@ class NativePublishTests(unittest.TestCase):
         self.assertEqual(list(self.work.glob(".asm-registry-*")), [], "temporary workspace was not removed")
         return result
 
+    def test_macos_executable_publication_requires_the_declared_format(self):
+        candidate = self.work / "candidate"
+        url = "https://github.com/owner/math/releases/download/v0.1.0/native"
+        candidate.write_bytes(elf(183))
+        arguments = self.arguments(artifacts=[("aarch64-macos", "executable", candidate, url)])
+        self.cli(arguments, code=1)
+        self.assertFalse(self.output.exists())
+        if IS_MACOS:
+            candidate.write_bytes(ASM.read_bytes())
+            self.cli(arguments)
+            record = registry.validate_manifest(json.loads(self.output.read_bytes()))
+            registry.validate_artifact(candidate.read_bytes(), record, record["artifacts"][0])
+
     def test_prepares_real_record_with_actual_digest_and_no_upload_claim(self):
         result = self.cli(self.arguments() + ["--json"])
         report = json.loads(result.stdout)
@@ -94,6 +109,8 @@ class NativePublishTests(unittest.TestCase):
     def test_six_target_kind_artifacts_have_distinct_validated_records(self):
         artifacts = []
         for target, machine in registry.TARGETS.items():
+            if not target.endswith("-linux"):
+                continue
             for kind in ("source", "executable"):
                 filename = target + (".tar.gz" if kind == "source" else ".bin")
                 path = self.work / filename

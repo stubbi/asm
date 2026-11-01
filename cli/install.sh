@@ -60,10 +60,20 @@ temporary=$(mktemp "$directory/.asm-install.XXXXXXXX")
 trap 'rm -f -- "$temporary"' EXIT HUP INT TERM
 install -m 755 -- "$source_file" "$temporary"
 if [ "$replace" = 1 ]; then
-    mv -fT -- "$temporary" "$destination"
+    if [ "$(uname -s)" = Darwin ]; then
+        # rename(2) refuses directory targets and replaces a symlink itself.
+        # Perl is a build/install tool, never part of the ASM CLI runtime.
+        /usr/bin/perl -e 'rename($ARGV[0], $ARGV[1]) or die "Cannot replace destination: $!\n"' -- "$temporary" "$destination"
+    else
+        mv -fT -- "$temporary" "$destination"
+    fi
 else
     # An exclusive hard link prevents a race from replacing another file.
-    ln -- "$temporary" "$destination"
+    if [ "$(uname -s)" = Darwin ]; then
+        /bin/link "$temporary" "$destination"
+    else
+        ln -T -- "$temporary" "$destination"
+    fi
     rm -- "$temporary"
 fi
 trap - EXIT HUP INT TERM
