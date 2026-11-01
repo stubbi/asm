@@ -45,21 +45,54 @@ ASM needs to make this kind of evidence available beside the exact target artifa
 ## Quick start
 
 The current CLI runs on **Linux x86-64**.
-To build from source, install Git, GNU Make, and GNU Binutils.
-On Debian or Ubuntu, the Binutils package supplies `as` and `ld`.
-Registry commands also use curl and SHA-256 from GNU Coreutils.
-Source dependencies use gzip.
-`asm doctor` checks the tools that the CLI needs.
+Install ASM once with the bootstrap installer.
+Use `asm self update` for later updates from the hub.
+
+### Install the command
+
+The installer needs curl and GNU Coreutils in `/usr/bin`.
+Use the [official GitHub CLI instructions](https://cli.github.com/) to install version 2.93.0 or later at `/usr/bin/gh`.
+No GitHub login is required.
+The installer checks the executable's size, digest, and signed release attestation before installation.
+The attestation connects the executable to the required release workflow.
+The installer writes `$HOME/.local/bin/asm` without administrator access.
+
+[Read the installer](https://asm.build/install.sh) before running it.
 
 ```sh
-git clone https://github.com/stubbi/asm.git
-cd asm
-make
-./build/asm doctor
-./build/asm new hello
-cd hello
-../build/asm run
-../build/asm test
+(
+  installer=$(mktemp) || exit
+  trap 'rm -f "$installer"' 0
+  curl -q --proto '=https' --tlsv1.2 --fail --silent --show-error --max-time 120 https://asm.build/install.sh -o "$installer" || exit
+  sh "$installer"
+) &&
+export PATH="$HOME/.local/bin:$PATH" &&
+asm version
+```
+
+For the current release, `asm version` prints `asm 0.2.0 (x86_64-linux)`.
+The installer preserves a different existing `asm` command.
+Running it again accepts only the same release bytes with the required ownership and permissions.
+
+The `export` command applies to the current shell.
+Add it to your shell configuration to keep this setting.
+The [update contract](docs/self-update.md) explains the verification policy and supported installation paths.
+
+### Run your first project
+
+Install GNU Binutils before building a project.
+On Debian or Ubuntu, the `binutils` package supplies `/usr/bin/as` and `/usr/bin/ld`.
+Source dependencies also need `/usr/bin/gzip`.
+`asm doctor` checks the project and registry tools.
+
+Run these commands from the directory that will contain your new project:
+
+```sh
+asm doctor &&
+asm new hello &&
+cd hello &&
+asm run &&
+asm test
 ```
 
 The program prints:
@@ -77,24 +110,55 @@ The [hello example](examples/hello) shows the complete project.
 Read [the CLI source](cli/asm.s) to follow the implementation.
 The [registry module](cli/registry.s) contains the native registry client.
 
-### Install the command
+### Update ASM
 
-From the ASM repository, run:
+Self-update supports only the direct, user-owned `$HOME/.local/bin/asm` file.
+Use your package manager for an installation that it owns.
+
+Run the installed command:
 
 ```sh
-make install PREFIX="$HOME/.local"
-export PATH="$HOME/.local/bin:$PATH"
+asm self update
+```
+
+ASM selects its own `stubbi/asm` package from the hub.
+It verifies the signed release, source commit, target, size, and digest before replacing the installed command.
+The new command takes effect on its next invocation.
+The update does not execute the downloaded file.
+
+Use `asm self update X.Y.Z` to select an exact newer version.
+Replace `X.Y.Z` with the required version.
+ASM refuses an older version.
+An equal version leaves the command unchanged without verifying the installed file again.
+This result does not establish registry freshness.
+
+Use `asm self update --json` for machine-readable output.
+Use `asm self --help` for the command contract.
+
+Updates are manual.
+The index has no independently signed expiry or revocation record.
+Read [the security model](docs/specs/security.md#bootstrap-and-manual-self-update) for the trust boundary and remaining limits.
+
+### Build from source
+
+The source build needs Git, GNU Make, and GNU Binutils.
+Registry commands also need curl and GNU sha256sum.
+
+```sh
+git clone https://github.com/stubbi/asm.git &&
+cd asm &&
+make &&
+make install PREFIX="$HOME/.local" &&
+export PATH="$HOME/.local/bin:$PATH" &&
 asm version
 ```
 
-The `export` command applies to the current shell.
-Add it to your shell configuration to keep this setting.
-The installer refuses to replace a different existing `asm` command.
-To replace that command deliberately, add `REPLACE=1`.
+The source installer refuses to replace a different existing `asm` command.
+To replace that command deliberately, add `REPLACE=1` to the installation command.
 `make uninstall PREFIX="$HOME/.local"` removes the command only when its bytes match this build.
 
-[Release downloads](https://github.com/stubbi/asm/releases) include the native binary, source archives, checksums, and build metadata.
-Check the supported target and the checksum before you run a downloaded file.
+The [current release](https://github.com/stubbi/asm/releases/tag/v0.2.0) contains the executable, source, checksums, build metadata, and signed provenance bundle.
+The bootstrap installer performs the binary installation checks.
 
 ### Describe a project
 
@@ -180,6 +244,7 @@ The table below describes the implemented release boundary.
 | Area | Current implementation |
 | --- | --- |
 | Native CLI | Linux x86-64 assembly, with direct Linux system calls. |
+| Installation and updates | Bootstrap installation and manual `asm self update` with signed release provenance. |
 | Project workflow | Create, inspect, build, run, test, and clean projects. |
 | Registry client | Search packages, inspect versions, fetch artifacts, and install checked host executables. |
 | Dependencies | Add, update, remove, check, and restore exact direct source dependencies. |
@@ -211,8 +276,8 @@ The initial publication path uses a reviewed pull request.
 It does not upload files or reserve a package name.
 Follow the [publishing guide](registry/README.md) to prepare archives and submit the record.
 
-The CLI's project, registry, dependency, archive, and publication logic is assembly.
-It uses mature system tools for assembly, linking, HTTPS, SHA-256, and gzip.
+The CLI's project, registry, dependency, archive, publication, and self-update logic is assembly.
+It uses mature system tools for assembly, linking, HTTPS, SHA-256, gzip, and signature verification.
 Python handles registry operations and release automation.
 JavaScript supports the website.
 
