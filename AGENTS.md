@@ -2,6 +2,10 @@
 
 ASM helps people build, share, and check assembly software.
 The user must be able to trust the result and understand its limits.
+ASM aims to support software distribution at global scope, with assembly as its current package focus.
+Discovery capacity, authenticated distribution, and recovery are core requirements.
+Use the [architecture proposal](docs/architecture.md) and its [acceptance gates](docs/architecture-gates.md) when changing platform contracts.
+Keep deployed behavior, unpublished experiments, proposed targets, and measured results distinct.
 Read [the project purpose](docs/why-asm.md) before you change the product.
 Read [design.md](design.md) before you change an interface or its text.
 
