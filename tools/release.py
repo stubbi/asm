@@ -103,7 +103,8 @@ def command(arguments: list[str], cwd: Path, env: dict[str, str], timeout: int =
     except (OSError, subprocess.TimeoutExpired) as error:
         raise registry.RegistryError(f"could not run {arguments[0]}: {error}") from error
     if result.returncode:
-        detail = result.stderr.decode("utf-8", "replace").strip()[-2000:]
+        detail_limit = 64000 if include_stderr else 2000
+        detail = result.stderr.decode("utf-8", "replace").strip()[-detail_limit:]
         raise registry.RegistryError(f"{arguments[0]} failed with exit {result.returncode}: {detail}")
     return result.stdout + result.stderr if include_stderr else result.stdout
 

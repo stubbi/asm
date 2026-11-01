@@ -5,6 +5,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Only host detection, HTTPS transport, verifier, and a race-injecting link
 wrapper are replaced in a disposable script. The wrapper executes /bin/link.
 No production override or test mode is added to the installer.
+
+The test script exports a caller-controlled loader setting after its shell has
+started. dyld(1) processes these settings before a program's entry point. An
+invalid inserted library can prevent the shell from starting on hosts without
+SIP protection; that process-start failure is outside the installer's boundary.
+The installer cannot constrain a same-account caller's pre-launch loader setup.
+Use an existing system library so the installer and its clean child environments
+are exercised on both protected developer Macs and hosted macOS runners.
 """
 
 from __future__ import annotations
@@ -154,7 +162,7 @@ class MacOSBootstrapUserFlowTests(unittest.TestCase):
                     "GH_CONFIG_DIR": str(self.base / "untrusted-config"), "SSL_CERT_FILE": "must-not-pass",
                     "CURL_CA_BUNDLE": "must-not-pass", "SIGSTORE_ROOT_FILE": "must-not-pass",
                     "TUF_ROOT": "must-not-pass", "PERL5OPT": "must-not-pass",
-                    "PERL5LIB": "must-not-pass", "DYLD_INSERT_LIBRARIES": "must-not-pass"}
+                    "PERL5LIB": "must-not-pass"}
 
     def write_script(self):
         script = bootstrap.render_installer(self.release).decode()
@@ -162,7 +170,9 @@ class MacOSBootstrapUserFlowTests(unittest.TestCase):
                                ("/usr/bin/uname", "uname"), ("/usr/bin/sw_vers", "sw_vers"),
                                ("/bin/link", "link")):
             script = script.replace(original, str(self.tools / name))
-        self.script.write_text(script)
+        # Export after /bin/sh has launched. A missing library at process
+        # launch aborts dyld before the shell can execute any installer code.
+        self.script.write_text("export DYLD_INSERT_LIBRARIES=/usr/lib/libSystem.B.dylib\n" + script)
 
     def test_os_and_architecture_choose_the_exact_record_asset(self):
         release = mac_release(linux=True)
@@ -401,7 +411,10 @@ class MacOSBootstrapUserFlowTests(unittest.TestCase):
 
     def test_verifier_receives_no_perl_or_dynamic_loader_configuration(self):
         self.assertEqual(self.run_installer().returncode, 0)
-        for call in self.calls("gh"):
+        # Prove that the installer entered with the untrusted loader setting.
+        # A SIP-protected shell can otherwise remove it before the test starts.
+        self.assertIn("DYLD_INSERT_LIBRARIES", self.calls("uname")[0]["env_keys"])
+        for call in self.calls("gh") + self.calls("curl"):
             for key in ("PERL5OPT", "PERL5LIB", "DYLD_INSERT_LIBRARIES"):
                 self.assertNotIn(key, call["env_keys"])
 
