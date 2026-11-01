@@ -189,12 +189,8 @@ class LocalPostgres:
         self.base = Path(self.temp.name)
         self.data = self.base / "data"
         self.password = secrets.token_hex(24)
-        password_file = self.base / "password"
         try:
-            password_file.write_text(self.password + "\n")
-            password_file.chmod(0o600)
-            self._initialize(bindir, password_file, env)
-            password_file.unlink()
+            self._initialize(bindir, env)
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 self.port = reservation.getsockname()[1]
@@ -227,14 +223,17 @@ class LocalPostgres:
             self.close()
             raise
 
-    def _initialize(self, bindir, password_file, env):
+    def _initialize(self, bindir, env):
+        # Linux exposes the private input pipe through /dev/stdin. Keep the
+        # administrator password out of regular files, arguments, and the environment.
         process = subprocess.Popen(
             [str(bindir / "initdb"), "-D", str(self.data), "--username=asm_fixture_admin",
              "--auth-host=scram-sha-256", "--auth-local=scram-sha-256",
-             "--pwfile=" + str(password_file), "--encoding=UTF8", "--locale=C", "--no-instructions"],
-            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+             "--pwfile=/dev/stdin", "--encoding=UTF8", "--locale=C", "--no-instructions"],
+            env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, start_new_session=True)
         try:
-            output, _ = process.communicate(timeout=20)
+            output, _ = process.communicate(input=(self.password + "\n").encode("ascii"), timeout=20)
         except BaseException:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)

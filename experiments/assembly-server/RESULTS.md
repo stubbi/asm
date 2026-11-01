@@ -11,7 +11,7 @@ The independent checkout came from tree `22b94bfab71da66e31fae719d80d31dcbcb5dda
 It compiled both executables again and started its own PostgreSQL clusters.
 Legacy reference-tool and administrator-file variables pointed to unavailable paths during that run.
 The build and tests did not use them.
-All ten code and fixture inputs match the final source manifest.
+At that checkpoint, all ten code and fixture inputs matched the recorded source manifest.
 
 The native application, readiness query, and search query are byte-identical to the initial checkpoint.
 The changes are build checks, a local PostgreSQL fixture, its regressions, and documentation.
@@ -86,6 +86,25 @@ The fixture retains all acceptance audit fields, and its failure test exercises 
 
 These failures were corrected without weakening the HTTP assertions or increasing their time limits.
 The [failure record](evidence/reproducibility-failures.json) identifies the retained logs by digest and states each correction.
+
+## Administrator password correction
+
+The first public CodeQL scan identified a password-file write in the local fixture.
+The finding applies to commit `25793199b178c1a38e533304f2311f90af49811c`.
+The fixture wrote its random administrator password to a temporary file before running `initdb`.
+
+The fixture now sends that password through a private subprocess input pipe.
+On Linux, `initdb` reads the pipe through `--pwfile=/dev/stdin`.
+The password is absent from the process arguments and environment.
+The 20-second initialization timeout and owned process-group cleanup remain unchanged.
+The server's separate, owner-only connection URL files remain part of its tested configuration contract.
+
+All 16 existing tests passed after this change as unprivileged UID 65534.
+The run had no failures, errors, or skips and took 7.999 seconds.
+The test cases, native application, SQL, and dependency pins did not change.
+The [correction record](evidence/password-pipe-results.json) binds the result to the changed source and retained finding.
+The [test output](evidence/password-pipe-test-output.txt) retains the complete unittest result.
+This local result does not establish that the updated public CodeQL check passed.
 
 ## Remaining limits
 
