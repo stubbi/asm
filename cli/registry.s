@@ -19,6 +19,7 @@
  */
 .equ INDEX_LIMIT, 1048576
 .equ ROW_LIMIT, 4096
+.equ REGISTRY_OUTPUT_LIMIT, 65536
 .equ ARTIFACT_LIMIT, 67108864
 .equ O_NOFOLLOW, 131072
 .equ O_CLOEXEC, 524288
@@ -647,6 +648,7 @@ registry_parse_records:
     inc qword ptr [rip + registry_row_count]
     jmp .Lindex_row
 .Lindex_parsed:
+    call registry_check_unique
     pop r15
     pop r14
     pop r13
@@ -654,8 +656,8 @@ registry_parse_records:
     ret
 
 /* Input: RDI points to eight bounded, NUL-terminated field pointers. Output:
- * returns only for a valid row unique against prior registry_rows. Otherwise
- * exits before a fetch. Scratch: index is unchanged. Stack: up to 24 bytes. */
+ * returns only for valid fields. The complete parser checks identity uniqueness
+ * before returning. Scratch: index is unchanged. Stack: 8 bytes plus calls. */
 registry_validate_row:
     push rbx
     mov rbx, rdi
@@ -724,39 +726,141 @@ registry_validate_row:
     je registry_bad_index
     cmp byte ptr [rdi + rax - 1], ' '
     je registry_bad_index
-    /* A duplicate artifact identity must never choose an arbitrary digest. */
+    pop rbx
+    ret
+
+/* Input: RDI/RSI=validated eight-pointer rows. Output: EAX is negative, zero,
+ * or positive for lexical artifact-identity order (package/version/target/kind).
+ * Bytes are printable ASCII and each field ends at an accessible NUL. No row
+ * or string changes. Scratch: RAX/RCX/RDX/R8/R9. Stack: none. */
+registry_identity_compare:
+    xor ecx, ecx
+.Lidentity_field:
+    mov r8, [rdi + rcx]
+    mov r9, [rsi + rcx]
+.Lidentity_byte:
+    movzx eax, byte ptr [r8]
+    movzx edx, byte ptr [r9]
+    sub eax, edx
+    jne .Lidentity_return
+    test edx, edx
+    jz .Lidentity_next_field
+    inc r8
+    inc r9
+    jmp .Lidentity_byte
+.Lidentity_next_field:
+    add ecx, 8
+    cmp ecx, 32
+    jb .Lidentity_field
+.Lidentity_return:
+    ret
+
+/* Input: RDI=owned row-pointer array, RSI=root index, RDX=exclusive heap size.
+ * Bounds: root < size <= ROW_LIMIT. The child heaps already satisfy max order.
+ * Output: restores the max heap rooted at RSI. Only pointers within the array
+ * change. All row bytes remain unchanged. Scratch: caller-saved registers.
+ * Stack: 40 saved bytes plus calls. At most floor(log2(ROW_LIMIT)) iterations. */
+registry_identity_sift:
+    push rbx
     push r12
     push r13
-    lea r12, [rip + registry_rows]
-    xor r13d, r13d
-.Lduplicate_row:
-    cmp r13, [rip + registry_row_count]
-    jae .Lrow_valid
-    mov rdi, [rbx]
-    mov rsi, [r12]
-    call streq
+    push r14
+    push r15
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.Lidentity_sift_loop:
+    lea r14, [r12 + r12 + 1]
+    cmp r14, r13
+    jae .Lidentity_sift_done
+    lea r15, [r14 + 1]
+    cmp r15, r13
+    jae .Lidentity_sift_child
+    mov rdi, [rbx + r14*8]
+    mov rsi, [rbx + r15*8]
+    call registry_identity_compare
     test eax, eax
-    jz .Lduplicate_next
-    mov rdi, [rbx + 8]
-    mov rsi, [r12 + 8]
-    call streq
+    jge .Lidentity_sift_child
+    mov r14, r15
+.Lidentity_sift_child:
+    mov rdi, [rbx + r12*8]
+    mov rsi, [rbx + r14*8]
+    call registry_identity_compare
     test eax, eax
-    jz .Lduplicate_next
-    mov rdi, [rbx + 16]
-    mov rsi, [r12 + 16]
-    call streq
+    jge .Lidentity_sift_done
+    mov rax, [rbx + r12*8]
+    mov rcx, [rbx + r14*8]
+    mov [rbx + r12*8], rcx
+    mov [rbx + r14*8], rax
+    mov r12, r14
+    jmp .Lidentity_sift_loop
+.Lidentity_sift_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* Input: registry_rows contains registry_row_count <= ROW_LIMIT validated rows.
+ * Output: returns only when every artifact identity is unique; otherwise exits
+ * before any result or download. Sorts a separate 32 KiB pointer array with
+ * heap sort, then compares adjacent identities. Work is O(n log n), including
+ * hostile row order; there is no hash collision path or recursion. Original
+ * row order is preserved. Scratch: caller-saved registers and owned pointer
+ * array. Stack: 32 saved bytes; at most 88 bytes with nested calls. */
+registry_check_unique:
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r12, [rip + registry_row_count]
+    cmp r12, 2
+    jb .Lunique_done
+    lea r13, [rip + registry_sorted_rows]
+    lea rbx, [rip + registry_rows]
+    xor ecx, ecx
+.Lunique_copy:
+    mov [r13 + rcx*8], rbx
+    add rbx, 64
+    inc rcx
+    cmp rcx, r12
+    jb .Lunique_copy
+    mov r14, r12
+    shr r14, 1
+.Lunique_heap:
+    dec r14
+    mov rdi, r13
+    mov rsi, r14
+    mov rdx, r12
+    call registry_identity_sift
+    test r14, r14
+    jnz .Lunique_heap
+    mov r14, r12
+    dec r14
+.Lunique_sort:
+    mov rax, [r13]
+    mov rcx, [r13 + r14*8]
+    mov [r13], rcx
+    mov [r13 + r14*8], rax
+    mov rdi, r13
+    xor esi, esi
+    mov rdx, r14
+    call registry_identity_sift
+    dec r14
+    jnz .Lunique_sort
+    mov r14d, 1
+.Lunique_adjacent:
+    mov rdi, [r13 + r14*8 - 8]
+    mov rsi, [r13 + r14*8]
+    call registry_identity_compare
     test eax, eax
-    jz .Lduplicate_next
-    mov rdi, [rbx + 24]
-    mov rsi, [r12 + 24]
-    call streq
-    test eax, eax
-    jnz registry_bad_index
-.Lduplicate_next:
-    add r12, 64
-    inc r13
-    jmp .Lduplicate_row
-.Lrow_valid:
+    jz registry_bad_index
+    inc r14
+    cmp r14, r12
+    jb .Lunique_adjacent
+.Lunique_done:
+    pop r14
     pop r13
     pop r12
     pop rbx
@@ -1095,6 +1199,8 @@ registry_invalid:
  * summary; info matches a package; versions suppresses duplicate versions.
  * Emits plain TSV or one JSON object. Cleans the workspace before exit. */
 registry_list:
+    mov byte ptr [rip + registry_output_active], 1
+    mov qword ptr [rip + registry_output_size], 0
     cmp byte ptr [rip + json_mode], 0
     je .Llist_start
     lea rdi, [rip + registry_results_prefix]
@@ -1102,7 +1208,7 @@ registry_list:
     jne .Llist_prefix
     lea rdi, [rip + registry_versions_prefix]
 .Llist_prefix:
-    call out
+    call registry_emit
 .Llist_start:
     lea r12, [rip + registry_rows]
     xor r13d, r13d
@@ -1137,7 +1243,7 @@ registry_list:
     cmp qword ptr [rip + registry_matches], 0
     je .Llist_json_row
     lea rdi, [rip + registry_comma]
-    call out
+    call registry_emit
 .Llist_json_row:
     cmp byte ptr [rip + registry_mode], 3
     je .Llist_json_version
@@ -1156,9 +1262,9 @@ registry_list:
     jmp .Llist_count
 .Llist_human_version:
     mov rdi, [r12 + 8]
-    call out
+    call registry_emit
     lea rdi, [rip + registry_newline]
-    call out
+    call registry_emit
 .Llist_count:
     inc qword ptr [rip + registry_matches]
 .Llist_next:
@@ -1169,18 +1275,90 @@ registry_list:
     cmp byte ptr [rip + json_mode], 0
     je .Llist_finish
     lea rdi, [rip + registry_results_suffix]
-    call out
+    call registry_emit
 .Llist_finish:
+    cmp qword ptr [rip + registry_matches], 0
+    jne .Llist_flush
+    cmp byte ptr [rip + registry_mode], 1
+    jne .Llist_flush
+    cmp byte ptr [rip + json_mode], 0
+    jne .Llist_flush
+    lea rdi, [rip + registry_no_matches]
+    call registry_emit
+.Llist_flush:
+    call registry_flush
+    mov byte ptr [rip + registry_output_active], 0
     call registry_cleanup
     cmp qword ptr [rip + registry_matches], 0
     jne exit_ok
     cmp byte ptr [rip + registry_mode], 1
     jne registry_not_found
-    cmp byte ptr [rip + json_mode], 0
-    jne exit_ok
-    lea rdi, [rip + registry_no_matches]
-    call out
     jmp exit_ok
+
+/* Input: RDI=accessible NUL-terminated text. Output: writes through out when
+ * listing is inactive; otherwise appends to the owned 64 KiB output buffer.
+ * Each copy is bounded by remaining capacity and string length. A full buffer
+ * is flushed before reuse. DF is clear from _start. Scratch: caller-saved
+ * registers and buffer; callee-saved registers survive. Stack: 24 saved bytes
+ * plus calls. A returned write error is fatal and cleans the registry workspace. */
+registry_emit:
+    cmp byte ptr [rip + registry_output_active], 0
+    je out
+    push rbx
+    push r12
+    push r13
+    mov rbx, rdi
+    call strlen
+    mov r12, rax
+.Lemit_chunk:
+    test r12, r12
+    jz .Lemit_done
+    mov rax, [rip + registry_output_size]
+    mov r13d, REGISTRY_OUTPUT_LIMIT
+    sub r13, rax
+    cmp r13, r12
+    jbe .Lemit_copy
+    mov r13, r12
+.Lemit_copy:
+    lea rdi, [rip + registry_output_buffer]
+    add rdi, rax
+    mov rsi, rbx
+    mov rcx, r13
+    rep movsb
+    add [rip + registry_output_size], r13
+    add rbx, r13
+    sub r12, r13
+    cmp qword ptr [rip + registry_output_size], REGISTRY_OUTPUT_LIMIT
+    jne .Lemit_chunk
+    call registry_flush
+    jmp .Lemit_chunk
+.Lemit_done:
+    pop r13
+    pop r12
+    pop rbx
+    xor eax, eax
+    ret
+
+/* Input: owned output buffer and size <= REGISTRY_OUTPUT_LIMIT. Output: all
+ * queued bytes are written once in order, then size becomes zero. write_all
+ * retries EINTR and short writes. Any other failure exits nonzero. Scratch:
+ * caller-saved registers; no saved stack bytes, one nested call. */
+registry_flush:
+    mov rdx, [rip + registry_output_size]
+    test rdx, rdx
+    jz .Lflush_done
+    mov edi, 1
+    lea rsi, [rip + registry_output_buffer]
+    call write_all
+    test rax, rax
+    js .Lflush_error
+    mov qword ptr [rip + registry_output_size], 0
+.Lflush_done:
+    ret
+.Lflush_error:
+    lea rdi, [rip + registry_err_output_write]
+    mov esi, 1
+    jmp registry_fail
 
 /* Input: RDI=haystack, RSI=needle, both bounded strings. Output: EAX=1 for a
  * case-sensitive substring (including empty needle), else zero. Read-only.
@@ -1244,15 +1422,15 @@ registry_print_text_row:
     test r14d, r14d
     jz .Ltext_value
     lea rdi, [rip + registry_tab]
-    call out
+    call registry_emit
 .Ltext_value:
     mov rdi, [rbx + r14*8]
-    call out
+    call registry_emit
     inc r14d
     cmp r14d, 8
     jb .Ltext_field
     lea rdi, [rip + registry_newline]
-    call out
+    call registry_emit
     pop r14
     pop rbx
     ret
@@ -1265,30 +1443,30 @@ registry_print_json_row:
     push r15
     mov rbx, rdi
     lea rdi, [rip + registry_lbrace]
-    call out
+    call registry_emit
     xor r14d, r14d
     lea r15, [rip + registry_json_keys]
 .Ljson_field:
     test r14d, r14d
     jz .Ljson_key
     lea rdi, [rip + registry_comma]
-    call out
+    call registry_emit
 .Ljson_key:
     mov rdi, [r15 + r14*8]
-    call out
+    call registry_emit
     mov rdi, [rbx + r14*8]
     cmp r14d, 6
     je .Ljson_number
     call registry_json_string
     jmp .Ljson_next
 .Ljson_number:
-    call out
+    call registry_emit
 .Ljson_next:
     inc r14d
     cmp r14d, 8
     jb .Ljson_field
     lea rdi, [rip + registry_rbrace]
-    call out
+    call registry_emit
     pop r15
     pop r14
     pop rbx
@@ -1342,7 +1520,7 @@ registry_json_string:
     mov byte ptr [rdi], '"'
     mov byte ptr [rdi + 1], 0
     lea rdi, [rip + registry_json_buffer]
-    jmp out
+    jmp registry_emit
 
 /* Input: validated rows plus query/target/kind/exact-version globals.
  * Output: RAX=selected eight-pointer row, or zero. Stores registry_selected.
@@ -1903,6 +2081,7 @@ registry_err_curl: .asciz "registry downloads require /usr/bin/curl"
 registry_err_sha: .asciz "artifact verification requires /usr/bin/sha256sum"
 registry_err_integrity: .asciz "artifact size or SHA-256 verification failed; output was not created"
 registry_err_output: .asciz "cannot create output; the destination must not exist and must be on the same filesystem"
+registry_err_output_write: .asciz "cannot write registry output; check the output destination and try again"
 registry_err_install_target: .asciz "installation requires x86_64-linux; use fetch to inspect another target"
 registry_err_elf: .asciz "artifact is not a supported x86-64 ELF executable; check its target and format"
 registry_err_home: .asciz "HOME must be an absolute directory; set an explicit destination with --output"
@@ -1970,8 +2149,11 @@ registry_checksum_contents: .skip 256
 registry_selector: .skip 170
 registry_default_output: .skip 4096
 registry_json_buffer: .skip 24576
+registry_output_size: .skip 8
+registry_output_buffer: .skip REGISTRY_OUTPUT_LIMIT
 registry_copy_buffer: .skip 65536
 registry_rows: .skip ROW_LIMIT * 64
+registry_sorted_rows: .skip ROW_LIMIT * 8
 registry_index: .skip INDEX_LIMIT + 2
 registry_mode: .skip 1
 registry_has_query: .skip 1
@@ -1980,4 +2162,5 @@ registry_local_index: .skip 1
 registry_literal: .skip 1
 registry_has_workspace: .skip 1
 registry_checksum_created: .skip 1
+registry_output_active: .skip 1
 .section .note.GNU-stack,"",@progbits
