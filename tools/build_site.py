@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import registry
+import bootstrap
 from release import materialize, output_path, publish_directory, resolve_commit
 
 
@@ -140,8 +141,12 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         registry.write_atomic(destination / "downloads.json", registry.json_bytes(counts))
         for record in records:
             registry.write_atomic(destination / "packages" / record["name"] / (record["version"] + ".json"), registry.json_bytes(record))
+        installer = bootstrap.write_bootstrap(
+            stage, records, checked,
+            bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS))
         build = {"schema": 1, "reference_commit": commit, "releases": len(records),
-                 "artifact_checked_releases": len(checked), "download_counts_requested": downloads}
+                 "artifact_checked_releases": len(checked), "download_counts_requested": downloads,
+                 "bootstrap_version": installer["version"] if installer else None}
         registry.write_atomic(stage / "build.json", registry.json_bytes(build))
         publish_directory(stage, output)
     return build
