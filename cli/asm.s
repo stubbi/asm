@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 ASM contributors
+ * See LICENSE and LICENSING.md for the terms and scope.
+ */
 .intel_syntax noprefix
 .global _start
 .global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
@@ -83,6 +87,11 @@ _start:
     call streq
     test eax, eax
     jnz cmd_version
+    lea rsi, [rip + opt_license]
+    mov rdi, r12
+    call streq
+    test eax, eax
+    jnz cmd_license
     lea rbx, [rip + commands]
 .Ldispatch:
     mov rsi, [rbx]
@@ -350,6 +359,12 @@ cmd_version:
     call parse_options_only
     lea rdi, [rip + version_text]
     lea rsi, [rip + version_json]
+    call report
+    jmp exit_ok
+cmd_license:
+    call parse_options_only
+    lea rdi, [rip + license_text]
+    lea rsi, [rip + license_json]
     call report
     jmp exit_ok
 cmd_targets:
@@ -1462,6 +1477,7 @@ clean_file:
 .section .rodata
 commands:
     .quad command_help, cmd_help, command_version, cmd_version
+    .quad command_license, cmd_license
     .quad command_doctor, cmd_doctor, command_init, cmd_init
     .quad command_new, cmd_new, command_build, cmd_build
     .quad command_run, cmd_run, command_test, cmd_test
@@ -1477,6 +1493,7 @@ commands:
     .quad command_yank, cmd_unimplemented, 0, 0
 command_help: .asciz "help"
 command_version: .asciz "version"
+command_license: .asciz "license"
 command_doctor: .asciz "doctor"
 command_init: .asciz "init"
 command_new: .asciz "new"
@@ -1506,6 +1523,7 @@ opt_help: .asciz "--help"
 opt_h: .asciz "-h"
 opt_version: .asciz "--version"
 opt_V: .asciz "-V"
+opt_license: .asciz "--license"
 opt_target: .asciz "--target"
 opt_locked: .asciz "--locked"
 opt_separator: .asciz "--"
@@ -1557,8 +1575,10 @@ err_build_io: .asciz "cannot write build artifacts; build must be a real directo
 err_test: .asciz "test program failed"
 err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
-version_text: .asciz "asm 0.1.0 (x86_64-linux)\n"
-version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"host\":\"x86_64-linux\"}\n"
+version_text: .asciz "asm 0.2.0 (x86_64-linux)\n"
+version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.2.0\",\"host\":\"x86_64-linux\"}\n"
+license_text: .asciz "ASM 0.2.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute ASM under this license.\nASM is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.2.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.2.0\"}\n"
 targets_text: .asciz "x86_64-linux (host; GNU as + ld)\n"
 targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
@@ -1573,7 +1593,7 @@ test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
 clean_text: .asciz "Removed asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
-    .ascii "asm 0.1.0 - build assembly projects\n\n"
+    .ascii "asm 0.2.0 - build assembly projects\n\n"
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
@@ -1596,6 +1616,7 @@ help_text:
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
     .ascii "  version          Print the CLI version\n"
+    .ascii "  license          Show the license, warranty, and source\n"
     .ascii "  help             Show this help\n\n"
     .ascii "Options: --target x86_64-linux, --json, --no-color, --help\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
@@ -1603,26 +1624,13 @@ help_text:
     .ascii "JSON describes asm's own output; child output is passed through.\n"
     .ascii "For registry options, use asm search --help.\n"
     .ascii "Unimplemented commands fail with exit status 69; use asm status.\n"
+    .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.1.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\"]}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.2.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.1.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\"],\"unimplemented\":[\"login\",\"yank\"]}\n"
-manifest_prefix: .asciz "[package]\nname = \""
-manifest_suffix: .asciz "\"\nversion = \"0.1.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
-main_template:
-    .ascii ".intel_syntax noprefix\n.global _start\n\n.section .text\n_start:\n"
-    .ascii "    mov eax, 1\n    mov edi, 1\n    lea rsi, [rip + message]\n"
-    .ascii "    mov edx, OFFSET message_len\n    syscall\n    mov eax, 60\n    xor edi, edi\n    syscall\n\n"
-    .ascii ".section .rodata\nmessage: .ascii \"Hello from asm!\\n\"\n.equ message_len, . - message\n"
-    .ascii ".section .note.GNU-stack,\"\",@progbits\n"
-    .byte 0
-test_template:
-    .ascii ".intel_syntax noprefix\n.global _start\n\n.section .text\n_start:\n"
-    .ascii "    # Exit zero for success; replace this with your assertions.\n"
-    .ascii "    mov eax, 60\n    xor edi, edi\n    syscall\n"
-    .ascii ".section .note.GNU-stack,\"\",@progbits\n"
-    .byte 0
+    .asciz "{\"version\":\"0.2.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+.include "cli/templates.s"
 
 .section .bss
 .balign 8

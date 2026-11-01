@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 ASM contributors
+ * See LICENSE and LICENSING.md for the terms and scope.
+ */
 .intel_syntax noprefix
 .global cmd_publish, validate_source_package
 
@@ -1292,6 +1296,7 @@ pub_no_color_option: .asciz "--no-color"
 pub_tar_suffix: .asciz ".tar.gz"
 pub_release_suffix: .asciz "/releases/download/v1/file"
 pub_licenses:
+    .asciz "AGPL-3.0-only", "AGPL-3.0-or-later"
     .asciz "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0"
     .asciz "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later"
     .asciz "ISC", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later"

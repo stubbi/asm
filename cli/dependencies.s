@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 ASM contributors
+ * See LICENSE and LICENSING.md for the terms and scope.
+ */
 .intel_syntax noprefix
 .global cmd_add, cmd_update, cmd_remove, cmd_lock, cmd_sync
 .global verify_project_dependencies, release_dependency_lock
