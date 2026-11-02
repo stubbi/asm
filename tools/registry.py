@@ -248,7 +248,7 @@ def check_immutable(records: list[dict], baseline: list[dict]) -> None:
         require(old_content == new_content, f"published release is immutable: {key[0]}@{key[1]}")
 
 
-def read_regular(root: Path, relative: str) -> bytes:
+def read_regular(root: Path, relative: str, maximum: int = MAX_FILE_BYTES) -> bytes:
     portable_path(relative)
     descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -263,7 +263,8 @@ def read_regular(root: Path, relative: str) -> bytes:
             info = os.fstat(stream.fileno())
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "source must be a regular, unlinked file")
             require(info.st_size <= MAX_FILE_BYTES, "source file is too large")
-            data = stream.read(MAX_FILE_BYTES + 1)
+            require(info.st_size <= maximum, "source archive is too large")
+            data = stream.read(min(MAX_FILE_BYTES, maximum) + 1)
             require(len(data) == info.st_size, "source file changed or exceeded the size limit")
             return data
     except OSError as error:
@@ -287,6 +288,7 @@ def collect_files(root: Path, includes: list[str] | None = None) -> dict[str, tu
     require(root.is_dir() and not root.is_symlink(), "source directory must exist and cannot be a symlink")
     roots = [root / portable_path(item) for item in includes] if includes else [root]
     files = {}
+    total = 0
     for selected in roots:
         require(selected.exists() and not selected.is_symlink(), "included source path is missing or is a link")
         paths = [selected] if selected.is_file() else sorted(selected.rglob("*"))
@@ -297,7 +299,10 @@ def collect_files(root: Path, includes: list[str] | None = None) -> dict[str, tu
             require(not path.is_symlink(), "source links are not allowed")
             if path.is_dir():
                 continue
-            data = read_regular(root, relative)
+            if relative in files:
+                continue
+            data = read_regular(root, relative, MAX_EXPANDED_BYTES - total)
+            total += len(data)
             mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
             files[relative] = (data, mode)
             require(len(files) <= MAX_FILES, "too many source files")
@@ -305,7 +310,8 @@ def collect_files(root: Path, includes: list[str] | None = None) -> dict[str, tu
 
 
 def git_output(repository: Path, *arguments: str) -> bytes:
-    result = subprocess.run(["git", "-C", str(repository), *arguments], check=False,
+    # Source IDs and immutable baselines must identify the original objects.
+    result = subprocess.run(["git", "--no-replace-objects", "-C", str(repository), *arguments], check=False,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode:
         raise RegistryError("Git command failed: " + result.stderr.decode("utf-8", "replace").strip())
@@ -320,6 +326,7 @@ def git_files(repository: Path, commit: str, source_path: str, includes: list[st
     selectors = [portable_path(item) for item in includes] if includes else None
     raw = git_output(repository, "ls-tree", "-r", "-z", "--full-tree", commit, "--", source_path)
     files = {}
+    total = 0
     for item in raw.split(b"\0"):
         if not item:
             continue
@@ -335,8 +342,10 @@ def git_files(repository: Path, commit: str, source_path: str, includes: list[st
         require(kind == "blob" and mode in {"100644", "100755"}, "Git links and submodules are not accepted")
         size = int(git_output(repository, "cat-file", "-s", blob).strip())
         require(size <= MAX_FILE_BYTES, "Git source file is too large")
+        require(size <= MAX_EXPANDED_BYTES - total, "source archive is too large")
         data = git_output(repository, "cat-file", "blob", blob)
         require(len(data) == size, "Git blob size mismatch")
+        total += len(data)
         files[relative] = (data, 0o755 if mode == "100755" else 0o644)
         require(len(files) <= MAX_FILES, "too many source files")
     require(files, "source commit has no selected files")

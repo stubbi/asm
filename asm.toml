@@ -1,3 +1,5 @@
+# This manifest describes the Linux x86-64 reference build.
+# Use make to select the native Linux or Apple Silicon macOS implementation.
 [package]
 name = "asm"
 version = "0.4.0"

@@ -218,11 +218,13 @@ asm version
 ```
 
 `make` selects the native implementation for your machine.
+The root `asm.toml` describes the Linux x86-64 reference build.
 The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
 
 ## Contribute
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+The [repository layout](CONTRIBUTING.md#repository-layout) explains the source, licenses, experiments, and retained measurements.
 Follow the [design guide](design.md), [writing guide](docs/writing.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.

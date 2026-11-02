@@ -8,6 +8,30 @@ Read [the license scope](LICENSING.md) before contributing code or other materia
 Contributions use the license that applies to the affected files.
 Keep required notices and identify the origin of imported material.
 
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `cli/` | Native CLI implementations, shared starter text, and platform adapters. |
+| `tools/` | Build preparation, registry operations, installation generation, releases, and measurement tools. |
+| `tests/` | CLI, registry, release, and site checks, including failure cases. |
+| `examples/` | Independently licensed reference packages used by tests and release builds. |
+| `registry/packages/` | Immutable published version records, including earlier licenses and artifact digests. |
+| `site/` | Static website sources. The site builder generates indexes and the installer. |
+| `docs/` | Current guides, specifications, proposals, release notes, and evidence reports. |
+| `LICENSES/` | Additional license notices required by [the license scope](LICENSING.md). |
+| `benchmarks/` | Raw measurements, input identities, traces, regressions, and excluded runs for [the registry report](docs/performance-registry.md). |
+| `experiments/` | The [local assembly server experiment](experiments/assembly-server/README.md), its fixture, tests, and recorded limits. |
+| `.github/` | Review templates, ownership rules, and checked build and publication workflows. |
+
+The root `asm.toml` defines the Linux x86-64 reference build.
+Use `make` for native host selection.
+The manifest format describes one project target, not a list of CLI hosts.
+
+Keep measurements separate from experiments that explore new behavior.
+Retain failed and superseded measurements when they explain a published result.
+Remove completed implementation plans when current specifications cover their decisions and Git retains their history.
+
 ## Set up the project
 
 Use Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later for native CLI checks.
@@ -57,6 +81,7 @@ Read [SECURITY.md](SECURITY.md) for a vulnerability report.
 
 ## Review a pull request
 
+Apply the minimalism and complete-history review requirements in [AGENTS.md](AGENTS.md).
 Check the result through the public interface.
 Check the failure paths and file effects.
 Compare claims with the current source and evidence.

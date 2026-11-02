@@ -48,6 +48,8 @@ All 11 trace files were inspected and required no redaction.
 The original benchmark harness and assembly source manifest also remain byte for byte unchanged.
 The [redaction manifest](../benchmarks/registry-linux-x86_64-20261101/public-redaction.json) identifies each changed JSON field and gives original and public file hashes.
 It contains no removed local identifiers.
+The manifest records publication snapshots, including an earlier version of this guide.
+Later guide corrections can differ from those snapshot hashes.
 
 ## Exact inputs
 
@@ -73,7 +75,7 @@ The [comment-correction record](../benchmarks/registry-linux-x86_64-20261101/reg
 No runtime code changed, and no new timing samples were collected.
 The source manifest remains unchanged.
 Hashes in the comment-correction record identify the original evidence checked at that time.
-For the current public copies, use the hashes in the redaction manifest.
+For the public measurement files, use the hashes in the redaction manifest.
 
 ## Method
 
@@ -194,25 +196,28 @@ Create two copies of the baseline source:
 ```sh
 git worktree add --detach ../asm-benchmark-before eea8498f6d49c26c7112f6510f12528861886e87
 git worktree add --detach ../asm-benchmark-after eea8498f6d49c26c7112f6510f12528861886e87
-cp cli/registry.s ../asm-benchmark-after/cli/registry.s
+git show 566701967d38d2f2a984fc9acb31e4d95c266f81:cli/registry.s > ../asm-benchmark-after/cli/registry.s
 make -C ../asm-benchmark-before
 make -C ../asm-benchmark-after
 ```
 
-Record the candidate registry digest:
+The candidate uses the corrected source identified above.
+Later registry changes are excluded from this comparison.
+Check the candidate registry digest:
 
 ```sh
-sha256sum ../asm-benchmark-after/cli/registry.s
+printf '%s\n' '4fe271d95054828da7d1066edb141adfe22a8602fdcba69bd23bde763ad88225  ../asm-benchmark-after/cli/registry.s' | sha256sum -c -
 ```
 
-Run the comparison with that digest as the candidate source label:
+The check reports `../asm-benchmark-after/cli/registry.s: OK`.
+Run the comparison with the pinned candidate source label:
 
 ```sh
 python3 tools/benchmark_registry.py \
   --baseline ../asm-benchmark-before/build/asm \
   --candidate ../asm-benchmark-after/build/asm \
   --baseline-source eea8498f6d49c26c7112f6510f12528861886e87 \
-  --candidate-source "eea8498 plus registry $(sha256sum ../asm-benchmark-after/cli/registry.s)" \
+  --candidate-source 'eea8498 plus registry from 566701967d38d2f2a984fc9acb31e4d95c266f81' \
   --output ../asm-registry-results \
   --samples 31 --warmups 3 --strace
 ```
