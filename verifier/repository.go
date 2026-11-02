@@ -199,40 +199,40 @@ func openState(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	directory := os.NewFile(uintptr(fd), "/")
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	prefix := ""
 	needOwned := false
 	for i, part := range parts {
 		prefix += "/" + part
-		next, err := unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		next, err := unix.Openat(int(directory.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err == unix.ENOENT && i == len(parts)-1 {
-			if err = unix.Mkdirat(fd, part, 0700); err == nil {
-				next, err = unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+			if err = unix.Mkdirat(int(directory.Fd()), part, 0700); err == nil {
+				next, err = unix.Openat(int(directory.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 			}
 		}
-		unix.Close(fd)
+		directory.Close()
 		if err != nil {
 			return nil, err
 		}
-		fd = next
+		directory = os.NewFile(uintptr(next), prefix)
 		var st unix.Stat_t
-		if err = unix.Fstat(fd, &st); err != nil {
-			unix.Close(fd)
+		if err = unix.Fstat(next, &st); err != nil {
+			directory.Close()
 			return nil, err
 		}
 		owned := st.Uid == uint32(os.Getuid())
 		sticky := st.Uid == 0 && st.Mode&unix.S_ISVTX != 0 && (prefix == "/tmp" || prefix == "/private/tmp")
 		if (!owned && st.Uid != 0) || (needOwned && (!owned || st.Mode&0022 != 0)) ||
 			(st.Mode&0022 != 0 && !sticky) || (i == len(parts)-1 && (!owned || st.Mode&0077 != 0)) {
-			unix.Close(fd)
+			directory.Close()
 			return nil, errors.New("trust state has unsafe ownership or directory permissions")
 		}
+		if err := platformPermissions(directory); err != nil {
+			directory.Close()
+			return nil, err
+		}
 		needOwned = sticky
-	}
-	directory := os.NewFile(uintptr(fd), path)
-	if err := platformPermissions(directory); err != nil {
-		directory.Close()
-		return nil, err
 	}
 	return directory, nil
 }

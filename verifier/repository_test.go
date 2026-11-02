@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -128,6 +130,10 @@ func statePath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	must(t, os.Chmod(dir, 0700))
+	// Darwin's temporary directory can start with the system /var symlink.
+	// Supply its canonical path; production still refuses symlink components.
+	dir, err := filepath.EvalSymlinks(dir)
+	must(t, err)
 	return filepath.Join(dir, "state")
 }
 
@@ -237,6 +243,11 @@ func TestProtectedStateAndOutput(t *testing.T) {
 		t.Fatal("accepted writable state")
 	}
 	must(t, os.Chmod(state, 0700))
+	alias := filepath.Join(filepath.Dir(state), "state-link")
+	must(t, os.Symlink(state, alias))
+	if r.refresh(alias) == nil {
+		t.Fatal("accepted symlink state directory")
+	}
 	victim := filepath.Join(filepath.Dir(state), "victim")
 	must(t, os.WriteFile(victim, []byte("preserve"), 0600))
 	must(t, os.Symlink(victim, filepath.Join(state, "root.json")))
@@ -251,6 +262,22 @@ func TestProtectedStateAndOutput(t *testing.T) {
 	if string(data) != "preserve" {
 		t.Fatal("changed existing file")
 	}
+}
+
+func TestDarwinAncestorACL(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin ACL contract")
+	}
+	r := newRepositoryFixture(t)
+	state := statePath(t)
+	parent := filepath.Dir(state)
+	must(t, exec.Command("/bin/chmod", "+a", "everyone allow add_subdirectory", parent).Run())
+	t.Cleanup(func() { _ = exec.Command("/bin/chmod", "-N", parent).Run() })
+	if r.refresh(state) == nil {
+		t.Fatal("accepted writable ancestor ACL")
+	}
+	must(t, exec.Command("/bin/chmod", "-N", parent).Run())
+	must(t, r.refresh(state))
 }
 
 func TestRootProfileAndJSON(t *testing.T) {
