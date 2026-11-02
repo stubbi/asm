@@ -3,163 +3,71 @@
 **A home for assembly.**
 
 ASM is a package registry and command-line tool for assembly projects.
-Build a project. Find a package. Check its target, source, and release evidence.
-The CLI itself is written in assembly.
+Create a project, use packages, and share releases with their source and verification results.
 
 [Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why ASM](docs/why-asm.md) · [Security model](docs/specs/security.md)
 
-## Why we are building this
+## A new era for software
 
-Software should serve people exceptionally well and use resources with care.
-We are building a foundation that helps people and AI create better software and makes the results practical to share and assess.
-Our [brand foundation](docs/brand/foundation.md) defines this vision, story, and decision principles.
-The [messaging guide](docs/brand/messaging.md) shows how to apply them.
+Programming languages made software practical for people to write and maintain.
+AI opens up a different approach: generate implementations for the machine, and judge them by the experience they deliver.
 
-We expect AI to make useful assembly cheaper to write and maintain.
-If that happens, assembly needs an ecosystem that makes the results easy to use.
-Every project should not need to invent its own package format, target selection, and release checks.
+The priorities are familiar: software that works, responds quickly, and protects its users.
+As code becomes cheaper to produce, the cost of running it matters more.
+Memory, compute, and energy use affect both the experience and the cost of delivering it.
 
-Our working assumptions:
+Assembly gives direct control over instructions, memory layout, and CPU features.
+AI could make that control practical for a much wider range of software.
+Each implementation still needs a way to reach the people and projects that can use it.
 
-1. **User experience and total cost matter.** Software must work reliably, respond quickly, and use resources well. Development and maintenance count too.
-2. **AI can change the economics of assembly.** We expect more useful implementations for more machines. We will measure the effort required to make them dependable.
-3. **Machine control can improve selected workloads.** Instructions, layout, algorithms, and CPU features are all possible sources of improvement.
-4. **Cheaper generation may make more targets practical.** We will measure the cost of specifications, tools, proofs, integration, and maintenance.
-5. **Generation requires verification.** People and agents use the same checks. A proof must state its model, assumptions, and connection to the released bytes.
-6. **Performance claims must be reproducible.** Publish the workload, baseline, hardware, tools, raw results, and regressions.
+ASM brings assembly into a shared package ecosystem: named packages, explicit machine targets, repeatable builds, and evidence tied to each release.
+The goal is to make efficient, dependable software practical to distribute and reuse.
 
-These are research assumptions, not established results.
-We will revise them when experiments disagree.
-ASM must remain useful when a compiler already produces the best implementation for a workload.
-
-The product follows from those assumptions: one workflow for assembly projects, with explicit targets and inspectable evidence.
-Read [the full motivation](docs/why-asm.md).
-
-### An early measured example
-
-Our [asmwc experiment](docs/evidence.md) compares complete assembly and Rust implementations of a word counter.
-On one Apple M3, default counting took 15.234 ms in assembly and 68.468 ms in Rust.
-Those are warm-cache medians for a 128 MiB text file, with 24 samples per implementation.
-The comparison includes differences in algorithms, input scheduling, and startup.
-
-We checked the published record digests and recomputed the selected medians.
-We did not reproduce the macOS experiment during the ASM build.
-The [evidence record](docs/evidence.md) includes the baseline, raw samples, slower cases, and limits.
-ASM needs to make this kind of evidence available beside the exact target artifact.
+[More on the technical reasoning](docs/why-asm.md).
 
 ## Quick start
 
-Version 0.4.0 runs on **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
-Install ASM once with the bootstrap installer.
-Use `asm self update` for later updates from the hub.
-
-Intel macOS is unsupported.
-The [macOS contract](docs/macos.md) describes native qualification and signing limits.
+ASM 0.4.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 
 ### Install the command
 
-Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) before you start.
-On Linux, use `/usr/bin/gh` and install curl and GNU Coreutils in `/usr/bin`.
-On Apple Silicon, use `/opt/homebrew/bin/gh`.
-The macOS installer uses system tools and requires protected local APFS with ownership enabled.
-ACL allow entries are refused; normal deny-only home ACLs are supported.
-The ASM installer does not use administrator access or a GitHub login.
+Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) before running the installer.
+
+| System | Required tools |
+| --- | --- |
+| Linux | GitHub CLI at `/usr/bin/gh`, curl, and GNU Coreutils in `/usr/bin`. |
+| Apple Silicon macOS | GitHub CLI at `/opt/homebrew/bin/gh`; other tools are supplied by macOS. |
 
 ```sh
 curl -qfsS -m120 https://asm.build/install.sh | sh
 ```
 
-The same command selects each supported operating system and architecture.
-The installer reads the operating system and CPU architecture with `uname`.
-It selects the matching executable before downloading it.
-An unsupported host stops installation before any files change.
-
-The installer writes `$HOME/.local/bin/asm`.
-It checks the executable's size, digest, and signed release attestation before installation.
-The attestation connects the executable to the required release workflow.
-A different existing `asm` file remains unchanged.
-
 Apply the PATH command shown by the installer.
-Then check the installed version:
+Then check the version:
 
 ```sh
 asm version
 ```
 
-Version 0.4.0 reports its version and host, such as `asm 0.4.0 (aarch64-macos)`.
-Use `asm self update` for later updates.
+On Apple Silicon, the output is `asm 0.4.0 (aarch64-macos)`.
 
 <details>
 <summary>Set PATH for this terminal</summary>
-
-Put the installation directory first in PATH for this terminal:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Add the same command to your shell configuration to keep this setting.
-Run `asm version` again.
+Add this command to your shell configuration to keep the setting.
 
 </details>
 
-<details>
-<summary>Inspect the installer first</summary>
-
-You can [read the installer](https://asm.build/install.sh) without running it.
-To inspect a local copy, download it to a temporary file:
-
-```sh
-asm_installer=$(mktemp) &&
-curl -qfsSL --proto '=https' --tlsv1.2 -m 120 https://asm.build/install.sh -o "$asm_installer" &&
-cat "$asm_installer"
-```
-
-If the download succeeds, review the displayed script.
-After your review, run this separate command in the same terminal:
-
-```sh
-sh "$asm_installer"
-```
-
-Remove the temporary file after installation:
-
-```sh
-rm -f "$asm_installer"
-unset asm_installer
-```
-
-</details>
-
-<details>
-<summary>Use in scripts and CI</summary>
-
-For scripts and CI, use the complete-download commands below.
-The script runs only if the download succeeds.
-
-```sh
-(
-  installer=$(mktemp) || exit
-  trap 'rm -f "$installer"' 0
-  curl -q --proto '=https' --tlsv1.2 -fsSL --max-time 120 https://asm.build/install.sh -o "$installer" || exit
-  sh "$installer"
-)
-```
-
-Running it again accepts only the same release bytes with the required ownership and permissions.
-The installer does not change PATH or run the downloaded command.
-
-</details>
-
-The [update contract](docs/self-update.md) explains the verification policy and supported installation paths.
+[Installer source](https://asm.build/install.sh) · [Installation requirements](docs/self-update.md) · [macOS filesystem and signing requirements](docs/macos.md)
 
 ### Run your first project
 
-On Linux, install GNU Binutils before building a project.
-On macOS, install Apple's Xcode Command Line Tools with `xcode-select --install`.
-On Debian or Ubuntu, the `binutils` package supplies `/usr/bin/as` and `/usr/bin/ld`.
-Source dependencies also need `/usr/bin/gzip`.
-`asm doctor` checks the project and registry tools.
+Install GNU Binutils on Linux, or Xcode Command Line Tools on macOS with `xcode-select --install`.
+On Debian or Ubuntu, the `binutils` package supplies the assembler and linker.
 
 Run these commands from the directory that will contain your new project:
 
@@ -177,82 +85,26 @@ The program prints:
 Hello from asm!
 ```
 
-Your project contains an `asm.toml` manifest, `src/main.s`, and `tests/main.s`.
-`asm run` builds the project before it runs the program.
-`asm test` builds and runs the test program.
-A test succeeds when it exits with code zero.
-
-The hello examples show complete Linux projects for [x86-64](examples/hello) and [ARM64](examples/hello-aarch64).
-Read the CLI source for [x86-64](cli/asm.s) or [ARM64](cli/aarch64/asm.s) to follow the implementation.
-Each implementation includes native project, registry, dependency, and self-update commands.
+The project contains `asm.toml`, `src/main.s`, and `tests/main.s`.
+Assembly source is text; `asm build` assembles and links it into the executable `build/app`.
+`asm run` also runs that executable.
+`asm test` builds and runs `tests/main.s`; a zero exit code passes the test.
 
 ### Update ASM
 
-Self-update supports only the direct, user-owned `$HOME/.local/bin/asm` file.
-Use your package manager for an installation that it owns.
-
-Run the installed command:
+For an installation made with the installer:
 
 ```sh
 asm self update
 ```
 
-ASM selects its own `stubbi/asm` package from the hub.
-It verifies the signed release, source commit, target, size, and digest before replacing the installed command.
-The new command takes effect on its next invocation.
-The update does not execute the downloaded file.
+For an installation managed by another package manager, use that manager to update ASM.
 
-Use `asm self update X.Y.Z` to select an exact newer version.
-Replace `X.Y.Z` with the required version.
-ASM refuses an older version.
-An equal version leaves the command unchanged without verifying the installed file again.
-This result does not establish registry freshness.
-
-Use `asm self update --json` for machine-readable output.
-Use `asm self --help` for the command contract.
-
-Updates are manual.
-The index has no independently signed expiry or revocation record.
-Read [the security model](docs/specs/security.md#bootstrap-and-manual-self-update) for the trust boundary and remaining limits.
-
-### Build from source
-
-The source build needs Git, Make, and Python 3.11 or later.
-Linux also needs GNU Binutils; registry commands need curl and GNU sha256sum.
-Apple Silicon macOS needs Xcode Command Line Tools and uses system curl, shasum, and gzip.
-Read [the macOS qualification guide](docs/macos.md) for its ABI and release evidence.
-
-```sh
-git clone https://github.com/stubbi/asm.git &&
-cd asm &&
-make &&
-make install PREFIX="$HOME/.local" &&
-export PATH="$HOME/.local/bin:$PATH" &&
-asm version
-```
-
-The source installer refuses to replace a different existing `asm` command.
-To replace that command deliberately, add `REPLACE=1` to the installation command.
-`make uninstall PREFIX="$HOME/.local"` removes the command only when its bytes match this build.
-
-`make` selects the native implementation from the build host.
-The source archive contains the Linux implementations and Darwin assembly adapters.
-Its root `asm.toml` describes the x86-64 reference project; use Make to build the CLI on ARM64 or macOS.
-
-To cross-assemble the ARM64 CLI on Linux x86-64, install AArch64 GNU cross-binutils and run:
-
-```sh
-make ARCH=aarch64 build/asm-aarch64-linux
-```
-
-This creates `build/asm-aarch64-linux`.
-Run it on Linux ARM64, or use QEMU for limited behavior checks.
-Read the [ARM64 implementation notes](cli/aarch64/README.md) for its instruction baseline, ABI, and test boundary.
-
-The [current release](https://github.com/stubbi/asm/releases/tag/v0.4.0) contains all three CLI executables, source, checksums, build metadata, and signed provenance.
-The bootstrap installer performs the binary installation checks.
+## Projects and packages
 
 ### Describe a project
+
+`asm.toml` names the project, its source file, and its target:
 
 ```toml
 [package]
@@ -264,12 +116,8 @@ source = "src/main.s"
 target = "x86_64-linux"
 ```
 
-`asm new` writes your native host target into this manifest.
-The example declares Linux x86-64. Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
-The initial manifest format accepts these four string fields.
-It rejects unknown fields, duplicate fields, invalid paths, and unsupported build targets.
-It does not accept arbitrary build scripts.
-The build uses the native assembler syntax and writes the program to `build/app`.
+`asm new` sets the target for your machine.
+Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 
 ### Find a package
 
@@ -277,164 +125,118 @@ The build uses the native assembler syntax and writes the program to `build/app`
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-# The curated hello package supplies Linux artifacts.
 asm fetch stubbi/hello@0.4.0 --target x86_64-linux --kind source
 ```
 
-The client checks the downloaded size and SHA-256 digest.
-It refuses to overwrite an existing destination.
-Fetch does not extract or execute the artifact.
-Use `asm --help` for the current command syntax.
+This downloads the Linux x86-64 source archive and checks its size and SHA-256 digest.
+Use `asm --help` for command options.
 
 ### Use a source dependency
 
-This example requires Linux x86-64 and uses the System V ABI.
-From a project directory, add an exact version:
+This example requires Linux x86-64 and gzip at `/usr/bin/gzip`.
+From a project directory:
 
 ```sh
 asm add stubbi/math@0.4.0 --target x86_64-linux
 asm lock
 ```
 
-ASM records the selection in `asm.lock`.
-It checks and extracts the source under `.asm/packages`.
-The build makes that directory available to the assembler.
-Include the library explicitly in your source:
+Include the library in your source:
 
 ```asm
 .include "stubbi/math/0.4.0/x86_64-linux/src/min.s"
 ```
 
-Follow [the complete package example](docs/use-a-package.md) on Linux x86-64 for a program that calls the function.
-
-The library exports `asm_u64_min`.
-Its [contract and tests](examples/math) describe the arguments, result, and register changes.
+The [complete example](docs/use-a-package.md) calls `asm_u64_min` and explains its calling convention.
 
 Commit `asm.lock` with your project.
-Use `asm sync` to restore its exact source artifacts on another machine with the same target.
-Use `asm build --locked` when a missing lock file must be an error.
-Builds check existing locked dependencies before assembly.
-
-`asm update owner/name@X.Y.Z` selects an explicit replacement version.
-`asm remove owner/name` removes a selection and retains cached files.
-Version ranges and transitive dependencies are future work.
-A lock file checks declared packages; it does not sandbox other assembler inputs.
+`asm sync` restores the recorded dependencies.
+`asm build --locked` requires the lock file and checks dependencies before assembly.
 
 ### Install a program
 
-The curated hello executable is available on Linux.
-On a supported Linux host, run:
+On Linux x86-64 or ARM64:
 
 ```sh
 asm install stubbi/hello@0.4.0
 ```
 
-For this Linux example, ASM checks the host executable's size, digest, and ELF structure.
-It installs to `$HOME/.local/bin/hello` without running the program.
-An existing destination causes an error.
-Use `--output PATH` to choose another new file.
+This installs the matching executable at `$HOME/.local/bin/hello`.
+Use `--output PATH` to choose another destination.
+The destination must be a new file.
 
 ## Status
 
 ASM is an early alpha.
-The table below describes the implemented release boundary.
-[The roadmap](docs/roadmap.md) describes the complete service we intend to build.
 
-| Area | Current implementation |
+| Area | Available today |
 | --- | --- |
-| Native CLI | Linux x86-64 and ARM64 assembly; Apple Silicon macOS assembly with Darwin adapters and libSystem. |
-| Installation and updates | Bootstrap installation and manual `asm self update` with signed release provenance. |
-| Project workflow | Create, inspect, build, run, test, and clean projects. |
-| Registry client | Search packages, inspect versions, fetch artifacts, and install checked host executables. |
-| Dependencies | Add, update, remove, check, and restore exact direct source dependencies. |
-| Package identity | Explicit `owner/name` namespaces and exact numeric versions. |
-| Target metadata | Separate x86-64, AArch64, and RISC-V Linux artifacts, plus AArch64 macOS. |
-| Registry website | Package search, target filters, versions, artifacts, and evidence states. |
-| Download counts | GitHub release-asset counts, with their observation time. |
-| Source publication | Commit-bound archives, native submission preparation, and reviewed registry records. |
-| Artifact checks | Bounded metadata, size and digest checks, archive inspection, ELF checks, and native Mach-O/signature checks. |
-| Formal verification | Defined evidence model. No hosted proof service yet. |
+| Native CLI | Linux x86-64, Linux ARM64, and Apple Silicon macOS 15+. |
+| Projects | Create, inspect, build, run, test, and clean. |
+| Packages | Search, inspect versions, download source, and install executables. |
+| Dependencies | Exact versions of direct source dependencies, with a lock file. |
+| Registry | Package search, target filters, release records, and verification results. |
+| Publication | Source archives and release records submitted through reviewed pull requests. |
+| Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
+| CLI updates | Manual updates with signed release provenance. |
 
-The native CLI host and a package target are separate concepts.
-Each client can fetch a package for another supported registry target.
-Each client builds and runs local projects for its native host target.
-`asm targets` lists that build target.
-The RISC-V hello package does not imply a RISC-V CLI.
-The [Apple Silicon macOS implementation](docs/macos.md) passes separate native qualification and release gates.
-ASM's macOS CLI executable has an ad-hoc code signature and verified GitHub release provenance; Developer ID signing and notarization are not provided.
-Intel macOS, Windows, and general cross-build commands remain unsupported.
+Projects build for the machine running ASM.
+Packages can provide separate artifacts for other targets, including RISC-V Linux.
 
-The [local registry benchmark](docs/performance-registry.md) measures the native x86-64 search implementation.
-At 4,096 records, median elapsed time decreased by approximately 19–21 times on the measured host.
-Small-catalog wall-time results were inconclusive, and some tail latencies increased.
-These results do not measure ARM64, network installation, or hosted search capacity.
-
-Transitive dependency resolution, automatic public publication, account recovery, and isolated public build workers remain release gates.
-The current service does not claim feature parity with npm, PyPI, or crates.io.
-
-The [assembly server experiment](experiments/assembly-server/README.md) includes published source, build instructions, and local HTTP and PostgreSQL tests.
-It is not deployed at `asm.build`.
+Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
+The [roadmap](docs/roadmap.md) tracks that work.
 
 ## Publish from source
 
-A release record identifies a public source repository and an exact Git commit.
-Each artifact has its own target, kind, size, URL, and digest.
-A published version fixes its artifact digests.
-Clients reject different bytes.
+A package release records its source repository, exact Git commit, target, and artifact digests.
+`asm publish` checks the release files and prepares a local submission record.
+Publication proceeds through a pull request to the registry.
 
-The initial publication path uses a reviewed pull request.
-[The registry specification](docs/specs/registry.md) gives the format and commands.
-`asm publish` validates actual artifact bytes and writes a local submission record.
-It does not upload files or reserve a package name.
-Follow the [publishing guide](registry/README.md) to prepare archives and submit the record.
-
-The CLI's project, registry, dependency, archive, publication, and self-update logic is assembly.
-It uses mature system tools for assembly, linking, HTTPS, SHA-256, gzip, and signature verification.
-Python handles registry operations and release automation.
-JavaScript supports the website.
+Follow the [publishing guide](registry/README.md) for the commands and submission process.
 
 ## Security evidence
 
-Useful security evidence answers a specific question.
-ASM records metadata checks, artifact checks, provenance, formal proofs, and agent review separately.
-A missing result stays visible as missing.
+Package records distinguish artifact checks, build provenance, formal proofs, and agent reviews.
+Each result applies to a particular check and artifact.
+Missing results appear as missing.
 
-Lean and Kraken can support proofs for suitable assembly routines.
-A proof must identify the theorem, instruction model, toolchain, assumptions, and artifact it covers.
-The public service also needs isolated workers and trusted verification rules.
+The [security model](docs/specs/security.md) explains the checks, trust boundaries, and planned verification services.
 
-Agents can propose implementations, tests, proof candidates, and reviews.
-They cannot grant a release a security status by opinion.
-Read [the security design](docs/specs/security.md) for the required gates and current limits.
+## Build from source
+
+Install Git, Make, and Python 3.11 or later.
+Linux also requires GNU Binutils, curl, GNU Coreutils, and gzip.
+Apple Silicon macOS requires Xcode Command Line Tools.
+
+```sh
+git clone https://github.com/stubbi/asm.git &&
+cd asm &&
+make &&
+make install PREFIX="$HOME/.local" &&
+export PATH="$HOME/.local/bin:$PATH" &&
+asm version
+```
+
+`make` selects the native implementation for your machine.
+The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
 
 ## Contribute
 
-Read [AGENTS.md](AGENTS.md), [design.md](design.md), and [the writing guide](docs/writing.md).
-The same contribution rules apply to people and agents.
-Follow the [code of conduct](CODE_OF_CONDUCT.md) in project discussions.
-The [maintenance guide](docs/maintaining.md) defines review, release, and incident procedures.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+Follow the [design guide](design.md), [writing guide](docs/writing.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
-To run all local checks, install Python 3.11 or later and Node.js 18 or later.
-On Linux x86-64, release checks also need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
-On Linux, run:
+The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
+Python handles registry operations and release automation; JavaScript supports the website.
 
-```sh
-make check
-```
-
-On macOS, run `make test` for native qualification.
-
-Tests cover user-visible behavior and rejection paths.
-CI requires native Linux x86-64, Linux ARM64, and macOS qualification.
-All three host checks must pass before a release can proceed.
-Keep each commit focused.
-Include the reason for the change and the relevant validation in your pull request.
-Report a defect through [GitHub Issues](https://github.com/stubbi/asm/issues).
+On Linux, run `make check` from the repository root.
+On macOS, run `make test`.
+The [contribution guide](CONTRIBUTING.md) lists test prerequisites, including cross-toolchains.
+Include the reason for your change and its validation in the pull request.
+Report defects through [GitHub Issues](https://github.com/stubbi/asm/issues).
 
 ## License
 
 ASM uses [AGPL-3.0-or-later](LICENSE).
-Changes to the platform should remain available to its users, including users of modified hosted versions.
 Starter code and reference examples use MIT.
 Packages retain the license declared for each version.
-Read the [license scope](LICENSING.md), or run `asm license`.
+See the [license scope](LICENSING.md), or run `asm license`.
