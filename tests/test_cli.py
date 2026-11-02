@@ -3,7 +3,9 @@
 import json
 import os
 from pathlib import Path
+import resource
 import shutil
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -55,6 +57,57 @@ class NativeCliTests(unittest.TestCase):
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
         self.assertIn("yank", status["unimplemented"])
+
+    def test_closed_stdout_is_an_error_in_plain_and_json_modes(self):
+        commands = [
+            ("help",), ("version",), ("license",), ("targets",), ("status",),
+            ("doctor",), ("search", "--help"), ("publish", "--help"), ("self", "--help"),
+        ]
+        for command in commands:
+            for options in [[], ["--json"]]:
+                with self.subTest(command=command, options=options):
+                    result = subprocess.run(
+                        [str(ASM), *options, *command], cwd=self.work,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                        preexec_fn=lambda: os.close(1), timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    if options:
+                        error = json.loads(result.stderr)
+                        self.assertFalse(error["ok"])
+                        self.assertIn("cannot write command output", error["error"])
+                    else:
+                        self.assertIn("cannot write command output", result.stderr)
+
+    def test_partial_stdout_failure_does_not_report_success(self):
+        project = self.project()
+        lock = project / "asm.lock"
+        original = b"# asm-lock-v1\n# registry local\n"
+        lock.write_bytes(original)
+        cases = [
+            (("version", "--json"), b'{"name":'),
+            (("lock", "--json"), b'{"ok":true,"dependencies":0'),
+        ]
+        for command, prefix in cases:
+            with self.subTest(command=command):
+                def limit_output():
+                    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+                    resource.setrlimit(resource.RLIMIT_FSIZE, (len(prefix), len(prefix)))
+
+                output = self.work / "limited-output.json"
+                with output.open("wb") as destination:
+                    result = subprocess.run(
+                        [str(ASM), *command], cwd=project,
+                        stdout=destination, stderr=subprocess.PIPE, text=True,
+                        preexec_fn=limit_output, timeout=10,
+                    )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(output.read_bytes(), prefix)
+                error = json.loads(result.stderr)
+                self.assertFalse(error["ok"])
+                self.assertIn("cannot write command output", error["error"])
+                self.assertEqual(lock.read_bytes(), original)
 
     def test_license_and_starter_grants_have_distinct_scopes(self):
         report = json.loads(self.cli("license", "--json").stdout)

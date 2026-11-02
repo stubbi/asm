@@ -199,13 +199,27 @@ write_all:
 .Lwrite_zero:
     mov rax, -5
     ret
+/* Input: RDI=valid output string. Output: RAX=0 after the complete stdout write;
+ * returned write failures report a static stderr error and exit 1. Uses standard
+ * caller scratch, preserves callee-saved registers, and reserves 8 stack bytes
+ * for call alignment. File and stderr writers keep their returned-error contract. */
 out:
     mov rsi, rdi
     mov edi, 1
-    jmp write_cstr
+    sub rsp, 8
+    call write_cstr
+    add rsp, 8
+    test rax, rax
+    js .Lout_error
+    ret
+.Lout_error:
+    lea rdi, [rip + err_output]
+    mov esi, 1
+    jmp die
 
 /* Input: RDI=text, RSI=JSON, both static strings with a trailing LF. Selects the
- * global output mode and writes stdout. Returns write_cstr status. Stack: none. */
+ * global output mode and uses out's complete-write or fatal-error contract.
+ * Stack: none beyond out's frame. */
 report:
     cmp byte ptr [rip + json_mode], 0
     je out
@@ -1565,6 +1579,7 @@ error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
 error_json_suffix: .asciz "\"}\n"
 err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
+err_output: .asciz "cannot write command output; check the output destination and try again"
 err_target: .asciz "unsupported target; this release supports x86_64-linux only"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
 err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"

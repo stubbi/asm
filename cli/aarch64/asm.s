@@ -265,14 +265,26 @@ write_all:
     ARM_IMM x10, -5
     mov x9, x10
     ret
+/* Input: x0=valid output string. Output: x9=0 after the complete stdout write;
+ * returned write failures report a static stderr error and exit 1. Uses standard
+ * caller scratch, preserves callee-saved registers, and uses a 16-byte ARM_CALL
+ * frame. File and stderr writers keep their returned-error contract. */
 out:
     mov x1, x0
     ARM_IMM w10, 1
     mov w0, w10
-    b write_cstr
+    ARM_CALL write_cstr
+    tst x9, x9
+    b.mi .Lout_error
+    ret
+.Lout_error:
+    ARM_ADDR x0, err_output
+    mov w1, #1
+    b die
 
 /* Input: x0=text, x1=JSON, both static strings with a trailing LF. Selects the
- * global output mode and writes stdout. Returns write_cstr status. Stack: none. */
+ * global output mode and uses out's complete-write or fatal-error contract.
+ * Stack: none beyond out's frame. */
 report:
     ARM_ADDR x16, json_mode
     ldrb w10, [x16]
@@ -2362,6 +2374,7 @@ error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
 error_json_suffix: .asciz "\"}\n"
 err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
+err_output: .asciz "cannot write command output; check the output destination and try again"
 err_target: .asciz "unsupported target; this release supports aarch64-linux only"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
 err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"
