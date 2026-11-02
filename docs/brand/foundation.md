@@ -1,6 +1,6 @@
-# ASM brand foundation
+# Asm brand foundation
 
-This is the source of truth for ASM's belief, vision, story, and decision principles.
+This is the source of truth for Asm's belief, vision, story, and decision principles.
 Use it with the [messaging guide](messaging.md) for every task.
 [AGENTS.md](../../AGENTS.md) makes both documents required context for agents.
 
@@ -45,7 +45,7 @@ Make machine-level software practical to build upon and distribute with inspecta
 We start with assembly projects, a package registry, and a command-line tool.
 Our broader goal is dependable software distribution at global scope.
 
-ASM provides the shared foundation between producing code and putting it into use.
+Asm provides the shared foundation between producing code and putting it into use.
 Package identity, explicit targets, repeatable workflows, and evidence give builders something they can assess and reuse.
 Authenticated distribution, discovery, and recovery must grow together as the service develops.
 The [architecture proposal](../architecture.md) and [acceptance gates](../architecture-gates.md) define those platform ambitions.
@@ -58,7 +58,7 @@ The result must earn its place through correctness, user experience, security, a
 
 Assembly is a language and an implementation choice.
 It does not automatically outperform a compiler or make code safe.
-ASM must remain useful when a compiler already produces the best implementation for a workload.
+Asm must remain useful when a compiler already produces the best implementation for a workload.
 The [project purpose](../why-asm.md) develops the technical assumptions and their limits.
 
 ## The defining story
@@ -78,7 +78,7 @@ It gives us a direct foundation for exploring that future.
 But an implementation becomes more useful when others can build on it.
 People need to know what it does, which machine it supports, where it came from, and what evidence accompanies it.
 
-That is why we are building ASM.
+That is why we are building Asm.
 We bring assembly projects, packages, targets, and release evidence into a shared workflow.
 Our ambition is a foundation that helps people and AI create better software, and helps others make informed decisions about using it.
 
@@ -89,14 +89,14 @@ It does not replace the current product description or approve a visual redesign
 
 ## Who we serve first
 
-| Person | Need | What ASM should help them do |
+| Person | Need | What Asm should help them do |
 | --- | --- | --- |
 | Assembly author, including a person working with AI | Turn an implementation into something others can use | Declare interfaces and targets, build, test, package, and prepare release evidence |
 | Package consumer | Make an informed choice and integrate dependable components | Find a package, inspect its scope and evidence, and use an exact compatible artifact |
 | Contributor or maintainer | Improve a shared foundation without weakening it | Follow explicit contracts, preserve evidence, and ship focused changes |
 
 People who use the resulting applications are the ultimate beneficiaries.
-The initial audience does not imply that ASM is already an autonomous application builder or a universal runtime.
+The initial audience does not imply that Asm is already an autonomous application builder or a universal runtime.
 
 ## Principles that govern the work
 

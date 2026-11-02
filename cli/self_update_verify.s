@@ -6,7 +6,7 @@
 .equ SELF_VERIFIER_DEADLINE_SECONDS, 120
 
 /* GitHub CLI supplies Sigstore verification and its own trusted-root handling.
- * ASM supplies fixed identity constraints and checks the verified repository ID.
+ * Asm supplies fixed identity constraints and checks the verified repository ID.
  * Release-supplied roots, GH credentials, custom hosts, and shell expressions are
  * never accepted. This manual protocol provides no registry freshness or
  * revocation guarantee. It does not implement a TUF release-metadata client.
@@ -600,7 +600,7 @@ self_source_digest_option: .asciz "--source-digest"
 self_signer_digest_option: .asciz "--signer-digest"
 self_error_verifier: .asciz "self update requires GitHub CLI 2.93.0 or later at /usr/bin/gh; install it from cli.github.com and try again"
 self_error_attestation: .asciz "release attestation verification failed; the previous binary remains; check the official release and verifier connection"
-self_error_metadata: .asciz "the attested release metadata does not match the selected ASM artifact; the previous binary remains; check the release"
+self_error_metadata: .asciz "the attested release metadata does not match the selected Asm artifact; the previous binary remains; check the release"
 self_error_proxy: .asciz "proxy environment entries must be unique and at most 4096 bytes; correct the proxy settings and try again"
 self_proxy_https_upper: .asciz "HTTPS_PROXY="
 self_proxy_https_lower: .asciz "https_proxy="

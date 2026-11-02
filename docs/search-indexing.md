@@ -1,6 +1,6 @@
 # Search indexing
 
-ASM publishes a [sitemap](https://asm.build/sitemap.xml) and [crawl rules](https://asm.build/robots.txt).
+Asm publishes a [sitemap](https://asm.build/sitemap.xml) and [crawl rules](https://asm.build/robots.txt).
 The sitemap lists the homepage and CLI source reference.
 Each page declares its preferred URL with a canonical link.
 The catalog has no separate HTML package pages yet.

@@ -37,7 +37,7 @@ type trustedRepository struct {
 // root requires two of three independent keys; online roles cannot replace it.
 func checkRoot(data []byte, now time.Time) error {
 	if err := strictJSON(data); err != nil {
-		return fmt.Errorf("ASM root is not provisioned: %w", err)
+		return fmt.Errorf("Asm root is not provisioned: %w", err)
 	}
 	r, err := metadata.Root().FromBytes(data)
 	if err != nil {
@@ -58,7 +58,7 @@ func checkRoot(data []byte, now time.Time) error {
 		for _, id := range role.KeyIDs {
 			key := r.Signed.Keys[id]
 			if key == nil || key.Type != "ed25519" || key.Scheme != "ed25519" {
-				return errors.New("ASM root profile requires Ed25519 keys")
+				return errors.New("Asm root profile requires Ed25519 keys")
 			}
 			material := key.Value.PublicKey
 			if seen[material] {

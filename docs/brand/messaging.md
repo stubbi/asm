@@ -1,4 +1,4 @@
-# ASM messaging guide
+# Asm messaging guide
 
 Read the [brand foundation](foundation.md) before using this guide.
 The foundation defines our intent.
@@ -7,11 +7,13 @@ Current specifications and evidence determine which product claims we can make.
 
 ## Name and role
 
-Use **ASM** for the project and service.
-Use **asm** for the command, and **asm.build** for the website address.
+Use **Asm** for the project and service in prose, including at the start of a sentence.
+Keep the wordmark lowercase: **asm**.
+Use `asm` for the command and **asm.build** for the website address.
+Keep literal identifiers, required legal notices, and recorded evidence unchanged.
 Follow the terms in the [writing guide](../writing.md).
 
-**Product description:** ASM is a package registry and command-line tool for assembly projects.
+**Product description:** Asm is a package registry and command-line tool for assembly projects.
 
 **Current descriptor:** A home for assembly.
 
@@ -20,22 +22,22 @@ Follow the terms in the [writing guide](../writing.md).
 **Working brand expression:** Made for machines. Built for people.
 
 The working expression is a candidate, not a new capability claim or an instruction to replace every existing heading.
-Use a concrete product description wherever a reader first needs to understand what ASM does.
+Use a concrete product description wherever a reader first needs to understand what Asm does.
 
 ## Short introduction
 
-ASM helps people build, share, and check assembly software.
+Asm helps people build, share, and check assembly software.
 We expect AI to make useful assembly cheaper to create and maintain.
 That makes dependable reuse more valuable.
-ASM brings projects, packages, targets, and release evidence into a shared workflow.
+Asm brings projects, packages, targets, and release evidence into a shared workflow.
 Our ambition is software that serves people well and uses resources with care.
 
 ## The story at different depths
 
 | Context | Lead with | Then explain |
 | --- | --- | --- |
-| Homepage or README | What ASM does and who can use it today | A real first task, the larger purpose, and evidence with clear limits |
-| Project introduction | Human outcomes and the change AI may enable | Assembly as the technical bet and distribution as ASM's role |
+| Homepage or README | What Asm does and who can use it today | A real first task, the larger purpose, and evidence with clear limits |
+| Project introduction | Human outcomes and the change AI may enable | Assembly as the technical bet and distribution as Asm's role |
 | Package page | Identity, version, target, and available evidence | Interface, source, artifact checks, and missing results |
 | Contributor onboarding | The defining belief and decision principles | Current contracts, useful work, validation, and review requirements |
 | Technical proposal | The user problem and measurable acceptance conditions | Relevant principles, alternatives, risks, and evidence |
@@ -49,7 +51,7 @@ Keep the underlying belief and factual boundary consistent.
 1. Software should serve people through reliable behavior, responsiveness, security, accessibility, and responsible resource use.
 2. AI may change the cost of producing and maintaining machine-level implementations.
 3. More generated code increases the value of dependable reuse and inspectable evidence.
-4. ASM starts with packaging and distribution for assembly projects.
+4. Asm starts with packaging and distribution for assembly projects.
 5. Current capabilities and measured results show progress toward the larger vision.
 
 Do not turn that order into a mandatory page layout.

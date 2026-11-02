@@ -36,6 +36,6 @@ Include the source in your GNU assembler file:
 .include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
 ```
 
-ASM adds `.asm/packages` to the assembler's include path.
+Asm adds `.asm/packages` to the assembler's include path.
 Call `asm_u64_min` with the interface described above.
 Include the file once in each linked program.

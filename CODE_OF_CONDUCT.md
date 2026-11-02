@@ -1,6 +1,6 @@
 # Code of conduct
 
-ASM welcomes contributors with different backgrounds, experience, and perspectives.
+Asm welcomes contributors with different backgrounds, experience, and perspectives.
 This policy applies to the project's issues, pull requests, discussions, and other spaces that its maintainers control.
 It applies to maintainers and contributors alike.
 
@@ -39,7 +39,7 @@ They limit disclosure of report details to what the response requires.
 
 A person can request reconsideration through the available reporting route.
 New evidence and a clear explanation help that review.
-ASM currently has one listed owner and no separate moderation team.
+Asm currently has one listed owner and no separate moderation team.
 This policy does not imply an independent appeal body or a guaranteed response time.
 
 [reporting]: https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam

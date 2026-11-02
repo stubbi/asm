@@ -1,9 +1,9 @@
 # Local test schema
 
 `0001_registry.sql` is a byte-identical copy of the reviewed registry migration.
-Its source checkpoint is `286a75c9d806aaed3e91bd54785db2ac60f5310a` from the unpublished ASM behavioral reference.
+Its source checkpoint is `286a75c9d806aaed3e91bd54785db2ac60f5310a` from the unpublished Asm behavioral reference.
 The copied SQL is included here so this experiment does not require that checkout or its Rust executable.
-The repository's AGPL-3.0-or-later license applies to this original ASM material.
+The repository's AGPL-3.0-or-later license applies to this original Asm material.
 
 The migration's SHA-384 is:
 

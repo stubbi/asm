@@ -625,7 +625,7 @@ registry_cleanup:
  * changes. The parent, verifier, and hashing processes retain their limits.
  * Retries interrupted waits. Owns fixed 23-pointer argv; stack: 32 saved
  * bytes and 32 local bytes (16-byte Linux rlimit / child status + alignment).
- * ASM AArch64 callee-saved registers are preserved. No shell is involved. */
+ * Asm AArch64 callee-saved registers are preserved. No shell is involved. */
 registry_download:
     ARM_ADDR x16, registry_curl_argv + 21*8
     str x0, [x16]

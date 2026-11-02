@@ -1,4 +1,4 @@
-# Contribute to ASM
+# Contribute to Asm
 
 Read [the project purpose](docs/why-asm.md) and [AGENTS.md](AGENTS.md).
 Follow the [code of conduct](CODE_OF_CONDUCT.md) in project spaces.
@@ -78,7 +78,7 @@ Do not replace a published version.
 
 ## Report a defect
 
-Include the ASM version, host target, command, and observed result.
+Include the Asm version, host target, command, and observed result.
 Give the smallest example that reproduces the defect.
 Remove secrets and private data from logs.
 Use [GitHub Issues](https://github.com/stubbi/asm/issues) for ordinary defects.

@@ -1,6 +1,6 @@
 # Native AArch64 CLI
 
-This directory contains the Linux AArch64 implementation of ASM.
+This directory contains the Linux AArch64 implementation of Asm.
 The assembler emits ARMv8-A instructions directly.
 The executable has no instruction interpreter or C runtime.
 Transport, decompression, digest, and provenance checks use the same fixed external tools as the x86-64 implementation.

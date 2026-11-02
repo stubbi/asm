@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the fixed ASM installer from a validated, canonical release record.
+"""Render the fixed Asm installer from a validated, canonical release record.
 
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
@@ -46,7 +46,7 @@ def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dic
     registry.version_tuple(version)
     source = record["source"]
     registry.require(source["repository"] == REPOSITORY and source["path"] == ".",
-                     "installer source must be the canonical ASM repository root")
+                     "installer source must be the canonical Asm repository root")
     registry.require(re.fullmatch(r"[0-9a-f]{40}", source["commit"]) is not None,
                      "installer source needs a full Git commit")
     artifacts = [{key: artifact[key] for key in ("target", "sha256", "bytes", "url")}
@@ -140,11 +140,11 @@ cat "$asm_installer"'''
     return f'''<div class="bootstrap-panel">
 <p class="section-footnote">The installer supports {hosts}. It selects the matching build on your machine. {tools} Use <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> before you start.</p>
 <div class="terminal">
-<div class="terminal-header"><div class="terminal-label">INSTALL ASM {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy ASM installation command">Copy</button></div>
+<div class="terminal-header"><div class="terminal-label">INSTALL Asm {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy Asm installation command">Copy</button></div>
 <pre><code id="bootstrap-commands">{escape(commands)}</code></pre>
 <div class="terminal-footer"><span>{hosts}</span><a href="install.sh">Read the installer ↗</a></div>
 </div>
-<p class="section-footnote">The ASM installer does not use sudo or a GitHub login. It checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves a different existing asm file.</p>
+<p class="section-footnote">The Asm installer does not use sudo or a GitHub login. It checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves a different existing asm file.</p>
 <p class="section-footnote">Apply the PATH command shown by the installer. Then run <code>asm version</code>. For later updates, run <code>asm self update</code>.</p>
 <details class="source-fallback">
 <summary>Set PATH for this terminal</summary>

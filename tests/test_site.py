@@ -103,7 +103,7 @@ class SearchDiscoveryTests(unittest.TestCase):
         for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
                           ("commit", "-qm", "Record source reference fixture")):
             subprocess.run(["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null",
-                            "-c", "commit.gpgSign=false", "-c", "user.name=ASM site test fixture",
+                            "-c", "commit.gpgSign=false", "-c", "user.name=asm site test fixture",
                             "-c", "user.email=fixture@example.invalid", *arguments],
                            check=True, capture_output=True, timeout=10)
 

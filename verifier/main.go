@@ -55,7 +55,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "asm verification:", err)
+		fmt.Fprintln(os.Stderr, "Asm verification:", err)
 		os.Exit(1)
 	}
 }
@@ -169,7 +169,7 @@ func checkProvenanceResult(result *verify.VerificationResult, commit string) err
 	if c.SourceRepositoryURI != repository || c.SourceRepositoryIdentifier != repositoryID ||
 		c.SourceRepositoryRef != "refs/heads/main" || c.RunnerEnvironment != "github-hosted" ||
 		c.BuildSignerURI != workflow || result.Statement.PredicateType != predicate {
-		return errors.New("release provenance does not match ASM's publisher policy")
+		return errors.New("release provenance does not match Asm's publisher policy")
 	}
 	if !commitPattern.MatchString(c.SourceRepositoryDigest) || c.BuildSignerDigest != c.SourceRepositoryDigest {
 		return errors.New("source and signer commits differ")

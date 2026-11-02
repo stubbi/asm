@@ -1,4 +1,4 @@
-# Provision ASM distribution trust
+# Provision Asm distribution trust
 
 Status: gated implementation; production trust is not provisioned.
 The published 0.4.0 installer still requires GitHub CLI.
@@ -39,7 +39,7 @@ That size is the trade-off for removing a separate verifier installation while r
 
 The bootstrap pins a verifier's URL, byte size, and SHA-256.
 It checks those bytes before execution.
-It then requires current ASM authorization and the existing release-provenance policy.
+It then requires current Asm authorization and the existing release-provenance policy.
 The initial installer still depends on its HTTPS delivery and the origin's integrity.
 A modified installer cannot authenticate itself.
 
@@ -50,7 +50,7 @@ The fixed policy retains repository ID `1441332955`, the release workflow, main 
 The adapter requires certificate-transparency and artifact-transparency evidence.
 It uses Sigstore's authenticated root distribution, with explicit HTTPS transport bounds.
 
-ASM's separate TUF repository authorizes current update metadata and artifacts.
+Asm's separate TUF repository authorizes current update metadata and artifacts.
 It uses root, targets, snapshot, and timestamp roles with distinct Ed25519 keys.
 The offline root requires two of three keys.
 Consistent snapshots bind metadata versions, lengths, and hashes.
@@ -154,7 +154,7 @@ The release builder accepts `--trusted-distribution` for both native qualificati
 
 Keep the dependency versions and checksums in `verifier/go.mod` and `verifier/go.sum`.
 Review dependency changes and retain their license notices with distributed source.
-The helper uses Apache-2.0 and other compatible third-party components; ASM's adapter remains AGPL-3.0-or-later.
+The helper uses Apache-2.0 and other compatible third-party components; Asm's adapter remains AGPL-3.0-or-later.
 
 ## Publish update metadata
 
@@ -226,12 +226,12 @@ Use the offline root to replace compromised online keys.
 Complete a recovery rehearsal before public activation.
 
 Older clients retain their current provenance checks when upgrading to the first bundled-verifier release.
-They cannot gain ASM freshness protection before that upgrade.
+They cannot gain Asm freshness protection before that upgrade.
 Preserve the Linux-compatible index and the separate macOS index during migration.
 
 ## Evidence and remaining gates
 
-Local development checks exercised genuine signatures from ASM 0.4.0's published release bundle.
+Local development checks exercised genuine signatures from Asm 0.4.0's published release bundle.
 They also exercised changed artifacts, wrong source commits, and invalid signatures.
 Generated TUF fixtures exercised expiry, replay across restarts, mixed snapshots, root thresholds, rotation, and failed-refresh state retention.
 Bootstrap tests exercised an absent GitHub CLI, corrupted verifier bytes, rejected authorization, network failure, and an existing destination.

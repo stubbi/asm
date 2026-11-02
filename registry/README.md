@@ -9,14 +9,14 @@ Use a namespace that you control. A maintainer reviews each new namespace claim.
 Your package needs `asm.toml`, its declared assembly source, a README, and a license file. The README must state the architecture, ABI, assembler dialect, build commands, and test method. Use an exact numeric version such as `0.1.0`.
 
 Use the license that applies to your package.
-ASM's platform license does not set the license of packages in the registry.
+Asm's platform license does not set the license of packages in the registry.
 The example below declares `MIT` for its example source.
 The registry also accepts `AGPL-3.0-or-later` and other identifiers in the documented policy.
-See [ASM's licensing guide](../LICENSING.md) for its separate core, template, and example scopes.
+See [Asm's licensing guide](../LICENSING.md) for its separate core, template, and example scopes.
 
 Commit the source. Record its full commit ID with `git rev-parse HEAD`. Use that ID with `pack-git`; it reads the committed files and excludes dirty working files.
 
-The following commands show the form. Replace the uppercase values with your package details. Run them from the ASM repository. `SOURCE_REPOSITORY` is the path to your local source checkout. `FULL_COMMIT_ID` must identify a commit in that checkout.
+The following commands show the form. Replace the uppercase values with your package details. Run them from the Asm repository. `SOURCE_REPOSITORY` is the path to your local source checkout. `FULL_COMMIT_ID` must identify a commit in that checkout.
 
 ```sh
 python3 tools/registry.py pack-git SOURCE_REPOSITORY \

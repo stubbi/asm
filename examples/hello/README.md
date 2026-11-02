@@ -6,7 +6,7 @@ It requires no C runtime.
 
 ## Build and run
 
-First, build the ASM CLI from the repository root:
+First, build the Asm CLI from the repository root:
 
 ```sh
 make

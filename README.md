@@ -1,11 +1,11 @@
-# ASM
+# asm
 
 **A home for assembly.**
 
-ASM is a package registry and command-line tool for assembly projects.
+Asm is a package registry and command-line tool for assembly projects.
 Create a project, use packages, and share releases with their source and verification results.
 
-[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why ASM](docs/why-asm.md) · [Security model](docs/specs/security.md)
+[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md)
 
 ## A new era for software
 
@@ -20,14 +20,14 @@ Assembly gives direct control over instructions, memory layout, and CPU features
 AI could make that control practical for a much wider range of software.
 Each implementation still needs a way to reach the people and projects that can use it.
 
-ASM brings assembly into a shared package ecosystem: named packages, explicit machine targets, repeatable builds, and evidence tied to each release.
+Asm brings assembly into a shared package ecosystem: named packages, explicit machine targets, repeatable builds, and evidence tied to each release.
 The goal is to make efficient, dependable software practical to distribute and reuse.
 
 [More on the technical reasoning](docs/why-asm.md).
 
 ## Quick start
 
-ASM 0.4.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
+Asm 0.4.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 
 ### Install the command
 
@@ -90,7 +90,7 @@ Assembly source is text; `asm build` assembles and links it into the executable 
 `asm run` also runs that executable.
 `asm test` builds and runs `tests/main.s`; a zero exit code passes the test.
 
-### Update ASM
+### Update Asm
 
 For an installation made with the installer:
 
@@ -98,7 +98,7 @@ For an installation made with the installer:
 asm self update
 ```
 
-For an installation managed by another package manager, use that manager to update ASM.
+For an installation managed by another package manager, use that manager to update Asm.
 
 ## Projects and packages
 
@@ -167,7 +167,7 @@ The destination must be a new file.
 
 ## Status
 
-ASM is an early alpha.
+Asm is an early alpha.
 
 | Area | Available today |
 | --- | --- |
@@ -180,7 +180,7 @@ ASM is an early alpha.
 | Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
 | CLI updates | Manual updates with signed release provenance. |
 
-Projects build for the machine running ASM.
+Projects build for the machine running Asm.
 Packages can provide separate artifacts for other targets, including RISC-V Linux.
 
 Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
@@ -238,7 +238,7 @@ Report defects through [GitHub Issues](https://github.com/stubbi/asm/issues).
 
 ## License
 
-ASM uses [AGPL-3.0-or-later](LICENSE).
+Asm uses [AGPL-3.0-or-later](LICENSE).
 Starter code and reference examples use MIT.
 Packages retain the license declared for each version.
 See the [license scope](LICENSING.md), or run `asm license`.
