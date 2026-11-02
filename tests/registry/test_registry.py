@@ -216,6 +216,102 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             registry.collect_files(source)
 
+    def test_source_collection_enforces_total_limit_before_reading(self):
+        for name in ("a", "b"):
+            (self.root / name).write_bytes(b"12345678")
+        fdopen = registry.os.fdopen
+        payload_reads = []
+
+        def observe_reads(*arguments, **keywords):
+            stream = fdopen(*arguments, **keywords)
+            read = stream.read
+
+            def observed_read(*arguments, **keywords):
+                data = read(*arguments, **keywords)
+                payload_reads.append(data)
+                return data
+
+            stream.read = observed_read
+            return stream
+
+        with patch.object(registry, "MAX_EXPANDED_BYTES", 8), \
+             patch.object(registry.os, "fdopen", side_effect=observe_reads):
+            with self.assertRaises(registry.RegistryError):
+                registry.collect_files(self.root)
+        self.assertEqual(payload_reads, [b"12345678"])
+        with patch.object(registry, "MAX_EXPANDED_BYTES", 16):
+            self.assertEqual(set(registry.collect_files(self.root)), {"a", "b"})
+        with patch.object(registry, "MAX_EXPANDED_BYTES", 8):
+            self.assertEqual(set(registry.collect_files(self.root, ["a", "a"])), {"a"})
+
+    @unittest.skipUnless(shutil.which("git"), "Git is needed for the committed-source limit test")
+    def test_git_collection_enforces_total_limit_before_reading(self):
+        for name in ("a", "b"):
+            (self.root / name).write_bytes(b"12345678")
+
+        def git(*arguments):
+            return subprocess.check_output(["git", "-C", str(self.root), *arguments], stderr=subprocess.DEVNULL)
+
+        git("init", "-q")
+        git("add", ".")
+        git("-c", "user.name=Registry Test", "-c", "user.email=registry-test@example.invalid",
+            "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+        commit = git("rev-parse", "HEAD").decode().strip()
+        git_output = registry.git_output
+        payload_reads = []
+
+        def observe_reads(repository, *arguments):
+            data = git_output(repository, *arguments)
+            if arguments[:2] == ("cat-file", "blob"):
+                payload_reads.append(data)
+            return data
+
+        with patch.object(registry, "MAX_EXPANDED_BYTES", 8), \
+             patch.object(registry, "git_output", side_effect=observe_reads):
+            with self.assertRaises(registry.RegistryError):
+                registry.git_files(self.root, commit, ".")
+        self.assertEqual(payload_reads, [b"12345678"])
+        with patch.object(registry, "MAX_EXPANDED_BYTES", 16):
+            self.assertEqual(set(registry.git_files(self.root, commit, ".")), {"a", "b"})
+
+    @unittest.skipUnless(shutil.which("git"), "Git is needed for the replacement-object test")
+    def test_git_replacement_objects_cannot_change_recorded_source_or_baseline(self):
+        for replacement in ("commit", "blob"):
+            repository = self.root / replacement
+            repository.mkdir()
+            source = repository / "main.s"
+            source.write_bytes(b"original source\n")
+            record, _ = release()
+            metadata = self.save_record(repository / "registry", record)
+
+            def git(*arguments):
+                return subprocess.check_output(["git", "-C", str(repository), *arguments], stderr=subprocess.DEVNULL).decode().strip()
+
+            def commit():
+                git("add", ".")
+                git("-c", "user.name=Registry Test", "-c", "user.email=registry-test@example.invalid",
+                    "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+                return git("rev-parse", "HEAD")
+
+            git("init", "-q")
+            original = commit()
+            source.write_bytes(b"replacement source\n")
+            changed_record = copy.deepcopy(record)
+            changed_record["summary"] = "Replacement metadata."
+            metadata.write_bytes(registry.json_bytes(changed_record))
+            changed = commit()
+            if replacement == "commit":
+                git("replace", original, changed)
+            else:
+                for relative in ("main.s", metadata.relative_to(repository).as_posix()):
+                    git("replace", git("rev-parse", original + ":" + relative),
+                        git("rev-parse", changed + ":" + relative))
+            with self.subTest(replacement=replacement, operation="source"):
+                self.assertEqual(registry.git_files(repository, original, ".", ["main.s"])["main.s"][0],
+                                 b"original source\n")
+            with self.subTest(replacement=replacement, operation="baseline"):
+                self.assertEqual(registry.baseline_from_git(repository, original), [record])
+
     def test_filesystem_fifos_are_rejected_without_open_blocking(self):
         source = self.root / "source"
         source.mkdir()
