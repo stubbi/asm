@@ -75,7 +75,9 @@ cmd_self:
     lea rsi, [rip + self_version]
     call streq
     test eax, eax
+.ifndef ASM_TRUSTED_DISTRIBUTION
     jnz self_unchanged
+.endif
 .Lself_begin:
     call registry_workspace
     mov eax, 257
@@ -104,12 +106,16 @@ cmd_self:
     mov [rip + registry_target], rax
     lea rax, [rip + registry_executable_kind]
     mov [rip + registry_kind], rax
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    call self_authenticated_index
+.else
     lea rdi, [rip + registry_default_url]
     lea rsi, [rip + registry_temp_index]
     lea rdx, [rip + registry_index_max]
     call registry_download
     test eax, eax
     jnz self_download_error
+.endif
     lea rax, [rip + registry_temp_index]
     mov [rip + registry_index_path], rax
     call registry_read_index
@@ -148,6 +154,9 @@ cmd_self:
     /* This gate verifies the manifest, its source binding, and the exact
      * payload. It returns only after every required provenance check passes. */
     call self_verify_release
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    call self_authorize_candidate
+.endif
     call self_commit_update
     call self_update_cleanup
     cmp byte ptr [rip + json_mode], 0

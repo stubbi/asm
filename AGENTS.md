@@ -182,6 +182,7 @@ Use isolated workers before you accept arbitrary public builds or proofs.
 ## Test the contract
 
 Run `make test` for CLI changes.
+Run `make verifier-test` for bundled-verifier or trust-publication changes.
 Run the registry tests for format, archive, or publication changes.
 Run the site checks for markup, behavior, or navigation changes.
 Run the full release checks before a release.

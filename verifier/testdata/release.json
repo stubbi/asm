@@ -1,0 +1,319 @@
+{
+  "archive_format": "USTAR + gzip; sorted paths; zero timestamps; normalized ownership",
+  "assets": [
+    {
+      "bytes": 132200,
+      "file": "asm-0.4.0-aarch64-linux",
+      "sha256": "6200ef1b843e5203bf5bb07b590d501dabed04b292ca7dfadcde71ccfdaf32f5"
+    },
+    {
+      "bytes": 245296,
+      "file": "asm-0.4.0-aarch64-macos",
+      "sha256": "6b349be8a43daf23d05c1cdae2a50caa38faec85d6ff41a7ed93cbdc5820ba1f"
+    },
+    {
+      "bytes": 472933,
+      "file": "asm-0.4.0-source.tar.gz",
+      "sha256": "dc82526b7a2eae93d64347b81c60757b3f1d766bea09c46774b41343c21feb63"
+    },
+    {
+      "bytes": 97504,
+      "file": "asm-0.4.0-x86_64-linux",
+      "sha256": "7a618e4070a9b373d63554c7f144b40ad51729ff868fa091bd1d72de4b4fe586"
+    },
+    {
+      "bytes": 1064,
+      "file": "hello-0.4.0-aarch64-linux",
+      "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9"
+    },
+    {
+      "bytes": 1646,
+      "file": "hello-0.4.0-aarch64-linux.tar.gz",
+      "sha256": "65bfee6131c5b32bad7eba896bb1e950b22f59d46b4c25066257f12e193f9141"
+    },
+    {
+      "bytes": 1296,
+      "file": "hello-0.4.0-riscv64-linux",
+      "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92"
+    },
+    {
+      "bytes": 1666,
+      "file": "hello-0.4.0-riscv64-linux.tar.gz",
+      "sha256": "f1c20fc81c2370f18738b358de2da03617175634396ff06f6bdc4de592187194"
+    },
+    {
+      "bytes": 8880,
+      "file": "hello-0.4.0-x86_64-linux",
+      "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440"
+    },
+    {
+      "bytes": 1567,
+      "file": "hello-0.4.0-x86_64-linux.tar.gz",
+      "sha256": "612f02537bbd16e24782cbf9971eef0f26a568740df3b9e17482c53656e8cc22"
+    },
+    {
+      "bytes": 2054,
+      "file": "math-0.4.0-x86_64-linux-source.tar.gz",
+      "sha256": "5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08"
+    }
+  ],
+  "builds": {
+    "asm": {
+      "command": [
+        "make",
+        "build/asm",
+        "ARCH=x86_64",
+        "AS=as",
+        "LD=ld"
+      ],
+      "reproducibility": "Two clean builds produced identical bytes.",
+      "target": "x86_64-linux",
+      "version_check": {
+        "exit_code": 0,
+        "status": "pass",
+        "stdout": "asm 0.4.0 (x86_64-linux)\n"
+      }
+    },
+    "asm_targets": {
+      "aarch64-linux": {
+        "command": [
+          "make",
+          "build/asm",
+          "ARCH=aarch64",
+          "AS=aarch64-linux-gnu-as",
+          "LD=aarch64-linux-gnu-ld"
+        ],
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "target": "aarch64-linux",
+        "version_check": {
+          "exit_code": 0,
+          "runner": "qemu-aarch64",
+          "status": "pass",
+          "stdout": "asm 0.4.0 (aarch64-linux)\n"
+        }
+      },
+      "aarch64-macos": {
+        "asset": {
+          "bytes": 245296,
+          "file": "asm-0.4.0-aarch64-macos",
+          "sha256": "6b349be8a43daf23d05c1cdae2a50caa38faec85d6ff41a7ed93cbdc5820ba1f"
+        },
+        "code_signature": "ad-hoc; verified with codesign --verify --strict",
+        "command": [
+          "make",
+          "build/asm"
+        ],
+        "developer_id": "not-run",
+        "notarization": "not-run",
+        "platform": {
+          "machine": "arm64",
+          "minimum": "15.0",
+          "system": "Darwin",
+          "version": "15.8.2"
+        },
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "schema": 1,
+        "source_commit": "1dbe731fbe19d1e6201afd662699382e4983655a",
+        "target": "aarch64-macos",
+        "targets_check": {
+          "exit_code": 0,
+          "result": {
+            "host": "aarch64-macos",
+            "targets": [
+              "aarch64-macos"
+            ]
+          },
+          "runner": "native",
+          "status": "pass"
+        },
+        "tests": {
+          "command": [
+            "make",
+            "test"
+          ],
+          "exit_code": 0,
+          "output_sha256": "f1e2391448a80991f1db65558b8c465f64bd7a5fbb3687a46925422b849f9c06",
+          "skipped": 0,
+          "status": "pass",
+          "suite": "tests/macos",
+          "tests_run": 166
+        },
+        "tool_versions": {
+          "clang": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+          "python": "3.15.2",
+          "sdk": "15.5"
+        },
+        "version": "0.4.0",
+        "version_check": {
+          "exit_code": 0,
+          "runner": "native",
+          "status": "pass",
+          "stdout": "asm 0.4.0 (aarch64-macos)\n"
+        }
+      },
+      "x86_64-linux": {
+        "command": [
+          "make",
+          "build/asm",
+          "ARCH=x86_64",
+          "AS=as",
+          "LD=ld"
+        ],
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "target": "x86_64-linux",
+        "version_check": {
+          "exit_code": 0,
+          "status": "pass",
+          "stdout": "asm 0.4.0 (x86_64-linux)\n"
+        }
+      }
+    },
+    "hello": {
+      "aarch64-linux": {
+        "assemble": [
+          "aarch64-linux-gnu-as",
+          "--fatal-warnings",
+          "-o",
+          "build/main.o",
+          "src/main.s"
+        ],
+        "link": [
+          "aarch64-linux-gnu-ld",
+          "-z",
+          "noexecstack",
+          "--build-id=none",
+          "-o",
+          "build/hello",
+          "build/main.o"
+        ],
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "runtime": {
+          "exit_code": 0,
+          "runner": "qemu-aarch64",
+          "status": "pass",
+          "stdout": "Hello from asm!\n"
+        },
+        "source_path": "examples/hello-aarch64"
+      },
+      "riscv64-linux": {
+        "assemble": [
+          "riscv64-linux-gnu-as",
+          "-march=rv64i",
+          "-mabi=lp64",
+          "--fatal-warnings",
+          "-o",
+          "build/main.o",
+          "src/main.s"
+        ],
+        "link": [
+          "riscv64-linux-gnu-ld",
+          "-z",
+          "noexecstack",
+          "--build-id=none",
+          "-o",
+          "build/hello",
+          "build/main.o"
+        ],
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "runtime": {
+          "exit_code": 0,
+          "runner": "qemu-riscv64",
+          "status": "pass",
+          "stdout": "Hello from asm!\n"
+        },
+        "source_path": "examples/hello-riscv64"
+      },
+      "x86_64-linux": {
+        "assemble": [
+          "as",
+          "--64",
+          "--fatal-warnings",
+          "-o",
+          "build/main.o",
+          "src/main.s"
+        ],
+        "link": [
+          "ld",
+          "-z",
+          "noexecstack",
+          "--build-id=none",
+          "-o",
+          "build/hello",
+          "build/main.o"
+        ],
+        "reproducibility": "Two clean builds produced identical bytes.",
+        "runtime": {
+          "exit_code": 0,
+          "runner": "native",
+          "status": "pass",
+          "stdout": "Hello from asm!\n"
+        },
+        "source_path": "examples/hello"
+      }
+    },
+    "math": {
+      "runtime": {
+        "commands": [
+          [
+            "asm",
+            "run"
+          ],
+          [
+            "asm",
+            "test"
+          ]
+        ],
+        "exit_code": 0,
+        "runner": "asm from the source commit",
+        "status": "pass",
+        "stdout": "min(12, 37) = 12\n",
+        "test_stdout": "Passed tests/main.s\n"
+      },
+      "source_path": "examples/math",
+      "target": "x86_64-linux"
+    }
+  },
+  "cli_hosts": [
+    "x86_64-linux",
+    "aarch64-linux",
+    "aarch64-macos"
+  ],
+  "formal_proofs": "not-run",
+  "hello_targets": [
+    "aarch64-linux",
+    "riscv64-linux",
+    "x86_64-linux"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "package_licenses": {
+    "stubbi/asm": "AGPL-3.0-or-later",
+    "stubbi/hello": "MIT",
+    "stubbi/math": "MIT"
+  },
+  "project": "asm",
+  "provenance": "not-run",
+  "repository": "https://github.com/stubbi/asm",
+  "schema": 1,
+  "source_commit": "1dbe731fbe19d1e6201afd662699382e4983655a",
+  "tag": "v0.4.0",
+  "template_license": "MIT",
+  "tool_versions": {
+    "aarch64-linux-gnu-as": "GNU assembler (GNU Binutils for Ubuntu) 2.42",
+    "aarch64-linux-gnu-ld": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+    "as": "GNU assembler (GNU Binutils for Ubuntu) 2.42",
+    "git": "git version 2.56.0",
+    "ld": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+    "make": "GNU Make 4.3",
+    "native_aarch64-macos": {
+      "clang": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+      "python": "3.15.2",
+      "sdk": "15.5"
+    },
+    "python": "3.12.3",
+    "qemu-aarch64": "qemu-aarch64 version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+    "qemu-riscv64": "qemu-riscv64 version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+    "riscv64-linux-gnu-as": "GNU assembler (GNU Binutils for Ubuntu) 2.42",
+    "riscv64-linux-gnu-ld": "GNU ld (GNU Binutils for Ubuntu) 2.42"
+  },
+  "version": "0.4.0"
+}

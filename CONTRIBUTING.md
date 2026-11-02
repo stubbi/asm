@@ -13,6 +13,7 @@ Keep required notices and identify the origin of imported material.
 | Path | Purpose |
 | --- | --- |
 | `cli/` | Native CLI implementations, shared starter text, and platform adapters. |
+| `verifier/` | Bundled Sigstore and TUF adapter, maintainer tools, and trust tests. Production activation is gated. |
 | `tools/` | Build preparation, registry operations, installation generation, releases, and measurement tools. |
 | `tests/` | CLI, registry, release, and site checks, including failure cases. |
 | `examples/` | Independently licensed reference packages used by tests and release builds. |
@@ -48,6 +49,10 @@ Registry tests do not need publisher credentials.
 Cross-target examples need the corresponding GNU tools and QEMU for local execution.
 The release workflow installs those tools from Ubuntu packages.
 CI requires Linux x86-64, Linux ARM64, and native macOS qualification before a release.
+
+Verifier changes also require the Go version declared in `verifier/go.mod`.
+Run `make verifier-test` for bundled-verifier or trust-publication changes.
+The [trust guide](docs/trusted-distribution.md) defines the separate production activation gates.
 
 ## Make a change
 

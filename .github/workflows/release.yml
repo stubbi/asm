@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      trusted_distribution:
+        description: Bundle the verifier and require the provisioned ASM root
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -23,8 +28,21 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: inputs.trusted_distribution
+        with:
+          go-version-file: verifier/go.mod
+          cache-dependency-path: verifier/go.sum
+      - name: Check the provisioned verifier
+        if: inputs.trusted_distribution
+        run: make verifier-test check-trust-root
       - name: Build and test clean native release bytes
-        run: python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist
+        env:
+          ASM_TRUSTED: ${{ inputs.trusted_distribution }}
+        run: |
+          ASM_TRUSTED_FLAG=''
+          if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
+          python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist $ASM_TRUSTED_FLAG
       - name: Retain exact native bytes and runtime evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -46,6 +64,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: inputs.trusted_distribution
+        with:
+          go-version-file: verifier/go.mod
+          cache-dependency-path: verifier/go.sum
+      - name: Check the provisioned verifier
+        if: inputs.trusted_distribution
+        run: make verifier-test check-trust-root
       - name: Check the native ARM64 implementation
         run: make check
       - name: Check installation boundaries between users
@@ -70,6 +96,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: inputs.trusted_distribution
+        with:
+          go-version-file: verifier/go.mod
+          cache-dependency-path: verifier/go.sum
+      - name: Check the provisioned verifier
+        if: inputs.trusted_distribution
+        run: make verifier-test check-trust-root
       - name: Check the version tag
         run: |
           set -euo pipefail
@@ -109,9 +143,13 @@ jobs:
           name: native-macos-${{ github.sha }}
           path: native-input
       - name: Check and build the release
+        env:
+          ASM_TRUSTED: ${{ inputs.trusted_distribution }}
         run: |
+          ASM_TRUSTED_FLAG=''
+          if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
           make check
-          python3 tools/release.py --commit "$GITHUB_SHA" --output dist --native-input native-input --hello-target x86_64-linux --hello-target aarch64-linux --hello-target riscv64-linux
+          python3 tools/release.py --commit "$GITHUB_SHA" --output dist --native-input native-input --hello-target x86_64-linux --hello-target aarch64-linux --hello-target riscv64-linux $ASM_TRUSTED_FLAG
           test "$(stat -c %s dist/release.json)" -le 1048576
       - name: Check installation boundaries between users
         run: |
@@ -184,7 +222,9 @@ jobs:
           ASM_VERSION=$(python3 -c 'import json; print(json.load(open("cli/commands.json"))["version"])')
           ASM_COMMIT=$(git rev-parse HEAD)
           test -f "docs/releases/$ASM_VERSION.md"
-          gh release create "v$ASM_VERSION" dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json dist/release-attestation.sigstore.json \
+          ASM_EXTRA_ASSETS=()
+          if [ -f dist/install.sh ]; then ASM_EXTRA_ASSETS+=(dist/install.sh); fi
+          gh release create "v$ASM_VERSION" dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json dist/release-attestation.sigstore.json "${ASM_EXTRA_ASSETS[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$ASM_COMMIT" \
             --title "ASM $ASM_VERSION" \

@@ -228,7 +228,7 @@ The [repository layout](CONTRIBUTING.md#repository-layout) explains the source, 
 Follow the [design guide](design.md), [writing guide](docs/writing.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
-Python handles registry operations and release automation; JavaScript supports the website.
+Python handles registry operations and release automation; JavaScript supports the website. The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
 
 On Linux, run `make check` from the repository root.
 On macOS, run `make test`.

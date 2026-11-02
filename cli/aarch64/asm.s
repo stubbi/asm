@@ -2495,3 +2495,7 @@ made_test: .skip 1
 .include "cli/aarch64/self_update_metadata.s"
 
 .include "cli/aarch64/platform.s"
+
+.ifdef ASM_TRUSTED_DISTRIBUTION
+.include "cli/aarch64/self_update_trust.s"
+.endif

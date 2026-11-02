@@ -81,6 +81,9 @@ self_prepare_verifier:
     mov x0, x9
     mov x1, x21
     ARM_CALL copy_string
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    ARM_CALL self_prepare_embedded_verifier
+.else
     ARM_ADDR x16, self_gh_path
     mov x0, x16
     ARM_ADDR x16, self_version_argv
@@ -151,6 +154,7 @@ self_prepare_verifier:
     ARM_IMM w11, 0
     cmp w9, w11
     b.lt self_verifier_missing
+.endif
     add sp, sp, #16
     ARM_RESTORE x21
     ARM_RESTORE x19
@@ -359,6 +363,9 @@ self_verify_release:
  * Stack: 16 alignment bytes. */
 self_verify_attestation:
     sub sp, sp, #16
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    ARM_CALL self_embedded_provenance
+.else
     ARM_ADDR x16, self_gh_path
     mov x0, x16
     ARM_ADDR x16, self_verify_argv
@@ -366,6 +373,7 @@ self_verify_attestation:
     ARM_ADDR x16, self_gh_environment
     mov x2, x16
     ARM_CALL self_capture
+.endif
     tst w9, w9
     b.ne self_attestation_error
     ARM_ADDR x16, self_capture_length

@@ -105,7 +105,9 @@ cmd_self:
     mov x1, x16
     ARM_CALL streq
     tst w9, w9
+.ifndef ASM_TRUSTED_DISTRIBUTION
     b.ne self_unchanged
+.endif
 .Lself_begin:
     ARM_CALL registry_workspace
     ARM_ADDR x16, self_parent_fd
@@ -147,6 +149,9 @@ cmd_self:
     mov x9, x16
     ARM_ADDR x16, registry_kind
     str x9, [x16]
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    ARM_CALL self_authenticated_index
+.else
     ARM_ADDR x16, registry_default_url
     mov x0, x16
     ARM_ADDR x16, registry_temp_index
@@ -156,6 +161,7 @@ cmd_self:
     ARM_CALL registry_download
     tst w9, w9
     b.ne self_download_error
+.endif
     ARM_ADDR x16, registry_temp_index
     mov x9, x16
     ARM_ADDR x16, registry_index_path
@@ -219,6 +225,9 @@ cmd_self:
     /* This gate verifies the manifest, its source binding, and the exact
      * payload. It returns only after every required provenance check passes. */
     ARM_CALL self_verify_release
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    ARM_CALL self_authorize_candidate
+.endif
     ARM_CALL self_commit_update
     ARM_CALL self_update_cleanup
     ARM_ADDR x16, json_mode
