@@ -1,12 +1,12 @@
 # Roadmap
 
-ASM is a project tool and package registry for assembly. The CLI is written in assembly. Registry tooling and the website use other languages.
+asm is a project tool and package registry for assembly. The CLI is written in assembly. Registry tooling and the website use other languages.
 
 These are delivery gates. A gate closes when its behavior is implemented, tested, and available through the documented route.
 
 ## Global distribution
 
-ASM aims to support software distribution at global scope, with assembly as its current package focus.
+asm aims to support software distribution at global scope, with assembly as its current package focus.
 Substantial discovery traffic is a core requirement.
 Known-package installation must remain independent of search availability.
 

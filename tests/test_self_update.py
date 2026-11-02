@@ -1,7 +1,7 @@
 """Native self-update tests with deterministic transport/verifier fixtures.
 
 The test-only source copy changes two fixed tool paths. No runtime override is
-added to ASM. The fixtures check real child argv and the explicit environment.
+added to asm. The fixtures check real child argv and the explicit environment.
 These tests do not claim to perform Sigstore cryptographic verification.
 The oversized-write fixture ignores curl's size flag and uses real file writes.
 It tests the kernel limit independently of HTTP or a specific curl version.
@@ -339,7 +339,7 @@ class SelfUpdateTests(unittest.TestCase):
 
     def row(self, version=NEXT, target=TARGET, digest=None, size=None, url=None):
         return "\t".join(("stubbi/asm", version, target, "executable", digest or self.digest,
-                          url or self.artifact_url, str(size or len(self.next_bytes)), "ASM CLI")) + "\n"
+                          url or self.artifact_url, str(size or len(self.next_bytes)), "asm CLI")) + "\n"
 
     def write_index(self, *rows):
         (self.fixture / "index.tsv").write_text("# asm-registry-v1\n" + "".join(rows or [self.row()]))

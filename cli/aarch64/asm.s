@@ -2389,7 +2389,7 @@ err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
 version_text: .asciz "asm 0.4.0 (aarch64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"host\":\"aarch64-linux\"}\n"
-license_text: .asciz "ASM 0.4.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute ASM under this license.\nASM is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.4.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_text: .asciz "asm 0.4.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute asm under this license.\nasm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.4.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
 license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.4.0\"}\n"
 targets_text: .asciz "aarch64-linux (host; GNU as + ld)\n"
 targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"aarch64-linux\"]}\n"

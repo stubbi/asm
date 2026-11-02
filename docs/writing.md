@@ -20,9 +20,12 @@ Use notes for information. Put required actions in steps.
 
 ## Project terms
 
+Always write the brand as lowercase **asm**, including in headings and at the start of a sentence.
+Keep literal identifiers, required legal notices, and recorded evidence unchanged.
+
 | Term | Meaning |
 | --- | --- |
-| ASM | The project and service. |
+| asm | The project and service. |
 | `asm` | The command that the user runs. |
 | package | A named unit of software with one or more versions. |
 | version | An immutable release of a package. |

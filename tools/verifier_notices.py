@@ -23,7 +23,7 @@ def collect(go: str, repository: Path) -> bytes:
             modules[module["Path"] + "@" + module["Version"]] = Path(module["Dir"])
     goroot = Path(subprocess.check_output([go, "env", "GOROOT"], cwd=repository / "verifier", timeout=15).decode().strip())
     modules["Go standard library and runtime"] = goroot
-    blocks = ["ASM verifier dependency notices\nASM adapter source: AGPL-3.0-or-later; see LICENSE and LICENSING.md.\n"]
+    blocks = ["asm verifier dependency notices\nasm adapter source: AGPL-3.0-or-later; see LICENSE and LICENSING.md.\n"]
     for name, directory in sorted(modules.items()):
         notices = [path for path in sorted(directory.iterdir())
                    if path.is_file() and path.name.upper().split(".")[0] in {"LICENSE", "LICENCE", "COPYING", "NOTICE"}]

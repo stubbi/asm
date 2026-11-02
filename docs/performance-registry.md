@@ -1,6 +1,6 @@
 # Local registry performance
 
-ASM validates the complete local catalog before it returns a search result.
+asm validates the complete local catalog before it returns a search result.
 The previous implementation compared each artifact identity with every preceding record.
 It also wrote each output field, separator, and JSON key with a separate system call.
 

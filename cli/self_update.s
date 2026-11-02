@@ -6,7 +6,7 @@
 .global cmd_self, self_update_cleanup
 
 /* Manual updates operate only on HOME/.local/bin/asm. An open directory and
- * nonblocking advisory lock coordinate ASM invocations. The directory and
+ * nonblocking advisory lock coordinate asm invocations. The directory and
  * executable must belong to the calling UID, without group/other write bits.
  * A same-account process can ignore the lock; this is not a local sandbox.
  * All returning routines preserve SysV callee-saved registers. Command and
@@ -842,7 +842,7 @@ self_manifest_name: .asciz "release.json"
 self_bundle_name: .asciz "release-attestation.sigstore.json"
 self_manifest_suffix: .asciz "/release.json"
 self_bundle_suffix: .asciz "/release-attestation.sigstore.json"
-self_updated_text: .asciz "Updated ASM to "
+self_updated_text: .asciz "Updated asm to "
 self_updated_suffix: .asciz ". Start a new command to use it.\n"
 self_success_json: .asciz "{\"updated\":true,\"version\":"
 self_success_suffix: .asciz ",\"integrity_verified\":true,\"provenance_verified\":true}\n"
@@ -857,8 +857,8 @@ self_error_changed: .asciz "the installation path or executable changed during t
 self_error_filesystem: .asciz "self update requires a supported local filesystem; use your package manager or install the verified release manually"
 self_error_io: .asciz "self update could not prepare or replace the executable; the previous binary remains; check free space and directory permissions"
 self_error_download: .asciz "self update could not download required release files over HTTPS; the previous binary remains; check the connection and release"
-self_error_release: .asciz "self update requires the exact official versioned ASM artifact; the previous binary remains; check the published release"
-self_error_not_found: .asciz "no matching ASM host executable was found; check the requested version with asm versions stubbi/asm"
+self_error_release: .asciz "self update requires the exact official versioned asm artifact; the previous binary remains; check the published release"
+self_error_not_found: .asciz "no matching asm host executable was found; check the requested version with asm versions stubbi/asm"
 self_help_text:
     .ascii "Usage: asm self update [X.Y.Z] [--json] [--no-color]\n\n"
     .ascii "Manually update the direct HOME/.local/bin/asm installation.\n"

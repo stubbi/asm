@@ -1,4 +1,4 @@
-# ASM design guide
+# asm design guide
 
 This guide covers the website, registry pages, documentation, and CLI output. Use it when you add or change a user-facing surface. The implementation is in [`site/`](site/). The [registry specification](docs/specs/registry.md) and [security model](docs/specs/security.md) define the technical claims that the interface can make.
 
@@ -10,11 +10,11 @@ The website must earn trust through accurate information. Do not manufacture sig
 
 ## Reference and original direction
 
-The requested reference is [Entire](https://entire.com/). Its [official brand guide](https://entire.com/brand) emphasizes clear space, monochrome logo use, and sufficient contrast. The homepage connects product explanations to concrete development tasks. These are useful principles for ASM.
+The requested reference is [Entire](https://entire.com/). Its [official brand guide](https://entire.com/brand) emphasizes clear space, monochrome logo use, and sufficient contrast. The homepage connects product explanations to concrete development tasks. These are useful principles for asm.
 
-ASM uses its own wordmark, colors, layout, code examples, and writing. Do not reuse Entire's logo, illustrations, brand assets, copy, or product claims. The reference does not grant rights to its assets. The observations above come from the public homepage and brand guide; they are not an audit of Entire's underlying CSS.
+asm uses its own wordmark, colors, layout, code examples, and writing. Do not reuse Entire's logo, illustrations, brand assets, copy, or product claims. The reference does not grant rights to its assets. The observations above come from the public homepage and brand guide; they are not an audit of Entire's underlying CSS.
 
-The ASM direction is a technical field guide: light paper, dark ink, visible rules, and precise labels. Use one restrained accent. Let code and package records carry the detail. Avoid glow, ornamental gradients, glass effects, decorative terminal windows, and collections of interchangeable feature cards.
+The asm direction is a technical field guide: light paper, dark ink, visible rules, and precise labels. Use one restrained accent. Let code and package records carry the detail. Avoid glow, ornamental gradients, glass effects, decorative terminal windows, and collections of interchangeable feature cards.
 
 ## Information comes before decoration
 

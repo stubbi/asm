@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       trusted_distribution:
-        description: Bundle the verifier and require the provisioned ASM root
+        description: Bundle the verifier and require the provisioned asm root
         type: boolean
         default: false
 
@@ -227,6 +227,6 @@ jobs:
           gh release create "v$ASM_VERSION" dist/asm-* dist/hello-* dist/math-* dist/SHA256SUMS dist/release.json dist/release-attestation.sigstore.json "${ASM_EXTRA_ASSETS[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$ASM_COMMIT" \
-            --title "ASM $ASM_VERSION" \
+            --title "asm $ASM_VERSION" \
             --notes-file "docs/releases/$ASM_VERSION.md" \
             --prerelease

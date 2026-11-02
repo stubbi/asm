@@ -1,6 +1,6 @@
 # Evidence from assembly software
 
-ASM needs performance claims that a reader can inspect.
+asm needs performance claims that a reader can inspect.
 This page records one published experiment and its limits.
 The [six working assumptions](why-asm.md) remain the project's motivation.
 This experiment does not establish all six assumptions.
@@ -11,7 +11,7 @@ This experiment does not establish all six assumptions.
 Its application logic includes argument parsing, file traversal, counting, aggregation, and output formatting.
 System libraries provide allocation, input, output, and scheduling.
 
-**Status: published experiment; measurements not reproduced by the ASM build.**
+**Status: published experiment; measurements not reproduced by the asm build.**
 The records describe an experiment from 31 October 2026.
 The source publication reviewed here is commit `13ddc7effea46f3f2aad3f5b69635817e6fd6541`.
 That commit identifies the published records, not a new benchmark run.
@@ -101,7 +101,7 @@ They do not reproduce the experiment or authenticate the benchmark host.
 The publication retains compiler settings, corpus digests, source digests, executable digests, and raw measurements.
 It does not claim that rebuilt executables have identical bytes.
 
-## What this means for ASM
+## What this means for asm
 
 A useful package record must connect an artifact to its target, source, build, and applicable evidence.
 Separate target artifacts prevent a result for one platform from becoming a claim about every platform.
@@ -109,7 +109,7 @@ Performance records need the measured workload, comparison implementation, raw s
 They also need slower and inconclusive results.
 
 This experiment supports those design requirements.
-It is not a benchmark of the `asm` CLI or a performance certificate for an ASM package.
+It is not a benchmark of the `asm` CLI or a performance certificate for an asm package.
 
 [project]: https://github.com/stubbi/asmwc/tree/13ddc7effea46f3f2aad3f5b69635817e6fd6541
 [upstream]: https://github.com/LuminousToaster/ripwc/tree/de1a12e8e2d7c031404370773e5099b23ef01e95

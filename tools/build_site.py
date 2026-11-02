@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the static ASM site and generated registry. Nothing is uploaded."""
+"""Build the static asm site and generated registry. Nothing is uploaded."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     page = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLI source reference — asm</title>
-<meta name="description" content="Read the ASM CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+<meta name="description" content="Read the asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
 <link rel="canonical" href="https://asm.build/reference/">
 <link rel="stylesheet" href="../styles.css"></head>
 <body class="reference-page"><main class="container section"><a href="../">← asm.build</a>
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reference-commit", default="HEAD")
     parser.add_argument("--verify-artifacts", action="store_true", help="download and validate every declared artifact")
     parser.add_argument("--download-counts", "--downloads", action="store_true", dest="downloads", help="read optional GitHub asset counters")
-    parser.add_argument("--trust-publication", type=Path, help="fresh signed ASM TUF publication")
+    parser.add_argument("--trust-publication", type=Path, help="fresh signed asm TUF publication")
     parser.add_argument("--trust-verifier", type=Path, help="locally built asm-verify")
     parser.add_argument("--trust-inspector", type=Path, help="locally built asm-trust")
     args = parser.parse_args(argv)

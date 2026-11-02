@@ -40,14 +40,14 @@ See the [release notes](docs/releases/0.3.0.md) and [performance record](docs/pe
 - Update the installed command with native `asm self update`.
 - Bind each CLI update to the fixed workflow, repository identity, source commit, and artifact digest.
 - Preserve the installed command on download, signature, permission, or replacement failure.
-- License the ASM platform under AGPL-3.0-or-later.
+- License the asm platform under AGPL-3.0-or-later.
 - Keep starter text and reference examples under explicit MIT terms.
 - Show license, warranty, and source information with `asm license`.
 - Accept AGPL package records in the native CLI and registry validator.
 - Preserve and display the license of each package version.
 - Include the applicable license notices in release source archives.
 
-ASM 0.1.0 retains its original MIT license.
+asm 0.1.0 retains its original MIT license.
 See the [release notes](docs/releases/0.2.0.md) and [license scope](LICENSING.md).
 
 ## 0.1.0

@@ -2,7 +2,7 @@
 
 This document states the implemented checks and the controls required for later services. Implementation and release gates are tracked in the [roadmap](../roadmap.md).
 
-ASM distributes executable code. A package can be correctly signed, build successfully, pass tests, and still be malicious. The interface must report what was checked, on which bytes, by which tool, and under which assumptions.
+asm distributes executable code. A package can be correctly signed, build successfully, pass tests, and still be malicious. The interface must report what was checked, on which bytes, by which tool, and under which assumptions.
 
 ## Current implementation
 
@@ -12,11 +12,11 @@ The native CLI parses the bounded index and verifies fetched bytes. Fetch does n
 
 The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
 
-ASM's own bootstrap installer and manual self-update command verify release provenance before installing a binary. This fixed release policy does not apply to general package downloads. A package must not inherit ASM's provenance result.
+asm's own bootstrap installer and manual self-update command verify release provenance before installing a binary. This fixed release policy does not apply to general package downloads. A package must not inherit asm's provenance result.
 
 The controls in the following sections are requirements for those later services. Passing the current validator is not evidence that the later controls have run.
 
-Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate ASM processes; they do not constrain other processes running as the same user.
+Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate asm processes; they do not constrain other processes running as the same user.
 
 Lock checks cover declared dependencies. GNU assembler includes and data directives can select other local files. The local build workflow is not a hermetic sandbox. Registry workers need separate isolation before they build untrusted submissions.
 
@@ -71,7 +71,7 @@ The bootstrap installer installs the CLI for Linux x86-64, Linux ARM64, or Apple
 
 The installer script is obtained from `https://asm.build/install.sh`. HTTPS and control of that origin are the initial script trust boundary. A signature check inside a modified installer cannot make that installer trustworthy.
 
-The quick-start command streams the script to a POSIX shell. The shell must parse the complete function and final entry block before installation starts. An incomplete entry block does not download an artifact or change the installation. The installer never runs the downloaded ASM command.
+The quick-start command streams the script to a POSIX shell. The shell must parse the complete function and final entry block before installation starts. An incomplete entry block does not download an artifact or change the installation. The installer never runs the downloaded asm command.
 
 The quick-start pipeline is for interactive use. Its exit status can be zero if curl fails before it sends any script bytes. Curl still reports the download error. For scripts and CI, use the complete-download route in the installation instructions. That route requires a successful download before execution. The separate inspection route keeps the downloaded file for review before execution.
 
@@ -91,9 +91,9 @@ The bootstrap accepts an existing file only if its ownership, link count, permis
 This no-op creates no temporary files and does not download files or run the provenance verifier.
 It can succeed when the existing installation directories permit no writes.
 
-The manual command refuses a downgrade. An equal selected version is a no-op; it does not reverify the installed file or establish registry freshness. A stale index can hide a newer release. The protocol has no independently signed expiry, emergency revocation record, or durable metadata-version history. GitHub CLI's root refresh does not supply those missing ASM release guarantees.
+The manual command refuses a downgrade. An equal selected version is a no-op; it does not reverify the installed file or establish registry freshness. A stale index can hide a newer release. The protocol has no independently signed expiry, emergency revocation record, or durable metadata-version history. GitHub CLI's root refresh does not supply those missing asm release guarantees.
 
-This protocol is not an audited TUF client for ASM metadata. It does not enable unattended updates. The repository, release workflow, GitHub identity service, verifier, and trusted roots remain trusted. Same-account processes can ignore advisory locks. Atomic replacement does not promise directory durability after power loss.
+This protocol is not an audited TUF client for asm metadata. It does not enable unattended updates. The repository, release workflow, GitHub identity service, verifier, and trusted roots remain trusted. Same-account processes can ignore advisory locks. Atomic replacement does not promise directory durability after power loss.
 
 Read [the self-update contract](../self-update.md) for exact identities, supported filesystems, permission requirements, and recovery instructions.
 
@@ -117,7 +117,7 @@ Each check result must identify:
 
 `not-run`, `unsupported`, and `error` must never be rendered as passing. Counts of successful checks are not safety scores. A package page may say “archive validated” or “this routine's stated contract was proved”; it must not infer “safe package.”
 
-Use OSV for known-advisory checks where a dependency has a supported ecosystem identity or a known upstream commit. [OSV supports version and commit queries](https://google.github.io/osv.dev/api/). Do not invent an `ASM` ecosystem identifier and assume coverage. An empty response means no matching advisory was returned at that time. Native ASM advisories need their own maintained identifiers and version ranges until an upstream mapping exists.
+Use OSV for known-advisory checks where a dependency has a supported ecosystem identity or a known upstream commit. [OSV supports version and commit queries](https://google.github.io/osv.dev/api/). Do not invent an `asm` ecosystem identifier and assume coverage. An empty response means no matching advisory was returned at that time. Native asm advisories need their own maintained identifiers and version ranges until an upstream mapping exists.
 
 Yanking removes a version from the v1 native index without changing its recorded bytes. There is no implemented client revocation service. A later emergency-revocation policy must block known malicious artifacts. It must preserve an audit record, reason, and replacement guidance. Any legal or secret-removal exception must leave a tombstone; the old version must never become assignable to different content.
 
@@ -127,7 +127,7 @@ The proposed Kraken integration is [AeneasVerif/kraken](https://github.com/Aenea
 
 Its README, checked on 2026-10-31, describes x64 and AArch64 support. RISC-V is planned. It reasons at an abstraction above assembly and linking. Its documented x64 scope covers sequential computation and excludes operating-system and concurrency features, among other limitations.
 
-ASM must pin a reviewed commit and publish the exact supported subset. Coverage must identify the supported instructions and targets.
+asm must pin a reviewed commit and publish the exact supported subset. Coverage must identify the supported instructions and targets.
 
 Start with small routines and explicit contracts: arithmetic results, bounds on memory access, preserved registers, and preconditions. A proof about a mathematical model has a defined scope. It does not automatically cover toolchains, loaders, operating systems, timing, or final executables. Reproducible builds and provenance help connect inputs and outputs; they do not prove that translation preserves semantics.
 

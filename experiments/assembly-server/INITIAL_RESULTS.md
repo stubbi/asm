@@ -14,7 +14,7 @@ They do not establish production API parity or a performance advantage.
 
 | Input or result | Recorded value |
 | --- | --- |
-| Public ASM base | `aa27c26abfb8e177531c14b3ed6d124e98339a66` |
+| Public asm base | `aa27c26abfb8e177531c14b3ed6d124e98339a66` |
 | Unpublished schema and fixture tool | `286a75c9d806aaed3e91bd54785db2ac60f5310a` |
 | Application source | GNU Intel-syntax x86-64 assembly |
 | HTTP library | GNU libmicrohttpd 1.0.3 |

@@ -62,7 +62,7 @@ install -m 755 -- "$source_file" "$temporary"
 if [ "$replace" = 1 ]; then
     if [ "$(uname -s)" = Darwin ]; then
         # rename(2) refuses directory targets and replaces a symlink itself.
-        # Perl is a build/install tool, never part of the ASM CLI runtime.
+        # Perl is a build/install tool, never part of the asm CLI runtime.
         /usr/bin/perl -e 'rename($ARGV[0], $ARGV[1]) or die "Cannot replace destination: $!\n"' -- "$temporary" "$destination"
     else
         mv -fT -- "$temporary" "$destination"

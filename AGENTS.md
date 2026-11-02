@@ -1,4 +1,4 @@
-# Work on ASM
+# Work on asm
 
 ## Mandatory brand context
 
@@ -22,9 +22,9 @@ Keep downstream messaging consistent when the foundation changes.
 
 ## Project purpose
 
-ASM helps people build, share, and check assembly software.
+asm helps people build, share, and check assembly software.
 The user must be able to trust the result and understand its limits.
-ASM aims to support software distribution at global scope, with assembly as its current package focus.
+asm aims to support software distribution at global scope, with assembly as its current package focus.
 Discovery capacity, authenticated distribution, and recovery are core requirements.
 Use the [architecture proposal](docs/architecture.md) and its [acceptance gates](docs/architecture-gates.md) when changing platform contracts.
 Keep deployed behavior, unpublished experiments, proposed targets, and measured results distinct.
@@ -105,6 +105,7 @@ Collect no personal usage data without a defined purpose and a clear user choice
 
 Use ASD-STE100 Issue 9 as the reference for technical instructions and descriptions.
 Use the project terms in [docs/writing.md](docs/writing.md).
+Always write the brand as lowercase **asm**, including in headings and at the start of a sentence.
 Keep literal commands, API names, and code identifiers unchanged.
 
 - Give one instruction in each procedural sentence.

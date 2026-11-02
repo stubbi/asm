@@ -486,7 +486,7 @@ class BootstrapUserFlowTests(unittest.TestCase):
     def test_incomplete_stream_never_starts_installation(self):
         script = self.script.read_bytes()
         entry = script.rindex(b'    asm_bootstrap_main "$@"')
-        cuts = (script.index(b"set -eu") + 4, script.index(b"Downloading ASM") + 7,
+        cuts = (script.index(b"set -eu") + 4, script.index(b"Downloading asm") + 7,
                 script.index(b"Cannot set executable permissions.") + 8,
                 entry, entry + len(b"    asm_bootstrap_main"),
                 entry + len(b'    asm_bootstrap_main "$@"'), script.rindex(b"}"))

@@ -315,16 +315,16 @@ def artifact(data: bytes, filename: str, target: str, kind: str, base: str) -> d
 def core_license(files: dict[str, tuple[bytes, int]], commands: dict) -> str:
     """Read the declaration from the packaged source, preserving legacy MIT.
 
-    These checks enforce the two supported ASM source layouts. They do not
+    These checks enforce the two supported asm source layouts. They do not
     determine copyright ownership or replace a review of license scope.
     """
     text = files.get("LICENSE", (b"", 0))[0]
     declared = commands.get("license")
     if declared is None:
         registry.require(commands.get("version") == "0.1.0" and text.startswith(b"MIT License\n"),
-                         "source command metadata must declare the ASM license")
+                         "source command metadata must declare the asm license")
         return "MIT"
-    registry.require(declared in ("MIT", "AGPL-3.0-or-later"), "unsupported ASM source license declaration")
+    registry.require(declared in ("MIT", "AGPL-3.0-or-later"), "unsupported asm source license declaration")
     if declared == "MIT":
         registry.require(text.startswith(b"MIT License\n"), "MIT declaration differs from the source license file")
     else:

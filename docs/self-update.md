@@ -1,7 +1,7 @@
-# Update ASM
+# Update asm
 
 Use the bootstrap installer for the first installation.
-Then use the installed ASM command:
+Then use the installed asm command:
 
     asm self update
 
@@ -12,7 +12,7 @@ To select an exact newer version, use:
 Replace X.Y.Z with the required version.
 Use `asm self --help` for the command contract.
 This operation is manual.
-ASM does not start an update in the background.
+asm does not start an update in the background.
 
 ## Supported installation
 
@@ -40,7 +40,7 @@ The writable ancestor exception is exact root-owned `/tmp` on Linux, or `/privat
 Its immediate child must belong to the calling user and deny group or other writes.
 The sticky bit protects that child from removal or renaming by another user.
 An arbitrary sticky directory does not qualify for this exception.
-ASM rejects an installation that does not meet these conditions.
+asm rejects an installation that does not meet these conditions.
 
 Linux supports ext4, XFS, Btrfs, tmpfs, OverlayFS, and F2FS.
 macOS requires local APFS with ownership enabled and empty or deny-only ACLs.
@@ -77,7 +77,7 @@ The macOS feed includes the new target; the JSON catalog continues to describe a
 Both feeds retain exact version, target, size, and digest bindings.
 This compatibility split does not authenticate either index or add freshness protection.
 
-ASM selects an executable for its own host: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
+asm selects an executable for its own host: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
 It does not install an executable for another architecture.
 Without an explicit version, it selects the highest numeric version in the index.
 An older version is refused.
@@ -99,7 +99,7 @@ The limit is 1 MiB for metadata and the declared byte size for the candidate.
 A stricter inherited limit remains in effect.
 This download limit does not change the parent or verifier limits, including the verifier's cache writes.
 
-Before replacement, ASM performs these checks:
+Before replacement, asm performs these checks:
 
 1. Check the index format and selected target.
 2. Check the candidate's exact size and SHA-256.
@@ -125,15 +125,15 @@ The source and signer digests must equal the manifest's full source commit.
 Exactly one verified numeric repository ID must be returned.
 Missing, multiple, or different IDs stop the update.
 GitHub CLI uses its built-in trusted roots and root-refresh mechanism.
-ASM never accepts a trusted root from the release.
+asm never accepts a trusted root from the release.
 
 The verifier receives a private home, configuration directory, and cache.
-ASM does not forward GitHub tokens, host overrides, CA overrides, or general tool configuration.
+asm does not forward GitHub tokens, host overrides, CA overrides, or general tool configuration.
 Only the standard HTTP, HTTPS, ALL, and NO proxy variables are copied.
 Each proxy entry is limited to 4096 bytes; duplicate names are rejected.
 These settings change transport routing, not the required signer or trusted root.
 Each verifier child has a 120-second deadline.
-ASM resets the `SIGALRM` disposition and unblocks that signal before the verifier starts.
+asm resets the `SIGALRM` disposition and unblocks that signal before the verifier starts.
 A failed signal setup stops the update before the verifier runs.
 
 ## Replacement and recovery
@@ -141,12 +141,12 @@ A failed signal setup stops the update before the verifier runs.
 Linux opens the running executable through `/proc/self/exe`.
 macOS uses kernel vnode information for the executing text region before accepting its open descriptor.
 It checks that the destination is the same device and inode.
-Before each verifier call, ASM checks every absolute path ancestor again.
+Before each verifier call, asm checks every absolute path ancestor again.
 It requires the absolute installation directory and executable to match the held descriptors.
-An advisory directory lock coordinates concurrent ASM updates.
+An advisory directory lock coordinates concurrent asm updates.
 Another update fails promptly while that lock is held.
 
-ASM stages the new file below the installation directory.
+asm stages the new file below the installation directory.
 It finishes verification, applies the existing mode, and syncs the file before replacement.
 It repeats the absolute path and identity checks immediately before replacement.
 The final rename atomically replaces the directory entry.
@@ -169,7 +169,7 @@ The repository, reviewed workflow, GitHub identity service, verifier, and truste
 
 The index has no independently signed expiry or revocation record.
 A stale index can hide a newer release.
-The command does not claim TUF protection for ASM release metadata or an external security audit.
+The command does not claim TUF protection for asm release metadata or an external security audit.
 Unattended updates remain outside this protocol.
 
 See the [GitHub verifier manual](https://cli.github.com/manual/gh_attestation_verify)

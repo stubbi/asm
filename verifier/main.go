@@ -169,7 +169,7 @@ func checkProvenanceResult(result *verify.VerificationResult, commit string) err
 	if c.SourceRepositoryURI != repository || c.SourceRepositoryIdentifier != repositoryID ||
 		c.SourceRepositoryRef != "refs/heads/main" || c.RunnerEnvironment != "github-hosted" ||
 		c.BuildSignerURI != workflow || result.Statement.PredicateType != predicate {
-		return errors.New("release provenance does not match ASM's publisher policy")
+		return errors.New("release provenance does not match asm's publisher policy")
 	}
 	if !commitPattern.MatchString(c.SourceRepositoryDigest) || c.BuildSignerDigest != c.SourceRepositoryDigest {
 		return errors.New("source and signer commits differ")
