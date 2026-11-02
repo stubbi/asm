@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a disabled bundled-verifier profile for signed update authorization and release provenance.
+- Keep production activation gated on offline keys, metadata renewal, review, and recovery qualification.
 - Return a nonzero exit status when core command output cannot be written.
 - Ignore local Git object replacements when packaging committed source or checking published history.
 - Check the aggregate source-byte limit before reading each file.

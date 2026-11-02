@@ -1,10 +1,10 @@
 # Provision ASM distribution trust
 
-Status: implementation awaiting key provisioning and native qualification.
+Status: gated implementation; production trust is not provisioned.
 The published 0.4.0 installer still requires GitHub CLI.
 The default release and Pages workflows retain that path during migration.
 
-## Result and acceptance conditions
+## Intended result and activation conditions
 
 The intended result is installation and manual updates without a separately installed provenance verifier.
 This serves the foundation's principles: serve the person, earn trust with evidence, and make reuse dependable.
@@ -18,6 +18,10 @@ Acceptance requires these results:
 - Retain verified metadata versions across failures and process restarts.
 - Qualify root rotation and recovery before activation.
 - Publish a new immutable release and verify the deployed first-project flow.
+
+The disabled implementation can merge after native tests, failure-path checks, and history and security review pass.
+Production activation requires the offline root ceremony, metadata renewal operations, independent human security review, and a recovery rehearsal.
+Keep the release flag disabled until all activation conditions hold.
 
 ## Implementation boundary
 
@@ -63,6 +67,11 @@ Deleting it discards previously observed versions.
 Same-account mutation, administrator compromise, and a compromised system clock remain outside the protection boundary.
 The client detects a backward clock change exceeding five minutes relative to its retained observation.
 
+The client retains `rotation-root.json` as a recovery checkpoint before refreshing metadata.
+After a verified timestamp or snapshot key change, it removes obsolete timestamp and snapshot history.
+Interrupted cleanup resumes on the next update.
+Root renewal with unchanged keys retains replay protection.
+
 ## Create the root offline
 
 Choose the root-key custodians and recovery locations before creating keys.
@@ -81,6 +90,7 @@ Keep root-key creation and signing offline.
    cd verifier
    go build -trimpath -o ../build/asm-trust ./cmd/asm-trust
    go build -trimpath -o ../build/asm-verify .
+   cd ..
    ```
 
 2. On each root custodian's device, create one key:
@@ -225,9 +235,12 @@ Local development checks exercised genuine signatures from ASM 0.4.0's published
 They also exercised changed artifacts, wrong source commits, and invalid signatures.
 Generated TUF fixtures exercised expiry, replay across restarts, mixed snapshots, root thresholds, rotation, and failed-refresh state retention.
 Bootstrap tests exercised an absent GitHub CLI, corrupted verifier bytes, rejected authorization, network failure, and an existing destination.
+Recovery tests exercise process exits after root persistence and restart after partial cleanup.
+These tests do not simulate hardware power loss.
 
-The workspace could not run the native updater suites because `/tmp` was unavailable.
+The initial workspace could not run native updater suites because `/tmp` was unavailable.
 The same limitation affected the unchanged baseline.
+The pull request records subsequent native qualification and regression results.
 Native CI results are required before activation.
 An independent human security review has not been performed.
 A production recovery rehearsal remains an activation gate.

@@ -14,6 +14,7 @@ import trusted_bootstrap
 
 
 class TrustedBootstrapTests(unittest.TestCase):
+    tool_double = legacy.TOOL_DOUBLE
     setUp = legacy.BootstrapUserFlowTests.setUp
     run_installer = legacy.BootstrapUserFlowTests.run_installer
     save_config = legacy.BootstrapUserFlowTests.save_config
@@ -22,6 +23,8 @@ class TrustedBootstrapTests(unittest.TestCase):
     calls = legacy.BootstrapUserFlowTests.calls
 
     def write_script(self):
+        target = self.release["artifacts"][0]["target"]
+        version = self.release["version"]
         helper = self.base / "helper"
         helper.write_text(f'''#!{sys.executable}
 import json, os, pathlib, sys
@@ -32,16 +35,16 @@ assert not any(k in os.environ for k in ("GH_TOKEN", "GITHUB_TOKEN", "SSL_CERT_F
 with (base / "helper-calls").open("a") as out: out.write(json.dumps(args)+"\\n")
 if args[0] == "authorize":
     assert args[1] == {str(self.home / '.local/bin/.asm-trust')!r}
-    assert args[2] == "asm-0.2.0-x86_64-linux"
+    assert args[2] == {f"asm-{version}-{target}"!r}
     sys.exit(1 if cfg.get("expired_metadata") else 0)
 assert args[0] == "provenance" and args[3] == {legacy.COMMIT!r}
 if cfg.get("verification_error"): sys.exit(1)
 print("1441332955")
 ''' + '\n#' + ' fixture padding' * 600 + '\n')
-        self.verifier = {"target": "x86_64-linux", "bytes": helper.stat().st_size,
+        self.verifier = {"target": target, "bytes": helper.stat().st_size,
                          "sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
-                         "url": "https://github.com/stubbi/asm/releases/download/v0.2.0/asm-verify-0.2.0-x86_64-linux"}
-        transport = legacy.TOOL_DOUBLE.replace('#!/usr/bin/python3', f'#!{sys.executable}')
+                         "url": f"https://github.com/stubbi/asm/releases/download/v{version}/asm-verify-{version}-{target}"}
+        transport = self.tool_double.replace('#!/usr/bin/python3', f'#!{sys.executable}')
         transport = transport.replace('assert url in (cfg["artifact_url"], cfg["bundle_url"])', '''if url == cfg["verifier_url"]:
         if cfg.get("network_error"): sys.exit(22)
         data = pathlib.Path(cfg["verifier_path"]).read_bytes()
