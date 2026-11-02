@@ -1,7 +1,7 @@
 """Native self-update tests with deterministic transport/verifier fixtures.
 
 The test-only source copy changes two fixed tool paths. No runtime override is
-added to asm. The fixtures check real child argv and the explicit environment.
+added to Asm. The fixtures check real child argv and the explicit environment.
 These tests do not claim to perform Sigstore cryptographic verification.
 The oversized-write fixture ignores curl's size flag and uses real file writes.
 It tests the kernel limit independently of HTTP or a specific curl version.

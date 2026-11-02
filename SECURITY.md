@@ -12,7 +12,7 @@ Do not include the vulnerability details in that issue.
 
 ## Support scope
 
-asm is an early alpha.
+Asm is an early alpha.
 Security fixes target the latest release and the main branch.
 There is no guaranteed response time or support period yet.
 The maintainers will record a defined policy before a stable release.

@@ -315,16 +315,16 @@ def artifact(data: bytes, filename: str, target: str, kind: str, base: str) -> d
 def core_license(files: dict[str, tuple[bytes, int]], commands: dict) -> str:
     """Read the declaration from the packaged source, preserving legacy MIT.
 
-    These checks enforce the two supported asm source layouts. They do not
+    These checks enforce the two supported Asm source layouts. They do not
     determine copyright ownership or replace a review of license scope.
     """
     text = files.get("LICENSE", (b"", 0))[0]
     declared = commands.get("license")
     if declared is None:
         registry.require(commands.get("version") == "0.1.0" and text.startswith(b"MIT License\n"),
-                         "source command metadata must declare the asm license")
+                         "source command metadata must declare the Asm license")
         return "MIT"
-    registry.require(declared in ("MIT", "AGPL-3.0-or-later"), "unsupported asm source license declaration")
+    registry.require(declared in ("MIT", "AGPL-3.0-or-later"), "unsupported Asm source license declaration")
     if declared == "MIT":
         registry.require(text.startswith(b"MIT License\n"), "MIT declaration differs from the source license file")
     else:
@@ -578,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         release = build_release(args.repo, args.output, args.commit, args.version, args.repository,
                                 args.hello_target, args.native_input, args.trusted_distribution)
-        print(f"Built asm {release['version']} from {release['source_commit']}.")
+        print(f"Built Asm {release['version']} from {release['source_commit']}.")
         print(f"Wrote {len(release['assets'])} artifacts, checksums, release metadata, and proposed registry records to {args.output}.")
         print("No files were uploaded. Review the records before publication.")
         return 0

@@ -5,16 +5,16 @@ It then exits with status 0.
 It uses Linux system calls and GNU assembler syntax.
 It requires no C runtime.
 
-## Run with asm
+## Run with Asm
 
-On Linux ARM64, install asm and GNU Binutils.
+On Linux ARM64, install Asm and GNU Binutils.
 Run this command from the package directory:
 
 ```sh
 asm run
 ```
 
-asm builds the program before it runs it.
+Asm builds the program before it runs it.
 The program prints:
 
 ```text

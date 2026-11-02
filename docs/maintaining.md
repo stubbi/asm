@@ -1,4 +1,4 @@
-# Maintain asm
+# Maintain Asm
 
 This guide defines the maintenance procedure.
 It does not certify that every GitHub setting is enabled.
@@ -100,7 +100,7 @@ A correction to published artifact bytes requires a new version.
 
 The Pages workflow downloads and validates declared artifacts before deployment.
 General package commands check registry digests but do not verify GitHub attestations.
-asm's bootstrap installer and `asm self update` verify CLI release provenance before installation.
+Asm's bootstrap installer and `asm self update` verify CLI release provenance before installation.
 The registry specification defines the [publication and artifact checks](specs/registry.md).
 
 Keep the release record, checksums, source commit, target list, and workflow links available.

@@ -5,7 +5,7 @@
 .global extract_source_archive, verify_source_archive
 .global validate_source_archive, source_archive_member
 
-/* Source archive boundary. Linux AArch64, asm AArch64 callee-saved registers preserved.
+/* Source archive boundary. Linux AArch64, Asm AArch64 callee-saved registers preserved.
  * extract_source_archive(gzip_path, new_directory) returns 0 or 1.
  * verify_source_archive(gzip_path, existing_directory) returns 0 or 1.
  * Callers verify the compressed artifact digest before either operation.

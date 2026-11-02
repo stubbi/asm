@@ -20,12 +20,14 @@ Use notes for information. Put required actions in steps.
 
 ## Project terms
 
-Always write the brand as lowercase **asm**, including in headings and at the start of a sentence.
+Use **Asm** for the project and service in prose, including at the start of a sentence.
+Keep the wordmark, command, and website address lowercase: **asm**, `asm`, and **asm.build**.
 Keep literal identifiers, required legal notices, and recorded evidence unchanged.
 
 | Term | Meaning |
 | --- | --- |
-| asm | The project and service. |
+| Asm | The project and service in prose. |
+| asm | The lowercase wordmark. |
 | `asm` | The command that the user runs. |
 | package | A named unit of software with one or more versions. |
 | version | An immutable release of a package. |

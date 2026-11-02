@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       trusted_distribution:
-        description: Bundle the verifier and require the provisioned asm root
+        description: Bundle the verifier and require the provisioned Asm root
         type: boolean
         default: false
 

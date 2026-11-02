@@ -2,7 +2,7 @@
 
 This example calls a function from `stubbi/math@0.2.0`.
 It runs on Linux x86-64.
-Install asm and run `asm doctor` before you start.
+Install Asm and run `asm doctor` before you start.
 
 ## Create the project
 
@@ -12,7 +12,7 @@ cd minimum
 asm add stubbi/math@0.2.0 --target x86_64-linux
 ```
 
-asm checks the archive and extracts its source.
+Asm checks the archive and extracts its source.
 It writes the exact version, target, URL, size, and digest to `asm.lock`.
 The source is under `.asm/packages/stubbi/math/0.2.0/x86_64-linux`.
 

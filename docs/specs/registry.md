@@ -1,6 +1,6 @@
 # Registry v1
 
-asm v1 serves a static registry over HTTPS. Maintainers review publication records in GitHub pull requests. GitHub Releases holds the artifacts. The native CLI and website read indexes made from the same records.
+Asm v1 serves a static registry over HTTPS. Maintainers review publication records in GitHub pull requests. GitHub Releases holds the artifacts. The native CLI and website read indexes made from the same records.
 
 The native CLI supports package discovery, version lists, exact artifact selection, download, and size and SHA-256 checks. It can also prepare a local publication record. Direct dependency locks and cache verification are separate from transitive resolution. Authenticated index metadata and unattended publishing remain future work. See the [roadmap](../roadmap.md).
 
@@ -72,9 +72,9 @@ Tags and asset names use simple ASCII path segments. Percent escapes, credential
 Duplicate JSON keys, unknown fields, invalid types, and non-finite numbers are rejected. A manifest can be at most 64 KiB. The validator has a fixed set of supported open-source SPDX identifiers in `tools/registry.py`; v1 does not accept arbitrary license expressions. The license field is a declaration. The presence of a license file does not prove the right to distribute every included file.
 
 The supported identifiers include `AGPL-3.0-only`, `AGPL-3.0-or-later`, `MIT`, and `Apache-2.0`.
-The asm platform's license does not replace a package's declared license.
+The Asm platform's license does not replace a package's declared license.
 Packages with separately licensed components must retain their notices and explain their scope.
-The [licensing guide](../../LICENSING.md) defines asm's own core, template, and example boundaries.
+The [licensing guide](../../LICENSING.md) defines Asm's own core, template, and example boundaries.
 
 Published license declarations are immutable with the rest of the release record.
 A later version can declare a different supported license.
@@ -85,7 +85,7 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 ## Targets
 
 The registry describes three Linux targets and Apple Silicon macOS.
-asm 0.4 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
+Asm 0.4 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
 Each CLI builds projects for its own host target.
 Each CLI can fetch artifacts for other registry targets.
 The example README files give the commands for GNU cross assemblers and linkers.
@@ -230,7 +230,7 @@ Normal builds verify dependencies when a lock exists. `--locked` also rejects a 
 
 `asm sync` restores exact locked artifacts through their recorded URLs. It does not query a newer index. It retains local cache edits and reports a mismatch instead of discarding them.
 
-`asm update owner/name@version` selects an explicit replacement version. `asm remove owner/name` removes its lock entry and retains cache files. Failed updates preserve the prior lock. Advisory file locks coordinate asm processes in the same project.
+`asm update owner/name@version` selects an explicit replacement version. `asm remove owner/name` removes its lock entry and retains cache files. Failed updates preserve the prior lock. Advisory file locks coordinate Asm processes in the same project.
 
 The assembler receives `.asm/packages` as an include directory. For the math example, use:
 
@@ -250,7 +250,7 @@ Pass `--base-ref FULL_COMMIT` to compare against the registry history in Git, or
 
 Yanking keeps the JSON record and artifact identity but removes its rows from the native index. The current client cannot make a new fetch or add selection for a yanked version, even by exact version. Previously downloaded bytes remain on the user's machine. There is no implemented revocation service. Existing locks retain exact artifact URLs and digests; sync does not read the current index.
 
-The distinction between immutable content and a reversible yank is useful in [Cargo's publication model](https://doc.rust-lang.org/cargo/reference/publishing.html) and [PyPI's yank policy](https://docs.pypi.org/project-management/yanking/). Their client behavior differs. The preceding paragraph defines asm v1 behavior.
+The distinction between immutable content and a reversible yank is useful in [Cargo's publication model](https://doc.rust-lang.org/cargo/reference/publishing.html) and [PyPI's yank policy](https://docs.pypi.org/project-management/yanking/). Their client behavior differs. The preceding paragraph defines Asm v1 behavior.
 
 Later schemas need retained namespace ownership, owner-change audit records, emergency revocation, and tombstones for takedowns. A withdrawn version must never be reused for different bytes.
 

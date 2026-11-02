@@ -245,9 +245,9 @@
     const artifacts = version?.artifacts.filter((artifact) => validArtifact(artifact) && artifact.kind === "executable") || [];
     const panel = document.getElementById("cli-download");
     if (!panel || !artifacts.length) return;
-    panel.append(element("h3", "", `asm ${version.version} release files`));
-    panel.append(element("p", "", "Use the installer above to check the signed release and install asm. These links provide the raw artifacts for inspection."));
-    panel.append(link("Install asm ↑", "#start", "text-link"));
+    panel.append(element("h3", "", `Asm ${version.version} release files`));
+    panel.append(element("p", "", "Use the installer above to check the signed release and install Asm. These links provide the raw artifacts for inspection."));
+    panel.append(link("Install Asm ↑", "#start", "text-link"));
     artifacts.forEach((artifact) => {
       panel.append(link(`Raw executable for ${artifact.target} ↗`, githubURL(artifact.url, true), "text-link"));
       panel.append(element("p", "checksum-label", `${formatBytes(artifact.bytes)} · SHA-256`));
@@ -265,7 +265,7 @@
     const panel = document.getElementById("math-guide");
     if (!panel) return;
     panel.append(element("h3", "", "Use the x86-64 math package"));
-    panel.append(element("p", "", "This example requires Linux x86-64. From your project directory, add an exact version. asm records it in asm.lock and checks the extracted source files."));
+    panel.append(element("p", "", "This example requires Linux x86-64. From your project directory, add an exact version. Asm records it in asm.lock and checks the extracted source files."));
     panel.append(commandBlock("math-add-commands", "Add the math package", `asm add stubbi/math@${version.version} --target x86_64-linux\nasm lock`));
     panel.append(element("p", "", "Add this include at file scope. Call asm_u64_min from your function with the two unsigned values in rdi and rsi."));
     panel.append(commandBlock("math-include-command", "Include the routine", `.include "stubbi/math/${version.version}/x86_64-linux/src/min.s"`));

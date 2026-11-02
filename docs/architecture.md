@@ -2,7 +2,7 @@
 
 **Status: proposal. Reviewed against the implementation and primary references on 1 November 2026.**
 
-asm should support substantial discovery traffic and reliable software distribution from the outset.
+Asm should support substantial discovery traffic and reliable software distribution from the outset.
 Search is a core product capability with its own capacity, relevance, and availability requirements.
 Installation must remain dependable when search is slow or unavailable.
 
@@ -190,7 +190,7 @@ Keep focus, browser history, keyboard navigation, and manual refresh usable.
 Publication sessions need CSRF protection and secure cookies.
 Private task pages must not enter shared caches.
 
-The asm interface can work without its enhancement script.
+The Asm interface can work without its enhancement script.
 An external identity provider can have separate browser requirements.
 Those requirements must remain visible to the user.
 
@@ -376,7 +376,7 @@ If change-data capture is introduced, retain its documented commit position and 
 [PostgreSQL's isolation documentation](https://www.postgresql.org/docs/18/transaction-iso.html) explains sequence and snapshot behavior.
 
 The [Debezium outbox router](https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html) is a useful implementation reference.
-It does not require asm to adopt Kafka or a large service topology immediately.
+It does not require Asm to adopt Kafka or a large service topology immediately.
 Choose delivery tooling after measuring lag, write load, operational cost, and recovery behavior.
 
 ### Rebuild without changing the public contract
@@ -556,7 +556,7 @@ Collect user-level discovery telemetry only with a stated purpose and a clear ch
 ## 10. Proposed objectives and qualification workloads
 
 All figures below are proposed qualification targets.
-They are not observed asm results or a capacity promise.
+They are not observed Asm results or a capacity promise.
 Set the machine class, regional topology, cost ceiling, and fault model before a qualification run.
 
 ### Service objectives

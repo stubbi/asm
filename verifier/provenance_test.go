@@ -14,8 +14,8 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
 
-// These public fixtures are asm 0.4.0's actual release manifest and attestation.
-// The test root contains public Sigstore verification material, never asm's
+// These public fixtures are Asm 0.4.0's actual release manifest and attestation.
+// The test root contains public Sigstore verification material, never Asm's
 // production update root or private keys. See testdata/README.md for origin.
 func TestPublishedProvenance(t *testing.T) {
 	artifact, err := os.ReadFile("testdata/release.json")

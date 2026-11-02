@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and check the asm v1 registry. Requires Python 3.11 or later."""
+"""Build and check the Asm v1 registry. Requires Python 3.11 or later."""
 
 from __future__ import annotations
 

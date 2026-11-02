@@ -7,7 +7,7 @@
 /* Prepare a local registry submission. No upload, login, network or shell.
  * Snapshot each artifact before hashing/validation. Required arguments are
  * explicit; the JSON record never asserts a remote commit or owner was verified.
- * pub_* names own all module state. Returning helpers preserve asm AArch64 callee
+ * pub_* names own all module state. Returning helpers preserve Asm AArch64 callee
  * registers. Terminal error labels clean the owned registry workspace.
  * Caller-saved integer registers and flags are scratch. Parser helpers that
  * intentionally advance x21 document that exception. Buffers use fixed limits:
@@ -22,7 +22,7 @@
 .section .text
 /* Shared source-package boundary for add/sync and publication. x0=archive
  * path, x1=validated owner/name, x2=validated version, x3=validated target.
- * w9=0/1. Preserves asm AArch64 callee registers and prior publication name/version.
+ * w9=0/1. Preserves Asm AArch64 callee registers and prior publication name/version.
  * Owns the archive/manifest scratch buffers; performs no filesystem mutation.
  * Stack frame: 80 bytes. The compressed artifact digest is the caller's check. */
 validate_source_package:

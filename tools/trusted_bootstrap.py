@@ -53,7 +53,7 @@ def render_installer(release: dict, verifiers: list[dict]) -> bytes:
     start = script.index("    # gh reads configuration before it handles --version.")
     end = script.index("    asm_check_ancestors\n", start)
     script = script[:start] + script[end:]
-    start = script.index("    printf 'Downloading asm")
+    start = script.index("    printf 'Downloading Asm")
     helper = '''    asm_fetch "$asm_verifier_url" "$asm_verifier_bytes" "$asm_stage/asm-verify" || asm_fail 'The verifier download failed.'
     [ "$(asm_stat "$asm_stat_bytes" "$asm_stage/asm-verify")" = "$asm_verifier_bytes" ] || asm_fail 'The verifier size does not match.'
     if [ "$asm_system" = Darwin ]; then

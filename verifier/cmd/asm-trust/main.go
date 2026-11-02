@@ -33,7 +33,7 @@ var allowedTarget = regexp.MustCompile(`^(index(-macos)?\.tsv|asm-[0-9]+\.[0-9]+
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "asm trust:", err)
+		fmt.Fprintln(os.Stderr, "Asm trust:", err)
 		os.Exit(1)
 	}
 }

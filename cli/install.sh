@@ -27,7 +27,7 @@ fi
 
 if [ "$action" = uninstall ]; then
     if [ ! -e "$destination" ] && [ ! -L "$destination" ]; then
-        printf '%s\n' 'asm is not installed at this path.'
+        printf '%s\n' 'Asm is not installed at this path.'
         exit 0
     fi
     if [ -L "$destination" ] || ! cmp -s "$source_file" "$destination"; then
@@ -41,7 +41,7 @@ fi
 
 if [ -e "$destination" ] || [ -L "$destination" ]; then
     if [ ! -L "$destination" ] && [ -f "$destination" ] && cmp -s "$source_file" "$destination"; then
-        printf 'The same asm binary is already installed at %s\n' "$destination"
+        printf 'The same Asm binary is already installed at %s\n' "$destination"
         exit 0
     fi
     if [ "$replace" != 1 ]; then
@@ -62,7 +62,7 @@ install -m 755 -- "$source_file" "$temporary"
 if [ "$replace" = 1 ]; then
     if [ "$(uname -s)" = Darwin ]; then
         # rename(2) refuses directory targets and replaces a symlink itself.
-        # Perl is a build/install tool, never part of the asm CLI runtime.
+        # Perl is a build/install tool, never part of the Asm CLI runtime.
         /usr/bin/perl -e 'rename($ARGV[0], $ARGV[1]) or die "Cannot replace destination: $!\n"' -- "$temporary" "$destination"
     else
         mv -fT -- "$temporary" "$destination"

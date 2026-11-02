@@ -2271,7 +2271,7 @@ cmd_clean:
     ARM_IMM w10, 1
     mov w1, w10
     b die
-/* Input: x0=one fixed asm artifact path. Unlinks the final entry, not its
+/* Input: x0=one fixed Asm artifact path. Unlinks the final entry, not its
  * symlink target. Returns for success or ENOENT; other errors exit. */
 clean_file:
     ARM_CALL arm_unlink
@@ -2389,7 +2389,7 @@ err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
 version_text: .asciz "asm 0.4.0 (aarch64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"host\":\"aarch64-linux\"}\n"
-license_text: .asciz "asm 0.4.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute asm under this license.\nasm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.4.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_text: .asciz "asm 0.4.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.4.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
 license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.4.0\"}\n"
 targets_text: .asciz "aarch64-linux (host; GNU as + ld)\n"
 targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"aarch64-linux\"]}\n"
@@ -2402,7 +2402,7 @@ build_text: .asciz "Built build/app\n"
 build_json: .asciz "{\"ok\":true,\"artifact\":\"build/app\"}\n"
 test_text: .asciz "Passed tests/main.s\n"
 test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
-clean_text: .asciz "Removed asm build artifacts.\n"
+clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
     .ascii "asm 0.4.0 - build assembly projects\n\n"
@@ -2412,7 +2412,7 @@ help_text:
     .ascii "  build            Assemble and link to build/app\n"
     .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
     .ascii "  test             Assemble and execute tests/main.s\n"
-    .ascii "  clean            Remove only asm's named build artifacts\n"
+    .ascii "  clean            Remove only Asm's named build artifacts\n"
     .ascii "  search [query]   Search the package registry\n"
     .ascii "  info <package>   Show registry package metadata\n"
     .ascii "  versions <pkg>   List published package versions\n"
@@ -2434,7 +2434,7 @@ help_text:
     .ascii "Options: --target aarch64-linux, --json, --no-color, --help\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
-    .ascii "JSON describes asm's own output; child output is passed through.\n"
+    .ascii "JSON describes Asm's own output; child output is passed through.\n"
     .ascii "For registry options, use asm search --help.\n"
     .ascii "Unimplemented commands fail with exit status 69; use asm status.\n"
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"

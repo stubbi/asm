@@ -1,6 +1,6 @@
 # Licensing
 
-asm is shared infrastructure for assembly software.
+Asm is shared infrastructure for assembly software.
 Changes to that infrastructure should remain available to its users.
 We use copyleft to support that goal, including when a modified version runs as a network service.
 
@@ -12,14 +12,14 @@ This guide explains the scope within this repository.
 
 Copyright (c) 2026 ASM contributors.
 
-Unless a file has a separate notice, asm is licensed under **AGPL-3.0-or-later**.
+Unless a file has a separate notice, Asm is licensed under **AGPL-3.0-or-later**.
 You can use version 3 of the GNU Affero General Public License, or any later version published by the Free Software Foundation.
 The unmodified version 3 text is in [LICENSE](LICENSE).
-asm is provided without warranty, as that license states.
+Asm is provided without warranty, as that license states.
 
 | Material | License |
 | --- | --- |
-| asm CLI, registry tools, website, tests, and project documentation | AGPL-3.0-or-later |
+| Asm CLI, registry tools, website, tests, and project documentation | AGPL-3.0-or-later |
 | `cli/templates.s`, `cli/aarch64/templates.s`, and their emitted starter text | MIT |
 | Each package under `examples/` | Its included MIT license |
 | Independently published packages | The license declared by that package version |
@@ -27,22 +27,22 @@ asm is provided without warranty, as that license states.
 
 The starter assembly files include the complete MIT notice.
 The retained MIT text is also in [LICENSES/MIT.txt](LICENSES/MIT.txt).
-This notice covers the identified MIT material and preserves the notice for material originally distributed in asm 0.1.0.
+This notice covers the identified MIT material and preserves the notice for material originally distributed in Asm 0.1.0.
 
-## Use asm
+## Use Asm
 
-Running asm to build or install a separate program does not assign asm's license to that program.
+Running Asm to build or install a separate program does not assign Asm's license to that program.
 The [AGPL's output rule][agpl] applies when output itself contains covered material.
-asm's generated starter text has the separate MIT grant stated above.
+Asm's generated starter text has the separate MIT grant stated above.
 Copied or linked package code has its own license conditions.
 
 Commercial use and paid services are permitted under the license.
 When distributing a covered binary, provide the corresponding source as the AGPL requires.
 Section 13 also requires a source offer to remote users of a modified version that supports network interaction.
-An independent program does not become part of asm merely because asm manages its package record.
+An independent program does not become part of Asm merely because Asm manages its package record.
 See [sections 2, 5, 6, and 13 of the license][agpl].
 
-asm publishes source archives beside its release binaries.
+Asm publishes source archives beside its release binaries.
 The website links to its source.
 `asm license` shows the applicable identifier, source location, and warranty notice.
 
@@ -60,8 +60,8 @@ Each version retains its own license record.
 
 ## Earlier release
 
-asm 0.1.0 was published under MIT before this policy was selected.
-asm 0.2.0 introduces the copyleft policy for the platform.
+Asm 0.1.0 was published under MIT before this policy was selected.
+Asm 0.2.0 introduces the copyleft policy for the platform.
 The earlier source, artifacts, and license record remain historical facts.
 Changing the current repository license does not relabel an earlier release.
 
