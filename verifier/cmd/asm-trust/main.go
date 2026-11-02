@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -45,6 +47,69 @@ func read(path string, limit int64) ([]byte, error) {
 		return nil, errors.New("invalid input file")
 	}
 	return os.ReadFile(path)
+}
+
+// Reject ambiguous signed documents and target maps before decoding.
+func strictJSON(data []byte) error {
+	if len(data) == 0 || len(data) > 1<<20 {
+		return errors.New("invalid JSON size")
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	var value func(int) error
+	value = func(depth int) error {
+		if depth > 64 {
+			return errors.New("JSON nesting limit exceeded")
+		}
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+		open, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		if open != '{' && open != '[' {
+			return errors.New("invalid JSON delimiter")
+		}
+		seen := map[string]bool{}
+		for d.More() {
+			if open == '{' {
+				key, err := d.Token()
+				if err != nil {
+					return err
+				}
+				s, ok := key.(string)
+				if !ok || seen[s] {
+					return errors.New("duplicate or invalid JSON key")
+				}
+				seen[s] = true
+			}
+			if err := value(depth + 1); err != nil {
+				return err
+			}
+		}
+		_, err = d.Token()
+		return err
+	}
+	if err := value(0); err != nil {
+		return err
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return errors.New("trailing JSON data")
+	}
+	return nil
+}
+
+func readJSON(path string, limit int64) ([]byte, error) {
+	data, err := read(path, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := strictJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func signer(path string) (signature.Signer, error) {
@@ -120,7 +185,7 @@ func run(args []string) error {
 		return exclusive(args[1], data)
 	}
 	if len(args) == 4 && args[0] == "sign-root" {
-		data, err := read(args[1], 1<<20)
+		data, err := readJSON(args[1], 1<<20)
 		if err != nil {
 			return err
 		}
@@ -152,7 +217,7 @@ func run(args []string) error {
 // mandatory. This command accepts a maintainer-selected root, never a key from
 // the staged publication. It does not install or run an artifact.
 func inspect(rootPath, repository, targetMap string) error {
-	anchor, err := read(rootPath, 1<<20)
+	anchor, err := readJSON(rootPath, 1<<20)
 	if err != nil {
 		return err
 	}
@@ -172,7 +237,7 @@ func inspect(rootPath, repository, targetMap string) error {
 	if err := u.Refresh(); err != nil {
 		return err
 	}
-	data, err := read(targetMap, 1<<20)
+	data, err := readJSON(targetMap, 1<<20)
 	if err != nil {
 		return err
 	}
@@ -222,7 +287,7 @@ func (dir localMirror) DownloadFile(address string, limit int64, _ time.Duration
 	if !ok || filepath.Base(name) != name {
 		return nil, errors.New("invalid metadata path")
 	}
-	data, err := read(filepath.Join(string(dir), "metadata", name), limit)
+	data, err := readJSON(filepath.Join(string(dir), "metadata", name), limit)
 	if os.IsNotExist(err) {
 		return nil, &metadata.ErrDownloadHTTP{StatusCode: 404, URL: address}
 	}
@@ -230,7 +295,7 @@ func (dir localMirror) DownloadFile(address string, limit int64, _ time.Duration
 }
 
 func publish(rootPath, keys, previous, targetMap, output string) error {
-	rootBytes, err := read(rootPath, 1<<20)
+	rootBytes, err := readJSON(rootPath, 1<<20)
 	if err != nil {
 		return err
 	}
@@ -252,7 +317,7 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 	snapshot := metadata.Snapshot(now.Add(7 * 24 * time.Hour))
 	timestamp := metadata.Timestamp(now.Add(24 * time.Hour))
 	if previous != "-" {
-		oldRootBytes, err := read(filepath.Join(previous, "metadata/root.json"), 1<<20)
+		oldRootBytes, err := readJSON(filepath.Join(previous, "metadata/root.json"), 1<<20)
 		if err != nil {
 			return err
 		}
@@ -269,7 +334,7 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		if oldRoot.Signed.Version == r.Signed.Version && string(oldRootBytes) != string(rootBytes) {
 			return errors.New("existing root bytes are immutable")
 		}
-		data, err := read(filepath.Join(previous, "metadata/targets.json"), 1<<20)
+		data, err := readJSON(filepath.Join(previous, "metadata/targets.json"), 1<<20)
 		if err != nil {
 			return err
 		}
@@ -281,7 +346,7 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 			return err
 		}
 		targets.Signed.Version = oldTargets.Signed.Version + 1
-		data, err = read(filepath.Join(previous, "metadata/snapshot.json"), 1<<20)
+		data, err = readJSON(filepath.Join(previous, "metadata/snapshot.json"), 1<<20)
 		if err != nil {
 			return err
 		}
@@ -293,7 +358,7 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 			return err
 		}
 		snapshot.Signed.Version = oldSnapshot.Signed.Version + 1
-		data, err = read(filepath.Join(previous, "metadata/timestamp.json"), 1<<20)
+		data, err = readJSON(filepath.Join(previous, "metadata/timestamp.json"), 1<<20)
 		if err != nil {
 			return err
 		}
@@ -306,7 +371,7 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		}
 		timestamp.Signed.Version = oldTimestamp.Signed.Version + 1
 	}
-	data, err := read(targetMap, 1<<20)
+	data, err := readJSON(targetMap, 1<<20)
 	if err != nil {
 		return err
 	}

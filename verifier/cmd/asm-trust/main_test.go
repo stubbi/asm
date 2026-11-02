@@ -100,3 +100,19 @@ func TestWrongOnlineKeyLeavesNoPublication(t *testing.T) {
 		t.Fatal("exposed failed publication")
 	}
 }
+
+func TestAmbiguousPublicationInputsLeaveNoOutput(t *testing.T) {
+	for _, input := range []string{`{"index.tsv":"first","index.tsv":"second"}`, `{"index.tsv":"first","index\u002etsv":"second"}`, `{} {}`, `{"nested":{"key":1,"key":2}}`} {
+		t.Run(input, func(t *testing.T) {
+			dir, root, targetMap := fixture(t)
+			check(t, os.WriteFile(targetMap, []byte(input), 0600))
+			output := filepath.Join(dir, "publication")
+			if publish(root, dir, "-", targetMap, output) == nil {
+				t.Fatal("accepted ambiguous target map")
+			}
+			if _, err := os.Lstat(output); !os.IsNotExist(err) {
+				t.Fatal("exposed failed publication")
+			}
+		})
+	}
+}
