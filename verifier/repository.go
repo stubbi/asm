@@ -4,10 +4,12 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +20,7 @@ import (
 	"github.com/theupdateframework/go-tuf/v2/metadata"
 	"github.com/theupdateframework/go-tuf/v2/metadata/config"
 	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
+	"github.com/theupdateframework/go-tuf/v2/metadata/trustedmetadata"
 	"github.com/theupdateframework/go-tuf/v2/metadata/updater"
 )
 
@@ -124,6 +127,36 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 	if err := atomicWrite(clock, []byte(time.Now().UTC().Format(time.RFC3339))); err != nil {
 		return err
 	}
+	// go-tuf v2.4.2 persists rotated roots but does not implement TUF 5.3.11.
+	// Keep the last processed root durable before Refresh can replace root.json.
+	// A restart can then finish cleanup even if root persistence was interrupted.
+	current, err := trustedmetadata.New(anchor)
+	if err != nil {
+		return err
+	}
+	checkpoint := filepath.Join(state, "rotation-root.json")
+	previousBytes, err := readRegular(checkpoint, maxMetadata)
+	if os.IsNotExist(err) {
+		previousBytes = anchor
+		if err := atomicWrite(checkpoint, previousBytes); err != nil {
+			return err
+		}
+		if err := directory.Sync(); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if err := strictJSON(previousBytes); err != nil {
+		return err
+	}
+	previous, err := trustedmetadata.New(previousBytes)
+	if err != nil {
+		return err
+	}
+	if current.Root.Signed.Version < previous.Root.Signed.Version {
+		return errors.New("cached root predates its recovery checkpoint")
+	}
 	cfg, err := config.New(metadataURL, anchor)
 	if err != nil {
 		return err
@@ -131,15 +164,46 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 	cfg.LocalMetadataDir = state
 	cfg.LocalTargetsDir = state
 	cfg.RemoteTargetsURL = targetsURL
-	cfg.Fetcher = transport
+	var u *updater.Updater
+	cfg.Fetcher = &rotationFetcher{Fetcher: transport, beforeTimestamp: func() error {
+		verified := u.GetTrustedMetadataSet()
+		if verified.Root.Signed.IsExpired(verified.RefTime) {
+			return &metadata.ErrExpiredMetadata{Msg: "final root.json is expired"}
+		}
+		changed, err := onlineKeysChanged(previous.Root.Signed, verified.Root.Signed)
+		if err != nil {
+			return err
+		}
+		if changed {
+			return errOnlineKeyRotation
+		}
+		return nil
+	}}
 	cfg.RootMaxLength, cfg.TimestampMaxLength = maxMetadata, 16384
 	cfg.SnapshotMaxLength, cfg.TargetsMaxLength = maxMetadata, maxMetadata
 	cfg.MaxRootRotations, cfg.MaxDelegations = 32, 0
-	u, err := updater.New(cfg)
+	u, err = updater.New(cfg)
 	if err != nil {
 		return err
 	}
 	refreshErr := u.Refresh()
+	if errors.Is(refreshErr, errOnlineKeyRotation) {
+		anchor, err = readRegular(filepath.Join(state, "root.json"), maxMetadata)
+		if err != nil {
+			return err
+		}
+		if err := completeRootRecovery(state, directory, anchor); err != nil {
+			return err
+		}
+		// The first updater already completed and verified the root phase. Start
+		// the online roles again without its in-memory pre-rotation timestamp.
+		cfg.LocalTrustedRoot, cfg.Fetcher, cfg.MaxRootRotations = anchor, transport, 0
+		u, err = updater.New(cfg)
+		if err != nil {
+			return err
+		}
+		refreshErr = u.Refresh()
+	}
 	// Retain every successfully verified metadata version, even if a later role
 	// fails. Restarting must not forget a newer timestamp or completed rotation.
 	for _, name := range roles {
@@ -163,6 +227,88 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		return refreshErr
 	}
 	return operation(&trustedRepository{updater: u, state: state})
+}
+
+var errOnlineKeyRotation = errors.New("online signing keys rotated")
+
+// Stop before the first remote timestamp fetch, after the maintained client has
+// verified and persisted the complete root chain. No rejected network check is
+// retried: this sentinel only discards the updater's obsolete in-memory state.
+type rotationFetcher struct {
+	fetcher.Fetcher
+	beforeTimestamp func() error
+}
+
+func (f *rotationFetcher) DownloadFile(address string, limit int64, timeout time.Duration) ([]byte, error) {
+	if address == metadataURL+"/timestamp.json" {
+		if err := f.beforeTimestamp(); err != nil {
+			return nil, err
+		}
+	}
+	return f.Fetcher.DownloadFile(address, limit, timeout)
+}
+
+func onlineKeysChanged(previous, current metadata.RootType) (bool, error) {
+	for _, role := range []string{"timestamp", "snapshot"} {
+		keySet := func(root metadata.RootType) (map[string]bool, error) {
+			keys := map[string]bool{}
+			if root.Roles[role] == nil {
+				return nil, errors.New("missing online signing role")
+			}
+			for _, id := range root.Roles[role].KeyIDs {
+				key := root.Keys[id]
+				if key == nil {
+					return nil, errors.New("missing online signing key")
+				}
+				public, err := key.ToPublicKey()
+				if err != nil {
+					return nil, err
+				}
+				encoded, err := x509.MarshalPKIXPublicKey(public)
+				if err != nil {
+					return nil, err
+				}
+				keys[string(encoded)+":"+key.Scheme] = true
+			}
+			return keys, nil
+		}
+		oldKeys, err := keySet(previous)
+		if err != nil {
+			return false, err
+		}
+		newKeys, err := keySet(current)
+		if err != nil {
+			return false, err
+		}
+		if !maps.Equal(oldKeys, newKeys) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Commit the verified root before removing timestamp/snapshot history. Keep the
+// old checkpoint until both removals are durable, so every interruption repeats
+// the required cleanup. Targets and the clock observation remain intact.
+func completeRootRecovery(state string, directory *os.File, rootBytes []byte) error {
+	if err := atomicWrite(filepath.Join(state, "root.json"), rootBytes); err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		return err
+	}
+	for _, name := range []string{"timestamp.json", "snapshot.json"} {
+		if err := os.Remove(filepath.Join(state, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := directory.Sync(); err != nil {
+		return err
+	}
+	if err := atomicWrite(filepath.Join(state, "rotation-root.json"), rootBytes); err != nil {
+		return err
+	}
+	return directory.Sync()
 }
 
 func (r *trustedRepository) download(name string) ([]byte, error) {
