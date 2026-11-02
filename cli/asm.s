@@ -1698,3 +1698,7 @@ made_test: .skip 1
 .include "cli/self_update.s"
 .include "cli/self_update_verify.s"
 .include "cli/self_update_metadata.s"
+
+.ifdef ASM_TRUSTED_DISTRIBUTION
+.include "cli/self_update_trust.s"
+.endif

@@ -63,6 +63,9 @@ self_prepare_verifier:
     mov rdi, rax
     mov rsi, r12
     call copy_string
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    call self_prepare_embedded_verifier
+.else
     lea rdi, [rip + self_gh_path]
     lea rsi, [rip + self_version_argv]
     lea rdx, [rip + self_gh_environment]
@@ -100,6 +103,7 @@ self_prepare_verifier:
     call registry_version_compare
     cmp eax, 0
     jl self_verifier_missing
+.endif
     add rsp, 8
     pop r12
     pop rbx
@@ -237,10 +241,14 @@ self_verify_release:
  * Stack: 8 alignment bytes. */
 self_verify_attestation:
     sub rsp, 8
+.ifdef ASM_TRUSTED_DISTRIBUTION
+    call self_embedded_provenance
+.else
     lea rdi, [rip + self_gh_path]
     lea rsi, [rip + self_verify_argv]
     lea rdx, [rip + self_gh_environment]
     call self_capture
+.endif
     test eax, eax
     jnz self_attestation_error
     cmp qword ptr [rip + self_capture_length], 11
