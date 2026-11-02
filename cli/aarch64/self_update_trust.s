@@ -25,7 +25,8 @@ self_prepare_embedded_verifier:
     ldr x0, [x16]
     ARM_ADDR x1, self_helper_relative
     ARM_IMM w2, 1 + 64 + 128 + O_NOFOLLOW + O_CLOEXEC
-    mov w3, #448
+    /* arm_openat's fourth argument uses x6 in the internal adapter ABI. */
+    mov w6, #448
     ARM_CALL arm_openat
     tbnz x9, #63, self_io_error
     mov x19, x9
