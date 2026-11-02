@@ -23,7 +23,7 @@ SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
     "SECURITY.md", "CODE_OF_CONDUCT.md", "LICENSING.md", "LICENSES", "cli", "docs", "examples",
-    "registry", "site", "tests", "tools", "benchmarks",
+    "registry", "site", "tests", "tools", "benchmarks", "verifier",
 ]
 HELLO_TARGETS = {
     "x86_64-linux": ("examples/hello", "as", "ld", ["--64"], None),
@@ -89,7 +89,7 @@ def publish_directory(stage: Path, output: Path) -> None:
 
 def build_environment() -> dict[str, str]:
     env = dict(os.environ)
-    for key in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "AS", "LD", "ASFLAGS", "LDFLAGS"):
+    for key in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "AS", "LD", "ASFLAGS", "LDFLAGS", "TRUSTED_DISTRIBUTION"):
         env.pop(key, None)
     env.update({"LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0"})
     return env
@@ -135,7 +135,7 @@ def native_test_result(output: bytes) -> dict:
 
 
 def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
-                         target: str = "aarch64-macos") -> dict:
+                         target: str = "aarch64-macos", trusted: bool = False) -> dict:
     """Qualify native bytes; declaring a released host remains a separate gate."""
     registry.require(target in NATIVE_CLI_TARGETS, "unsupported native release target")
     registry.require(platform.system() == "Darwin" and platform.machine().lower() == "arm64",
@@ -149,13 +149,15 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
     version = commands["version"]
     registry.version_tuple(version)
     env = build_environment()
+    if trusted:
+        env["TRUSTED_DISTRIBUTION"] = "1"
     with tempfile.TemporaryDirectory(prefix=".asm-native-release-", dir=output.parent) as temporary:
         work = Path(temporary)
         first, second = work / "first", work / "second"
         materialize(files, first)
         materialize(files, second)
         for snapshot in (first, second):
-            command(["make", "build/asm"], snapshot, env)
+            command(["make", "build/asm"], snapshot, env, 600 if trusted else 120)
         binary = read_binary(first / "build/asm", target)
         registry.require(binary == read_binary(second / "build/asm", target),
                          "the two clean native CLI builds do not match")
@@ -186,6 +188,14 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
         stage.mkdir()
         (stage / filename).write_bytes(binary)
         (stage / filename).chmod(0o755)
+        if trusted:
+            helper = read_binary(first / "build/asm-verify-aarch64-macos", target)
+            registry.require(helper == read_binary(second / "build/asm-verify-aarch64-macos", target), "native verifier builds differ")
+            helper_name = f"asm-verify-{version}-{target}"
+            (stage / helper_name).write_bytes(helper)
+            (stage / (helper_name + ".LICENSES.txt")).write_bytes((first / "build/asm-verify-aarch64-macos.LICENSES.txt").read_bytes())
+            evidence["verifier"] = {"file": helper_name, "bytes": len(helper), "sha256": hashlib.sha256(helper).hexdigest()}
+            evidence["trust_root_sha256"] = hashlib.sha256(files["verifier/trust/asm-root.json"][0]).hexdigest()
         (stage / NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
         publish_directory(stage, output)
     return evidence
@@ -250,7 +260,7 @@ def target_runner(name: str | None, env: dict[str, str]) -> str | None:
 
 def build_cli(snapshot: Path, env: dict[str, str], target: str = "x86_64-linux") -> bytes:
     architecture, assembler, linker, _ = CLI_TARGETS[target]
-    command(["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"], snapshot, env)
+    command(["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"], snapshot, env, 600 if env.get("TRUSTED_DISTRIBUTION") == "1" else 120)
     return read_binary(snapshot / "build/asm", target)
 
 
@@ -335,7 +345,7 @@ def require_mit_example(files: dict[str, tuple[bytes, int]], name: str) -> None:
 
 def build_release(repo: Path, output: Path, reference: str = "HEAD", version: str | None = None,
                   repository: str = "https://github.com/stubbi/asm",
-                  hello_targets: list[str] | None = None, native_input: Path | None = None) -> dict:
+                  hello_targets: list[str] | None = None, native_input: Path | None = None, trusted: bool = False) -> dict:
     registry.repository_url(repository)
     output = output_path(output)
     commit = resolve_commit(repo, reference)
@@ -365,6 +375,8 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     tag = "v" + version
     base = repository + "/releases/download/" + tag
     env = build_environment()
+    if trusted:
+        env["TRUSTED_DISTRIBUTION"] = "1"
     with tempfile.TemporaryDirectory(prefix=".asm-release-", dir=output.parent) as temporary:
         work = Path(temporary)
         first = work / "first"
@@ -494,6 +506,23 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                 registry.validate_artifact(payloads[filename], record, item)
             path = stage / "registry/packages" / record["name"] / (version + ".json")
             registry.write_atomic(path, registry.json_bytes(record))
+        verifier_assets = []
+        if trusted:
+            for target in cli_hosts:
+                filename = f"asm-verify-{version}-{target}"
+                if target == "aarch64-macos":
+                    helper = read_binary(native_input / filename, target)
+                    expected = {"file": filename, "bytes": len(helper), "sha256": hashlib.sha256(helper).hexdigest()}
+                    registry.require(native[1].get("verifier") == expected, "native verifier lacks exact-byte qualification")
+                    registry.require(native[1].get("trust_root_sha256") == hashlib.sha256(files["verifier/trust/asm-root.json"][0]).hexdigest(), "native trust root differs")
+                else:
+                    helper = read_binary(first / f"build/asm-verify-{target}", target)
+                    registry.require(helper == read_binary(second / f"build/asm-verify-{target}", target), "verifier builds differ")
+                payloads[filename] = helper
+                notices = native_input / (filename + ".LICENSES.txt") if target == "aarch64-macos" else first / f"build/asm-verify-{target}.LICENSES.txt"
+                registry.require(notices.is_file() and not notices.is_symlink() and notices.stat().st_size <= 1 << 20, "verifier license notices are required")
+                payloads[filename + ".LICENSES.txt"] = notices.read_bytes()
+                verifier_assets.append({"target": target, "url": f"{base}/{filename}", "bytes": len(helper), "sha256": hashlib.sha256(helper).hexdigest()})
         assets = []
         for filename, data in sorted(payloads.items()):
             path = stage / filename
@@ -508,6 +537,16 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                    "tool_versions": tools, "builds": builds, "assets": assets,
                    "archive_format": "USTAR + gzip; sorted paths; zero timestamps; normalized ownership",
                    "provenance": "not-run", "formal_proofs": "not-run"}
+        if trusted:
+            import bootstrap
+            import trusted_bootstrap
+            release["distribution"] = {"profile": "asm-tuf-v1", "verifiers": verifier_assets,
+                                       "root_sha256": hashlib.sha256(files["verifier/trust/asm-root.json"][0]).hexdigest()}
+            selected = bootstrap.installer_release([cli_record], {(cli_record["name"], version)})
+            registry.require(selected is not None, "trusted release needs an installer record")
+            payloads["install.sh"] = trusted_bootstrap.render_installer(selected, verifier_assets)
+            (stage / "install.sh").write_bytes(payloads["install.sh"])
+            release["assets"].append({"file": "install.sh", "bytes": len(payloads["install.sh"]), "sha256": hashlib.sha256(payloads["install.sh"]).hexdigest()})
         metadata = registry.json_bytes(release)
         (stage / "release.json").write_bytes(metadata)
         checksums = {name: hashlib.sha256(data).hexdigest() for name, data in payloads.items()}
@@ -527,17 +566,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hello-target", choices=sorted(HELLO_TARGETS), action="append", help="repeat for each hello target; default: x86_64-linux")
     parser.add_argument("--native-target", choices=sorted(NATIVE_CLI_TARGETS), help="build and test native qualification input on its own host")
     parser.add_argument("--native-input", type=Path, help="native job output from this exact source commit")
+    parser.add_argument("--trusted-distribution", action="store_true", help="require the provisioned root and bundle the verifier")
     args = parser.parse_args(argv)
     try:
         if args.native_target:
             registry.require(args.native_input is None and args.version is None and args.hello_target is None,
                              "native qualification cannot override the source version or consume another build")
-            evidence = build_native_release(args.repo, args.output, args.commit, args.native_target)
+            evidence = build_native_release(args.repo, args.output, args.commit, args.native_target, args.trusted_distribution)
             print(f"Qualified {evidence['target']} from {evidence['source_commit']}.")
             print(f"Wrote native bytes and runtime evidence to {args.output}. No files were uploaded.")
             return 0
         release = build_release(args.repo, args.output, args.commit, args.version, args.repository,
-                                args.hello_target, args.native_input)
+                                args.hello_target, args.native_input, args.trusted_distribution)
         print(f"Built asm {release['version']} from {release['source_commit']}.")
         print(f"Wrote {len(release['assets'])} artifacts, checksums, release metadata, and proposed registry records to {args.output}.")
         print("No files were uploaded. Review the records before publication.")

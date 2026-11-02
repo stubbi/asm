@@ -58,6 +58,8 @@ def prepare(source: Path) -> str:
         begin = text.index('    ARM_ADDR x16, self_filesystem_stat\n    ldr w10')
         end = text.index('.Lself_local_filesystem:', begin)
         text = text[:begin] + '    ARM_ADDR x16, self_filesystem_stat\n    ldr w10, [x16]\n    ARM_IMM w11, 0x41504653\n    cmp w10, w11\n    b.ne self_filesystem_error\n' + text[end:]
+    if source.name == 'self_update_trust.s':
+        text = text.replace('self_trust_index: .asciz "index.tsv"', 'self_trust_index: .asciz "index-macos.tsv"')
     if source.name == 'self_update_verify.s':
         text = text.replace('/usr/bin/gh', '/opt/homebrew/bin/gh')
     if source.name == 'registry.s':

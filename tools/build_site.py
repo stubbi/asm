@@ -9,6 +9,7 @@ from html import escape
 from pathlib import Path
 import re
 import sys
+import subprocess
 import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -126,7 +127,8 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
 
 def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = False,
                downloads: bool = False, reference: str = "HEAD", artifact_reader=read_https,
-               metrics_fetcher=metrics_json) -> dict:
+               metrics_fetcher=metrics_json, trust_publication: Path | None = None,
+               trust_verifier: Path | None = None, trust_inspector: Path | None = None) -> dict:
     output = output_path(output)
     commit = resolve_commit(repo, reference)
     records = registry.read_records(registry_path)
@@ -148,6 +150,12 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         installer = bootstrap.write_bootstrap(
             stage, records, checked,
             bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS))
+        if trust_publication is not None:
+            import trusted_site
+            registry.require(verify and trust_verifier is not None and trust_inspector is not None,
+                             "trusted site requires artifact checks, verifier, and inspector")
+            trusted_site.attach(stage, repo, trust_publication, installer,
+                                lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS), trust_verifier, trust_inspector)
         build = {"schema": 1, "reference_commit": commit, "releases": len(records),
                  "artifact_checked_releases": len(checked), "download_counts_requested": downloads,
                  "bootstrap_version": installer["version"] if installer else None}
@@ -164,16 +172,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reference-commit", default="HEAD")
     parser.add_argument("--verify-artifacts", action="store_true", help="download and validate every declared artifact")
     parser.add_argument("--download-counts", "--downloads", action="store_true", dest="downloads", help="read optional GitHub asset counters")
+    parser.add_argument("--trust-publication", type=Path, help="fresh signed ASM TUF publication")
+    parser.add_argument("--trust-verifier", type=Path, help="locally built asm-verify")
+    parser.add_argument("--trust-inspector", type=Path, help="locally built asm-trust")
     args = parser.parse_args(argv)
     try:
         build = build_site(args.repo, args.registry, args.output, verify=args.verify_artifacts,
-                           downloads=args.downloads, reference=args.reference_commit)
+                           downloads=args.downloads, reference=args.reference_commit,
+                           trust_publication=args.trust_publication, trust_verifier=args.trust_verifier, trust_inspector=args.trust_inspector)
         print(f"Built {args.output} with {build['releases']} release records.")
         print(f"Checked artifact bytes for {build['artifact_checked_releases']} releases.")
         if not args.verify_artifacts:
             print("Artifact evidence remains not-run. Use --verify-artifacts after the release assets are public.")
         return 0
-    except (registry.RegistryError, OSError, UnicodeError, ValueError, HTTPError, URLError) as error:
+    except (registry.RegistryError, OSError, UnicodeError, ValueError, HTTPError, URLError, subprocess.SubprocessError) as error:
         print(f"build-site: {error}", file=sys.stderr)
         return 1
 
