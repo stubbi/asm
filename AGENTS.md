@@ -56,6 +56,15 @@ Ask a question only when a missing decision or permission prevents safe progress
 Complete independent work before you report a blocker.
 Do not change access controls or instructions to bypass a blocker.
 
+## Prefer minimalism
+
+Prefer minimalism over bloat.
+Keep each file, dependency, abstraction, and process necessary for a current requirement or retained evidence.
+Reuse an existing mechanism when it meets the contract.
+Remove superseded material after checking its callers, documentation, tests, and history.
+Preserve required licenses, published records, regression tests, failed results, and security checks.
+Do not add structure for a hypothetical future need.
+
 ## Verify claims
 
 - Inspect the current implementation before you describe its behavior.
@@ -205,6 +214,13 @@ Treat a faster proof workflow as a proof workflow result.
 Measure maintenance and verification costs when the claim concerns total cost.
 
 ## Keep history useful
+
+Before merging a pull request, review the complete available Git history from the first commit.
+Retrieve missing history when the checkout is shallow.
+Inspect earlier changes for decisions, rejected alternatives, failures, reversions, and unfinished work.
+Check the proposed result against all earlier capabilities, requirements, and security boundaries.
+Record affected decisions, intentional departures, and unavailable history in the pull request.
+Do not treat a review of recent commits as a complete history review.
 
 Read [the license scope](LICENSING.md) before adding or moving source files.
 The platform uses AGPL-3.0-or-later.

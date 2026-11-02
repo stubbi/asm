@@ -1,5 +1,12 @@
 # Change log
 
+## Unreleased
+
+- Return a nonzero exit status when core command output cannot be written.
+- Ignore local Git object replacements when packaging committed source or checking published history.
+- Check the aggregate source-byte limit before reading each file.
+- Clarify the repository layout, reference manifest, host support, and retained measurement instructions.
+
 ## 0.4.0
 
 - Add an Apple Silicon macOS 15 CLI using native assembly, Mach-O, and libSystem adapters.

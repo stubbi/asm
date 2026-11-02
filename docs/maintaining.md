@@ -99,7 +99,8 @@ A correction to published artifact bytes requires a new version.
 10. Check the deployed registry and download links after the [Pages workflow][pages-workflow] finishes.
 
 The Pages workflow downloads and validates declared artifacts before deployment.
-The native CLI checks registry digests but does not verify GitHub attestations itself.
+General package commands check registry digests but do not verify GitHub attestations.
+ASM's bootstrap installer and `asm self update` verify CLI release provenance before installation.
 The registry specification defines the [publication and artifact checks](specs/registry.md).
 
 Keep the release record, checksums, source commit, target list, and workflow links available.

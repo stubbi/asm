@@ -20,11 +20,12 @@ The proposed latency and workload targets are not measured capacity.
 
 The code now contains:
 
-- Native x86-64 and ARM64 Linux CLIs with project creation, build, run, test, and diagnostics.
+- Native CLIs for x86-64 Linux, ARM64 Linux, and Apple Silicon macOS 15 or later.
+  Each CLI supports project creation, build, run, test, and diagnostics.
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
 - Native source-archive validation, extraction, and cache comparison.
 - Native preparation of publication records for reviewed pull requests.
-- Immutable registry metadata, source and ELF checks, and deterministic index generation.
+- Immutable registry metadata, source archive checks, ELF and Mach-O checks, and deterministic index generation.
 - Package pages with real records, version history, target details, and check status.
 - Download counts from GitHub release assets, with unavailable values marked explicitly.
 - GNU assembly examples for x86-64, AArch64, and RISC-V Linux.
@@ -54,7 +55,7 @@ Transitive resolution, version ranges, feature selection, and solver diagnostics
 
 ## More hosts and package interfaces
 
-- Add native CLI ports beyond x86-64 and ARM64 Linux.
+- Add native CLI ports beyond the current Linux and Apple Silicon macOS hosts.
 - Add general cross-build support.
 - Describe ABI, object format, assembler dialect, and required ISA extensions in metadata.
 - Separate host tools from target libraries.

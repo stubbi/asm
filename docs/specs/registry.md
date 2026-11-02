@@ -158,7 +158,7 @@ The artifact and source fields use the release-record shapes above.
 The website keeps all versions visible, including yanked versions.
 An absent version license is unavailable; consumers must not substitute the latest version's declaration.
 
-Current evidence has `metadata`, `artifacts`, `provenance`, `formal`, and `agent_review` keys. Metadata is `validated` after schema checks. Artifacts are `validated` only after the tool checks the actual bytes, including archive or ELF structure. Without that step, artifacts are `not-run`. The other three fields are `not-run` until their separate verification services exist. None of these fields is a safety rating.
+Current evidence has `metadata`, `artifacts`, `provenance`, `formal`, and `agent_review` keys. Metadata is `validated` after schema checks. Artifacts are `validated` only after the tool checks the actual bytes, including archive, ELF, or Mach-O structure. Without that step, artifacts are `not-run`. The other three fields are `not-run` until their separate verification services exist. None of these fields is a safety rating.
 
 ### Download counts
 
@@ -173,7 +173,7 @@ These are GitHub asset downloads. They include repeated requests, automation, an
 Use `tools/registry.py` with Python 3.11 or later. It uses the standard library.
 
 1. Commit the source that you intend to publish. Include its manifest, source, README, and license.
-2. Use `pack-git` with the full commit ID and source path. It reads Git objects and does not include dirty working files.
+2. Use `pack-git` with the full commit ID and source path. It excludes dirty working files and ignores local object replacements.
 3. Build any executable artifact from that same committed source. Record the toolchain and test result.
 4. Upload the exact artifacts to a public GitHub release. Keep the existing bytes when you retry a release.
 5. Use `prepare` to compute sizes and SHA-256 digests, check each artifact, and write the publication record.
@@ -184,7 +184,7 @@ Use `tools/registry.py` with Python 3.11 or later. It uses the standard library.
 
 Archives use deterministic USTAR and gzip: sorted paths, normalized modes, zero timestamps and ownership, and no links or special files. The inspector reads the archive without extracting or executing it. It rejects traversal, duplicate paths, case collisions, file/directory conflicts, invalid checksums, and hidden trailing content. It also rejects sensitive file names and resource-limit violations.
 
-An archive can contain 4096 members. Paths can contain 240 characters. Files can contain 16 MiB. Both compressed data and the expanded TAR stream are limited to 64 MiB. An accepted archive is a structural check, not proof of benign code. See the [security model](security.md).
+An archive can contain 4096 members. Paths can contain 240 characters. Files can contain 16 MiB. Both compressed data and the expanded TAR stream are limited to 64 MiB. Source collectors check the remaining byte budget before reading each file. An accepted archive is a structural check, not proof of benign code. See the [security model](security.md).
 
 ## Consume a package
 
@@ -198,7 +198,7 @@ asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source --output hello.
 ```
 
 Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind.
-The default target is the CLI host: `x86_64-linux` or `aarch64-linux`.
+The default target is the CLI host: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
 The default kind is `source`.
 Use exact versions in reproducible instructions.
 
@@ -218,7 +218,7 @@ asm lock
 asm build --locked
 ```
 
-Add accepts source packages for the CLI's native build target: `x86_64-linux` or `aarch64-linux`.
+Add accepts source packages for the CLI's native build target: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
 It checks the artifact before extraction and writes `asm.lock` after extraction succeeds.
 It runs no package code.
 

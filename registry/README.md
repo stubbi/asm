@@ -30,7 +30,7 @@ python3 tools/registry.py pack-git SOURCE_REPOSITORY \
 
 Use repeated `--include PATH` options if the repository contains files that do not belong in the package. Paths are relative to `--source-path`. Include the manifest, README, license, and all files needed by the build.
 
-For a program, you can also publish an ELF executable. Build it from the same commit. Keep the toolchain versions and test results with the release. Each release can have one source artifact and one executable artifact for each supported target.
+For a program, you can also publish an ELF or Mach-O executable. Build it from the same commit. Use the qualified Mac host for a Mach-O executable. Keep the toolchain versions and test results with the release. Each release can have one source artifact and one executable artifact for each supported target.
 
 ## Prepare the record
 
@@ -54,7 +54,7 @@ asm publish \
   --output registry/packages/owner/hello/0.1.0.json
 ```
 
-Repeat `--artifact TARGET KIND FILE URL` for other artifacts in the same release. The native command calculates size and SHA-256 from a private copy. It checks source contents or ELF structure before it writes the record. It makes no network request and publishes nothing.
+Repeat `--artifact TARGET KIND FILE URL` for other artifacts in the same release. The native command calculates size and SHA-256 from a private copy. It checks source contents or the executable's ELF or Mach-O structure before it writes the record. It makes no network request and publishes nothing.
 
 Source packages must match the declared name, version, and target. Their manifest uses the native CLI's small TOML subset. Up to six target/kind artifacts can share one record. The output must be a new file, and its parent directory must exist.
 
