@@ -40,14 +40,13 @@ jobs:
           trap 'docker logs asm-mcp-test; docker rm -f asm-mcp-test asm-catalog-fixture; docker network rm asm-mcp-qualification' EXIT
           docker run --detach --name asm-mcp-test --read-only --cap-drop ALL \
             --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
-            --network asm-mcp-qualification \
-            --publish 127.0.0.1:18080:8080 asm-mcp:qualification
-          .asm/mcp-venv/bin/python - <<'PY'
+            --network asm-mcp-qualification asm-mcp:qualification
+          docker exec --interactive --env GITHUB_SHA="$GITHUB_SHA" asm-mcp-test python - <<'PY'
           import asyncio, json, os
           import httpx2
           from mcp import Client
           async def check():
-              base = 'http://127.0.0.1:18080'
+              base = 'http://127.0.0.1:8080'
               async with httpx2.AsyncClient(trust_env=False, timeout=4) as http:
                   for attempt in range(50):
                       try:
@@ -86,12 +85,12 @@ jobs:
             --network asm-mcp-qualification --network-alias asm-hub.asm.svc.cluster.local \
             --volume "$PWD/.asm/catalog-fixture:/fixture:ro" --entrypoint python \
             asm-mcp:qualification -m http.server 8080 --bind 0.0.0.0 --directory /fixture
-          .asm/mcp-venv/bin/python - <<'PY'
+          docker exec --interactive asm-mcp-test python - <<'PY'
           import asyncio, hashlib
           import httpx2
           from mcp import Client
           async def check():
-              base = 'http://127.0.0.1:18080'
+              base = 'http://127.0.0.1:8080'
               async with httpx2.AsyncClient(trust_env=False, timeout=4) as http:
                   for attempt in range(30):
                       if (await http.get(base + '/health/ready')).status_code == 200:
