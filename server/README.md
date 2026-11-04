@@ -132,7 +132,10 @@ The existing Linux guest returned an input/output error.
 Earlier dependency preparation also recorded storage and read-only-filesystem failures.
 No dependency build or container recovery was retried here.
 Native macOS has libmicrohttpd 1.0.1 and libpq 18.1, which do not satisfy the pinned Linux qualification.
-Linux CI must run the integration suite before this checkpoint earns a runtime claim.
+The later [Linux CI run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) built the pinned dependencies and passed all 11 runtime tests.
+It tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
+This result covers the stated TLS, configuration, readiness, identity, and idle-shutdown cases.
+It does not qualify deployment compatibility, catalog behavior, saturation, or recovery.
 
 The schema and guard originated in the reviewed assembly reference.
 `guard.sql` retains its provenance notice and checksum.

@@ -257,5 +257,10 @@ The checks exercise real stdio and loopback HTTP clients, package failure paths,
 Hosted-mode checks also exercise startup rejection, header policy, readiness failures, source identity, and graceful shutdown.
 Native Linux AMD64 and ARM64 image jobs provide separate qualification gates.
 Their presence in a workflow does not establish a successful build or runtime result.
+[Run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed both native image jobs on 5 November 2026.
+[Run 41934599143](https://github.com/stubbi/asm/actions/runs/41934599143) passed all 66 adapter tests on the same source.
+They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, containing source head `fd977e5`.
+The image checks cover source identity, protocol compatibility, catalog failure and recovery, resource bounds, and idle shutdown.
+They do not establish public HTTPS availability or registry recovery.
 The [research record](agent-integration-research.md) explains the selected skill and MCP patterns.
 The [hosted registry contract](hosted-registry.md) records service scope and remaining gates.

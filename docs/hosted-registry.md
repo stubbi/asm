@@ -17,14 +17,18 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
-| Assembly registry runtime foundation | Linux x86-64 source under `server/`; static assembly checked | TLS/PostgreSQL runtime checks remain unrun; catalog exports and operator commands remain incomplete. |
-| MCP adapter image | Separate native Linux AMD64 and ARM64 CI jobs | Image build and runtime qualification must pass for each architecture. |
+| Assembly registry runtime foundation | Linux x86-64; 11 TLS/PostgreSQL runtime tests passed in CI | Catalog exports, operator commands, and deployment qualification remain incomplete. |
+| MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
 | Package catalog | Four declared target profiles | A profile does not qualify a package artifact or a server port. |
 | Other server targets | ARM64 and RISC-V64 need separate assembly ports | MCP portability supplies no evidence for these registry implementations. |
 
 The [README](../README.md#status) states the released CLI host support.
 Intel macOS and Windows remain separate host-port requirements.
+
+[Runtime run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) and [image run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed on 5 November 2026.
+They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
+These checks do not qualify live deployment, full registry behavior, or recovery.
 
 ## Public implementation
 
