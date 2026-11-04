@@ -1,13 +1,21 @@
 # Change log
 
-## Unreleased
+## 0.5.0
 
+- Record executable installations, including explicit output paths, in a bounded local inventory.
+- Add `asm installed`, `asm upgrade`, and `asm uninstall` on all three supported CLI hosts.
+- Retain the recorded destination and registry origin during upgrades; reject downgrades and changed bytes for an equal version.
+- Refuse changed or unmanaged files and preserve prior files after ordinary commit failures.
+- Keep `update` and `remove` for source dependencies; retain unmanaged installations without automatic adoption.
 - Add a disabled bundled-verifier profile for signed update authorization and release provenance.
 - Keep production activation gated on offline keys, metadata renewal, review, and recovery qualification.
 - Return a nonzero exit status when core command output cannot be written.
 - Ignore local Git object replacements when packaging committed source or checking published history.
 - Check the aggregate source-byte limit before reading each file.
 - Clarify the repository layout, reference manifest, host support, and retained measurement instructions.
+
+Published 0.4.0 artifacts remain unchanged and do not include installed-program management.
+See the [release notes](docs/releases/0.5.0.md) and [installed-program contract](docs/installed-programs.md).
 
 ## 0.4.0
 

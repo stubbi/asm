@@ -16,13 +16,14 @@ The [assembly server experiment](../experiments/assembly-server/README.md) is pu
 The Rust behavioral reference remains unpublished.
 The proposed latency and workload targets are not measured capacity.
 
-## Current release
+## Current release: 0.5.0
 
 The code now contains:
 
 - Native CLIs for x86-64 Linux, ARM64 Linux, and Apple Silicon macOS 15 or later.
   Each CLI supports project creation, build, run, test, and diagnostics.
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
+- Local installation inventory, upgrades, and uninstall for recorded executables.
 - Native source-archive validation, extraction, and cache comparison.
 - Native preparation of publication records for reviewed pull requests.
 - Immutable registry metadata, source archive checks, ELF and Mach-O checks, and deterministic index generation.
@@ -34,6 +35,21 @@ The release checks build the AArch64 and RISC-V examples with cross tools and ru
 A native RISC-V CLI remains future work.
 
 **Release gate:** build from a clean checkout. Run the documented package workflow. Verify published artifacts through the public registry. Reject changed artifacts and malformed records.
+
+## Installed programs
+
+Asm 0.5.0 records executable installations and provides `installed`, `upgrade`, and `uninstall`.
+Published 0.4.0 binaries do not include these commands.
+`update` and `remove` continue to manage source dependencies.
+
+The [installed-program contract](installed-programs.md) defines inventory records, file checks, and recovery limits.
+These commands do not execute package code.
+Earlier installations remain unmanaged; Asm does not adopt them during a CLI update.
+Process interruption can require manual recovery because executable and inventory changes are separate filesystem operations.
+
+**Acceptance gate:** install, list, upgrade, and uninstall a program through the native CLI.
+Reject changed files, changed release bytes, unsupported targets, and origin changes.
+Preserve existing files after corrupt downloads and failed commits.
 
 ## Direct dependencies
 
