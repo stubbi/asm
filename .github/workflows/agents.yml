@@ -1,0 +1,28 @@
+name: Agent integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agents:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned developer adapter dependencies
+        env:
+          PIP_CONFIG_FILE: /dev/null
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+        run: |
+          python3 -m venv .asm/mcp-venv
+          .asm/mcp-venv/bin/python -m pip install --require-hashes -r requirements-mcp.txt
+      - name: Check real MCP clients and agent contracts
+        run: make agent-test PYTHON=.asm/mcp-venv/bin/python

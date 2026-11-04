@@ -139,6 +139,8 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
     with tempfile.TemporaryDirectory(prefix=".asm-site-", dir=output.parent) as temporary:
         stage = Path(temporary) / "site"
         materialize(registry.collect_files(repo / "site"), stage)
+        (stage / "skills").mkdir(exist_ok=True)
+        materialize(registry.collect_files(repo / "skills/asm-build"), stage / "skills/asm-build")
         # Source references use a recorded commit, never an uncommitted file.
         write_reference(repo, commit, stage / "reference")
         destination = stage / "registry/v1"
