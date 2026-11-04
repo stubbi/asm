@@ -147,15 +147,15 @@ class InstalledProgramTests(unittest.TestCase):
                 if fault == "probe_error":
                     injected = "    b program_probe_error\n"
                 else:
-                    injected = ("    ARM_CALL arm_getpid\n    mov x0, x9\n"
-                                f"    mov x1, #{int(signal.SIGSTOP)}\n    ARM_CALL arm_kill\n")
+                    injected = ("    ARM_SAVE x9\n    ARM_CALL arm_getpid\n    mov x0, x9\n"
+                                f"    mov x1, #{int(signal.SIGSTOP)}\n    ARM_CALL arm_kill\n    ARM_RESTORE x9\n")
             else:
                 operation = "    mov qword ptr [rip + program_probe_active], 1\n"
                 if fault == "probe_error":
                     injected = "    jmp program_probe_error\n"
                 else:
-                    injected = ("    mov eax, 39\n    syscall\n    mov rdi, rax\n"
-                                f"    mov esi, {int(signal.SIGSTOP)}\n    mov eax, 62\n    syscall\n")
+                    injected = ("    push rax\n    mov eax, 39\n    syscall\n    mov rdi, rax\n"
+                                f"    mov esi, {int(signal.SIGSTOP)}\n    mov eax, 62\n    syscall\n    pop rax\n")
             self.assertEqual(text.count(operation), 1, "Fault must occur after this invocation creates its probe")
             text = text.replace(operation, operation + injected)
         binary = self.work / "inventory-failure"
@@ -503,6 +503,45 @@ class InstalledProgramTests(unittest.TestCase):
             self.assert_preserved(self.payloads["0.1.0"], before_inventory)
             self.assertEqual(destination.stat().st_size, 0)
             destination.unlink()
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+
+    def test_probe_cleanup_retains_an_unrelated_replacement(self):
+        self.install()
+        before_inventory = self.inventory.read_bytes()
+        destination = self.destination.with_name("new-program")
+        self.write_index(self.row("0.1.0", package="other/hello"))
+        binary = self.inventory_failure_binary("probe_stop")
+        process = subprocess.Popen([str(binary), "install", "other/hello@0.1.0", "--index", str(self.index),
+                                    "--artifact", str(self.artifacts["0.1.0"]), "--output", str(destination)],
+                                   cwd=self.work, env=self.environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 5
+            stopped = False
+            while time.monotonic() < deadline:
+                waited, status = os.waitpid(process.pid, os.WUNTRACED | os.WNOHANG)
+                if waited:
+                    if os.WIFSTOPPED(status):
+                        stopped = True
+                        break
+                    process.returncode = os.waitstatus_to_exitcode(status)
+                    break
+                time.sleep(0.01)
+            self.assertTrue(stopped, "The instrumented command did not stop at its owned probe")
+            self.assertEqual(destination.stat().st_size, 0)
+            destination.unlink()
+            replacement = b"unrelated replacement must remain\n"
+            destination.write_bytes(replacement)
+            destination.chmod(0o644)
+            os.kill(process.pid, signal.SIGCONT)
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 1, (stdout, stderr))
+            self.assertEqual(destination.read_bytes(), replacement)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o644)
+            self.assert_preserved(self.payloads["0.1.0"], before_inventory)
+            self.assertEqual(list(self.work.glob(".asm-registry-*")), [])
         finally:
             if process.poll() is None:
                 process.kill()
