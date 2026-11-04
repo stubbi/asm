@@ -4,6 +4,8 @@
 
 - Record executable installations, including explicit output paths, in a bounded local inventory.
 - Add `asm installed`, `asm upgrade`, and `asm uninstall` on all three supported CLI hosts.
+- Check case and Unicode path aliases with the destination filesystem before installation.
+- Reject inventory records that claim the same installed file before upgrade or uninstall.
 - Retain the recorded destination and registry origin during upgrades; reject downgrades and changed bytes for an equal version.
 - Refuse changed or unmanaged files and preserve prior files after ordinary commit failures.
 - Keep `update` and `remove` for source dependencies; retain unmanaged installations without automatic adoption.

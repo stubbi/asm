@@ -7,10 +7,12 @@ import fcntl
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from host import IS_ARM64, IS_MACOS, OTHER_TARGET, TARGET, program
@@ -111,10 +113,10 @@ class InstalledProgramTests(unittest.TestCase):
         self.assertEqual(self.destination.read_bytes(), before_bytes)
         self.assertEqual(self.inventory.read_bytes(), before_inventory)
 
-    def inventory_failure_binary(self):
-        """Give only the final inventory rename an invalid directory descriptor.
+    def inventory_failure_binary(self, fault="inventory"):
+        """Compile one failure or stop into a specific transaction boundary.
 
-        The real executable mutation and rollback still run. No production
+        The real filesystem operations and cleanup still run. No production
         fault switch is introduced, and no operating-system permission is weakened.
         """
         if IS_MACOS:
@@ -126,17 +128,36 @@ class InstalledProgramTests(unittest.TestCase):
             directory = "cli/aarch64" if IS_ARM64 else "cli"
             module = ROOT / directory / "programs.s"
             text = module.read_text()
-        start = text.index("program_commit_state:\n")
-        end = text.index("\nprogram_list:", start)
-        commit = text[start:end]
-        if IS_ARM64:
-            operation = "    ARM_CALL arm_renameat\n"
-            replacement = "    mov x2, #-1\n" + operation
+        if fault == "inventory":
+            start = text.index("program_commit_state:\n")
+            end = text.index("\nprogram_list:", start)
+            commit = text[start:end]
+            if IS_ARM64:
+                operation = "    ARM_CALL arm_renameat\n"
+                replacement = "    mov x2, #-1\n" + operation
+            else:
+                operation = "    syscall\n"
+                replacement = "    mov rdx, -1\n" + operation
+            self.assertEqual(commit.count(operation), 1, "Fault must affect only the final inventory rename")
+            text = text[:start] + commit.replace(operation, replacement) + text[end:]
         else:
-            operation = "    syscall\n"
-            replacement = "    mov rdx, -1\n" + operation
-        self.assertEqual(commit.count(operation), 1, "Fault must affect only the final inventory rename")
-        text = text[:start] + commit.replace(operation, replacement) + text[end:]
+            self.assertIn(fault, ("probe_error", "probe_stop"))
+            if IS_ARM64:
+                operation = "    P_SET 1, program_probe_active\n"
+                if fault == "probe_error":
+                    injected = "    b program_probe_error\n"
+                else:
+                    injected = ("    ARM_CALL arm_getpid\n    mov x0, x9\n"
+                                f"    mov x1, #{int(signal.SIGSTOP)}\n    ARM_CALL arm_kill\n")
+            else:
+                operation = "    mov qword ptr [rip + program_probe_active], 1\n"
+                if fault == "probe_error":
+                    injected = "    jmp program_probe_error\n"
+                else:
+                    injected = ("    mov eax, 39\n    syscall\n    mov rdi, rax\n"
+                                f"    mov esi, {int(signal.SIGSTOP)}\n    mov eax, 62\n    syscall\n")
+            self.assertEqual(text.count(operation), 1, "Fault must occur after this invocation creates its probe")
+            text = text.replace(operation, operation + injected)
         binary = self.work / "inventory-failure"
         if IS_MACOS:
             source.write_text(text)
@@ -326,6 +347,31 @@ class InstalledProgramTests(unittest.TestCase):
                 self.assertFalse(destination.exists())
                 self.assertEqual(self.installed(), [])
 
+    def test_cli_unicode_alias_reservation_obeys_the_filesystem(self):
+        directory = self.home / ".local/bin"
+        directory.mkdir(parents=True)
+        reserved = directory / "asm"
+        alternate = directory / "aſm"
+        reserved.write_bytes(b"temporary name-comparison fixture")
+        original = reserved.stat()
+        try:
+            other = alternate.stat()
+            aliases = (original.st_dev, original.st_ino) == (other.st_dev, other.st_ino)
+        except FileNotFoundError:
+            aliases = False
+        reserved.unlink()
+        result = self.cli("install", PACKAGE, "--index", self.index,
+                          "--artifact", self.artifacts["0.1.0"], "--output", alternate,
+                          code=1 if aliases else 0)
+        if aliases:
+            self.assertIn("reserved", result.stderr)
+            self.assertFalse(alternate.exists())
+            self.assertEqual(self.installed(), [])
+        else:
+            self.assertEqual(self.installed()[0]["path"], str(alternate))
+            self.cli("uninstall", PACKAGE)
+        self.assertFalse(reserved.exists())
+
     def test_download_workspace_is_reserved_as_an_install_destination(self):
         # exec retains the wrapper's PID, making the private workspace name
         # deterministic without altering the CLI or guessing process IDs.
@@ -355,6 +401,112 @@ class InstalledProgramTests(unittest.TestCase):
                  "--artifact", self.artifacts["0.1.0"], "--output", self.destination, code=1)
         self.assertEqual(self.inventory.read_bytes(), before_inventory)
         self.assertFalse(self.destination.exists())
+
+    def check_missing_destination_alias(self, recorded_name, alternate_name):
+        recorded = self.work / recorded_name
+        alternate = self.work / alternate_name
+        self.install(output=recorded)
+        original = recorded.stat()
+        try:
+            other = alternate.stat()
+            aliases = (original.st_dev, original.st_ino) == (other.st_dev, other.st_ino)
+        except FileNotFoundError:
+            aliases = False
+        before_inventory = self.inventory.read_bytes()
+        recorded.unlink()
+        self.write_index(self.row("0.1.0", package="other/hello"))
+        self.cli("install", "other/hello@0.1.0", "--index", self.index,
+                 "--artifact", self.artifacts["0.1.0"], "--output", alternate,
+                 code=1 if aliases else 0)
+        if aliases:
+            self.assertEqual(self.inventory.read_bytes(), before_inventory)
+            self.assertFalse(recorded.exists())
+            self.assertFalse(alternate.exists())
+        else:
+            self.assertEqual(len(self.installed()), 2)
+            self.assertEqual(alternate.read_bytes(), self.payloads["0.1.0"])
+            self.cli("uninstall", "other/hello")
+            self.assertEqual(self.inventory.read_bytes(), before_inventory)
+            self.assertFalse(recorded.exists())
+
+    def test_missing_destination_reservation_obeys_filesystem_case_rules(self):
+        self.check_missing_destination_alias("hello", "HELLO")
+
+    def test_missing_destination_reservation_obeys_unicode_case_rules(self):
+        self.check_missing_destination_alias("café", "CAFÉ")
+
+    def test_missing_destination_reservation_obeys_unicode_normalization_rules(self):
+        self.check_missing_destination_alias("café", "cafe\u0301")
+
+    def test_existing_alias_records_cannot_change_a_shared_file(self):
+        self.install()
+        alternate = self.destination.with_name("HELLO")
+        original = self.destination.stat()
+        try:
+            other = alternate.stat()
+            aliases = (original.st_dev, original.st_ino) == (other.st_dev, other.st_ino)
+        except FileNotFoundError:
+            aliases = False
+        if not aliases:
+            alternate.write_bytes(self.payloads["0.1.0"])
+            alternate.chmod(0o755)
+        first = self.inventory.read_bytes()
+        _, row = first.split(b"\n", 1)
+        other_row = row.replace(PACKAGE.encode(), b"other/hello").replace(
+            str(self.destination).encode(), str(alternate).encode())
+        self.inventory.write_bytes(first + other_row)
+        before_inventory = self.inventory.read_bytes()
+        if aliases:
+            self.write_index(self.row("0.2.0"))
+            self.upgrade(code=1)
+            self.cli("uninstall", PACKAGE, code=1)
+            self.assert_preserved(self.payloads["0.1.0"], before_inventory)
+        else:
+            self.cli("uninstall", PACKAGE)
+            self.assertFalse(self.destination.exists())
+            self.assertEqual(alternate.read_bytes(), self.payloads["0.1.0"])
+            self.assertEqual([x["package"] for x in self.installed()], ["other/hello"])
+            self.cli("uninstall", "other/hello")
+
+    def test_probe_failure_restores_an_absent_destination(self):
+        self.install()
+        before_inventory = self.inventory.read_bytes()
+        destination = self.destination.with_name("new-program")
+        self.write_index(self.row("0.1.0", package="other/hello"))
+        binary = self.inventory_failure_binary("probe_error")
+        self.cli("install", "other/hello@0.1.0", "--index", self.index,
+                 "--artifact", self.artifacts["0.1.0"], "--output", destination,
+                 binary=binary, code=1)
+        self.assertFalse(destination.exists())
+        self.assert_preserved(self.payloads["0.1.0"], before_inventory)
+
+    def test_interrupted_probe_leaves_only_an_empty_nonexecutable_new_file(self):
+        self.install()
+        before_inventory = self.inventory.read_bytes()
+        destination = self.destination.with_name("new-program")
+        self.write_index(self.row("0.1.0", package="other/hello"))
+        binary = self.inventory_failure_binary("probe_stop")
+        process = subprocess.Popen([str(binary), "install", "other/hello@0.1.0", "--index", str(self.index),
+                                    "--artifact", str(self.artifacts["0.1.0"]), "--output", str(destination)],
+                                   cwd=self.work, env=self.environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 5
+            while not destination.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(destination.exists(), "The instrumented command did not reach the filename check")
+            metadata = destination.stat()
+            self.assertEqual(metadata.st_size, 0)
+            self.assertEqual(metadata.st_mode & 0o777, 0)
+            process.kill()
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+            self.assert_preserved(self.payloads["0.1.0"], before_inventory)
+            self.assertEqual(destination.stat().st_size, 0)
+            destination.unlink()
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
 
     def test_install_rejects_paths_that_cannot_be_recorded_without_changing_files(self):
         nested = self.work / "nested"

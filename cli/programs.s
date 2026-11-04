@@ -258,8 +258,8 @@ program_commit_install:
     jnz .Lp_commit_opened
     mov rsi, qword ptr [rip + registry_output]
     call program_absolute_path
-    call program_check_new_path
     call program_open_destination
+    call program_check_new_path
     mov rdi, qword ptr [rip + program_dest_fd]
     mov rsi, qword ptr [rip + program_dest_name]
     lea rdx, [rip + program_check_stat]
@@ -1335,26 +1335,248 @@ program_valid_absolute_path:
     pop rbx
     ret
 
-/* A missing file still belongs to its installation record. Reject a new
- * package at that path instead of generating an ambiguous inventory.
- * Input program_path, parsed rows/count. Stack: two saved registers. */
+/* A missing file still belongs to its installation record. Compare actual
+ * parent directory identities, then let that directory resolve the names.
+ * Only a parent collision needs a probe. One O_EXCL mode-000 empty file at
+ * the new destination exposes the filesystem's exact case/Unicode rules.
+ * No data is written and no execution is possible. Remove the owned probe
+ * before staging the executable. An interruption can leave an empty inert
+ * new destination; previous files and inventory bytes remain unchanged.
+ * Inputs: held destination FD/name, canonical program_path, <=128 rows.
+ * Names are borrowed from parsed rows; names[129] includes reserved asm.
+ * Stack: six saved registers. No shell, child, or Unicode approximation.
+ */
 program_check_new_path:
     push rbx
     push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, qword ptr [rip + program_dest_fd]
+    lea rsi, [rip + program_alias_parent_stat]
+    mov eax, 5
+    syscall
+    test rax, rax
+    js program_path_error
     lea rbx, [rip + program_rows]
     mov rbp, qword ptr [rip + program_count]
+    mov r13, 0
 .Lp_new_path_loop:
     test rbp, rbp
-    jz .Lp_new_path_done
+    jz .Lp_new_path_cli
     lea rdi, [rip + program_path]
     mov rsi, qword ptr [rbx + 40]
     call streq
     test eax, eax
     jnz program_destination_exists
+    mov rdi, qword ptr [rbx + 40]
+    mov rsi, 0
+    call program_walk_parent
+    cmp rax, -2
+    je .Lp_new_path_next
+    test rax, rax
+    js program_path_error
+    mov r12, rax
+    mov rdi, r12
+    lea rsi, [rip + program_alias_record_stat]
+    mov eax, 5
+    syscall
+    mov r14, rax
+    mov rdi, r12
+    mov eax, 3
+    syscall
+    test r14, r14
+    js program_path_error
+    lea rdi, [rip + program_alias_parent_stat]
+    lea rsi, [rip + program_alias_record_stat]
+    call program_same_identity
+    test eax, eax
+    jz .Lp_new_path_next
+    mov r8, qword ptr [rip + program_basename]
+    lea r11, [rip + program_alias_names]
+    mov qword ptr [r11 + r13*8], r8
+    lea r13, [r13 + 1]
+.Lp_new_path_next:
     lea rbx, [rbx + 64]
     sub rbp, 1
     jmp .Lp_new_path_loop
+.Lp_new_path_cli:
+    /* Reserve filesystem aliases of asm, including Unicode case aliases. */
+    lea rdi, [rip + program_reserved_path]
+    mov rsi, 0
+    call program_walk_parent
+    test rax, rax
+    js .Lp_new_path_probe
+    mov r12, rax
+    mov rdi, r12
+    lea rsi, [rip + program_alias_record_stat]
+    mov eax, 5
+    syscall
+    mov r14, rax
+    mov rdi, r12
+    mov eax, 3
+    syscall
+    test r14, r14
+    js program_path_error
+    lea rdi, [rip + program_alias_parent_stat]
+    lea rsi, [rip + program_alias_record_stat]
+    call program_same_identity
+    test eax, eax
+    jz .Lp_new_path_probe
+    lea r8, [rip + program_cli_name]
+    lea r11, [rip + program_alias_names]
+    mov qword ptr [r11 + r13*8], r8
+    lea r13, [r13 + 1]
+.Lp_new_path_probe:
+    test r13, r13
+    jz .Lp_new_path_done
+    mov qword ptr [rip + program_alias_count], r13
+    mov rdi, qword ptr [rip + program_dest_fd]
+    mov rsi, qword ptr [rip + program_dest_name]
+    mov rdx, O_NOFOLLOW + O_CLOEXEC + 193
+    mov r10, 0
+    mov eax, 257
+    syscall
+    cmp rax, -17
+    je program_destination_exists
+    test rax, rax
+    js program_probe_error
+    mov qword ptr [rip + program_probe_fd], rax
+    mov qword ptr [rip + program_probe_active], 1
+    mov rdi, rax
+    lea rsi, [rip + program_probe_stat]
+    mov eax, 5
+    syscall
+    test rax, rax
+    js program_probe_error
+    mov r15, 0
+.Lp_new_path_lookup:
+    lea r11, [rip + program_alias_names]
+    mov rsi, qword ptr [r11 + r15*8]
+    mov rdi, qword ptr [rip + program_dest_fd]
+    lea rdx, [rip + program_probe_entry_stat]
+    mov r10, 256
+    mov eax, 262
+    syscall
+    cmp rax, -2
+    je .Lp_new_path_lookup_next
+    test rax, rax
+    js program_probe_error
+    lea rdi, [rip + program_probe_stat]
+    lea rsi, [rip + program_probe_entry_stat]
+    call program_same_identity
+    test eax, eax
+    jnz .Lp_new_path_collision
+.Lp_new_path_lookup_next:
+    lea r15, [r15 + 1]
+    cmp r15, r13
+    jb .Lp_new_path_lookup
+    call program_remove_probe
+    test rax, rax
+    jnz program_probe_error
 .Lp_new_path_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
+.Lp_new_path_collision:
+    call program_remove_probe
+    test rax, rax
+    jnz program_probe_error
+    lea r11, [rip + program_alias_names]
+    mov r8, qword ptr [r11 + r15*8]
+    lea r9, [rip + program_cli_name]
+    cmp r8, r9
+    je program_reserved_error
+    jmp program_destination_exists
+
+/* RDI/RSI=normalized stat structures. EAX=1 only for equal device and inode.
+ * Identity comparison grants no ownership, permission, or digest result.
+ * No stack or writes; scratch R8/R9. */
+program_same_identity:
+    mov r8, qword ptr [rdi + PROGRAM_STAT_DEVICE]
+    mov r9, qword ptr [rsi + PROGRAM_STAT_DEVICE]
+    cmp r8, r9
+    jne .Lp_identity_different
+    mov r8, qword ptr [rdi + PROGRAM_STAT_INODE]
+    mov r9, qword ptr [rsi + PROGRAM_STAT_INODE]
+    cmp r8, r9
+    jne .Lp_identity_different
+    mov eax, 1
+    ret
+.Lp_identity_different:
+    mov eax, 0
+    ret
+
+/* Remove only a destination that still identifies the held exclusive probe.
+ * A replacement entry is retained. ENOENT means absence already holds.
+ * RAX=0 on restored absence, -1 if inspection/removal/close fails. Never exits.
+ * The probe FD is closed on every path. Same-UID races remain outside the
+ * advisory-lock contract; identity is rechecked before each unlink attempt.
+ * Stack: two saved registers. No writes to file contents or inventory.
+ */
+program_remove_probe:
+    push rbx
+    push rbp
+    mov rbp, 0
+    mov r8, qword ptr [rip + program_probe_active]
+    test r8, r8
+    jz .Lp_probe_remove_done
+    mov rbx, qword ptr [rip + program_probe_fd]
+    test rbx, rbx
+    js .Lp_probe_remove_bad
+    mov rdi, rbx
+    lea rsi, [rip + program_probe_stat]
+    mov eax, 5
+    syscall
+    test rax, rax
+    js .Lp_probe_remove_bad
+.Lp_probe_remove_check:
+    mov rdi, qword ptr [rip + program_dest_fd]
+    mov rsi, qword ptr [rip + program_dest_name]
+    lea rdx, [rip + program_probe_entry_stat]
+    mov r10, 256
+    mov eax, 262
+    syscall
+    cmp rax, -2
+    je .Lp_probe_remove_close
+    test rax, rax
+    js .Lp_probe_remove_bad
+    lea rdi, [rip + program_probe_stat]
+    lea rsi, [rip + program_probe_entry_stat]
+    call program_same_identity
+    test eax, eax
+    jz .Lp_probe_remove_bad
+    mov rdi, qword ptr [rip + program_dest_fd]
+    mov rsi, qword ptr [rip + program_dest_name]
+    mov rdx, 0
+    mov eax, 263
+    syscall
+    cmp rax, -4
+    je .Lp_probe_remove_check
+    test rax, rax
+    js .Lp_probe_remove_bad
+    jmp .Lp_probe_remove_close
+.Lp_probe_remove_bad:
+    mov rbp, -1
+.Lp_probe_remove_close:
+    mov rdi, qword ptr [rip + program_probe_fd]
+    test rdi, rdi
+    js .Lp_probe_remove_clear
+    mov eax, 3
+    syscall
+    test rax, rax
+    jns .Lp_probe_remove_clear
+    mov rbp, -1
+.Lp_probe_remove_clear:
+    mov qword ptr [rip + program_probe_fd], -1
+    mov qword ptr [rip + program_probe_active], 0
+.Lp_probe_remove_done:
+    mov rax, rbp
     pop rbp
     pop rbx
     ret
@@ -1467,7 +1689,68 @@ program_check_existing:
     syscall
     test rax, rax
     js program_io_error
+    call program_check_existing_claims
     call program_recheck_destination
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
+
+/* Refuse mutation when another valid inventory row names the held file.
+ * Input: trusted program_current_stat and program_found; <=128 parsed rows.
+ * Walk each other parent and perform raw nofollow identity lookup. No file is
+ * created or changed. Missing paths cannot claim this existing inode; other
+ * lookup failures fail closed. A matching device/inode is ambiguous state.
+ * Owns each temporary parent FD until its immediate close. Scratch stat is
+ * program_alias_record_stat. Stack: four saved registers. Listing never calls
+ * this routine and continues to report recorded metadata without filesystem IO.
+ */
+program_check_existing_claims:
+    push rbx
+    push rbp
+    push r12
+    push r13
+    lea rbx, [rip + program_rows]
+    mov rbp, qword ptr [rip + program_count]
+.Lp_existing_claim_loop:
+    test rbp, rbp
+    jz .Lp_existing_claim_done
+    mov r8, qword ptr [rip + program_found]
+    cmp rbx, r8
+    je .Lp_existing_claim_next
+    mov rdi, qword ptr [rbx + 40]
+    mov rsi, 0
+    call program_walk_parent
+    cmp rax, -2
+    je .Lp_existing_claim_next
+    test rax, rax
+    js program_path_error
+    mov r12, rax
+    mov rdi, r12
+    mov rsi, qword ptr [rip + program_basename]
+    lea rdx, [rip + program_alias_record_stat]
+    mov r10, 256
+    mov eax, 262
+    syscall
+    mov r13, rax
+    mov rdi, r12
+    mov eax, 3
+    syscall
+    cmp r13, -2
+    je .Lp_existing_claim_next
+    test r13, r13
+    js program_state_error
+    lea rdi, [rip + program_current_stat]
+    lea rsi, [rip + program_alias_record_stat]
+    call program_same_identity
+    test eax, eax
+    jnz program_state_error
+.Lp_existing_claim_next:
+    lea rbx, [rbx + 64]
+    sub rbp, 1
+    jmp .Lp_existing_claim_loop
+.Lp_existing_claim_done:
     pop r13
     pop r12
     pop rbp
@@ -1871,6 +2154,7 @@ program_list:
  * Cleanup failure cannot replace an earlier error. Stack: one saved register. */
 program_cleanup:
     push rbx
+    call program_remove_probe
     mov rdi, qword ptr [rip + program_temp_fd]
     test rdi, rdi
     js .Lp_cleanup_temp_name
@@ -1985,6 +2269,9 @@ program_recovery_error:
     mov qword ptr [rip + program_keep_stage], 1
     lea rdi, [rip + program_error_recovery]
     jmp program_error
+program_probe_error:
+    lea rdi, [rip + program_error_probe]
+    jmp program_error
 program_io_error:
     lea rdi, [rip + program_error_io]
 program_error:
@@ -1999,6 +2286,7 @@ program_state_prefix: .asciz ".installed-"
 program_stage_prefix: .asciz ".asm-program-"
 program_reserved_suffix: .asciz "/.local/bin/asm"
 program_candidate: .asciz "candidate"
+program_cli_name: .asciz "asm"
 program_previous: .asciz "previous"
 program_local: .asciz "local"
 program_root: .asciz "/"
@@ -2033,6 +2321,7 @@ program_error_exists: .asciz "the destination exists or cannot be replaced; choo
 program_error_internal: .asciz "the destination is inside Asm installation state or its temporary workspace; choose another program destination"
 program_error_reserved: .asciz "HOME/.local/bin/asm is reserved for the CLI updater; use asm self update"
 program_error_recovery: .asciz "program rollback failed; preserve the .asm-program-PID directory beside the destination and its previous file for recovery"
+program_error_probe: .asciz "the program name check failed; inspect the new destination for an empty nonexecutable file before retrying"
 program_error_io: .asciz "program management could not finish; check free space, directory permissions, and retained .asm-program-PID stages"
 
 .section .data
@@ -2043,6 +2332,7 @@ program_dest_fd: .quad -1
 program_stage_fd: .quad -1
 program_current_fd: .quad -1
 program_temp_fd: .quad -1
+program_probe_fd: .quad -1
 .section .bss
 .balign 8
 program_upgrade: .skip 8
@@ -2066,6 +2356,8 @@ program_stage_created: .skip 8
 program_state_created: .skip 8
 program_cleanup_count: .skip 8
 program_internal_stat_result: .skip 8
+program_probe_active: .skip 8
+program_alias_count: .skip 8
 program_number: .skip 32
 program_state_temp: .skip 64
 program_stage_name: .skip 64
@@ -2073,6 +2365,11 @@ program_new_row: .skip 64
 program_walk_stat: .skip PROGRAM_STAT_BYTES
 program_check_stat: .skip PROGRAM_STAT_BYTES
 program_current_stat: .skip PROGRAM_STAT_BYTES
+program_probe_stat: .skip PROGRAM_STAT_BYTES
+program_probe_entry_stat: .skip PROGRAM_STAT_BYTES
+program_alias_parent_stat: .skip PROGRAM_STAT_BYTES
+program_alias_record_stat: .skip PROGRAM_STAT_BYTES
+program_alias_names: .skip (PROGRAM_LIMIT + 1) * 8
 program_state_path: .skip 4096
 program_reserved_path: .skip 4096
 program_path: .skip 4096
