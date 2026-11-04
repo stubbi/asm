@@ -102,6 +102,13 @@ If a file has changed, retain it for inspection.
 Restore the exact recorded executable before retrying the management command.
 Do not delete an inventory record to make Asm overwrite an unrelated file.
 
+Installation checks filename aliases with the destination filesystem before committing a new executable.
+A temporary, empty file at the new destination has mode `000`.
+Asm removes this file before normal finalization.
+Cleanup removes this file only when it still matches the owned probe.
+Interruption or a cleanup failure can leave this file behind.
+Preserve unfamiliar or modified files during manual recovery.
+
 Private staging and an advisory inventory lock coordinate Asm operations.
 Descriptor-relative file operations protect checked directory boundaries.
 The lock does not constrain another process that runs under the same account.
