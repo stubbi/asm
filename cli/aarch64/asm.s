@@ -397,6 +397,9 @@ common_option:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lopt_locked
+    mov x9, x19
+    ARM_CALL native_link_option
+    cbnz w9, .Lopt_yes
     mov x0, x19
     ARM_ADDR x16, opt_help
     mov x1, x16
@@ -1017,9 +1020,15 @@ init_rollback:
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
 /* Input: cwd is the project. Output: package_* buffers contain validated fields.
  * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source=256. Failure exits without build
+ * include NUL: name=65, version/target=64, source/native fields=256. Failure exits without build
  * changes. Stack: 64 saved bytes plus nested calls; all callee-saved restored. */
 read_manifest:
+    ARM_ADDR x16, package_link
+    strb wzr, [x16]
+    ARM_ADDR x16, package_libraries
+    strb wzr, [x16]
+    ARM_ADDR x16, package_check
+    strb wzr, [x16]
     ARM_SAVE x21
     ARM_SAVE x22
     ARM_SAVE x23
@@ -1258,6 +1267,18 @@ read_manifest:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lfield_target
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, key_link
+    ARM_CALL streq
+    cbnz w9, .Lfield_link
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, key_libraries
+    ARM_CALL streq
+    cbnz w9, .Lfield_libraries
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, key_check
+    ARM_CALL streq
+    cbnz w9, .Lfield_check
     b manifest_error
 .Lfield_name:
     ARM_IMM w11, 1
@@ -1302,6 +1323,27 @@ read_manifest:
     mov w1, w10
     ARM_IMM w10, 8
     mov w2, w10
+    b .Lfield_read
+.Lfield_link:
+    cmp w22, #2
+    b.ne manifest_error
+    ARM_ADDR x0, package_link
+    mov w1, #255
+    mov w2, #16
+    b .Lfield_read
+.Lfield_libraries:
+    cmp w22, #2
+    b.ne manifest_error
+    ARM_ADDR x0, package_libraries
+    mov w1, #255
+    mov w2, #32
+    b .Lfield_read
+.Lfield_check:
+    cmp w22, #2
+    b.ne manifest_error
+    ARM_ADDR x0, package_check
+    mov w1, #255
+    mov w2, #64
 .Lfield_read:
     tst w23, w2
     b.ne manifest_error
@@ -1484,8 +1526,9 @@ read_manifest:
     b.ne .Lmanifest_comment
     b .Lmanifest_line
 .Lmanifest_finish:
+    and w10, w23, #15
     ARM_IMM w11, 15
-    cmp w23, w11
+    cmp w10, w11
     b.ne manifest_error
     ARM_ADDR x16, package_name
     mov x0, x16
@@ -1507,6 +1550,12 @@ read_manifest:
     ARM_CALL validate_target
     tst w9, w9
     b.eq unsupported_target
+    ARM_ADDR x0, package_link
+    ARM_ADDR x1, package_libraries
+    ARM_ADDR x2, package_check
+    ARM_CALL native_link_validate
+    cbz w9, manifest_error
+    ARM_CALL native_link_check_options
     ARM_RESTORE x24
     ARM_RESTORE x23
     ARM_RESTORE x22
@@ -1812,6 +1861,9 @@ valid_source:
 /* Build outputs in a fresh process-specific staging directory, then rename
  * completed artifacts into place. Never pass project paths through a shell. */
 cmd_build:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1825,6 +1877,9 @@ cmd_build:
     ARM_CALL report
     b exit_ok
 cmd_run:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1875,6 +1930,9 @@ cmd_run:
     mov w0, w9
     b exit_code
 cmd_test:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1961,6 +2019,8 @@ build_project:
     ARM_ADDR x16, binary_suffix
     mov x1, x16
     ARM_CALL copy_string
+    ARM_CALL native_link_compile_check
+    cbnz w9, build_child_error
     ARM_ADDR x16, as_path
     mov x9, x16
     ARM_ADDR x16, child_argv
@@ -2009,6 +2069,13 @@ build_project:
     ARM_CALL spawn_wait
     tst w9, w9
     b.ne build_child_error
+    ARM_ADDR x16, package_link
+    ldrb w10, [x16]
+    cbz w10, .Lbuild_standalone_link
+    ARM_CALL native_link_build
+    cbnz w9, build_child_error
+    b .Lbuild_linked
+.Lbuild_standalone_link:
     ARM_ADDR x16, ld_path
     mov x9, x16
     ARM_ADDR x16, child_argv
@@ -2043,6 +2110,7 @@ build_project:
     ARM_CALL spawn_wait
     tst w9, w9
     b.ne build_child_error
+.Lbuild_linked:
     ARM_ADDR x16, stage_object
     mov x0, x16
     ARM_ADDR x16, object_output
@@ -2145,7 +2213,8 @@ unsigned_decimal:
     mov x9, x1
     ret
 
-/* Spawn a fixed executable with explicit argv, inherit env and file streams.
+/* Spawn a fixed executable with explicit argv and inherited file streams.
+ * Compiler drivers use a fixed environment; application children inherit env.
  * Return child's exit code, or 128+signal; never turn a failed exec into success. */
 /* Input: x0=executable path, x1=NUL-terminated argv pointer array. All pointers
  * remain owned by the parent. Output: w9=0..255; fork/wait/exec failure is 127.
@@ -2196,10 +2265,10 @@ spawn_wait:
     b .Lspawn_return
 .Lspawn_child:
     mov x0, x21
+    ARM_CALL native_link_child_environment
+    mov x2, x9
+    mov x0, x21
     mov x1, x22
-    ARM_ADDR x16, envp
-    ldr x10, [x16]
-    mov x2, x10
     ARM_CALL arm_execve
     ARM_IMM w10, 127
     mov w0, w10
@@ -2298,6 +2367,8 @@ commands:
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
     .quad command_install, cmd_install, command_update, cmd_update
+    .quad command_installed, cmd_installed, command_upgrade, cmd_upgrade
+    .quad command_uninstall, cmd_uninstall
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
@@ -2323,6 +2394,9 @@ command_versions: .asciz "versions"
 command_fetch: .asciz "fetch"
 command_publish: .asciz "publish"
 command_install: .asciz "install"
+command_installed: .asciz "installed"
+command_upgrade: .asciz "upgrade"
+command_uninstall: .asciz "uninstall"
 command_update: .asciz "update"
 command_lock: .asciz "lock"
 command_sync: .asciz "sync"
@@ -2366,6 +2440,9 @@ key_name: .asciz "name"
 key_version: .asciz "version"
 key_source: .asciz "source"
 key_target: .asciz "target"
+key_link: .asciz "link"
+key_libraries: .asciz "libraries"
+key_check: .asciz "check"
 section_package: .asciz "package"
 section_build: .asciz "build"
 newline: .asciz "\n"
@@ -2417,7 +2494,10 @@ help_text:
     .ascii "  info <package>   Show registry package metadata\n"
     .ascii "  versions <pkg>   List published package versions\n"
     .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
-    .ascii "  install <pkg>    Install a host ELF executable without running it\n"
+    .ascii "  install <pkg>    Install a host executable without running it\n"
+    .ascii "  installed        List recorded installed programs\n"
+    .ascii "  upgrade <pkg[@v]> Upgrade a recorded program\n"
+    .ascii "  uninstall <pkg>  Uninstall an unchanged recorded program\n"
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
@@ -2433,6 +2513,7 @@ help_text:
     .ascii "  help             Show this help\n\n"
     .ascii "Options: --target aarch64-linux, --json, --no-color, --help\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
+    .ascii "Native builds: --include-dir PATH and --library-dir PATH (repeat up to eight).\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
     .ascii "JSON describes Asm's own output; child output is passed through.\n"
     .ascii "For registry options, use asm search --help.\n"
@@ -2440,9 +2521,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.4.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"aarch64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.4.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"aarch64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss
@@ -2485,6 +2566,8 @@ made_test: .skip 1
 
 /* Keep one assembler translation unit so the CLI can build itself with the
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
+.include "cli/aarch64/native_link.s"
+.include "cli/aarch64/programs.s"
 .include "cli/aarch64/registry.s"
 .include "cli/aarch64/elf.s"
 .include "cli/aarch64/archive.s"

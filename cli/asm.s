@@ -302,6 +302,10 @@ common_option:
     call streq
     test eax, eax
     jnz .Lopt_locked
+    mov rax, rbx
+    call native_link_option
+    test eax, eax
+    jnz .Lopt_yes
     mov rdi, rbx
     lea rsi, [rip + opt_help]
     call streq
@@ -743,13 +747,17 @@ init_rollback:
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
 /* Input: cwd is the project. Output: package_* buffers contain validated fields.
  * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source=256. Failure exits without build
+ * include NUL: name=65, version/target=64, source/native fields=256.
+ * Failure exits without build
  * changes. Stack: 32 saved bytes plus nested calls; all callee-saved restored. */
 read_manifest:
     push r12
     push r13
     push r14
     push r15
+    mov byte ptr [rip + package_link], 0
+    mov byte ptr [rip + package_libraries], 0
+    mov byte ptr [rip + package_check], 0
     mov eax, SYS_open
     lea rdi, [rip + manifest_path]
     mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
@@ -879,6 +887,21 @@ read_manifest:
     call streq
     test eax, eax
     jnz .Lfield_target
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + native_key_link]
+    call streq
+    test eax, eax
+    jnz .Lfield_link
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + native_key_libraries]
+    call streq
+    test eax, eax
+    jnz .Lfield_libraries
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + native_key_check]
+    call streq
+    test eax, eax
+    jnz .Lfield_check
     jmp manifest_error
 .Lfield_name:
     cmp r13d, 1
@@ -907,6 +930,27 @@ read_manifest:
     lea rdi, [rip + package_target]
     mov esi, 63
     mov edx, 8
+    jmp .Lfield_read
+.Lfield_link:
+    cmp r13d, 2
+    jne manifest_error
+    lea rdi, [rip + package_link]
+    mov esi, 255
+    mov edx, 16
+    jmp .Lfield_read
+.Lfield_libraries:
+    cmp r13d, 2
+    jne manifest_error
+    lea rdi, [rip + package_libraries]
+    mov esi, 255
+    mov edx, 32
+    jmp .Lfield_read
+.Lfield_check:
+    cmp r13d, 2
+    jne manifest_error
+    lea rdi, [rip + package_check]
+    mov esi, 255
+    mov edx, 64
 .Lfield_read:
     test r14d, edx
     jnz manifest_error
@@ -996,7 +1040,9 @@ read_manifest:
     jne .Lmanifest_comment
     jmp .Lmanifest_line
 .Lmanifest_finish:
-    cmp r14d, 15
+    mov eax, r14d
+    and eax, 15
+    cmp eax, 15
     jne manifest_error
     lea rdi, [rip + package_name]
     call valid_name
@@ -1010,6 +1056,13 @@ read_manifest:
     call valid_source
     test eax, eax
     jz manifest_error
+    lea rdi, [rip + package_link]
+    lea rsi, [rip + package_libraries]
+    lea rdx, [rip + package_check]
+    call native_link_validate
+    test eax, eax
+    jz manifest_error
+    call native_link_check_options
     lea rdi, [rip + package_target]
     call validate_target
     test eax, eax
@@ -1164,6 +1217,7 @@ valid_source:
 /* Build outputs in a fresh process-specific staging directory, then rename
  * completed artifacts into place. Never pass project paths through a shell. */
 cmd_build:
+    mov byte ptr [rip + native_allow], 1
     mov byte ptr [rip + allow_locked], 1
     call parse_options_only
     call read_manifest
@@ -1173,6 +1227,7 @@ cmd_build:
     call report
     jmp exit_ok
 cmd_run:
+    mov byte ptr [rip + native_allow], 1
     mov byte ptr [rip + allow_locked], 1
     mov byte ptr [rip + run_mode], 1
 .Lrun_options:
@@ -1206,6 +1261,7 @@ cmd_run:
     mov edi, eax
     jmp exit_code
 cmd_test:
+    mov byte ptr [rip + native_allow], 1
     mov byte ptr [rip + allow_locked], 1
     call parse_options_only
     call read_manifest
@@ -1270,6 +1326,9 @@ build_project:
     mov rdi, rax
     lea rsi, [rip + binary_suffix]
     call copy_string
+    call native_link_compile_check
+    test eax, eax
+    jnz build_child_error
     lea rax, [rip + as_path]
     mov [rip + child_argv], rax
     lea rax, [rip + as_64]
@@ -1294,6 +1353,11 @@ build_project:
     call spawn_wait
     test eax, eax
     jnz build_child_error
+    cmp byte ptr [rip + package_link], 0
+    je .Lbuild_standalone_link
+    call native_link_build
+    jmp .Lbuild_link_result
+.Lbuild_standalone_link:
     lea rax, [rip + ld_path]
     mov [rip + child_argv], rax
     lea rax, [rip + arg_z]
@@ -1310,6 +1374,7 @@ build_project:
     lea rdi, [rip + ld_path]
     lea rsi, [rip + child_argv]
     call spawn_wait
+.Lbuild_link_result:
     test eax, eax
     jnz build_child_error
     mov eax, SYS_rename
@@ -1381,7 +1446,8 @@ unsigned_decimal:
     mov rax, rsi
     ret
 
-/* Spawn a fixed executable with explicit argv, inherit env and file streams.
+/* Spawn a fixed executable with explicit argv and inherited file streams.
+ * Compiler children receive fixed PATH and locale; applications inherit env.
  * Return child's exit code, or 128+signal; never turn a failed exec into success. */
 /* Input: RDI=executable path, RSI=NUL-terminated argv pointer array. All pointers
  * remain owned by the parent. Output: EAX=0..255; fork/wait/exec failure is 127.
@@ -1424,6 +1490,11 @@ spawn_wait:
     mov rdi, r12
     mov rsi, r13
     mov rdx, [rip + envp]
+    lea rcx, [rip + native_cc_path]
+    cmp rdi, rcx
+    jne .Lspawn_environment_ready
+    lea rdx, [rip + native_tool_env]
+.Lspawn_environment_ready:
     syscall
     mov edi, 127
     jmp exit_code
@@ -1503,6 +1574,8 @@ commands:
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
     .quad command_install, cmd_install, command_update, cmd_update
+    .quad command_installed, cmd_installed, command_upgrade, cmd_upgrade
+    .quad command_uninstall, cmd_uninstall
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
@@ -1528,6 +1601,9 @@ command_versions: .asciz "versions"
 command_fetch: .asciz "fetch"
 command_publish: .asciz "publish"
 command_install: .asciz "install"
+command_installed: .asciz "installed"
+command_upgrade: .asciz "upgrade"
+command_uninstall: .asciz "uninstall"
 command_update: .asciz "update"
 command_lock: .asciz "lock"
 command_sync: .asciz "sync"
@@ -1617,12 +1693,16 @@ help_text:
     .ascii "  build            Assemble and link to build/app\n"
     .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
     .ascii "  test             Assemble and execute tests/main.s\n"
+    .ascii "  build/run/test:  --include-dir PATH, --library-dir PATH (link = c)\n"
     .ascii "  clean            Remove only Asm's named build artifacts\n"
     .ascii "  search [query]   Search the package registry\n"
     .ascii "  info <package>   Show registry package metadata\n"
     .ascii "  versions <pkg>   List published package versions\n"
     .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
     .ascii "  install <pkg>    Install a host ELF executable without running it\n"
+    .ascii "  installed        List programs installed by Asm\n"
+    .ascii "  upgrade <pkg>    Upgrade an installed program\n"
+    .ascii "  uninstall <pkg>  Uninstall an unchanged installed program\n"
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
@@ -1645,9 +1725,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.4.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.4.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -1686,6 +1766,7 @@ made_tests: .skip 1
 made_manifest: .skip 1
 made_main: .skip 1
 made_test: .skip 1
+.include "cli/native_link.s"
 .section .note.GNU-stack,"",@progbits
 
 /* Keep one assembler translation unit so the CLI can build itself with the
@@ -1694,6 +1775,7 @@ made_test: .skip 1
 .include "cli/elf.s"
 .include "cli/archive.s"
 .include "cli/dependencies.s"
+.include "cli/programs.s"
 .include "cli/publish.s"
 .include "cli/self_update.s"
 .include "cli/self_update_verify.s"

@@ -562,10 +562,12 @@ pub_source_paths:
     ret
 
 /* Inspect the small project manifest inside the validated TAR. The accepted
- * subset matches the native build manifest: two sections, four quoted values,
+ * subset matches the native build manifest: two sections, seven quoted values,
  * no escapes or duplicate fields. All reads are bounded by a copied NUL.
  * Input: RDI=validated target, pub_name/version and successful archive table.
- * Output: EAX=0/1. Owns a 16385-byte manifest and four 256-byte values. Frame:56. */
+ * Output: EAX=0/1. Owns a 16385-byte manifest and seven 256-byte values. Frame:56.
+ * Optional values and the field mask reset before each artifact. The stateless
+ * native-link validator never changes build-command package globals. */
 pub_check_project:
     push rbx
     push rbp
@@ -575,6 +577,10 @@ pub_check_project:
     push r15
     sub rsp, 8
     mov [rip + pub_project_target], rdi
+    mov byte ptr [rip + pub_project_link], 0
+    mov byte ptr [rip + pub_project_libraries], 0
+    mov byte ptr [rip + pub_project_check], 0
+    xor r14d, r14d
     call pub_source_paths
     test eax, eax
     jnz .Lpub_project_bad
@@ -611,7 +617,6 @@ pub_check_project:
     mov byte ptr [rdi + rcx], 0
     mov r12, rdi
     xor r13d, r13d
-    xor r14d, r14d
     xor r15d, r15d
 .Lpub_manifest_line:
     call pub_skip_horizontal
@@ -752,8 +757,16 @@ pub_check_project:
     jne .Lpub_manifest_comment
     jmp .Lpub_manifest_line
 .Lpub_manifest_finish:
-    cmp r14d, 15
+    mov eax, r14d
+    and eax, 15
+    cmp eax, 15
     jne .Lpub_project_bad
+    lea rdi, [rip + pub_project_link]
+    lea rsi, [rip + pub_project_libraries]
+    lea rdx, [rip + pub_project_check]
+    call native_link_validate
+    test eax, eax
+    jz .Lpub_project_bad
     mov rsi, [rip + pub_name]
 .Lpub_unscoped_name:
     cmp byte ptr [rsi], '/'
@@ -798,6 +811,19 @@ pub_check_project:
     jz .Lpub_project_bad
     test ecx, ecx
     jnz .Lpub_project_bad
+    lea rdi, [rip + pub_project_check]
+    cmp byte ptr [rdi], 0
+    je .Lpub_project_valid
+    call pub_portable_path
+    test eax, eax
+    jnz .Lpub_project_bad
+    lea rdi, [rip + pub_project_check]
+    call source_archive_member
+    test rax, rax
+    jz .Lpub_project_bad
+    test ecx, ecx
+    jnz .Lpub_project_bad
+.Lpub_project_valid:
     xor eax, eax
     jmp .Lpub_project_return
 .Lpub_project_bad:
@@ -1331,6 +1357,9 @@ pub_name_key: .asciz "name"
 pub_version_key: .asciz "version"
 pub_source_key: .asciz "source"
 pub_target_key: .asciz "target"
+pub_link_key: .asciz "link"
+pub_libraries_key: .asciz "libraries"
+pub_check_key: .asciz "check"
 pub_quote_text: .asciz "\""
 pub_comma: .asciz ","
 pub_rbrace: .asciz "}"
@@ -1390,6 +1419,12 @@ pub_project_fields:
     .long 4, 2
     .quad pub_target_key, pub_project_arch
     .long 8, 2
+    .quad pub_link_key, pub_project_link
+    .long 16, 2
+    .quad pub_libraries_key, pub_project_libraries
+    .long 32, 2
+    .quad pub_check_key, pub_project_check
+    .long 64, 2
     .quad 0, 0, 0
 pub_readme_names: .quad pub_readme_name, pub_readme_md, pub_readme_txt, 0
 pub_license_names: .quad pub_license_name, pub_license_txt, pub_license_md, 0
@@ -1417,6 +1452,9 @@ pub_project_name: .skip 256
 pub_project_version: .skip 256
 pub_project_source: .skip 256
 pub_project_arch: .skip 256
+pub_project_link: .skip 256
+pub_project_libraries: .skip 256
+pub_project_check: .skip 256
 pub_key: .skip 32
 pub_manifest: .skip 16385
 pub_elf_header: .skip 64

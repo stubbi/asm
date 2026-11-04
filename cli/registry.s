@@ -253,6 +253,10 @@ registry_command:
     jz registry_bad_args
     call read_manifest
 .Lregistry_load:
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lprogram_registry_load
+    call program_before_load
+.Lprogram_registry_load:
     cmp qword ptr [rip + registry_index_path], 0
     jne .Lregistry_read
     call registry_workspace
@@ -372,6 +376,7 @@ registry_workspace:
  * and checksum, then removes the empty directory. Clears the ownership flag.
  * Does not replace an original error with a cleanup error. Stack: none. */
 registry_cleanup:
+    call program_cleanup
     cmp byte ptr [rip + self_active], 0
     jne self_update_cleanup
     cmp byte ptr [rip + registry_has_workspace], 0
@@ -1604,6 +1609,11 @@ registry_fetch:
     call dependency_prepare_selection
     mov rbx, [rip + registry_selected]
 .Lfetch_selection_ready:
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lprogram_selection_ready
+    call program_prepare_selection
+    mov rbx, [rip + registry_selected]
+.Lprogram_selection_ready:
     mov rdi, [rbx + 48]
     call registry_size_value
     mov [rip + registry_expected_size], rax
@@ -1671,6 +1681,11 @@ registry_fetch:
     lea rax, [rip + registry_default_output]
     mov [rip + registry_output], rax
 .Lfetch_output_ready:
+    cmp byte ptr [rip + registry_mode], 5
+    jne .Lprogram_fetch_finalization
+    call program_commit_install
+    jmp .Lprogram_fetch_report
+.Lprogram_fetch_finalization:
     /* Only the explicit install command grants execute permission. */
     mov eax, 90
     lea rdi, [rip + registry_temp_payload]
@@ -1691,9 +1706,12 @@ registry_fetch:
     syscall
     test rax, rax
     js .Lfetch_output_error
+.Lprogram_fetch_report:
     call registry_cleanup
     cmp byte ptr [rip + json_mode], 0
     jne .Lfetch_json
+    cmp byte ptr [rip + registry_mode], 5
+    je exit_ok
     lea rdi, [rip + registry_fetched_text]
     cmp byte ptr [rip + registry_mode], 5
     jne .Lartifact_report
@@ -2103,10 +2121,16 @@ registry_help_text:
     .ascii "  asm add owner/name@version [--artifact local-file] [--json]\n"
     .ascii "  asm update owner/name@version [--artifact local-file] [--json]\n"
     .ascii "  asm remove owner/name [--json]\n"
+    .ascii "  asm installed [--json]\n"
+    .ascii "  asm upgrade owner/name[@version] [--index PATH | --registry HTTPS_URL]\n"
+    .ascii "  asm uninstall owner/name [--json]\n"
     .ascii "  asm lock [--json]\n"
     .ascii "  asm sync [--artifact local-file] [--json]\n\n"
     .ascii "Use --index path for a local index or --registry https://... for an index URL.\n"
     .ascii "The default index is https://asm.build/registry/v1/index.tsv.\n"
+    .ascii "upgrade manages recorded programs; update and remove manage source dependencies.\n"
+    .ascii "upgrade reuses the recorded HTTPS origin; local records require --index PATH.\n"
+    .ascii "upgrade also accepts --artifact PATH and --json; it refuses --output and downgrades.\n"
     .ascii "fetch selects the highest numeric version if you omit @version.\n"
     .ascii "fetch defaults to source and x86_64-linux. It verifies bytes and SHA-256.\n"
     .ascii "fetch does not overwrite, extract, install, or run package contents.\n"

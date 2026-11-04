@@ -911,10 +911,12 @@ pub_source_paths:
     ret
 
 /* Inspect the small project manifest inside the validated TAR. The accepted
- * subset matches the native build manifest: two sections, four quoted values,
+ * subset matches the native build manifest: two sections, seven quoted values,
  * no escapes or duplicate fields. All reads are bounded by a copied NUL.
  * Input: x0=validated target, pub_name/version and successful archive table.
- * Output: w9=0/1. Owns a 16385-byte manifest and four 256-byte values. Frame: 112. */
+ * Output: w9=0/1. Owns a 16385-byte manifest and seven 256-byte values. Frame: 112.
+ * Optional values and the field mask reset before each artifact. The stateless
+ * native-link validator never changes build-command package globals. */
 pub_check_project:
     ARM_SAVE x19
     ARM_SAVE x20
@@ -925,6 +927,13 @@ pub_check_project:
     sub sp, sp, #16
     ARM_ADDR x16, pub_project_target
     str x0, [x16]
+    ARM_ADDR x16, pub_project_link
+    strb wzr, [x16]
+    ARM_ADDR x16, pub_project_libraries
+    strb wzr, [x16]
+    ARM_ADDR x16, pub_project_check
+    strb wzr, [x16]
+    mov w23, wzr
     ARM_CALL pub_source_paths
     tst w9, w9
     b.ne .Lpub_project_bad
@@ -982,8 +991,6 @@ pub_check_project:
     mov x21, x0
     eor w22, w22, w22
     tst w22, w22
-    eor w23, w23, w23
-    tst w23, w23
     eor w24, w24, w24
     tst w24, w24
 .Lpub_manifest_line:
@@ -1286,8 +1293,15 @@ pub_check_project:
     b .Lpub_manifest_line
 .Lpub_manifest_finish:
     ARM_IMM w11, 15
-    cmp w23, w11
+    and w10, w23, #15
+    cmp w10, w11
     b.ne .Lpub_project_bad
+    ARM_ADDR x0, pub_project_link
+    ARM_ADDR x1, pub_project_libraries
+    ARM_ADDR x2, pub_project_check
+    ARM_CALL native_link_validate
+    tst w9, w9
+    b.eq .Lpub_project_bad
     ARM_ADDR x16, pub_name
     ldr x10, [x16]
     mov x1, x10
@@ -1371,6 +1385,19 @@ pub_check_project:
     b.eq .Lpub_project_bad
     tst w3, w3
     b.ne .Lpub_project_bad
+    ARM_ADDR x0, pub_project_check
+    ldrb w10, [x0]
+    cbz w10, .Lpub_project_valid
+    ARM_CALL pub_portable_path
+    tst w9, w9
+    b.ne .Lpub_project_bad
+    ARM_ADDR x0, pub_project_check
+    ARM_CALL source_archive_member
+    tst x9, x9
+    b.eq .Lpub_project_bad
+    tst w3, w3
+    b.ne .Lpub_project_bad
+.Lpub_project_valid:
     eor w9, w9, w9
     tst w9, w9
     b .Lpub_project_return
@@ -2172,6 +2199,9 @@ pub_name_key: .asciz "name"
 pub_version_key: .asciz "version"
 pub_source_key: .asciz "source"
 pub_target_key: .asciz "target"
+pub_link_key: .asciz "link"
+pub_libraries_key: .asciz "libraries"
+pub_check_key: .asciz "check"
 pub_quote_text: .asciz "\""
 pub_comma: .asciz ","
 pub_rbrace: .asciz "}"
@@ -2231,6 +2261,12 @@ pub_project_fields:
     .long 4, 2
     .quad pub_target_key, pub_project_arch
     .long 8, 2
+    .quad pub_link_key, pub_project_link
+    .long 16, 2
+    .quad pub_libraries_key, pub_project_libraries
+    .long 32, 2
+    .quad pub_check_key, pub_project_check
+    .long 64, 2
     .quad 0, 0, 0
 pub_readme_names: .quad pub_readme_name, pub_readme_md, pub_readme_txt, 0
 pub_license_names: .quad pub_license_name, pub_license_txt, pub_license_md, 0
@@ -2258,6 +2294,9 @@ pub_project_name: .skip 256
 pub_project_version: .skip 256
 pub_project_source: .skip 256
 pub_project_arch: .skip 256
+pub_project_link: .skip 256
+pub_project_libraries: .skip 256
+pub_project_check: .skip 256
 pub_key: .skip 32
 pub_manifest: .skip 16385
 pub_elf_header: .skip 64

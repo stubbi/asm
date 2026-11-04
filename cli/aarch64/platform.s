@@ -53,6 +53,7 @@ ARM_SYSCALL arm_kill, 129
 ARM_SYSCALL arm_execve, 221
 ARM_SYSCALL arm_wait4, 260
 ARM_SYSCALL arm_getpid, 172
+ARM_SYSCALL arm_getcwd, 17
 ARM_SYSCALL arm_chdir, 49
 ARM_SYSCALL arm_fchdir, 50
 ARM_SYSCALL arm_getuid, 174

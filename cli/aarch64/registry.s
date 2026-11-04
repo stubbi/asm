@@ -408,6 +408,11 @@ registry_command:
     b.eq registry_bad_args
     ARM_CALL read_manifest
 .Lregistry_load:
+    P_BYTE w10, registry_mode
+    cmp w10, #5
+    b.ne .Lp_registry_load_ready
+    ARM_CALL program_before_load
+.Lp_registry_load_ready:
     ARM_ADDR x16, registry_index_path
     ldr x10, [x16]
     ARM_IMM x11, 0
@@ -572,6 +577,7 @@ registry_workspace:
  * and checksum, then removes the empty directory. Clears the ownership flag.
  * Does not replace an original error with a cleanup error. Stack: none. */
 registry_cleanup:
+    ARM_CALL program_cleanup
     ARM_ADDR x16, self_active
     ldrb w10, [x16]
     ARM_IMM w11, 0
@@ -2719,6 +2725,11 @@ registry_fetch:
     ldr x10, [x16]
     mov x19, x10
 .Lfetch_selection_ready:
+    P_BYTE w10, registry_mode
+    cmp w10, #5
+    b.ne .Lp_registry_selection_ready
+    ARM_CALL program_prepare_selection
+.Lp_registry_selection_ready:
     mov x16, x19
     add x16, x16, #48
     ldr x10, [x16]
@@ -2862,6 +2873,12 @@ registry_fetch:
     ARM_ADDR x16, registry_output
     str x9, [x16]
 .Lfetch_output_ready:
+    P_BYTE w10, registry_mode
+    cmp w10, #5
+    b.ne .Lp_registry_original_output
+    ARM_CALL program_commit_install
+    b .Lp_registry_committed
+.Lp_registry_original_output:
     /* Only the explicit install command grants execute permission. */
     ARM_ADDR x16, registry_temp_payload
     mov x0, x16
@@ -2894,7 +2911,14 @@ registry_fetch:
     ARM_CALL arm_renameat2
     tst x9, x9
     b.mi .Lfetch_output_error
+.Lp_registry_committed:
     ARM_CALL registry_cleanup
+    P_BYTE w10, registry_mode
+    cmp w10, #5
+    b.ne .Lp_registry_report
+    P_BYTE w10, json_mode
+    cbz w10, exit_ok
+.Lp_registry_report:
     ARM_ADDR x16, json_mode
     ldrb w10, [x16]
     ARM_IMM w11, 0
@@ -3499,10 +3523,16 @@ registry_help_text:
     .ascii "  asm add owner/name@version [--artifact local-file] [--json]\n"
     .ascii "  asm update owner/name@version [--artifact local-file] [--json]\n"
     .ascii "  asm remove owner/name [--json]\n"
+    .ascii "  asm installed [--json]\n"
+    .ascii "  asm upgrade owner/name[@version] [--index PATH | --registry HTTPS_URL]\n"
+    .ascii "  asm uninstall owner/name [--json]\n"
     .ascii "  asm lock [--json]\n"
     .ascii "  asm sync [--artifact local-file] [--json]\n\n"
     .ascii "Use --index path for a local index or --registry https://... for an index URL.\n"
     .ascii "The default index is https://asm.build/registry/v1/index.tsv.\n"
+    .ascii "upgrade manages recorded programs; update and remove manage source dependencies.\n"
+    .ascii "upgrade reuses the recorded HTTPS origin; local records require --index PATH.\n"
+    .ascii "upgrade also accepts --artifact PATH and --json; it refuses --output and downgrades.\n"
     .ascii "fetch selects the highest numeric version if you omit @version.\n"
     .ascii "fetch defaults to source and aarch64-linux. It verifies bytes and SHA-256.\n"
     .ascii "fetch does not overwrite, extract, install, or run package contents.\n"
