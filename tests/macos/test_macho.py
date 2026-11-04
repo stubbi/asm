@@ -1,6 +1,7 @@
 """Native Mach-O installation must reject mismatched or malformed containers."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -26,6 +27,9 @@ class MachoTests(unittest.TestCase):
     def test_cli_installs_native_without_executing_and_rejects_corruption(self):
         with tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
             work = Path(directory)
+            home = work / 'home'
+            home.mkdir(mode=0o700)
+            environment = dict(os.environ, HOME=str(home))
             payload = work / 'payload'
             index = work / 'index.tsv'
             destination = work / 'installed'
@@ -42,12 +46,15 @@ class MachoTests(unittest.TestCase):
                                  + hashlib.sha256(data).hexdigest() + '\thttps://github.com/stubbi/asm/releases/download/v0.1.0/payload\t'
                                  + str(len(data)) + '\tNative test\n')
                 result = subprocess.run([str(ASM), 'install', 'stubbi/test', '--index', str(index), '--artifact', str(payload),
-                                         '--output', str(destination)], cwd=work, capture_output=True, timeout=15)
+                                         '--output', str(destination)], cwd=work, env=environment,
+                                        capture_output=True, timeout=15)
                 with self.subTest(prefix=data[:32]):
                     self.assertEqual(result.returncode, 0 if data == original else 1, result.stderr)
                     if data == original:
                         self.assertEqual(destination.read_bytes(), original)
-                        destination.unlink()
+                        subprocess.run([str(ASM), 'uninstall', 'stubbi/test'], cwd=work, env=environment,
+                                       capture_output=True, timeout=15, check=True)
+                        self.assertFalse(destination.exists())
                     else:
                         self.assertFalse(destination.exists())
 
@@ -63,12 +70,16 @@ class MachoTests(unittest.TestCase):
             offset += length
         with tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
             work = Path(directory)
+            home = work / 'home'
+            home.mkdir(mode=0o700)
+            environment = dict(os.environ, HOME=str(home))
             (work / 'payload').write_bytes(data)
             (work / 'index.tsv').write_text('# asm-registry-v1\nstubbi/test\t0.1.0\taarch64-macos\texecutable\t'
                 + hashlib.sha256(data).hexdigest() + '\thttps://github.com/stubbi/asm/releases/download/v0.1.0/payload\t'
                 + str(len(data)) + '\tInvalid signature\n')
             result = subprocess.run([str(ASM), 'install', 'stubbi/test', '--index', 'index.tsv', '--artifact', 'payload',
-                '--output', 'installed', '--json'], cwd=work, capture_output=True, text=True, timeout=20)
+                '--output', 'installed', '--json'], cwd=work, env=environment,
+                capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1)
             self.assertFalse(json.loads(result.stderr)['ok'])
             self.assertFalse((work / 'installed').exists())

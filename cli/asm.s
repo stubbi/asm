@@ -1503,6 +1503,8 @@ commands:
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
     .quad command_install, cmd_install, command_update, cmd_update
+    .quad command_installed, cmd_installed, command_upgrade, cmd_upgrade
+    .quad command_uninstall, cmd_uninstall
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
@@ -1528,6 +1530,9 @@ command_versions: .asciz "versions"
 command_fetch: .asciz "fetch"
 command_publish: .asciz "publish"
 command_install: .asciz "install"
+command_installed: .asciz "installed"
+command_upgrade: .asciz "upgrade"
+command_uninstall: .asciz "uninstall"
 command_update: .asciz "update"
 command_lock: .asciz "lock"
 command_sync: .asciz "sync"
@@ -1592,10 +1597,10 @@ err_build_io: .asciz "cannot write build artifacts; build must be a real directo
 err_test: .asciz "test program failed"
 err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
-version_text: .asciz "asm 0.4.0 (x86_64-linux)\n"
-version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"host\":\"x86_64-linux\"}\n"
-license_text: .asciz "asm 0.4.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.4.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
-license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.4.0\"}\n"
+version_text: .asciz "asm 0.5.0 (x86_64-linux)\n"
+version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"host\":\"x86_64-linux\"}\n"
+license_text: .asciz "asm 0.5.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.5.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.5.0\"}\n"
 targets_text: .asciz "x86_64-linux (host; GNU as + ld)\n"
 targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
@@ -1610,7 +1615,7 @@ test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
-    .ascii "asm 0.4.0 - build assembly projects\n\n"
+    .ascii "asm 0.5.0 - build assembly projects\n\n"
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
@@ -1623,6 +1628,9 @@ help_text:
     .ascii "  versions <pkg>   List published package versions\n"
     .ascii "  fetch <pkg[@v]>  Fetch and verify an artifact; do not run it\n"
     .ascii "  install <pkg>    Install a host ELF executable without running it\n"
+    .ascii "  installed        List programs installed by Asm\n"
+    .ascii "  upgrade <pkg>    Upgrade an installed program\n"
+    .ascii "  uninstall <pkg>  Uninstall an unchanged installed program\n"
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
@@ -1645,9 +1653,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.4.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.4.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -1694,6 +1702,7 @@ made_test: .skip 1
 .include "cli/elf.s"
 .include "cli/archive.s"
 .include "cli/dependencies.s"
+.include "cli/programs.s"
 .include "cli/publish.s"
 .include "cli/self_update.s"
 .include "cli/self_update_verify.s"

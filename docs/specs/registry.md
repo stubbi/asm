@@ -85,7 +85,7 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 ## Targets
 
 The registry describes three Linux targets and Apple Silicon macOS.
-Asm 0.4 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
+Asm 0.5.0 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
 Each CLI builds projects for its own host target.
 Each CLI can fetch artifacts for other registry targets.
 The example README files give the commands for GNU cross assemblers and linkers.
@@ -205,6 +205,19 @@ Use exact versions in reproducible instructions.
 Fetch checks byte size and SHA-256 before it exposes the output. It does not overwrite an existing destination, set an execute bit, extract, install, or run package contents. A download failure or hash mismatch is an error. Source review, extraction, and building are separate user actions. The digest is checked against the HTTPS index. V1 has no separate signing key for that index. A compromised registry origin can replace both metadata and artifacts.
 
 `--index PATH` uses a local index. `--registry HTTPS_URL` selects another index URL. `--artifact PATH` lets fetch check a local artifact for offline tests. The same metadata and digest rules apply.
+
+Asm 0.5.0 records executable installations and provides `asm installed`, `asm upgrade`, and `asm uninstall`.
+The [installed-program contract](../installed-programs.md) defines their local state and failure behavior.
+Published 0.4.0 binaries do not include these management commands.
+Both default destinations and explicit `--output PATH` destinations receive inventory records.
+One package identity has at most one managed installation.
+Earlier installations remain unmanaged; updating Asm does not adopt them.
+
+Upgrade retains the recorded path and registry origin.
+It selects the highest available host version unless an exact version is supplied.
+It rejects downgrades and changed digests or sizes for an equal version.
+Upgrade and uninstall refuse missing or changed installed files.
+The commands `update` and `remove` continue to manage project source dependencies.
 
 ## Direct dependencies and locks
 

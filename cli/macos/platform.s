@@ -86,6 +86,23 @@ mac_digest_environment: .quad 0
 .text
 MAC_SIMPLE arm_wait4, wait4
 MAC_SIMPLE arm_getpid, getpid
+/* x0=owned buffer, x1=capacity. x9=length including NUL, or negative errno.
+ * _getcwd bounds and terminates the result. Preserve x0-x7 and x19-x29.
+ * Scratch x8/x10-x17/NZCV; stack 96 bytes plus the errno helper. */
+arm_getcwd:
+    MAC_SAVE
+    bl _getcwd
+    cbz x0, .Lmac_getcwd_error
+    mov x9, #0
+.Lmac_getcwd_length:
+    ldrb w10, [x0, x9]
+    add x9, x9, #1
+    cbnz w10, .Lmac_getcwd_length
+    b .Lmac_getcwd_return
+.Lmac_getcwd_error:
+    ARM_CALL mac_errno
+.Lmac_getcwd_return:
+    MAC_RETURN
 MAC_SIMPLE arm_chdir, chdir
 MAC_SIMPLE arm_fchdir, fchdir
 MAC_SIMPLE arm_getuid, getuid
