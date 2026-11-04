@@ -1,0 +1,315 @@
+"""Exercise the assembly runtime against an owned TLS PostgreSQL fixture.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+Python runs tests only. It is not a registry application backend.
+"""
+import http.client
+import fcntl
+import json
+import os
+from pathlib import Path
+import pty
+import secrets
+import socket
+import subprocess
+import sys
+import termios
+import tempfile
+import time
+import unittest
+from urllib.parse import quote
+
+HERE = Path(__file__).resolve().parent
+REFERENCE = HERE.parent / "experiments/assembly-server"
+sys.path.insert(0, str(REFERENCE))
+from local_postgres import Database, LocalPostgres, create_catalog
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class TlsPostgres(LocalPostgres):
+    """Add certificates only to the disposable cluster owned by LocalPostgres."""
+    def openssl(self, *args):
+        subprocess.run(["openssl", *args], cwd=self.base, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+
+    def certificate(self, name, common_name, *, server=False):
+        self.openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + common_name,
+                     "-keyout", name + ".key", "-out", name + ".csr")
+        extension = self.base / (name + ".ext")
+        extension.write_text("subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n" if server
+                             else "extendedKeyUsage=clientAuth\n")
+        self.openssl("x509", "-req", "-in", name + ".csr", "-CA", "ca.crt", "-CAkey", "ca.key",
+                     "-set_serial", str(secrets.randbits(96)), "-days", "1",
+                     "-extfile", str(extension), "-out", name + ".crt")
+        (self.base / (name + ".key")).chmod(0o600)
+
+    def _initialize(self, bindir, env):
+        super()._initialize(bindir, env)
+        self.openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                     "-subj", "/CN=Asm runtime test CA", "-addext", "basicConstraints=critical,CA:TRUE",
+                     "-keyout", "ca.key", "-out", "ca.crt")
+        self.openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                     "-subj", "/CN=Unrelated test CA", "-addext", "basicConstraints=critical,CA:TRUE",
+                     "-keyout", "unrelated.key", "-out", "unrelated.crt")
+        self.certificate("server", "localhost", server=True)
+        with (self.data / "postgresql.conf").open("a") as out:
+            out.write("\nssl=on\n")
+            for key, name in (("ssl_cert_file", "server.crt"), ("ssl_key_file", "server.key"),
+                              ("ssl_ca_file", "ca.crt")):
+                # The temporary path has no quote. PostgreSQL receives no user path here.
+                out.write(f"{key}='{self.base / name}'\n")
+        hba = self.data / "pg_hba.conf"
+        hba.write_text("hostssl all all 127.0.0.1/32 cert\n" + hba.read_text())
+
+
+class RuntimeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        value = os.environ.get("ASM_SERVER_BINARY")
+        if not value or not Path(value).is_file():
+            raise AssertionError("ASM_SERVER_BINARY must identify a built assembly runtime; no runtime check ran.")
+        cls.binary = Path(value).resolve()
+        cls.revision = os.environ["ASM_SERVER_SOURCE_REVISION"]
+        cls.temp = tempfile.TemporaryDirectory(prefix="asm-runtime-")
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.base = Path(cls.temp.name)
+        cls.cluster = TlsPostgres(cls.base)
+        cls.addClassCleanup(cls.cluster.close)
+        cls.cluster.start()
+        cls.prefix = "asm_proto_" + secrets.token_hex(6)
+        cls.dbname = cls.prefix
+        cls.roles = {name: cls.prefix + suffix for name, suffix in
+                     (("migrator", "_m"), ("reader", "_r"), ("operator", "_o"))}
+        password = secrets.token_hex(24)
+        for role in cls.roles.values():
+            cls.cluster.admin.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD \'{password}\'')
+        cls.cluster.admin.execute(f'CREATE DATABASE "{cls.dbname}" OWNER "{cls.roles["migrator"]}"')
+        cls.admin = Database(cls.cluster.url(database=cls.dbname))
+        cls.addClassCleanup(cls.admin.close)
+        migrator = Database(cls.cluster.url(database=cls.dbname, role=cls.roles["migrator"], password=password))
+        operator = Database(cls.cluster.url(database=cls.dbname, role=cls.roles["operator"], password=password))
+        try:
+            create_catalog(migrator, operator, cls.roles["reader"], cls.roles["operator"])
+        finally:
+            migrator.close()
+            operator.close()
+        cls.configs = {}
+        for label, role in cls.roles.items():
+            cls.cluster.certificate(label, role)
+            path = cls.base / (label + ".url")
+            path.write_text(cls.url(role, label) + "\n")
+            path.chmod(0o600)
+            cls.configs[label] = path
+        cls.port = free_port()
+        cls.log = (cls.base / "server.log").open("wb")
+        cls.addClassCleanup(cls.log.close)
+        cls.server = subprocess.Popen([str(cls.binary), "serve"], env=cls.environment(),
+                                      stdout=cls.log, stderr=cls.log)
+        cls.addClassCleanup(cls.stop_server)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if cls.server.poll() is not None:
+                raise AssertionError(f"Runtime exited during startup ({cls.server.returncode}); inspect its fixed error.")
+            try:
+                if cls.request("/health/live")[0] == 200:
+                    return
+            except OSError:
+                time.sleep(0.02)
+        raise AssertionError("Runtime did not become live within five seconds.")
+
+    @classmethod
+    def url(cls, role, label, *, host="localhost", extra="", hostaddr="127.0.0.1"):
+        certs = cls.cluster.base
+        params = "&".join(key + "=" + quote(str(certs / name), safe="/") for key, name in
+                          (("sslrootcert", "ca.crt"), ("sslcert", label + ".crt"), ("sslkey", label + ".key")))
+        return (f"postgresql://{role}@{host}:{cls.cluster.port}/{cls.dbname}?"
+                f"sslmode=verify-full&{params}&hostaddr={hostaddr}{extra}")
+
+    @classmethod
+    def environment(cls, **changes):
+        env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
+        env.update(ASM_BIND=f"127.0.0.1:{cls.port}", ASM_DATABASE_URL_FILE=str(cls.configs["reader"]))
+        env.update(changes)
+        return env
+
+    @classmethod
+    def request(cls, path, method="GET", body=None):
+        connection = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=3)
+        try:
+            connection.request(method, path, body=body)
+            response = connection.getresponse()
+            return response.status, dict(response.getheaders()), json.loads(response.read())
+        finally:
+            connection.close()
+
+    @classmethod
+    def stop_server(cls):
+        if getattr(cls, "server", None) and cls.server.poll() is None:
+            cls.server.terminate()
+            try:
+                cls.server.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                cls.server.kill()
+                cls.server.wait(timeout=2)
+                raise AssertionError("The runtime did not stop within three seconds.")
+
+    def reject(self, *, config=None, bind=None, arguments=("serve",), content=None, expected=78, **env):
+        if content is not None:
+            config = self.base / ("rejected-" + secrets.token_hex(4) + ".url")
+            config.write_text(content)
+            config.chmod(0o600)
+        if config is not None:
+            env["ASM_DATABASE_URL_FILE"] = str(config)
+        env["ASM_BIND"] = bind if bind is not None else f"127.0.0.1:{free_port()}"
+        start = time.monotonic()
+        result = subprocess.run([str(self.binary), *arguments], env=self.environment(**env),
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, expected, result.stderr.decode("utf-8", "replace"))
+        self.assertEqual(result.stdout, b"")
+        self.assertNotIn(b"postgresql://", result.stderr)
+        self.assertLess(time.monotonic() - start, 2.8)
+        return result
+
+    def test_health_and_exact_source_identity(self):
+        self.assertEqual(self.request("/health/live")[2], {"status": "alive"})
+        self.assertEqual(self.request("/health/ready")[2], {"status": "ready"})
+        code, headers, body = self.request("/api/v2/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["source_revision"], self.revision)
+        self.assertEqual(body["source_url"], "https://github.com/stubbi/asm/tree/" + self.revision)
+        self.assertEqual(body["application_language"], "assembly")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+
+    def test_unimplemented_catalog_and_write_routes_do_not_claim_success(self):
+        for path in ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv", "/registry/v1/index.json", "/api/v2/packages"):
+            self.assertEqual(self.request(path)[0], 404)
+        self.assertEqual(self.request("/health/live", method="POST")[0], 405)
+        self.assertEqual(self.request("/health/live", body=b"x")[0], 400)
+        self.assertEqual(self.request("/health/live?unknown=x")[0], 400)
+
+    def test_cli_and_bind_configuration_fail_closed(self):
+        self.reject(arguments=(), expected=64)
+        self.reject(arguments=("migrate",), expected=64)
+        for bind in ("", "localhost:8080", "127.0.0.1:0", "127.0.0.1:80", "127.0.0.1:65536", "::1:8080", "0.0.0.0:8080junk"):
+            with self.subTest(bind=bind):
+                self.reject(bind=bind)
+
+    def test_private_configuration_file_is_required(self):
+        for content in ("", "x" * 4097, "postgresql://x\x00y", "postgresql://x\ny"):
+            self.reject(content=content)
+        path = self.base / "public.url"
+        path.write_text(self.configs["reader"].read_text())
+        path.chmod(0o644)
+        self.reject(config=path)
+        link = self.base / "linked.url"
+        link.symlink_to(self.configs["reader"])
+        self.reject(config=link)
+        self.reject(config=self.base)
+
+    def test_tls_policy_rejects_ambient_options_and_ambiguous_connections(self):
+        raw = self.configs["reader"].read_text().strip()
+        for value in (raw.replace("verify-full", "disable"), raw.replace("verify-full", "require"),
+                      raw + "&sslmode=verify-full", raw + "&options=-c%20search_path=public",
+                      raw.replace("&hostaddr=127.0.0.1", ""), raw.replace("127.0.0.1", "localhost"),
+                      raw.replace("@localhost", ":secret@localhost")):
+            with self.subTest(value=value.replace(raw, "valid-prefix")):
+                self.reject(content=value, PGSSLMODE="disable", PGSERVICE="untrusted")
+
+    def test_reader_rejects_migrator_operator_and_wrong_tls_identities(self):
+        self.reject(config=self.configs["migrator"])
+        self.reject(config=self.configs["operator"])
+        self.reject(content=self.url(self.roles["reader"], "reader", host="wrong.invalid"))
+        self.reject(content=self.url(self.roles["reader"], "operator"))
+        raw = self.configs["reader"].read_text()
+        self.reject(content=raw.replace("ca.crt", "unrelated.crt"))
+
+    def test_readiness_checks_actual_permissions_after_start(self):
+        role = self.roles["reader"]
+        self.admin.execute(f'REVOKE SELECT ON asm.artifacts FROM "{role}"')
+        try:
+            code, _, _ = self.request("/health/ready")
+            self.assertEqual(code, 503)
+            self.assertEqual(self.request("/health/live")[0], 200)
+        finally:
+            self.admin.execute(f'GRANT SELECT ON asm.artifacts TO "{role}"')
+        self.assertEqual(self.request("/health/ready")[0], 200)
+
+    def test_new_connections_load_replaced_certificate_files(self):
+        cert = self.cluster.base / "reader.crt"
+        key = self.cluster.base / "reader.key"
+        old_cert, old_key = cert.read_bytes(), key.read_bytes()
+        self.cluster.certificate("rotated", self.roles["reader"])
+        try:
+            cert.write_bytes((self.cluster.base / "rotated.crt").read_bytes())
+            key.write_bytes((self.cluster.base / "rotated.key").read_bytes())
+            self.assertNotEqual(cert.read_bytes(), old_cert)
+            self.assertEqual(self.request("/health/ready")[0], 200)
+            cert.write_bytes((self.cluster.base / "operator.crt").read_bytes())
+            key.write_bytes((self.cluster.base / "operator.key").read_bytes())
+            self.assertEqual(self.request("/health/ready")[0], 503)
+            self.assertEqual(self.request("/health/live")[0], 200)
+        finally:
+            cert.write_bytes(old_cert)
+            key.write_bytes(old_key)
+        self.assertEqual(self.request("/health/ready")[0], 200)
+
+    def test_stalled_database_handshake_has_a_deadline(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            raw = self.configs["reader"].read_text().replace(
+                f":{self.cluster.port}/", f":{listener.getsockname()[1]}/")
+            self.reject(content=raw)
+
+    def test_encrypted_client_key_never_prompts_on_an_open_terminal(self):
+        encrypted = self.cluster.base / "encrypted.key"
+        subprocess.run(["openssl", "pkey", "-in", str(self.cluster.base / "reader.key"),
+                        "-aes-256-cbc", "-passout", "stdin", "-out", str(encrypted)],
+                       input=b"test-key-password\n", check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
+        encrypted.chmod(0o600)
+        config = self.base / "encrypted.url"
+        config.write_text(self.configs["reader"].read_text().replace("reader.key", "encrypted.key"))
+        config.chmod(0o600)
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+
+        def terminal_session():
+            os.setsid()
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+
+        start = time.monotonic()
+        process = subprocess.Popen([str(self.binary), "serve"], stdin=slave,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env=self.environment(ASM_DATABASE_URL_FILE=str(config)),
+                                   preexec_fn=terminal_session)
+        try:
+            stdout, stderr = process.communicate(timeout=3)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=2)
+        self.assertEqual(process.returncode, 78)
+        self.assertEqual(stdout, b"")
+        self.assertNotIn(b"Enter PEM pass phrase", stderr)
+        self.assertLess(time.monotonic() - start, 2.8)
+
+    def test_z_sigterm_closes_the_listener_within_three_seconds(self):
+        start = time.monotonic()
+        self.server.terminate()
+        self.assertEqual(self.server.wait(timeout=3), 0)
+        self.assertLess(time.monotonic() - start, 3)
+        with self.assertRaises(OSError):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=0.2):
+                pass
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

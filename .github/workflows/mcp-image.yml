@@ -1,0 +1,176 @@
+name: MCP image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hash-pinned SDK and run the complete adapter checks
+        run: |
+          python3 -m venv .asm/mcp-venv
+          .asm/mcp-venv/bin/python -m pip install --require-hashes -r requirements-mcp.txt
+          make agent-test PYTHON=.asm/mcp-venv/bin/python
+      - name: Build the native image from the recorded public revision
+        run: docker build --file containers/mcp.Dockerfile --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --tag asm-mcp:qualification .
+      - name: Exercise the exact image without credentials or a writable root filesystem
+        env:
+          ASM_EXPECT_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect asm-mcp:qualification --format '{{.Architecture}}')" = "$ASM_EXPECT_ARCH"
+          docker network create --internal asm-mcp-qualification
+          trap 'docker logs asm-mcp-test; docker rm -f asm-mcp-test asm-catalog-fixture; docker network rm asm-mcp-qualification' EXIT
+          docker run --detach --name asm-mcp-test --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
+            --network asm-mcp-qualification \
+            --publish 127.0.0.1:18080:8080 asm-mcp:qualification
+          .asm/mcp-venv/bin/python - <<'PY'
+          import asyncio, json, os
+          import httpx2
+          from mcp import Client
+          async def check():
+              base = 'http://127.0.0.1:18080'
+              async with httpx2.AsyncClient(trust_env=False, timeout=4) as http:
+                  for attempt in range(50):
+                      try:
+                          response = await http.get(base + '/health/live')
+                          if response.status_code == 200:
+                              break
+                      except httpx2.HTTPError:
+                          pass
+                      await asyncio.sleep(0.1)
+                  else:
+                      raise AssertionError('The image did not become live.')
+                  status = (await http.get(base + '/api/v2/status')).json()
+                  assert status['source_revision'] == os.environ['GITHUB_SHA']
+                  assert (await http.get(base + '/health/ready')).status_code == 503
+                  assert (await http.post(base + '/mcp', headers={'Origin':'https://hostile.example'}, content=b'{}')).status_code == 403
+              for mode, version in [('auto','2026-07-28'), ('legacy','2025-11-25')]:
+                  async with Client(base + '/mcp', mode=mode, read_timeout_seconds=10) as client:
+                      assert client.protocol_version == version
+                      identity = json.loads((await client.read_resource('asm://service')).contents[0].text)
+                      assert identity['source_revision'] == os.environ['GITHUB_SHA']
+                      assert identity['source_url'] == 'https://github.com/stubbi/asm/tree/' + os.environ['GITHUB_SHA']
+                      tools = await client.list_tools()
+                      assert len(tools.tools) == 6
+                      targets = await client.call_tool('asm_list_targets', {})
+                      assert not targets.is_error and len(targets.structured_content['targets']) == 4
+                      guide = await client.call_tool('asm_get_workflow', {})
+                      assert not guide.is_error and guide.structured_content['sha256']
+                      unavailable = await client.call_tool('asm_search_packages', {'query':'math'})
+                      assert unavailable.is_error
+          asyncio.run(check())
+          PY
+          mkdir -p .asm/catalog-fixture/registry/v1
+          printf '%s' '{"schema":1,"packages":[]}' > .asm/catalog-fixture/registry/v1/index.json
+          docker run --detach --name asm-catalog-fixture --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 32 --memory 64m --cpus 1 \
+            --network asm-mcp-qualification --network-alias asm-hub.asm.svc.cluster.local \
+            --volume "$PWD/.asm/catalog-fixture:/fixture:ro" --entrypoint python \
+            asm-mcp:qualification -m http.server 8080 --bind 0.0.0.0 --directory /fixture
+          .asm/mcp-venv/bin/python - <<'PY'
+          import asyncio, hashlib
+          import httpx2
+          from mcp import Client
+          async def check():
+              base = 'http://127.0.0.1:18080'
+              async with httpx2.AsyncClient(trust_env=False, timeout=4) as http:
+                  for attempt in range(30):
+                      if (await http.get(base + '/health/ready')).status_code == 200:
+                          break
+                      await asyncio.sleep(0.1)
+                  else:
+                      raise AssertionError('The image did not recover with a valid registry catalog.')
+              async with Client(base + '/mcp', read_timeout_seconds=10) as client:
+                  result = await client.call_tool('asm_search_packages', {'query':''})
+                  assert not result.is_error
+                  assert result.structured_content['packages'] == []
+                  catalog = result.structured_content['catalog']
+                  assert catalog['source'] == 'http://asm-hub.asm.svc.cluster.local:8080/registry/v1/index.json'
+                  assert catalog['sha256'] == hashlib.sha256(b'{"schema":1,"packages":[]}').hexdigest()
+          asyncio.run(check())
+          PY
+          docker stop --time 15 asm-mcp-test
+          test "$(docker inspect asm-mcp-test --format '{{.State.ExitCode}}')" = 0
+          docker image inspect asm-mcp:qualification --format '{{json .}}' > mcp-image-${{ matrix.arch }}.json
+          docker save --output mcp-image-${{ matrix.arch }}.tar asm-mcp:qualification
+          sha256sum mcp-image-${{ matrix.arch }}.tar > mcp-image-${{ matrix.arch }}.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mcp-image-qualification-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            mcp-image-${{ matrix.arch }}.json
+            mcp-image-${{ matrix.arch }}.tar
+            mcp-image-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: qualify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Retrieve this trusted main run's qualified image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mcp-image-qualification-${{ matrix.arch }}-${{ github.sha }}
+      - name: Load the exact qualified architecture-specific image
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          sha256sum --check "mcp-image-$ASM_ARCH.sha256"
+          docker load --input "mcp-image-$ASM_ARCH.tar"
+          test "$(docker image inspect asm-mcp:qualification --format '{{.Architecture}}')" = "$ASM_ARCH"
+          test "$(docker image inspect asm-mcp:qualification --format '{{.Id}}')" = "$(jq -r .Id "mcp-image-$ASM_ARCH.json")"
+          test "$(docker image inspect asm-mcp:qualification --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          docker tag asm-mcp:qualification "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH"
+      - name: Publish the exact image and retain its digest
+        id: image
+        env:
+          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH"
+          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH" --format '{{index .RepoDigests 0}}')"
+          case "$ASM_REF" in ghcr.io/stubbi/asm-mcp@sha256:*) ;; *) exit 1 ;; esac
+          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$ASM_REF" >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest public source and image identity
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/stubbi/asm-mcp
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true

@@ -103,6 +103,7 @@ class ReleaseTests(unittest.TestCase):
             if (ROOT / "examples" / directory).is_dir():
                 shutil.copytree(ROOT / "examples" / directory, cls.repo / "examples" / directory, ignore=shutil.ignore_patterns("build"))
         shutil.copytree(ROOT / "site", cls.repo / "site")
+        shutil.copytree(ROOT / "skills/asm-build", cls.repo / "skills/asm-build")
         (cls.repo / "README.md").write_text("# Release test fixture\n\nUses the project's actual assembly sources.\n")
         shutil.copyfile(ROOT / "LICENSE", cls.repo / "LICENSE")
         if (ROOT / "LICENSING.md").is_file():
