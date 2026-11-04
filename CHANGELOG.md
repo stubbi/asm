@@ -1,5 +1,11 @@
 # Change log
 
+## Website dependency display
+
+- Show direct dependency declarations, requirements, and feature options for each checked source target and version.
+- Link available package records and distinguish unavailable metadata from checked empty declarations.
+- Preserve published artifact bytes, release records, and native registry feeds.
+
 ## 0.5.0
 
 - Record executable installations, including explicit output paths, in a bounded local inventory.

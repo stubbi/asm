@@ -110,3 +110,89 @@ test("missing counters do not become zero, and missing dates do not become 1970"
   assert.equal(formatDownloadCount({ observed_at: "2026-10-31T12:00:00Z", packages: { "owner/alpha": { total: 0 } } }, "owner/alpha"), "GitHub asset downloads: 0 · observed 2026-10-31");
   assert.equal(formatDownloadCount({ observed_at: null, packages: { "owner/alpha": { total: 12 } } }, "owner/alpha"), "GitHub asset downloads: 12 · observation time unavailable");
 });
+
+function sourceWithDependencies() {
+  return {
+    kind: "source", target: "x86_64-linux", bytes: 2054, sha256: "b".repeat(64),
+    url: "https://github.com/stubbi/asm/releases/download/v1/source.tar.gz",
+    dependency_metadata: {
+      schema: 1, source_sha256: "b".repeat(64),
+      dependencies: [{ name: "owner/math", requirement: "^1.2.0", optional: false, default_features: true, features: ["checked"] }],
+      features: { default: ["fast"], fast: ["dep:owner/math", "owner/math/checked"] }
+    }
+  };
+}
+
+test("dependency declarations require checked source bytes and their exact digest", () => {
+  const { dependencyMetadata } = require("../site/app.js");
+  const source = sourceWithDependencies();
+  assert.deepEqual(dependencyMetadata(source, "validated"), source.dependency_metadata);
+  for (const state of [undefined, "not-run", "error", "pass"]) assert.equal(dependencyMetadata(source, state), null);
+  assert.equal(dependencyMetadata({ ...source, kind: "executable" }, "validated"), null);
+  assert.equal(dependencyMetadata({ ...source, dependency_metadata: { ...source.dependency_metadata, source_sha256: "c".repeat(64) } }, "validated"), null);
+});
+
+test("checked empty declarations remain distinct from missing or malformed metadata", () => {
+  const { dependencyMetadata } = require("../site/app.js");
+  const source = sourceWithDependencies();
+  const empty = { schema: 1, source_sha256: source.sha256, dependencies: [], features: {} };
+  assert.deepEqual(dependencyMetadata({ ...source, dependency_metadata: empty }, "validated"), empty);
+  for (const metadata of [undefined, null, {}, { ...empty, schema: 2 }, { ...empty, dependencies: null }, { ...empty, features: [] }]) {
+    assert.equal(dependencyMetadata({ ...source, dependency_metadata: metadata }, "validated"), null);
+  }
+});
+
+test("dependency declarations keep ranges and feature policies without selecting a version", () => {
+  const { dependencyMetadata } = require("../site/app.js");
+  const source = sourceWithDependencies();
+  source.dependency_metadata.dependencies[0] = {
+    name: "owner/math", requirement: ">=1.2.0, <2.0.0", optional: true, default_features: false, features: ["checked"]
+  };
+  const metadata = dependencyMetadata(source, "validated");
+  assert.equal(metadata.dependencies[0].requirement, ">=1.2.0, <2.0.0");
+  assert.equal(metadata.dependencies[0].optional, true);
+  assert.equal(metadata.dependencies[0].default_features, false);
+  assert.equal(Object.hasOwn(metadata.dependencies[0], "version"), false);
+});
+
+test("dependency display rejects hostile names, malformed policies, and excessive lists", () => {
+  const { dependencyMetadata } = require("../site/app.js");
+  const source = sourceWithDependencies();
+  const valid = source.dependency_metadata.dependencies[0];
+  const invalid = [
+    { ...valid, name: "javascript:alert(1)" }, { ...valid, name: "owner/<img>" },
+    { ...valid, name: "owner/../math" }, { ...valid, name: "owner/math--one" },
+    { ...valid, optional: "false" }, { ...valid, default_features: null },
+    { ...valid, requirement: "<script>alert(1)</script>" }, { ...valid, requirement: " " },
+    { ...valid, requirement: " ^1.2.0" }, { ...valid, requirement: "1.2.0 " }, { ...valid, requirement: "1".repeat(129) },
+    { ...valid, features: ["<img>"] }, { ...valid, features: ["checked", "checked"] }
+  ];
+  for (const entry of invalid) {
+    assert.equal(dependencyMetadata({ ...source, dependency_metadata: { ...source.dependency_metadata, dependencies: [entry] } }, "validated"), null);
+  }
+  for (const entries of [[valid, valid], Array(65).fill(valid)]) {
+    assert.equal(dependencyMetadata({ ...source, dependency_metadata: { ...source.dependency_metadata, dependencies: entries } }, "validated"), null);
+  }
+});
+
+test("feature declarations are bounded and reference declared features and packages", () => {
+  const { dependencyMetadata } = require("../site/app.js");
+  const source = sourceWithDependencies();
+  for (const features of [
+    { default: ["missing"] }, { fast: ["dep:owner/missing"] }, { fast: ["owner/missing/checked"] },
+    { fast: ["<script>"] }, { fast: Array(65).fill("dep:owner/math") },
+    { fast: ["dep:owner/math", "dep:owner/math"] },
+    Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`feature${index}`, []]))
+  ]) {
+    assert.equal(dependencyMetadata({ ...source, dependency_metadata: { ...source.dependency_metadata, features } }, "validated"), null);
+  }
+});
+
+test("package fragment links use canonical identities without collisions", () => {
+  const { packageAnchor } = require("../site/app.js");
+  assert.equal(packageAnchor("owner/math"), "package-owner--math");
+  assert.notEqual(packageAnchor("owner-math/lib"), packageAnchor("owner/math-lib"));
+  for (const name of ["owner/../math", "javascript:alert(1)", "owner/math--one", "owner/math-", "owner_/math", "<img>"]) {
+    assert.equal(packageAnchor(name), null);
+  }
+});

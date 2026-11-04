@@ -75,13 +75,13 @@ def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | No
         return data
 
 
-def verify_artifacts(records: list[dict], read=read_https) -> set[tuple[str, str]]:
+def verify_artifacts(records: list[dict], read=read_https, *, dependency_metadata: dict | None = None) -> set[tuple[str, str]]:
     checked = set()
     for record in registry.check_records(records):
         for artifact in record["artifacts"]:
             registry.artifact_url(artifact["url"])
             data = read(artifact["url"], registry.MAX_ARTIFACT_BYTES, ASSET_HOSTS, expected_size=artifact["bytes"])
-            registry.validate_artifact(data, record, artifact)
+            registry.validate_artifact(data, record, artifact, dependency_metadata=dependency_metadata)
         checked.add((record["name"], record["version"]))
     return checked
 
@@ -132,8 +132,9 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
     output = output_path(output)
     commit = resolve_commit(repo, reference)
     records = registry.read_records(registry_path)
-    checked = verify_artifacts(records, artifact_reader) if verify else set()
-    tsv, index = registry.make_indexes(records, checked)
+    dependency_metadata = {}
+    checked = verify_artifacts(records, artifact_reader, dependency_metadata=dependency_metadata) if verify else set()
+    tsv, index = registry.make_indexes(records, checked, dependency_metadata=dependency_metadata)
     counts = registry.download_counts(records, fetch=metrics_fetcher) if downloads else unknown_counts(records)
     with tempfile.TemporaryDirectory(prefix=".asm-site-", dir=output.parent) as temporary:
         stage = Path(temporary) / "site"
