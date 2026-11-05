@@ -78,11 +78,20 @@ This build extension does not qualify such a replacement or change the architect
 
 ## Validation record
 
-The [earlier 5 November 2026 record](native-linking-evidence.json) retains the first implementation checkpoint.
+The [server package record](server-package-evidence.json) retains native Linux x86-64 and ARM64 qualification.
+Each target passed eight native-link tests, 19 extracted-package tests, 11 hosted-runtime tests, and four failure-preservation checks.
+The reference package built through the recorded native Asm CLI.
+The record binds the CLI, archive, both executables, test logs, toolchain, and exact checkout commit.
+Downloaded artifact bytes independently matched their recorded digests.
+
+The clean Apple Silicon checkout passed 225 CLI tests, 60 registry tests, and both verifier race-test packages.
+Seven evidence-parser regressions passed separately; they do not establish server execution.
+These results apply to their recorded commits and artifacts.
+They do not establish a release, deployment, or performance result.
+
+The [earlier checkpoint](native-linking-evidence.json) retains failed attempts and then-unrun gates.
 It predates the server ports and response-file rejection.
-It identifies its own artifacts, passing tests, failed attempts, and unrun gates.
-Native macOS behavior passed; Linux crossassembly does not establish Linux execution.
-The extracted Linux server's build and runtime tests remain unrun because local storage failed during dependency setup.
+Its crossassembly results do not replace the later native Linux results.
 
 ## Target coverage
 
@@ -92,22 +101,21 @@ All native-linking additions remain unreleased.
 
 | CLI host target | ISA | OS | C ABI for linked projects | CPU requirement | Current CLI evidence |
 | --- | --- | --- | --- | --- | --- |
-| `x86_64-linux` | x86-64 | Linux | System V AMD64, LP64 | No additional instruction extension introduced | Cross-built ELF; container and stack checks passed; runtime unrun |
-| `aarch64-linux` | AArch64 | Linux | AAPCS64, LP64 | ARMv8-A | Cross-built ELF; container and stack checks passed; runtime unrun |
+| `x86_64-linux` | x86-64 | Linux | System V AMD64, LP64 | No additional instruction extension introduced | Native GNU build and eight C ABI regressions passed |
+| `aarch64-linux` | AArch64 | Linux | AAPCS64, LP64 | ARMv8-A | Native GNU build and eight C ABI regressions passed |
 | `aarch64-macos` | AArch64 | macOS 15+ | Apple arm64, LP64 | Apple Silicon | Native build, execution, and CLI tests passed |
 
 The package must declare any additional library ABI, runtime, and CPU requirements.
 Linux kernel and libc minimums for this extension remain unqualified.
 These CLI results do not qualify a server on the same ISA.
-The cross-build used Clang and LLD, not the canonical GNU release toolchain.
-The Linux ELF checks cover CLI executables; C ABI project execution remains unrun.
-Linux native-library builds still need execution through the eight shared tests on each Linux host.
-The existing x86-64 and ARM64 CI jobs discover those tests through `make check`.
-Their configuration is not evidence that a run passed.
+The Linux native-link tests inspect PIE, RELRO, immediate binding, and the non-executable stack.
+The recorded jobs used GNU compiler and binutils tools.
+The macOS tests check the corresponding Mach-O build and execution contract.
 
 The reference server now has x86-64, AArch64, and RV64GC/LP64D source implementations.
 Target-specific manifests and header assertions accompany those sources.
-Their shared HTTP, PostgreSQL, runtime-version, and failure suites require separate execution evidence for each target.
+The x86-64 and ARM64 suites passed in the recorded native jobs.
+The RISC-V reference package still requires its separate extracted-build execution gate.
 The hosted foundation also has target-specific runtime and configuration sources, with its separate TLS suite.
 These source ports do not establish deployment qualification or new released support.
 Neither server has a macOS or Windows implementation.
@@ -117,19 +125,7 @@ Intel macOS and Windows CLI expansion also remain outside this native-linking qu
 
 `experiments/assembly-server/aarch64/server.s` implements the reference server with AAPCS64 calls and Linux AArch64 system calls.
 `server/aarch64/runtime.s` and `config.s` implement the hosted foundation with its existing TLS policy.
-All three files passed local crossassembly; native Linux execution remains a separate gate.
-The following requirements govern qualification and future changes.
-
-1. Add AArch64 source and target-specific package inputs beside `experiments/assembly-server/server.s` and `asm.toml`.
-2. Declare ARMv8-A, Linux, AAPCS64 LP64, runtime minimums, and additional CPU requirements separately.
-3. Port C calls, callbacks, variadic startup, return registers, callee-saved registers, and stack frames.
-4. Replace x86 system calls, open flags, and `stat` offsets in configuration handling.
-5. Assert the selected target headers and layouts in a target-specific `abi-check.c`.
-6. Preserve pinned libraries, assembly runtime-version rejection, SQL, deadlines, ownership, signals, and shutdown behavior.
-7. Add AArch64 preload fixtures to `test_runtime_versions.py` without weakening the x86 cases.
-8. Build the pinned dependencies and extracted package through the native ARM64 CLI as an ordinary user.
-9. Run all server tests and inspect the resulting ELF, hardening, dependencies, and file-preservation failures.
-10. Record source and artifact digests, toolchain, kernel, library versions, and native or emulated execution before declaring support.
+All three files passed local crossassembly and the recorded native Linux ARM64 runtime suites.
 
 The server uses the C ABI, not the CLI's internal `x9` result convention.
 Its HTTP callback and PostgreSQL calls need their own argument review.
@@ -149,15 +145,6 @@ The independently owned RISC-V CLI port must select `-march=rv64gc -mabi=lp64d` 
 Its freestanding profile must remain distinct.
 Until that CLI integration passes, the RISC-V reference package's extracted `asm build` gate remains open.
 The hosted foundation uses its direct native compiler build and can qualify independently.
-
-1. Select and document the ISA extensions, operating system, ABI, CPU requirements, and toolchain independently.
-2. Port every CLI module and syscall adapter before enabling a RISC-V architecture branch.
-3. Port native-link arguments, compiler environments, staging, publication validation, and failure preservation.
-4. Replace x86-or-ARM assumptions in host fixtures and target-specific build selection.
-5. Review native ELF flags for the selected ABI and ISA; do not copy the existing zero-flags rule.
-6. Add RISC-V server assembly, target-header assertions, and runtime-version preload fixtures.
-7. Qualify pinned dependencies, the extracted package, and full CLI and server suites on the selected target.
-8. Keep emulator results separate from native qualification and physical performance measurements.
 
 The RISC-V CLI implementation is maintained on a separate branch.
 Its native-library integration needs the same compiler argument rejection and runtime checks before qualification.
