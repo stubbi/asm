@@ -75,13 +75,13 @@ def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | No
         return data
 
 
-def verify_artifacts(records: list[dict], read=read_https) -> set[tuple[str, str]]:
+def verify_artifacts(records: list[dict], read=read_https, *, dependency_metadata: dict | None = None) -> set[tuple[str, str]]:
     checked = set()
     for record in registry.check_records(records):
         for artifact in record["artifacts"]:
             registry.artifact_url(artifact["url"])
             data = read(artifact["url"], registry.MAX_ARTIFACT_BYTES, ASSET_HOSTS, expected_size=artifact["bytes"])
-            registry.validate_artifact(data, record, artifact)
+            registry.validate_artifact(data, record, artifact, dependency_metadata=dependency_metadata)
         checked.add((record["name"], record["version"]))
     return checked
 
@@ -132,8 +132,20 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
     output = output_path(output)
     commit = resolve_commit(repo, reference)
     records = registry.read_records(registry_path)
-    checked = verify_artifacts(records, artifact_reader) if verify else set()
-    tsv, index = registry.make_indexes(records, checked)
+    dependency_metadata = {}
+    checked = verify_artifacts(records, artifact_reader, dependency_metadata=dependency_metadata) if verify else set()
+    tsv, index = registry.make_indexes(records, checked, dependency_metadata=dependency_metadata)
+    declarations = {"schema": 1, "sources": []}
+    for package in index["packages"]:
+        for version in package["versions"]:
+            for artifact in version["artifacts"]:
+                metadata = artifact.pop("dependency_metadata", None)
+                if metadata is not None:
+                    declarations["sources"].append({"name": package["name"], "version": version["version"],
+                                                  "target": artifact["target"], "metadata": metadata})
+    registry.require(len(declarations["sources"]) <= registry.MAX_ROWS, "dependency declarations have too many source entries")
+    declaration_bytes = registry.json_bytes(declarations)
+    registry.require(len(declaration_bytes) <= 4 * 1024 * 1024, "dependency declarations exceed four MiB")
     counts = registry.download_counts(records, fetch=metrics_fetcher) if downloads else unknown_counts(records)
     with tempfile.TemporaryDirectory(prefix=".asm-site-", dir=output.parent) as temporary:
         stage = Path(temporary) / "site"
@@ -146,6 +158,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         registry.write_atomic(destination / "index.tsv", registry.legacy_tsv(tsv).encode("ascii"))
         registry.write_atomic(destination / "index-macos.tsv", tsv.encode("ascii"))
         registry.write_atomic(destination / "index.json", registry.json_bytes(index))
+        registry.write_atomic(destination / "dependencies.json", declaration_bytes)
         registry.write_atomic(destination / "downloads.json", registry.json_bytes(counts))
         for record in records:
             registry.write_atomic(destination / "packages" / record["name"] / (record["version"] + ".json"), registry.json_bytes(record))

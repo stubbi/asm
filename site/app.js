@@ -72,6 +72,86 @@
       /^[a-f0-9]{64}$/.test(artifact.sha256) && githubURL(artifact.url, true);
   }
 
+  function packageAnchor(name) {
+    if (typeof name !== "string" || !/^[a-z][a-z0-9-]{0,38}\/[a-z][a-z0-9-]{0,63}$/.test(name) ||
+        name.split("/").some((part) => part.endsWith("-") || part.includes("--"))) return null;
+    return `package-${name.replace("/", "--")}`;
+  }
+
+  function featureName(name) {
+    return typeof name === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(name);
+  }
+
+  function featureList(values) {
+    return Array.isArray(values) && values.length <= 64 && values.every(featureName) && new Set(values).size === values.length;
+  }
+
+  // Declarations belong to one checked source artifact. Missing or invalid
+  // metadata is unknown, even when another target has an available declaration.
+  function dependencyMetadata(artifact, artifactEvidence) {
+    const metadata = artifact?.dependency_metadata;
+    if (artifactEvidence !== "validated" || artifact?.kind !== "source" || !validArtifact(artifact) ||
+        !metadata || metadata.schema !== 1 || metadata.source_sha256 !== artifact.sha256 ||
+        !Array.isArray(metadata.dependencies) || metadata.dependencies.length > 64 ||
+        !metadata.features || typeof metadata.features !== "object" || Array.isArray(metadata.features)) return null;
+    const names = new Set();
+    for (const dependency of metadata.dependencies) {
+      if (!dependency || !packageAnchor(dependency.name) || names.has(dependency.name) ||
+          typeof dependency.requirement !== "string" || !/^[0-9.*^~<>=, ]{1,128}$/.test(dependency.requirement) ||
+          dependency.requirement.trim() !== dependency.requirement || !dependency.requirement.trim() ||
+          typeof dependency.optional !== "boolean" || typeof dependency.default_features !== "boolean" ||
+          !featureList(dependency.features)) return null;
+      names.add(dependency.name);
+    }
+    const features = Object.entries(metadata.features);
+    if (features.length > 64) return null;
+    for (const [name, members] of features) {
+      if (!featureName(name) || !Array.isArray(members) || members.length > 64 || new Set(members).size !== members.length) return null;
+      for (const member of members) {
+        if (typeof member !== "string" || member.length > 137) return null;
+        if (featureName(member)) {
+          if (!Object.hasOwn(metadata.features, member)) return null;
+        } else if (member.startsWith("dep:")) {
+          if (!names.has(member.slice(4))) return null;
+        } else {
+          const separator = member.lastIndexOf("/");
+          if (separator < 0 || !names.has(member.slice(0, separator)) || !featureName(member.slice(separator + 1))) return null;
+        }
+      }
+    }
+    return metadata;
+  }
+
+  // The optional file cannot change the v1 catalog or attach another source's
+  // declarations. Missing, invalid, or ambiguous input leaves metadata unknown.
+  function mergeDependencyMetadata(packages, data) {
+    const result = packages.map((pkg) => ({ ...pkg, versions: pkg.versions.map((version) => ({
+      ...version, artifacts: version.artifacts.map((artifact) => {
+        const copy = { ...artifact };
+        delete copy.dependency_metadata;
+        return copy;
+      })
+    })) }));
+    if (!data || data.schema !== 1 || !Array.isArray(data.sources) || data.sources.length > 4096) return result;
+    const sources = new Map();
+    for (const source of data.sources) {
+      if (!source || !packageAnchor(source.name) || typeof source.version !== "string" ||
+          source.version.length > 32 || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(source.version) ||
+          typeof source.target !== "string" || !source.target.length || source.target.length > 128 ||
+          typeof source.metadata?.source_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(source.metadata.source_sha256)) return result;
+      const key = JSON.stringify([source.name, source.version, source.target, source.metadata.source_sha256]);
+      if (sources.has(key)) return result;
+      sources.set(key, source.metadata);
+    }
+    result.forEach((pkg) => pkg.versions.forEach((version) => version.artifacts.forEach((artifact) => {
+      const metadata = sources.get(JSON.stringify([pkg.name, version.version, artifact.target, artifact.sha256]));
+      if (dependencyMetadata({ ...artifact, dependency_metadata: metadata }, version.evidence?.artifacts)) {
+        artifact.dependency_metadata = metadata;
+      }
+    })));
+    return result;
+  }
+
   function evidenceText(value) {
     if (!evidenceStates.has(value)) return "Unavailable";
     return value === "not-run" ? "Not run" : value.charAt(0).toUpperCase() + value.slice(1);
@@ -95,7 +175,7 @@
 
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount };
+    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, packageAnchor, dependencyMetadata, mergeDependencyMetadata };
   }
   if (typeof document === "undefined") return;
 
@@ -170,8 +250,104 @@
     return formatDownloadCount(downloadRecords, pkg.name);
   }
 
+  function dependencyLink(name) {
+    const destination = packageAnchor(name);
+    if (destination && packages.some((pkg) => pkg.name === name)) {
+      const anchor = link(name, `#${destination}`, "dependency-link");
+      anchor.dataset.package = name;
+      return anchor;
+    }
+    const label = element("span", "dependency-name");
+    label.append(element("code", "", name), element("span", "dependency-unavailable", "Not in this catalog"));
+    return label;
+  }
+
+  function renderFeatureMember(member) {
+    const item = element("li");
+    if (member.startsWith("dep:")) {
+      item.append(document.createTextNode("Enable dependency "), dependencyLink(member.slice(4)));
+    } else if (member.includes("/")) {
+      const separator = member.lastIndexOf("/");
+      item.append(document.createTextNode("Request "), element("code", "", member.slice(separator + 1)),
+        document.createTextNode(" from "), dependencyLink(member.slice(0, separator)));
+    } else {
+      item.append(document.createTextNode("Enable feature "), element("code", "", member));
+    }
+    return item;
+  }
+
+  function renderDependencies(version) {
+    const section = element("section", "dependency-section");
+    section.append(element("h4", "", "Declared dependencies"));
+    const sources = version.artifacts.filter((artifact) => artifact?.kind === "source" && validArtifact(artifact));
+    if (!sources.length) {
+      section.append(element("p", "dependency-note", "Dependency information unavailable. This release has no checked source archive."));
+      return section;
+    }
+    sources.forEach((artifact) => {
+      const target = element("div", "dependency-target");
+      target.append(element("p", "dependency-target-name", artifact.target));
+      const metadata = dependencyMetadata(artifact, version.evidence?.artifacts);
+      if (!metadata) {
+        target.append(element("p", "dependency-note", "Dependency information unavailable for this source archive."));
+        section.append(target);
+        return;
+      }
+      if (!metadata.dependencies.length) {
+        target.append(element("p", "dependency-note", "No package dependencies declared."));
+      } else {
+        const dependencies = element("ul", "dependency-list");
+        metadata.dependencies.forEach((dependency) => {
+          const item = element("li", "dependency-item");
+          const heading = element("div", "dependency-heading");
+          heading.append(dependencyLink(dependency.name), element("code", "dependency-requirement", dependency.requirement));
+          item.append(heading);
+          const conditions = [dependency.optional ? "Optional" : "Required",
+            dependency.default_features ? "Default features requested" : "Default features disabled"];
+          if (dependency.optional) {
+            const activatedBy = Object.entries(metadata.features).filter(([, members]) =>
+              members.some((member) => member === `dep:${dependency.name}` || member.startsWith(`${dependency.name}/`))).map(([name]) => name);
+            if (activatedBy.length) conditions.push(`Enabled by: ${activatedBy.join(", ")}`);
+          }
+          item.append(element("p", "dependency-policy", conditions.join(" · ")));
+          if (dependency.features.length) {
+            item.append(element("p", "dependency-policy", `Requested features: ${dependency.features.join(", ")}`));
+          }
+          dependencies.append(item);
+        });
+        target.append(dependencies);
+      }
+      const features = Object.entries(metadata.features);
+      if (features.length) {
+        const disclosure = element("details", "dependency-features");
+        disclosure.append(element("summary", "", "Feature options"));
+        const definitions = element("dl");
+        features.forEach(([name, members]) => {
+          const term = element("dt");
+          term.append(element("code", "", name));
+          if (name === "default") term.append(element("span", "dependency-policy", "Enabled unless disabled"));
+          const description = element("dd");
+          if (members.length) {
+            const list = element("ul");
+            members.forEach((member) => list.append(renderFeatureMember(member)));
+            description.append(list);
+          } else {
+            description.append(element("p", "dependency-note", "No additional package requirements."));
+          }
+          definitions.append(term, description);
+        });
+        disclosure.append(definitions);
+        target.append(disclosure);
+      }
+      section.append(target);
+    });
+    section.append(element("p", "dependency-scope", "These are direct requirements from asm.toml. They do not identify a resolved dependency graph."));
+    return section;
+  }
+
   function renderVersion(version, latest) {
     const section = element("details", "version-record");
+    section.dataset.version = version.version;
     section.open = version.version === latest;
     const summary = element("summary", "", `Version ${version.version}`);
     if (version.yanked) summary.append(element("span", "release-state", "Yanked"));
@@ -201,6 +377,8 @@
       section.append(element("p", "registry-fallback", "No supported artifact links are present in this record."));
     }
 
+    section.append(renderDependencies(version));
+
     const evidence = element("ul", "evidence-record");
     Object.entries(evidenceLabels).forEach(([key, label]) => {
       evidence.append(element("li", "", `${label}: ${evidenceText(version.evidence?.[key])}`));
@@ -215,6 +393,8 @@
 
   function renderPackage(pkg) {
     const record = element("details", "package-record");
+    const destination = packageAnchor(pkg.name);
+    if (destination) record.id = destination;
     const summary = element("summary");
     summary.append(element("span", "package-name", pkg.name));
     summary.append(element("span", "package-version", pkg.latest || "No active release"));
@@ -238,6 +418,31 @@
     list.replaceChildren(...filtered.map(renderPackage));
     status.textContent = packageStatus(packages.length, filtered.length);
   }
+
+  function showPackageFromHash() {
+    const pkg = packages.find((entry) => packageAnchor(entry.name) && window.location.hash === `#${packageAnchor(entry.name)}`);
+    if (!pkg) return;
+    search.value = "";
+    targetSelect.value = "";
+    renderPackages();
+    const record = document.getElementById(packageAnchor(pkg.name));
+    if (!record) return;
+    record.open = true;
+    record.querySelector("summary").focus({ preventScroll: true });
+    record.scrollIntoView({ block: "start" });
+  }
+
+  list.addEventListener("click", (event) => {
+    const anchor = event.target.closest?.("a[data-package]");
+    if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const origin = anchor.closest(".package-record");
+    if (origin?.id && window.location.hash !== `#${origin.id}`) window.history.replaceState(null, "", `#${origin.id}`);
+    if (window.location.hash === anchor.hash) {
+      event.preventDefault();
+      showPackageFromHash();
+    }
+  });
+  window.addEventListener("hashchange", showPackageFromHash);
 
   function renderCliDownload() {
     const pkg = packages.find((entry) => entry.name === "stubbi/asm");
@@ -276,12 +481,17 @@
     panel.hidden = false;
   }
 
-  async function getJSON(path) {
+  async function getJSON(path, limit = 0) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(path, { signal: controller.signal, credentials: "omit" });
       if (!response.ok) throw new Error("Record unavailable");
+      if (limit) {
+        const text = await response.text();
+        if (text.length > limit) throw new Error("Record exceeds limit");
+        return JSON.parse(text);
+      }
       return await response.json();
     } finally {
       window.clearTimeout(timeout);
@@ -290,8 +500,9 @@
 
   async function loadRegistry() {
     status.textContent = "Loading package records…";
+    const declarations = getJSON("registry/v1/dependencies.json", 4 * 1024 * 1024).catch(() => null);
     try {
-      packages = normalizeIndex(await getJSON("registry/v1/index.json"));
+      packages = mergeDependencyMetadata(normalizeIndex(await getJSON("registry/v1/index.json")), null);
       const targets = [...new Set(packages.flatMap((pkg) => pkg.targets))].sort();
       targets.forEach((target) => {
         const option = element("option", "", target);
@@ -302,8 +513,21 @@
       search.addEventListener("input", renderPackages);
       targetSelect.addEventListener("change", renderPackages);
       renderPackages();
+      showPackageFromHash();
       renderCliDownload();
       renderMathGuide();
+      try {
+        packages = mergeDependencyMetadata(packages, await declarations);
+        list.querySelectorAll(".package-record").forEach((record) => {
+          const pkg = packages.find((entry) => entry.name === record.querySelector(".package-name").textContent);
+          record.querySelectorAll(".version-record").forEach((section) => {
+            const version = pkg.versions.find((entry) => entry.version === section.dataset.version);
+            section.querySelector(".dependency-section").replaceWith(renderDependencies(version));
+          });
+        });
+      } catch {
+        // Optional declarations must not make the package catalog unavailable.
+      }
       try {
         const records = await getJSON("registry/v1/downloads.json");
         if (records?.schema === 1 && records.source === "github-release-assets") {
