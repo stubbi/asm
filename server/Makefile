@@ -18,7 +18,7 @@ SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s
 SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s
 TARGET_FLAGS_riscv64-linux := -march=rv64gc -mabi=lp64d
 
-.PHONY: all test
+.PHONY: all test test-fixtures
 all:
 	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
 	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
@@ -43,7 +43,25 @@ all:
 	    -o "$$stage/asm-hub" $(SOURCES_$(TARGET)) $(LIBRARIES); \
 	  mv -fT -- "$$stage/asm-hub" "$(BUILD)/asm-hub"
 
-test: all
+test-fixtures:
+	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
+	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
+	  *) echo "Use native Linux to build the test-only startup fixture." >&2; exit 1 ;; esac
+	@set -eu; umask 077; \
+	  test ! -L "$(BUILD)" || { echo "BUILD must not be a symlink." >&2; exit 1; }; \
+	  mkdir -p "$(BUILD)"; \
+	  test ! -L "$(BUILD)/startup-fixture.so" && test ! -d "$(BUILD)/startup-fixture.so" || \
+	    { echo "startup-fixture.so must not be a symlink or directory." >&2; exit 1; }; \
+	  stage=$$(mktemp -d "$(BUILD)/.asm-startup-fixture.XXXXXXXX"); \
+	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
+	  $(CC) $(TARGET_FLAGS_$(TARGET)) -std=c11 -Wall -Wextra -Werror -fPIC -shared \
+	    -Wl,-z,relro,-z,now,-z,noexecstack -o "$$stage/startup-fixture.so" startup_fixture.c -ldl -pthread; \
+	  mv -fT -- "$$stage/startup-fixture.so" "$(BUILD)/startup-fixture.so"
+
+test: all test-fixtures
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
 	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
 	python3 test_runtime.py
+	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
+	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
+	ASM_SERVER_STARTUP_FIXTURE="$(BUILD)/startup-fixture.so" python3 test_startup.py
