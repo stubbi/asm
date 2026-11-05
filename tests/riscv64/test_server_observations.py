@@ -227,6 +227,76 @@ class ObservationTests(unittest.TestCase):
             self.assertTrue(retained["host_deadline_exceeded"])
             self.assertFalse(retained["application_qualified"])
 
+    def test_failed_late_report_rewrite_invalidates_pass_and_retains_failure_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            destination = output / "UNQUALIFIED-host-report.json"
+            clock, writes = [599.0], [0]
+            report = self.runner.initial_report()
+            report["outcome"] = "pass"
+            writer = self.runner.combined.write_report
+            rewrite_error = OSError("The corrective report write failed.")
+
+            def fail_corrective_write(path, value):
+                writes[0] += 1
+                if writes[0] > 1:
+                    raise rewrite_error
+                writer(path, value)
+                clock[0] = 601.0
+
+            with mock.patch.object(self.runner.time, "monotonic", side_effect=lambda: clock[0]), \
+                 mock.patch.object(self.runner.combined, "write_report", side_effect=fail_corrective_write):
+                with self.assertRaises(OSError) as failure:
+                    self.runner.finish_host_report(report, output, started=0, deadline=600, phase_probe=False)
+            self.assertIs(failure.exception, rewrite_error)
+            self.assertFalse(destination.exists(), "The failed correction left a stale passing report.")
+            marker = output / "host-finalization-failure.json"
+            self.assertLessEqual(marker.stat().st_size, 4096)
+            self.assertEqual(json.loads(marker.read_text()), {
+                "schema": 1, "scope": "reference-host-finalization", "outcome": "fail",
+                "qualification": "UNQUALIFIED", "reason": "host-deadline-exceeded",
+                "host_report_valid": False})
+
+    def test_failed_late_report_invalidation_propagates_when_failure_marker_is_unwritable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            destination = output / "UNQUALIFIED-host-report.json"
+            marker = output / "host-finalization-failure.json"
+            clock, writes = [599.0], [0]
+            report = self.runner.initial_report()
+            report["outcome"] = "pass"
+            writer = self.runner.combined.write_report
+            unlink, open_file = Path.unlink, Path.open
+            invalidation_error = PermissionError("The report cannot be removed.")
+
+            def fail_corrective_write(path, value):
+                writes[0] += 1
+                if writes[0] > 1:
+                    raise OSError("The corrective report write failed.")
+                writer(path, value)
+                clock[0] = 601.0
+
+            def reject_invalidation(path, *args, **kwargs):
+                if path == destination:
+                    raise invalidation_error
+                return unlink(path, *args, **kwargs)
+
+            def reject_marker(path, *args, **kwargs):
+                if path == marker:
+                    raise OSError("The failure marker cannot be written.")
+                return open_file(path, *args, **kwargs)
+
+            with mock.patch.object(self.runner.time, "monotonic", side_effect=lambda: clock[0]), \
+                 mock.patch.object(self.runner.combined, "write_report", side_effect=fail_corrective_write), \
+                 mock.patch.object(Path, "unlink", new=reject_invalidation), \
+                 mock.patch.object(Path, "open", new=reject_marker):
+                with self.assertRaises(OSError) as failure:
+                    self.runner.finish_host_report(report, output, started=0, deadline=600, phase_probe=False)
+            self.assertIs(failure.exception, invalidation_error)
+            self.assertEqual(report["outcome"], "fail")
+            self.assertEqual(json.loads(destination.read_text())["outcome"], "pass")
+            self.assertFalse(marker.exists())
+
     def _host_failure_scenario(self, base, *, extraction_seconds=0, create_timeout=False):
         """Replace only unavailable Docker; retain real host files and failure reports."""
         context = base / "context"

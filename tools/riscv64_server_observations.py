@@ -342,7 +342,20 @@ def finish_host_report(report, output, *, started, deadline, phase_probe):
     combined.write_report(destination, report)
     if time.monotonic() > deadline and report["outcome"] == "pass":
         check_time()
-        combined.write_report(destination, report)
+        try:
+            destination.unlink()
+            combined.write_report(destination, report)
+        except OSError:
+            # If removal also fails, stale bytes can remain. The CI failure is
+            # authoritative; this bounded marker is only best-effort evidence.
+            try:
+                with (output / "host-finalization-failure.json").open("x") as marker:
+                    marker.write(json.dumps({"schema": 1, "scope": "reference-host-finalization",
+                        "outcome": "fail", "qualification": "UNQUALIFIED",
+                        "reason": "host-deadline-exceeded", "host_report_valid": False}) + "\n")
+            except OSError:
+                pass
+            raise
 
 
 def container_contract(container, source=None):

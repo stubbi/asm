@@ -148,3 +148,11 @@ The collector selects three exact files and excludes legacy server, database, an
 
 The phase fixture is diagnostic evidence and cannot replace the failed 19-test acceptance gate.
 Remote execution requires the integration queue's source review and run selection.
+
+Final review found a late-write failure that could retain a passing host receipt after the deadline.
+Two regressions reproduced this defect against the earlier source.
+The correction removes the stale receipt before the failure rewrite.
+If removal or rewriting fails, the runner attempts a bounded failure marker and propagates the original error.
+Total filesystem failure can prevent both removal and marker publication. The CI result remains authoritative.
+The corrected local checks passed: 25 observation checks, 53 reference checks, and 20 shared harness checks.
+Actionlint and the Git whitespace check passed. The time limits and qualification flags retain their earlier values.
