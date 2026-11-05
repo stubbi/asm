@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import json
 import os
 from pathlib import Path
+import shlex
 import socket
 import stat
 import sys
@@ -113,22 +114,26 @@ class DockerIsolationTests(unittest.TestCase):
         import test_postgres18_image as gate
         marker = self.base / "executed"
         self.executable.chmod(0o700)
-        self.executable.write_text("#!" + sys.executable + "\nimport json,os,pathlib,sys\n"
-            "pathlib.Path(" + repr(str(marker)) + ").write_text('executed')\n"
-            "print(json.dumps({'argv':sys.argv[1:],'entries':os.listdir(sys.argv[4]),"
-            "'docker_config':os.environ.get('DOCKER_CONFIG'),'builder_config':os.environ.get('BUILDX_CONFIG')}))\n")
+        self.executable.write_text("#!/bin/sh\nset -eu\nprintf executed > " + shlex.quote(str(marker)) + "\n"
+            "configuration=$4\n"
+            "for entry in \"$configuration\"/* \"$configuration\"/.[!.]* \"$configuration\"/..?*; do\n"
+            "  if test -e \"$entry\" || test -L \"$entry\"; then exit 91; fi\n"
+            "done\n"
+            "printf '%s\\000' \"$@\" empty \"$DOCKER_CONFIG\" \"$BUILDX_CONFIG\"\n")
         self.executable.chmod(0o500)
         with self.local_policy(), patch.dict(os.environ, {"HOME": str(self.base), "PATH": os.defpath}, clear=True):
             with docker.invocation(["docker", "info"]) as (arguments, environment):
                 result = gate.bounded_result(arguments, timeout=3, environment=environment)
             self.assertEqual(result.returncode, 0, result.stderr)
-            observed = json.loads(result.stdout)
-            self.assertEqual(observed["argv"][:2], ["--host", "unix://" + str(self.socket_path)])
-            self.assertEqual(observed["argv"][2], "--config")
-            self.assertEqual(observed["argv"][4:], ["info"])
-            self.assertEqual(observed["entries"], [])
-            configuration = Path(observed["docker_config"])
-            self.assertEqual(observed["builder_config"], str(configuration / "buildx"))
+            fields = result.stdout.decode().split("\0")
+            self.assertEqual(fields.pop(), "")
+            self.assertEqual(len(fields), 8)
+            self.assertEqual(fields[:2], ["--host", "unix://" + str(self.socket_path)])
+            self.assertEqual(fields[2], "--config")
+            self.assertEqual(fields[4:6], ["info", "empty"])
+            configuration = Path(fields[6])
+            self.assertEqual(fields[3], str(configuration))
+            self.assertEqual(fields[7], str(configuration / "buildx"))
             self.assertFalse(configuration.exists())
         self.assertTrue(marker.exists())
         marker.unlink()
