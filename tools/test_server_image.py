@@ -125,16 +125,20 @@ def security_arguments():
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "512m", "--cpus", "2"]
 
 
-def runtime_files(image_id, arch):
+def runtime_files(image_id, arch, *, runner=None):
     base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
-    output = command([*base, "--entrypoint", "/usr/bin/ldd", image_id, "/usr/local/bin/asm-hub"]).stdout.decode()
+    def run(executable, *arguments):
+        if runner is not None:
+            return runner(image_id, *arguments, entrypoint=executable)
+        return command([*base, "--entrypoint", executable, image_id, *arguments]).stdout
+    output = run("/usr/bin/ldd", "/usr/local/bin/asm-hub").decode()
     if "not found" in output:
         raise ValueError("A runtime library is missing.")
     paths = sorted(set(re.findall(r"(?:=>\s+)?(/[^\s()]+)", output)))
     if not paths or len(paths) > 32:
         raise ValueError("The runtime library inventory is unavailable or exceeds its bound.")
     paths.append("/usr/local/bin/asm-hub")
-    output = command([*base, "--entrypoint", "/usr/bin/sha256sum", image_id, *paths]).stdout.decode()
+    output = run("/usr/bin/sha256sum", *paths).decode()
     files = {}
     for line in output.splitlines():
         digest, name = line.split("  ", 1)

@@ -1,0 +1,83 @@
+name: Selected PostgreSQL 18 compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres18-compatibility-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Qualify selected CNPG 18.6 on native AMD64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check the fixture contracts and prepare exact source and synthetic TLS inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/asm-postgres18-evidence"
+          {
+            uname -a
+            docker version
+            docker buildx version
+            openssl version
+          } > "$RUNNER_TEMP/asm-postgres18-evidence/environment.txt"
+          make postgres18-contract-test 2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/contracts.log"
+          python3 tools/operator_source.py create --repository . --revision "$GITHUB_SHA" --output .operator-source
+          python3 -I tools/test_postgres18_image.py --prepare --revision "$GITHUB_SHA"
+      - name: Build unchanged application targets and their isolated compatibility qualifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git --no-replace-objects -c core.fsmonitor=false -c core.hooksPath=/dev/null diff --exit-code "$GITHUB_SHA" -- .
+          for application in operator server; do
+            for target in runtime qualification; do
+              docker build --platform linux/amd64 --file "containers/$application.Dockerfile" \
+                --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target "$target" \
+                --tag "asm-$application:$target-amd64" . \
+                2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/build-$application-$target.log"
+            done
+          done
+          docker pull --platform linux/amd64 ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390 \
+            2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/database-pull.log"
+          for target in operator http database; do
+            docker build --platform linux/amd64 --file containers/postgres18.Dockerfile \
+              --target "$target" --tag "asm-postgres18:$target" . \
+              2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/build-postgres18-$target.log"
+          done
+      - name: Exercise owned SQL, TLS, roles, image commands, and canonical HTTP
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          make hosted-postgres18-test SOURCE_REVISION="$GITHUB_SHA" \
+            EVIDENCE_DIRECTORY="$RUNNER_TEMP/asm-postgres18-evidence/result" \
+            2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/gate.log"
+      - name: Remove only the owned private preparation after a build or gate failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -e .postgres18-fixture || test -L .postgres18-fixture; then
+            python3 -I tools/test_postgres18_image.py --cleanup-preparation --revision "$GITHUB_SHA" \
+              2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/preparation-cleanup.log"
+          fi
+      - name: Retain successful and failed evidence without private fixture files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: postgres18-compatibility-amd64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/asm-postgres18-evidence/
+          if-no-files-found: error
+          retention-days: 3

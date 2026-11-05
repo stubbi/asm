@@ -9,6 +9,8 @@ Local tooling alone does not meet this outcome.
 The existing private deployment preparation supplies isolated PostgreSQL, read-only request credentials, scoped operations, network rules, monitoring, and separate internal/public stages.
 It is not a running service.
 Production qualification requires actual data persistence, TLS, failure, recovery, and external client evidence.
+The [selected PostgreSQL 18 compatibility gate](postgres18-qualification.md) is an unexecuted, isolated candidate.
+It does not establish private-cluster or deployment qualification.
 
 ## Component and target scope
 

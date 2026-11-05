@@ -111,6 +111,14 @@ agent-test:
 hosted-registry-test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/hosted_registry -p 'test_*.py' -v
 
+.PHONY: postgres18-contract-test hosted-postgres18-test
+postgres18-contract-test:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/postgres18 -p 'test_*.py' -v
+
+# Build the fixed local qualification tags before this native Linux AMD64 gate.
+hosted-postgres18-test:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) tools/test_postgres18_image.py --revision "$(SOURCE_REVISION)" --output "$(EVIDENCE_DIRECTORY)"
+
 install: build/asm
 	sh cli/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
 
