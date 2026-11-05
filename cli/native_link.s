@@ -11,7 +11,8 @@
  * bounded to 255 bytes. Empty strings represent absent fields. Output: EAX=1
  * for the native-linking contract, else zero. No memory changes. Scratch:
  * caller-saved registers. Preserves all SysV callee-saved registers. Stack:8.
- * check uses the ordinary source path rules and must end with .c. */
+ * check uses source path rules, including no leading @ in any component,
+ * and must end with .c. This prevents compiler response-file expansion. */
 native_link_validate:
     push rbx
     mov rbx, rdx

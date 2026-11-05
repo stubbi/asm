@@ -16,6 +16,8 @@ usage: .asciz "Usage: asm-hub-prototype HTTP_PORT DATABASE_URL_FILE\nThis experi
 config_error: .asciz "asm-hub-prototype: use a regular, private database URL file and a port from 1024 to 65535.\n"
 db_error: .asciz "asm-hub-prototype: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub-prototype: the loopback HTTP listener could not start.\n"
+library_error: .asciz "asm-hub-prototype: use libmicrohttpd 1.0.3 and libpq 16.15. Rebuild with the pinned libraries.\n"
+http_version: .asciz "1.0.3"
 started: .asciz "asm-hub-prototype: listening on loopback; experimental read endpoints only.\n"
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
@@ -88,6 +90,7 @@ sleep_interval: .quad 0, 100000000
 .section .bss
 .balign 8
 db_config: .zero CONFIG_LIMIT + 2
+.balign 4
 stop_requested: .zero 4
 
 .section .text
@@ -104,7 +107,10 @@ main:
     cmp edi, 3
     jne .Lusage
     mov rbx, rsi
-    mov rdi, [rsi + 8]
+    call validate_libraries
+    test eax, eax
+    jz .Llibrary_fail
+    mov rdi, [rbx + 8]
     xor eax, eax
     xor ecx, ecx
 .Lport_digit:
@@ -189,6 +195,11 @@ main:
     call message
     mov eax, 78
     jmp .Lmain_done
+.Llibrary_fail:
+    lea rdi, [rip + library_error]
+    call message
+    mov eax, 78
+    jmp .Lmain_done
 .Ldatabase_fail:
     lea rdi, [rip + db_error]
     call message
@@ -204,6 +215,31 @@ main:
     pop rbp
     ret
 .size main,.-main
+
+/* Input: none. Output: EAX=1 for the pinned HTTP/libpq runtime versions, else 0.
+ * Changed: caller-saved System V registers. Stack: 8 bytes plus library calls.
+ * Owns no buffers; the HTTP version string is borrowed from the library.
+ * Runs before configuration reads, database requests, or listener creation. */
+validate_libraries:
+    sub rsp, 8
+    call MHD_get_version@PLT
+    test rax, rax
+    jz .Llibrary_invalid
+    mov rdi, rax
+    lea rsi, [rip + http_version]
+    call strcmp@PLT
+    test eax, eax
+    jnz .Llibrary_invalid
+    call PQlibVersion@PLT
+    cmp eax, 160015
+    sete al
+    movzx eax, al
+    add rsp, 8
+    ret
+.Llibrary_invalid:
+    xor eax, eax
+    add rsp, 8
+    ret
 
 /* Async signal handler: one aligned sig_atomic_t store; no library call. */
 request_stop:

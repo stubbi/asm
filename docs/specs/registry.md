@@ -35,6 +35,11 @@ target = "x86_64-linux"
 
 The native CLI accepts a small TOML subset. The publication record is separate. Registry validation checks that the project name, version, and target agree with that record. It also requires the declared assembly source, a README, and a license file.
 
+Source builds accept the optional native library fields described in [the build contract](../native-linking.md).
+A package that declares a compile-only ABI check must include its source file in the archive.
+Library names are bounded metadata, not linker flags or shell commands.
+Published Asm 0.5.0 binaries do not accept these fields.
+
 ## Release record
 
 The canonical path is `registry/packages/<owner>/<name>/<version>.json`.

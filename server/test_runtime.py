@@ -239,6 +239,16 @@ class RuntimeTests(unittest.TestCase):
         finally:
             self.admin.execute(f'GRANT SELECT ON asm.artifacts TO "{role}"')
         self.assertEqual(self.request("/health/ready")[0], 200)
+        for schema in ("pgxtemp_", "pgxtempx", "pgxtoast_temp_", "pgxtoastxtempx"):
+            with self.subTest(schema=schema):
+                self.admin.execute(f'CREATE SCHEMA "{schema}"')
+                try:
+                    self.admin.execute(f'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"')
+                    self.assertEqual(self.request("/health/ready")[0], 503)
+                    self.assertEqual(self.request("/health/live")[0], 200)
+                finally:
+                    self.admin.execute(f'DROP SCHEMA "{schema}"')
+                self.assertEqual(self.request("/health/ready")[0], 200)
 
     def test_new_connections_load_replaced_certificate_files(self):
         cert = self.cluster.base / "reader.crt"

@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, IS_MACOS, TARGET, MAC_ARCH
+from host import IS_ARM64, IS_MACOS, TARGET, MAC_ARCH, exit_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +29,12 @@ def main_source():
                 'adrp x0, message@PAGE\nadd x0, x0, message@PAGEOFF\nbl _puts\n'
                 'mov w0, #0\nldp x29, x30, [sp], #16\nret\n'
                 '.data\nmessage: .asciz "native linked"\n')
+    if TARGET == "riscv64-linux":
+        return ('.attribute arch, "rv64gc"\n.attribute stack_align, 16\n'
+                '.global main\n.text\nmain:\naddi sp, sp, -16\nsd ra, 8(sp)\n'
+                'la a0, message\ncall puts\nli a0, 0\nld ra, 8(sp)\n'
+                'addi sp, sp, 16\nret\n.section .rodata\n'
+                'message: .asciz "native linked"\n.section .note.GNU-stack,"",@progbits\n')
     if IS_ARM64:
         return ('.global main\n.text\nmain:\n'
                 'stp x29, x30, [sp, #-16]!\nmov x29, sp\n'
@@ -127,7 +133,7 @@ class NativeLinkTests(unittest.TestCase):
                        check=True, capture_output=True, timeout=20)
         assembly = main_source()
         call = ("bl _native_value" if IS_ARM64 else "call _native_value") if IS_MACOS else ("bl native_value" if IS_ARM64 else "call native_value")
-        marker = "mov w0, #0" if IS_ARM64 else "xor eax, eax"
+        marker = "li a0, 0" if TARGET == "riscv64-linux" else ("mov w0, #0" if IS_ARM64 else "xor eax, eax")
         assembly = assembly.replace(marker, call + "\n" + marker)
         (self.work / "main.s").write_text(assembly)
         self.manifest.write_text(self.base + 'link = "c"\nlibraries = "asmfixture"\ncheck = "check.c"\n')
@@ -175,6 +181,41 @@ class NativeLinkTests(unittest.TestCase):
         self.cli("build", success=False)
         self.assertEqual(binary.read_bytes(), before)
         self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_checker_filename_cannot_select_a_compiler_response_file(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        (self.work / "@response.c").write_text('_Static_assert(0, "must reject");\n')
+        (self.work / "response.c").write_text('--version\n')
+        self.manifest.write_text(self.base + 'link = "c"\ncheck = "@response.c"\n')
+        result = self.cli("build", success=False)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("invalid or missing asm.toml", result.stderr)
+        self.assertEqual(binary.read_bytes(), before)
+        self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_source_components_cannot_select_assembler_response_files(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        for linked in (False, True):
+            for path in ("@main.s", "src/@main.s"):
+                with self.subTest(c_abi=linked, path=path):
+                    source = self.work / path
+                    source.parent.mkdir(exist_ok=True)
+                    source.write_text(main_source() if linked else exit_source(23))
+                    manifest = self.base.replace('source = "main.s"', f'source = "{path}"')
+                    self.manifest.write_text(manifest + ('link = "c"\n' if linked else ''))
+                    result = self.cli("build", success=False)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("invalid or missing asm.toml", result.stderr)
+                    self.assertEqual(binary.read_bytes(), before)
+                    self.assertFalse(list((self.work / "build").glob(".asm-*")))
+        (self.work / "main@literal.s").write_text(main_source())
+        self.manifest.write_text(self.base.replace('source = "main.s"', 'source = "main@literal.s"')
+                                 + 'link = "c"\n')
+        self.assertEqual(self.cli("run").stdout, "native linked\n")
 
     def test_hidden_c_checker_is_compiled_without_execution(self):
         (self.work / ".c").write_text(

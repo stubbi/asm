@@ -1,12 +1,12 @@
 # Native library builds
 
 Status: implementation contract for source builds.
-Published Asm 0.4.0 binaries do not support this extension.
+Published Asm 0.5.0 binaries do not support this extension.
 
 ## Purpose
 
 An assembly package can call established native libraries without a generated application backend.
-The first consumer is the experimental Linux x86-64 server.
+The first consumer is the experimental Linux server package.
 Dependable reuse requires explicit inputs, retained ABI checks, and understandable failures.
 
 ## Manifest
@@ -33,7 +33,8 @@ Each name becomes one `-lNAME` argument.
 The field cannot contain linker flags or paths.
 
 `check` names a relative `.c` file using the existing source-path rules.
-Build-source and checker path components cannot start with `@`, which compilers can interpret as response-file input.
+Source and checker path components cannot start with `@` or `-`.
+Compilers can interpret these names as options, including generated frontend metadata.
 Source archives must include that file.
 Archive paths retain the registry's stricter portable-path rules and 240-byte limit.
 Asm compiles it with `-fsyntax-only`, C11, and warnings as errors.
@@ -77,75 +78,101 @@ This build extension does not qualify such a replacement or change the architect
 
 ## Validation record
 
-The [5 November 2026 record](native-linking-evidence.json) identifies the checked artifacts, passing tests, failed attempts, and unrun gates.
-Native macOS behavior passed; Linux crossassembly does not establish Linux execution.
-The extracted Linux server's build and runtime tests remain unrun because local storage failed during dependency setup.
+The [server package record](server-package-evidence.json) retains native Linux x86-64 and ARM64 qualification.
+Each target passed eight native-link tests, 19 extracted-package tests, 11 hosted-runtime tests, and four failure-preservation checks.
+The reference package built through the recorded native Asm CLI.
+The record binds the CLI, archive, both executables, test logs, toolchain, and exact checkout commit.
+Downloaded artifact bytes independently matched their recorded digests.
+
+The record also retains the schema-prefix regression: four readiness failures on each target, followed by both corrected suites passing.
+Literal temporary-schema prefixes now prevent wildcard exclusions from hiding reader CREATE privileges.
+The migration bytes and checksum remain unchanged.
+
+The clean Apple Silicon checkout passed 225 CLI tests, 60 registry tests, and both verifier race-test packages.
+Seven evidence-parser regressions passed separately; they do not establish server execution.
+These results apply to their recorded commits and artifacts.
+They do not establish a release, deployment, or performance result.
+
+The [earlier checkpoint](native-linking-evidence.json) retains failed attempts and then-unrun gates.
+It predates the server ports and response-file rejection.
+Its crossassembly results do not replace the later native Linux results.
 
 ## Target coverage
 
-The [shared coverage audit](target-coverage.md) defines the wider architecture work.
+The [shared coverage audit](target-coverage.md) and [architecture acceptance gates](architecture-gates.md) define the wider platform work.
 This section covers native linking and the assembly server only.
 All native-linking additions remain unreleased.
 
 | CLI host target | ISA | OS | C ABI for linked projects | CPU requirement | Current CLI evidence |
 | --- | --- | --- | --- | --- | --- |
-| `x86_64-linux` | x86-64 | Linux | System V AMD64, LP64 | No additional instruction extension introduced | Cross-built ELF; container and stack checks passed; runtime unrun |
-| `aarch64-linux` | AArch64 | Linux | AAPCS64, LP64 | ARMv8-A | Cross-built ELF; container and stack checks passed; runtime unrun |
+| `x86_64-linux` | x86-64 | Linux | System V AMD64, LP64 | No additional instruction extension introduced | Native GNU build and eight C ABI regressions passed |
+| `aarch64-linux` | AArch64 | Linux | AAPCS64, LP64 | ARMv8-A | Native GNU build and eight C ABI regressions passed |
 | `aarch64-macos` | AArch64 | macOS 15+ | Apple arm64, LP64 | Apple Silicon | Native build, execution, and CLI tests passed |
 
 The package must declare any additional library ABI, runtime, and CPU requirements.
 Linux kernel and libc minimums for this extension remain unqualified.
 These CLI results do not qualify a server on the same ISA.
-The cross-build used Clang and LLD, not the canonical GNU release toolchain.
-The Linux ELF checks cover CLI executables; C ABI project execution remains unrun.
-Linux native-library builds still need execution through the six shared tests on each Linux host.
-The existing x86-64 and ARM64 CI jobs discover those tests through `make check`.
-Their configuration is not evidence that a run passed.
+The Linux native-link tests inspect PIE, RELRO, immediate binding, and the non-executable stack.
+The recorded jobs used GNU compiler and binutils tools.
+The macOS tests check the corresponding Mach-O build and execution contract.
 
-The current server declares Linux x86-64 and the System V AMD64 LP64 ABI.
-Its source has cross-assembled, but the new extracted-package build and 17 server tests remain unrun.
-It has no ARM64, RISC-V64, macOS, or Windows implementation or deployment qualification.
+The reference server now has x86-64, AArch64, and RV64GC/LP64D source implementations.
+Target-specific manifests and header assertions accompany those sources.
+The x86-64 and ARM64 suites passed in the recorded native jobs.
+The RISC-V reference package still requires its separate extracted-build execution gate.
+The hosted foundation also has target-specific runtime and configuration sources, with its separate TLS suite.
+These source ports do not establish deployment qualification or new released support.
+Neither server has a macOS or Windows implementation.
 Intel macOS and Windows CLI expansion also remain outside this native-linking qualification.
 
-## Remaining ARM64 server port
+## ARM64 server implementation and qualification
 
-The port must preserve the existing x86-64 package and its failure behavior.
-Changing the manifest target alone cannot translate its assembly or ABI assertions.
-
-1. Add AArch64 source and target-specific package inputs beside `experiments/assembly-server/server.s` and `asm.toml`.
-2. Declare ARMv8-A, Linux, AAPCS64 LP64, runtime minimums, and additional CPU requirements separately.
-3. Port C calls, callbacks, variadic startup, return registers, callee-saved registers, and stack frames.
-4. Replace x86 system calls, open flags, and `stat` offsets in configuration handling.
-5. Assert the selected target headers and layouts in a target-specific `abi-check.c`.
-6. Preserve pinned libraries, assembly runtime-version rejection, SQL, deadlines, ownership, signals, and shutdown behavior.
-7. Add AArch64 preload fixtures to `test_runtime_versions.py` without weakening the x86 cases.
-8. Build the pinned dependencies and extracted package through the native ARM64 CLI as an ordinary user.
-9. Run all server tests and inspect the resulting ELF, hardening, dependencies, and file-preservation failures.
-10. Record source and artifact digests, toolchain, kernel, library versions, and native or emulated execution before declaring support.
+`experiments/assembly-server/aarch64/server.s` implements the reference server with AAPCS64 calls and Linux AArch64 system calls.
+`server/aarch64/runtime.s` and `config.s` implement the hosted foundation with its existing TLS policy.
+All three files passed local crossassembly and the recorded native Linux ARM64 runtime suites.
 
 The server uses the C ABI, not the CLI's internal `x9` result convention.
 Its HTTP callback and PostgreSQL calls need their own argument review.
 The [AAPCS64 2025Q1 specification](https://github.com/ARM-software/abi-aa/blob/2025Q1/aapcs64/aapcs64.rst) and pinned target headers govern that review.
 The ABI source was checked on 5 November 2026; it does not establish a minimum supported kernel.
 
-## Remaining RISC-V64 port
+## RISC-V64 server implementation and CLI integration
 
-The existing RV64I/LP64 hello example does not establish a native CLI or server.
-A full port needs an explicit ISA, C ABI, runtime minimum, PIC, and linker-relaxation policy.
-RV64GC/LP64D is a candidate for native-library work, not an accepted support declaration.
+`experiments/assembly-server/riscv64/server.s` and `server/riscv64/{runtime,config}.s` implement native RV64 server instructions.
+These servers select little-endian RV64GC and the LP64D C ABI.
+Their headers require the declared integer, atomic, compressed, and double-precision floating-point features.
+Local LLVM assembly checks produced ELF machine 243 with flags 5: compressed instructions and double-float ABI.
+GNU linkage and runtime execution still require target-specific qualification.
+The existing RV64I/LP64 hello example does not establish this native-library ABI or server behavior.
 
-1. Select and document the ISA extensions, operating system, ABI, CPU requirements, and toolchain independently.
-2. Port every CLI module and syscall adapter before enabling a RISC-V architecture branch.
-3. Port native-link arguments, compiler environments, staging, publication validation, and failure preservation.
-4. Replace x86-or-ARM assumptions in host fixtures and target-specific build selection.
-5. Review native ELF flags for the selected ABI and ISA; do not copy the existing zero-flags rule.
-6. Add RISC-V server assembly, target-header assertions, and runtime-version preload fixtures.
-7. Qualify pinned dependencies, the extracted package, and full CLI and server suites on the selected target.
-8. Keep emulator results separate from native qualification and physical performance measurements.
+The independently owned RISC-V CLI port must select `-march=rv64gc -mabi=lp64d` for `link = "c"` projects.
+Its freestanding profile must remain distinct.
+Until that CLI integration passes, the RISC-V reference package's extracted `asm build` gate remains open.
+The hosted foundation uses its direct native compiler build and can qualify independently.
 
-The Makefile currently rejects RISC-V CLI builds before output creation.
-Its source selection and verifier mapping also need explicit branches before that guard can change.
+The RISC-V CLI implementation is maintained on a separate branch.
+Its native-library integration needs the same compiler argument rejection and runtime checks before qualification.
 Release and installer changes belong to the separate release workstream after target qualification.
 The [RISC-V psABI](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/) defines ABI and ELF distinctions.
 Version 2.0-rc0, dated 4 November 2026, was inspected on 5 November 2026.
 The [GNU assembler 2.47 options](https://sourceware.org/binutils/docs/as/RISC_002dV_002dOptions.html) define ISA, ABI, PIC, and relaxation controls.
+
+## Prepare a target-specific reference package
+
+Use Python 3.11 or later to prepare source without changing the checkout's x86-64 manifest:
+
+```sh
+python3 experiments/assembly-server/package.py \
+  --target aarch64-linux --output build/server-aarch64-source
+```
+
+The new directory contains a standalone `asm.toml` with the selected source and target.
+Run `asm build` there on the matching Linux host, with the required native library paths.
+`--target riscv64-linux` prepares the RISC-V source tree; it does not supply a RISC-V CLI or execute a build.
+The helper rejects existing destinations, source links, special files, and nonportable paths.
+Preparation runs no package code.
+
+The source-only hosted handoff is `codex/server-runtime-ports`, commits `e3fabf00` and `3d2d0f45`, based on public main `78c6c91`.
+It contains no image, installer, or release changes.
+The native-package workflow separately exercises current Linux x86-64 and ARM64 CLI builds and both server suites.
+The hosted image workflow owns native x86-64/ARM64 and explicitly emulated RISC-V image qualification.
