@@ -58,7 +58,7 @@ The launcher delegates ordinary commands to the selected payload and propagates 
 It must not impose a tool deadline on a deliberately invoked CLI payload.
 
 The launcher remains installed during ordinary payload updates.
-Updating the launcher itself requires running the downloaded installer outside the managed installation after other Asm processes exit.
+Updating the launcher requires running the bootstrap installer after other Asm processes exit.
 This bootstrap lifecycle is a material limit, not automatic full-binary replacement.
 
 Commit to launcher protocol version 1 for compatible payload updates.
@@ -89,7 +89,8 @@ Keep the layout marker, bootstrap version, and required protocol in that canonic
 
 ## Installation and launch
 
-Before installation, bind the source descriptor to the running downloaded image.
+For a published installation, bind the source descriptor to the verified artifact digest, target, and provenance result.
+For explicit source installation, retain the source-build boundary without claiming publisher authentication.
 Validate target, size, file type, ownership, link count, and parent identities.
 Create protected private state and an initial versioned payload before publishing the root command.
 Use exclusive private staging, exact copied-byte checks, file flushing, and no-replace publication.
@@ -115,6 +116,7 @@ Package installation and inventory operations must reject destinations inside th
 Determine the managed role from the actual executing image and checked installation path, not HOME alone.
 Changing HOME must not turn an installed launcher into a standalone older CLI.
 An environment/path disagreement fails with a clear recovery step.
+Reserve the fixed `.local/bin/asm.exe` role even when HOME disagrees; require its valid managed state.
 Direct invocation of an inactive retained payload may inspect that version but must not update the active installation.
 
 Use a dedicated launcher wait path that preserves the payload's complete Windows exit status.
