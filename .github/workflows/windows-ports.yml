@@ -1,0 +1,154 @@
+name: Native Windows ports
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/windows-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ports-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Test ${{ matrix.target }} ${{ matrix.scope }} on Windows
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [cli, packages]
+        platform: [x64, arm64]
+        include:
+          - platform: x64
+            target: x86_64-windows
+            arch: x86_64
+            machine: x64
+            runner: windows-2025
+            prepare: tools/windows_x64.py
+          - platform: arm64
+            target: aarch64-windows
+            arch: aarch64
+            machine: arm64
+            runner: windows-11-arm
+            prepare: tools/windows_arm64.py
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Locate the installed LLVM and Windows SDK
+        env:
+          ASM_MACHINE: ${{ matrix.machine }}
+          ASM_SCOPE: ${{ matrix.scope }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $llvm = 'C:\Program Files\LLVM\bin'
+          $gzip = 'C:\Program Files\Git\usr\bin\gzip.exe'
+          $sdkVersion = $null
+          $msvcVersion = $null
+          $tools = @("$llvm\clang.exe", "$llvm\lld-link.exe")
+          if ($env:ASM_SCOPE -eq 'cli') { $tools += @($gzip, "$env:SystemRoot\System32\curl.exe") }
+          foreach ($tool in $tools) {
+            if (!(Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Required tool is absent: $tool" }
+          }
+          if ($env:ASM_SCOPE -eq 'cli') {
+          $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10\Lib'
+          $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory |
+            Where-Object { Test-Path -LiteralPath "$($_.FullName)\um\$env:ASM_MACHINE\kernel32.lib" } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (!$sdk) { throw "The Windows SDK import libraries are absent for $env:ASM_MACHINE" }
+          $msvc = Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*' -Directory |
+            Where-Object { Test-Path -LiteralPath "$($_.FullName)\lib\$env:ASM_MACHINE\libcmt.lib" } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (!$msvc) { throw "The MSVC runtime import libraries are absent for $env:ASM_MACHINE" }
+          $sdkVersion = $sdk.Name
+          $msvcVersion = $msvc.Name
+          "LIB=$($msvc.FullName)\lib\$env:ASM_MACHINE;$($sdk.FullName)\um\$env:ASM_MACHINE;$($sdk.FullName)\ucrt\$env:ASM_MACHINE" >> $env:GITHUB_ENV
+          $sdkInclude = "C:\Program Files (x86)\Windows Kits\10\Include\$($sdk.Name)"
+          "INCLUDE=$($msvc.FullName)\include;$sdkInclude\ucrt;$sdkInclude\shared;$sdkInclude\um" >> $env:GITHUB_ENV
+          }
+          "$llvm" >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force -Path build\windows-evidence | Out-Null
+          $metadata = @{
+            source_commit = (git rev-parse HEAD)
+            runner_architecture = $env:RUNNER_ARCH
+            image_os = $env:ImageOS
+            image_version = $env:ImageVersion
+            windows_sdk = $sdkVersion
+            msvc_runtime = $msvcVersion
+            llvm = (& "$llvm\clang.exe" --version | Out-String)
+          }
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content build\windows-evidence\build-environment.json -Encoding utf8
+          git diff --exit-code
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (git status --porcelain --untracked-files=normal) { throw 'The source checkout is not clean.' }
+      - name: Check the evidence refusal gates
+        if: matrix.scope == 'cli'
+        run: |
+          python -m unittest discover -s tests/windows -p test_evidence_driver.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build the native PE executable from assembly
+        if: matrix.scope == 'cli'
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_MACHINE: ${{ matrix.machine }}
+          ASM_TARGET: ${{ matrix.target }}
+          ASM_PREPARE: ${{ matrix.prepare }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = "build/windows/$env:ASM_ARCH"
+          python $env:ASM_PREPARE --output "$directory/asm.s"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & 'C:\Program Files\LLVM\bin\clang.exe' "--target=$env:ASM_ARCH-pc-windows-msvc" -c "$directory/asm.s" -o "$directory/asm.obj"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & 'C:\Program Files\LLVM\bin\lld-link.exe' "/machine:$env:ASM_MACHINE" /entry:_start /subsystem:console /nodefaultlib /nxcompat /dynamicbase /Brepro "/out:build/asm-$env:ASM_TARGET.exe" "$directory/asm.obj" kernel32.lib ntdll.lib advapi32.lib bcrypt.lib shell32.lib
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-FileHash -Algorithm SHA256 "$directory/asm.s", "$directory/asm.obj", "build/asm-$env:ASM_TARGET.exe" |
+            Select-Object Path, Hash | ConvertTo-Json | Set-Content build\windows-evidence\build-hashes.json -Encoding utf8
+      - name: Run the native command contract
+        if: matrix.scope == 'cli'
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_test.py --asm "build/asm-$env:ASM_TARGET.exe" --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-evidence/runtime.json --toolchain-bin 'C:\Program Files\LLVM\bin'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Run the independent native reference-package contract
+        if: matrix.scope == 'packages'
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_test.py --packages-only --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-evidence/packages.json --toolchain-bin 'C:\Program Files\LLVM\bin'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain native bytes and all available results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-windows-${{ matrix.scope }}-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            build/windows-evidence/*
+            build/windows/${{ matrix.arch }}/asm.s
+            build/asm-${{ matrix.target }}.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  qualification:
+    name: Require all four Windows qualification results
+    needs: native
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require both native jobs
+        env:
+          ASM_NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$ASM_NATIVE_RESULT" = success
