@@ -24,7 +24,7 @@ func check(t *testing.T, err error) {
 
 func fixture(t *testing.T) (string, string, string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := privateFixtureDirectory(t)
 	args := []string{"prepare-root", filepath.Join(dir, "unsigned.json")}
 	for _, name := range []string{"root1", "root2", "root3", "targets", "snapshot", "timestamp"} {
 		seed := sha256.Sum256([]byte("ASM MAINTAINER TOOL TEST ONLY " + name))

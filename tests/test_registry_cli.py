@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_MACOS, TARGET, OTHER_TARGET, ELF_MACHINE, VERSION
+from host import IS_MACOS, TARGET, OTHER_TARGET, ELF_MACHINE, VERSION, IS_ARM64
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -170,7 +170,7 @@ class RegistryCliTests(unittest.TestCase):
         original = ASM.read_bytes()
         bad = []
         if IS_MACOS:
-            mutations = [(0, "I", 0x464c457f), (4, "I", 0x1000007), (12, "I", 1),
+            mutations = [(0, "I", 0x464c457f), (4, "I", 0x1000007 if IS_ARM64 else 0x100000c), (12, "I", 1),
                          (16, "I", 129), (20, "I", 0xffffffff), (28, "I", 1), (36, "I", 4)]
         else:
             header_offset = struct.unpack_from("<Q", original, 32)[0]

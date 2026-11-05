@@ -61,9 +61,12 @@ class DependencyCliTests(unittest.TestCase):
                     data = b".global asm_u64_min\n.text\nasm_u64_min:\n    bgeu a1, a0, 1f\n    mv a0, a1\n1:  ret\n"
                 elif IS_RISCV64 and relative in {"src/main.s", "tests/main.s"}:
                     data = exit_source(0).encode()
+                elif IS_MACOS and not IS_ARM64 and relative == "src/min.s":
+                    data = (b".intel_syntax noprefix\n.global asm_u64_min\n.text\nasm_u64_min:\n"
+                            b"mov rax, rdi\ncmp rdi, rsi\ncmova rax, rsi\nret\n")
                 elif IS_ARM64 and relative == "src/min.s":
                     data = b".global asm_u64_min\n.text\nasm_u64_min:\n    cmp x0, x1\n    csel x0, x0, x1, ls\n    ret\n"
-                elif IS_ARM64 and relative in {"src/main.s", "tests/main.s"}:
+                elif (IS_ARM64 or IS_MACOS) and relative in {"src/main.s", "tests/main.s"}:
                     data = exit_source(0).encode()
                 member = tarfile.TarInfo(relative)
                 member.mode = 0o644
@@ -101,7 +104,7 @@ class DependencyCliTests(unittest.TestCase):
                     "bne a0, t0, failure\nli a0, 0\nli a7, 93\necall\n"
                     "failure:\nli a0, 99\nli a7, 93\necall\n")
         if IS_MACOS:
-            body = body.replace("mov x8, #93\nsvc #0", "bl _exit")
+            body = body.replace("mov x8, #93\nsvc #0", "bl _exit") if IS_ARM64 else body.replace("mov eax, 60\nsyscall", "call _exit")
         (project / "src/main.s").write_text(
             f'.include "stubbi/{name}/{version}/{TARGET}/src/min.s"\n' + program(body))
 

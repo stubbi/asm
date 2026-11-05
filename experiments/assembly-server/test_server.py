@@ -26,7 +26,7 @@ import uuid
 from local_postgres import Database, LocalPostgres, MIGRATION_SHA384, create_catalog
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BUILD = Path(os.environ.get("ASM_PROTO_BUILD_DIR", Path(__file__).resolve().parent / "build"))
 BINARY = Path(os.environ["ASM_PROTO_BINARY"])
 
 
@@ -90,7 +90,7 @@ class GateProxy:
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix="asm-server-test-", dir=ROOT / "build")
+        cls.temp = tempfile.TemporaryDirectory(prefix="asm-server-test-", dir=BUILD)
         cls.addClassCleanup(cls.temp.cleanup)
         cls.base = Path(cls.temp.name)
         cls.cluster = LocalPostgres(cls.base)
@@ -180,9 +180,9 @@ class ServerTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.stop_server()
         cls.log.flush()
-        evidence = ROOT / "build/assembly-server/evidence.json"
+        evidence = BUILD / "evidence.json"
         evidence.write_text(json.dumps(cls.evidence, indent=2) + "\n")
-        saved_log = ROOT / "build/assembly-server/server-test.log"
+        saved_log = BUILD / "server-test.log"
         saved_log.write_bytes((cls.base / "server.log").read_bytes())
 
     def request(self, path, *, method="GET", body=None, headers=None, timeout=4):
@@ -262,6 +262,16 @@ class ServerTests(unittest.TestCase):
         finally:
             self.fixture_admin.execute(f'GRANT SELECT ON asm.artifacts TO "{self.reader}"')
         self.assertEqual(self.request("/health/ready")[0], 200)
+        for schema in ("pgxtemp_", "pgxtempx", "pgxtoast_temp_", "pgxtoastxtempx"):
+            with self.subTest(schema=schema):
+                self.fixture_admin.execute(f'CREATE SCHEMA "{schema}"')
+                try:
+                    self.fixture_admin.execute(f'GRANT CREATE ON SCHEMA "{schema}" TO "{self.reader}"')
+                    self.assertEqual(self.request("/health/ready")[0], 503)
+                    self.assertEqual(self.request("/health/live")[0], 200)
+                finally:
+                    self.fixture_admin.execute(f'DROP SCHEMA "{schema}"')
+                self.assertEqual(self.request("/health/ready")[0], 200)
 
     def test_startup_rejects_migrator_and_missing_grants(self):
         result = subprocess.run([str(BINARY), str(self.unused_port()), str(self.url_files["migrator"])],

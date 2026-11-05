@@ -89,6 +89,7 @@ sleep_interval: .quad 0, 100000000
 .balign 8
 .globl db_config
 db_config: .zero CONFIG_LIMIT + 2
+.balign 4
 stop_requested: .zero 4
 
 .section .text
