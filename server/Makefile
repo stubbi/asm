@@ -9,20 +9,39 @@ BUILD ?= $(abspath ../build/server)
 SOURCE_REVISION ?= $(shell git rev-parse HEAD)
 LIBRARIES := -L"$(MHD_PREFIX)/lib" -Wl,-rpath,"$(MHD_PREFIX)/lib" \
   -L"$(PG_LIB_DIR)" -Wl,-rpath,"$(PG_LIB_DIR)" -lmicrohttpd -l:libpq.so.5 -pthread
+HOST_SYSTEM := $(shell uname -s)
+HOST_MACHINE := $(shell uname -m)
+NATIVE_TARGET := $(if $(filter x86_64,$(HOST_MACHINE)),x86_64-linux,$(if $(filter aarch64,$(HOST_MACHINE)),aarch64-linux,$(if $(filter riscv64,$(HOST_MACHINE)),riscv64-linux)))
+TARGET ?= $(NATIVE_TARGET)
+SOURCES_x86_64-linux := runtime.s config.s
+SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s
+SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s
+TARGET_FLAGS_riscv64-linux := -march=rv64gc -mabi=lp64d
 
 .PHONY: all test
 all:
-	@test "$$(uname -s)/$$(uname -m)" = Linux/x86_64 || \
-	  { echo "Use Linux x86-64 to build this runtime." >&2; exit 1; }
+	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
+	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
+	  *) echo "Use native Linux x86-64, AArch64, or RV64GC/LP64D to build this runtime." >&2; exit 1 ;; esac
+	@test "$(TARGET)" = "$(NATIVE_TARGET)" || \
+	  { echo "TARGET must match the native Linux host: $(NATIVE_TARGET)." >&2; exit 1; }
 	@printf '%s\n' '$(SOURCE_REVISION)' | LC_ALL=C grep -Eq '^[0-9a-f]{40}$$' || \
 	  { echo "SOURCE_REVISION must be an exact commit ID." >&2; exit 1; }
-	mkdir -p "$(BUILD)"
-	$(CC) -std=c11 -Wall -Wextra -Werror -I"$(MHD_PREFIX)/include" \
-	  -I"$(PG_INCLUDE_DIR)" -o "$(BUILD)/abi-check" abi-check.c $(LIBRARIES)
-	"$(BUILD)/abi-check"
-	$(CC) -g -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
-	  -x assembler-with-cpp -DASM_SOURCE_REVISION='"$(SOURCE_REVISION)"' \
-	  -o "$(BUILD)/asm-hub" runtime.s config.s $(LIBRARIES)
+	@set -eu; umask 077; \
+	  test ! -L "$(BUILD)" || { echo "BUILD must not be a symlink." >&2; exit 1; }; \
+	  mkdir -p "$(BUILD)"; \
+	  test ! -L "$(BUILD)/asm-hub" && test ! -d "$(BUILD)/asm-hub" || \
+	    { echo "asm-hub must not be a symlink or directory." >&2; exit 1; }; \
+	  stage=$$(mktemp -d "$(BUILD)/.asm-server.XXXXXXXX"); \
+	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
+	  $(CC) $(TARGET_FLAGS_$(TARGET)) -std=c11 -Wall -Wextra -Werror \
+	    -I"$(MHD_PREFIX)/include" -I"$(PG_INCLUDE_DIR)" \
+	    -o "$$stage/abi-check" abi-check.c $(LIBRARIES); \
+	  "$$stage/abi-check"; \
+	  $(CC) $(TARGET_FLAGS_$(TARGET)) -g -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
+	    -x assembler-with-cpp -DASM_SOURCE_REVISION='"$(SOURCE_REVISION)"' \
+	    -o "$$stage/asm-hub" $(SOURCES_$(TARGET)) $(LIBRARIES); \
+	  mv -fT -- "$$stage/asm-hub" "$(BUILD)/asm-hub"
 
 test: all
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \

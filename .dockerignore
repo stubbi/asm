@@ -8,6 +8,15 @@
 !tools/agent_catalog.py
 !tools/agent_workflow.py
 !tools/registry.py
+!tools/test_server_image.py
+!server/
+!server/**
+!experiments/
+!experiments/assembly-server/
+!experiments/assembly-server/local_postgres.py
+!experiments/assembly-server/guard.sql
+!experiments/assembly-server/fixtures/
+!experiments/assembly-server/fixtures/0001_registry.sql
 !skills/
 !skills/asm-build/
 !skills/asm-build/**

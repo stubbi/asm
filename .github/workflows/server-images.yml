@@ -1,0 +1,227 @@
+name: Assembly server images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    name: Qualify ${{ matrix.arch }} (${{ matrix.execution }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64, execution: native, minutes: 45 }
+          - { runner: ubuntu-24.04-arm, arch: arm64, execution: native, minutes: 45 }
+          - { runner: ubuntu-24.04, arch: riscv64, execution: emulated, minutes: 90 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the qualification harness
+        run: python3 tools/test_server_image.py --self-test
+      - name: Install the pinned Ubuntu RISC-V user emulator
+        if: matrix.arch == 'riscv64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_QEMU_DEB="$RUNNER_TEMP/asm-qemu-user-static.deb"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_QEMU_DEB" \
+            https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb
+          printf '%s  %s\n' 5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0 "$ASM_QEMU_DEB" | sha256sum --check --strict
+          test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB"
+          printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
+          if ! test -e /proc/sys/fs/binfmt_misc/register; then
+            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+          fi
+          sudo /usr/lib/systemd/systemd-binfmt /usr/lib/binfmt.d/qemu-riscv64.conf
+          grep -Fx 'interpreter /usr/libexec/qemu-binfmt/riscv64-binfmt-P' /proc/sys/fs/binfmt_misc/qemu-riscv64
+          test "$(readlink -f /usr/libexec/qemu-binfmt/riscv64-binfmt-P)" = /usr/bin/qemu-riscv64-static
+          grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
+      - name: Record the runner and emulator boundary
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_EXECUTION: ${{ matrix.execution }}
+        run: |
+          set -euo pipefail
+          mkdir -p server-image-evidence
+          {
+            uname -a
+            docker version
+            docker buildx version
+            printf 'target=linux/%s execution=%s\n' "$ASM_ARCH" "$ASM_EXECUTION"
+            if test "$ASM_ARCH" = riscv64; then
+              cat /proc/sys/fs/binfmt_misc/qemu-riscv64
+              grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
+              /usr/bin/qemu-riscv64-static --version
+              dpkg-query --show qemu-user-static systemd
+              sha256sum /usr/bin/qemu-riscv64-static
+            fi
+          } | tee server-image-evidence/environment.txt
+      - name: Build the target runtime and its derived qualification image
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
+            --tag "asm-server:runtime-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-runtime.log
+          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
+            --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
+      - name: Run the actual HTTP, PostgreSQL, TLS, and security suite
+        timeout-minutes: 5
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_EXECUTION: ${{ matrix.execution }}
+        run: |
+          set -euo pipefail
+          python3 tools/test_server_image.py --arch "$ASM_ARCH" --execution "$ASM_EXECUTION" \
+            --revision "$GITHUB_SHA" --image "asm-server:runtime-$ASM_ARCH" \
+            --qualification-image "asm-server:qualification-$ASM_ARCH" \
+            --output server-image-evidence/qualification.json \
+            2>&1 | tee server-image-evidence/runtime-tests.log
+      - name: Retain the exact qualified runtime image
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{json .}}' > server-image-evidence/image.json
+          docker save --output server-image-evidence/runtime.tar "asm-server:runtime-$ASM_ARCH"
+          (cd server-image-evidence && sha256sum runtime.tar > runtime.sha256)
+      - name: Retain successful and failed qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-image-${{ matrix.arch }}-${{ github.sha }}
+          path: server-image-evidence/
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: qualify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, riscv64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-image-${{ matrix.arch }}-${{ github.sha }}
+      - name: Load only this run's exact qualified runtime image
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          sha256sum --check runtime.sha256
+          jq --exit-status --arg revision "$GITHUB_SHA" --arg arch "$ASM_ARCH" \
+            '.status == "pass" and .scope == "assembly-runtime-foundation" and .source_revision == $revision and .architecture == $arch and .tests_run >= 11 and .tests_skipped == 0' qualification.json
+          docker load --input runtime.tar
+          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
+          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Architecture}}')" = "$ASM_ARCH"
+          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
+          docker tag "asm-server:runtime-$ASM_ARCH" "ghcr.io/stubbi/asm-hub:$ASM_TAG"
+      - name: Publish the qualified image and record its registry digest
+        id: image
+        shell: bash
+        env:
+          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASM_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
+          docker push "ghcr.io/stubbi/asm-hub:$ASM_TAG"
+          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-hub:$ASM_TAG" --format '{{index .RepoDigests 0}}')"
+          case "$ASM_REF" in ghcr.io/stubbi/asm-hub@sha256:*) ;; *) exit 1 ;; esac
+          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$ASM_REF" | tee registry-digest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the exact public source and qualified image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/stubbi/asm-hub
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-image-digest-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            registry-digest.txt
+            qualification.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-index:
+    needs: publish
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: server-image-digest-*-${{ github.sha }}
+          path: child-images
+      - name: Authenticate only for the trusted main publication
+        env:
+          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Verify all published children and create the combined index
+        id: index
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test_server_image.py --publish-index --revision "$GITHUB_SHA" \
+            --children-directory child-images --index-tag "sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --output index-report.json | tee index-digest.txt
+          printf 'digest=%s\n' "$(jq -r .index_digest index-report.json)" >> "$GITHUB_OUTPUT"
+          cat index-digest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the verified combined index
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/stubbi/asm-hub
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-image-index-${{ github.sha }}
+          path: |
+            index-report.json
+            index-digest.txt
+          if-no-files-found: error
+          retention-days: 30
