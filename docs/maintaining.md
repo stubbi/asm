@@ -78,6 +78,26 @@ A workflow attempt alone does not establish a successful publication.
 
 The [release builder](../tools/release.py) compares two clean CLI builds and two clean builds for each requested hello target.
 It also checks deterministic source archives and records the tools and observed execution results.
+Native ARM64 Linux and Apple Silicon macOS jobs supply exact-commit executables and their runtime evidence.
+The final builder consumes those bytes after it checks their source, target, version, digest, and native test results.
+A missing or mismatched native input stops the build.
+
+Linux ARM64 qualification runs the full CLI suite as root on a disposable, read-only runner.
+The unchanged suite includes cross-user permission checks.
+Private, root-owned source snapshots stay below `/tmp`.
+This is a test-runner requirement.
+The CLI installation contract still uses the caller's account.
+
+`make test` runs every root-level CLI test module on Linux.
+On macOS, it runs the native suite in `tests/macos`.
+`make package-test` runs all reference-package tests.
+`make check` runs both suites and the registry, release, and site checks.
+Package skips identify unsupported hosts or unavailable tools.
+They do not qualify a CLI host or package target.
+
+The legacy `--native-input DIRECTORY` argument identifies macOS qualification output.
+Use `--native-input-for aarch64-linux DIRECTORY` for the ARM64 Linux input.
+Both directories must come from the same exact source commit.
 Matching bytes in one build environment do not establish reproducibility across different toolchains or operating systems.
 
 Published version bytes must remain unchanged.
