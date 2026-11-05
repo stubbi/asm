@@ -35,7 +35,9 @@ jobs:
             runner: windows-11-arm
             prepare: tools/windows_arm64.py
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    # The expanded CLI suite invokes the source installer about fifty times.
+    # Native fifth-run PowerShell installation took 27.172s/39.939636s.
+    timeout-minutes: ${{ matrix.scope == 'cli' && 60 || 25 }}
     defaults:
       run:
         shell: pwsh
@@ -152,6 +154,7 @@ jobs:
             build/asm-${{ matrix.target }}.exe
           if-no-files-found: error
           retention-days: 14
+          include-hidden-files: true
 
   linux-packages:
     name: Check Linux reference packages with QEMU

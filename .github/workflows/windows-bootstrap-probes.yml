@@ -86,3 +86,4 @@ jobs:
             build/layout-rename-probe/
           if-no-files-found: error
           retention-days: 14
+          include-hidden-files: true
