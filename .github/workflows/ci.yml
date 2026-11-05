@@ -16,7 +16,7 @@ concurrency:
 jobs:
   check:
     name: Check the x86_64 release
-    needs: macos
+    needs: [arm64, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -48,8 +48,13 @@ jobs:
         with:
           name: native-macos-${{ github.sha }}
           path: native-input
+      - name: Receive the native ARM64 qualification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: native-arm64-${{ github.sha }}
+          path: native-arm64-input
       - name: Build release files
-        run: python3 tools/release.py --output dist --native-input native-input
+        run: python3 tools/release.py --output dist --native-input native-input --native-input-for aarch64-linux native-arm64-input
 
   arm64:
     name: Check the native ARM64 CLI
@@ -58,6 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Test native commands, parsers, and installation boundaries
@@ -68,6 +74,30 @@ jobs:
             test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
             test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor \
             test_bootstrap.BootstrapUserFlowTests.test_readonly_home_allows_non_root_install_and_exact_rerun
+      - name: Build and test exact native ARM64 release bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Root runs the unchanged cross-UID cases. A root-owned /tmp child
+          # keeps runner-owned checkout ancestors outside protected-path tests.
+          ASM_NATIVE_ROOT=$(sudo mktemp -d /tmp/asm-native-arm64.XXXXXXXX)
+          test -d "$GITHUB_WORKSPACE/.git"
+          test ! -L "$GITHUB_WORKSPACE/.git"
+          sudo mkdir "$ASM_NATIVE_ROOT/repo"
+          sudo cp -R "$GITHUB_WORKSPACE/.git" "$ASM_NATIVE_ROOT/repo/.git"
+          sudo env -i PATH="$PATH" HOME=/root LANG=C.UTF-8 \
+            python3 tools/release.py --repo "$ASM_NATIVE_ROOT/repo" --commit "$GITHUB_SHA" \
+            --native-target aarch64-linux --output "$ASM_NATIVE_ROOT/native-dist"
+          sudo rm -rf -- "$ASM_NATIVE_ROOT/repo"
+          sudo chmod 755 "$ASM_NATIVE_ROOT"
+          printf 'ASM_NATIVE_ARM_OUTPUT=%s/native-dist\n' "$ASM_NATIVE_ROOT" >> "$GITHUB_ENV"
+      - name: Retain exact native ARM64 bytes and runtime evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-arm64-${{ github.sha }}
+          path: ${{ env.ASM_NATIVE_ARM_OUTPUT }}/*
+          if-no-files-found: error
+          retention-days: 7
 
   macos:
     name: Check the native macOS CLI
