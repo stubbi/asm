@@ -1,6 +1,6 @@
 # Proposed Windows versioned installation
 
-Status: proposed design. User approval and implementation are pending.
+Status: approved for implementation by the user on 5 November 2026. Implementation and qualification are pending.
 
 ## Intent and evidence
 
@@ -90,6 +90,9 @@ Record limits and failure values must remain explicit in the assembly contracts.
 The marker identifies the layout schema; the selection record stores the payload's compatibility requirements.
 Read the actual launcher's version and supported protocols from its held, image-bound PE metadata.
 Do not treat a stored historical bootstrap version as authority after launcher repair.
+Each launcher invocation binds its own held file to its executing image before dispatch.
+Payload updates check compatibility against the held current root file, which determines the next launch.
+This check does not use a parent process ID or an inherited environment claim as authority.
 
 ## Installation and launch
 
