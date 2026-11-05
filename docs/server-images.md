@@ -101,9 +101,9 @@ No image layer or local virtual machine was used for that inspection.
 | Debian AMD64 child | `sha256:1e1a22175fbf1b32157ddaf0219e1db4e5401fab2b94ed285add64d18587cd2d` |
 | Debian ARM64/v8 child | `sha256:1470991b497d26788dc4d6f438bf5690c6ba0d499235d237e55f4b43caea7a75` |
 | Debian RISC-V64 child | `sha256:d2603372b44ea7e55fcc4b2f5fd667024d6f298af5af7c7474f639321570c5cc` |
-| `tonistiigi/binfmt` QEMU `v10.2.3-68` index | `sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0` |
-| QEMU installer source revision | `e29e7d72c9672c8c8bf846655ab149b50e1a62bd` |
-| `docker/setup-qemu-action` source revision | `99012661954931238ded8c8b007157a8430204e1` |
+| Ubuntu Noble QEMU package version | `1:8.2.2+ds-0ubuntu1.18` |
+| QEMU AMD64 `.deb` SHA-256 | `5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0` |
+| Installed `qemu-riscv64-static` SHA-256 | `be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65` |
 | GNU libmicrohttpd 1.0.3 source SHA-256 | `7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a` |
 | PostgreSQL 16.15 source SHA-256 | `c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed` |
 
@@ -122,8 +122,9 @@ Primary sources:
 
 - [Official Debian image definition](https://github.com/docker-library/official-images/blob/master/library/debian).
 - [Docker Registry API](https://distribution.github.io/distribution/spec/api/).
-- [Pinned QEMU installer release](https://github.com/tonistiigi/binfmt/releases/tag/deploy/v10.2.3-68).
-- [Pinned QEMU setup action](https://github.com/docker/setup-qemu-action/tree/99012661954931238ded8c8b007157a8430204e1).
+- [Ubuntu Noble updates package metadata](https://archive.ubuntu.com/ubuntu/dists/noble-updates/universe/binary-amd64/Packages.xz).
+- [Pinned Ubuntu QEMU package](https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb).
+- [Systemd registration implementation](https://github.com/systemd/systemd/blob/v255/src/binfmt/binfmt.c).
 - [GNU source archive](https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz).
 - [PostgreSQL source checksum](https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2.sha256).
 - [RISC-V psABI, section 10.1](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/#_file_header), version 2.0-rc0 dated 4 November 2026; checked 5 November 2026.
@@ -134,6 +135,11 @@ Use a healthy Linux Docker host with enough space for two source builds and Post
 Use a native host for AMD64 or ARM64 qualification.
 Install the pinned RISC-V binfmt registration before emulated builds.
 The workflow checks its `F` flag, which permits execution across container filesystem boundaries.
+The project workflow installs the checked Ubuntu package and registers only its RISC-V configuration through systemd.
+It checks the package version, package digest, emulator digest, and interpreter path.
+The runner's systemd version is recorded with the emulator version.
+The repository permits only project-owned and GitHub-owned actions.
+The initial external QEMU action failed that policy before any image job started; the policy remains unchanged.
 It also records the pinned QEMU executable's actual version output.
 
 Run the harness's small rejection checks without Docker:
