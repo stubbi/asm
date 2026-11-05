@@ -1,193 +1,209 @@
-name: UNQUALIFIED RISC-V server phase comparison
+name: UNQUALIFIED native reference self-tests
 
-# This isolated branch diagnoses a failed gate. It cannot publish an image.
+# This diagnostic compiles fixed synthetic test code. It cannot publish an image.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
-  group: riscv-server-observations-${{ github.ref }}
+  group: reference-native-compile-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  observe:
-    name: Observe the original cases and direct/proxy cohorts (UNQUALIFIED)
+  compile:
     runs-on: ubuntu-24.04
-    # The inner host budget is 600 seconds, including evidence collection.
-    # This outer budget also covers checkout, downloads, source selection, and upload.
-    timeout-minutes: 35
-    env:
-      ASM_FIXTURE_REVISION: 8fad44da00fa79001a42593810de2e0aa65597aa
-      ASM_EVIDENCE: ${{ github.workspace }}/server-observations-evidence
-      PYTHONDONTWRITEBYTECODE: '1'
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        timeout-minutes: 2
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Initialize failure evidence and check the diagnostic harness
         timeout-minutes: 1
-        shell: bash
-        run: |
-          set -euo pipefail
-          export ASM_CONTEXT="$RUNNER_TEMP/asm-observations-context"
-          export ASM_INPUTS="$RUNNER_TEMP/asm-observations-inputs"
-          printf 'ASM_CONTEXT=%s\nASM_INPUTS=%s\n' "$ASM_CONTEXT" "$ASM_INPUTS" >> "$GITHUB_ENV"
-          mkdir -p "$ASM_EVIDENCE" "$ASM_INPUTS"
-          python3 - <<'PYTHON'
-          import json
-          import os
-          from pathlib import Path
-          report = {"schema": 1, "scope": "UNQUALIFIED-riscv-server-phase-probe", "outcome": "fail",
-                    "source_revision": os.environ["GITHUB_SHA"], "execution": "qemu-user",
-                    "application_qualified": False, "native_qualified": False, "release_qualified": False,
-                    "original_19_test_gate": "fail", "error": "The diagnostic has not completed."}
-          Path(os.environ["ASM_EVIDENCE"], "initial-report.json").write_text(json.dumps(report, indent=2) + "\n")
-          PYTHON
-          python3 tools/riscv64_server_observations.py --self-test \
-            2>&1 | tee "$ASM_EVIDENCE/self-tests.log"
-      - name: Download the reviewed artifacts and pinned public header source
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          import sys
-          import time
-          sys.path.insert(0, "tools")
-          from riscv64_combined import bounded_process
-
-          inputs = Path(os.environ["ASM_INPUTS"])
-          evidence = Path(os.environ["ASM_EVIDENCE"])
-          deadline = time.monotonic() + 240
-          def remaining(limit):
-              seconds = min(limit, deadline - time.monotonic())
-              if seconds <= 0:
-                  raise ValueError("The shared artifact download deadline expired.")
-              return seconds
-          pins = (
-              ("image", 13423240467, 42035969713, "1b4f34899cbf67edba1cfc5ba7ed08ea97269f66", 84388798,
-               "e3e47e75585b85ab148ae8b596d73b6eca9dbedc0f1f7e6a2f0493e845b55817"),
-              # The API records the PR head; the retained receipt binds its tested merge separately.
-              ("server", 13426312471, 42042426725, "66f432bb129c0c56922ec8edfa657e82b4fb9851", 27690874,
-               "bc398de445a950e65f6cf1690dac89610129cf4c2ccc16b0ebb1997d4ff44136"),
-          )
-          for label, artifact, run, revision, size, digest in pins:
-              endpoint = f"repos/stubbi/asm/actions/artifacts/{artifact}"
-              metadata = evidence / (label + "-artifact.json")
-              result = bounded_process(["gh", "api", endpoint], metadata, timeout=remaining(30), max_bytes=65536)
-              if result["outcome"] != "pass":
-                  raise ValueError("Cannot read the pinned artifact metadata.")
-              receipt = json.loads(metadata.read_text())
-              if (receipt["id"] != artifact or receipt["expired"] is not False
-                      or receipt["size_in_bytes"] != size or receipt["digest"] != "sha256:" + digest
-                      or receipt["workflow_run"]["id"] != run
-                      or receipt["workflow_run"]["repository_id"] != 1441332955
-                      or receipt["workflow_run"]["head_repository_id"] != 1441332955
-                      or receipt["workflow_run"]["head_sha"] != revision):
-                  raise ValueError("The artifact metadata differs from the reviewed pin.")
-              archive = inputs / (label + ".zip")
-              result = bounded_process(["gh", "api", endpoint + "/zip"], archive,
-                                       timeout=remaining(180), max_bytes=size)
-              if result["outcome"] != "pass" or archive.stat().st_size != size:
-                  raise ValueError("The artifact download failed or has an unexpected byte size.")
-              with archive.open("rb") as stream:
-                  actual = hashlib.file_digest(stream, "sha256").hexdigest()
-              if actual != digest:
-                  raise ValueError("The artifact download differs from its reviewed digest.")
-              remaining(1)
-          source = inputs / "mhd-source.tar.gz"
-          source_url = "https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz"
-          source_sha = "7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a"
-          result = bounded_process(["/usr/bin/curl", "-q", "--fail", "--silent", "--show-error", "--location",
-                                    "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
-                                    "--max-time", "60", "--max-filesize", "8388608", "--output", source, source_url],
-                                   evidence / "mhd-source-download.log", timeout=remaining(65), max_bytes=16384)
-          if result["outcome"] != "pass" or source.stat().st_size != 2102293:
-              raise ValueError("The pinned MHD header source could not be downloaded within its bounds.")
-          with source.open("rb") as stream:
-              actual = hashlib.file_digest(stream, "sha256").hexdigest()
-          if actual != source_sha:
-              raise ValueError("The MHD header source differs from the historical image build pin.")
-          remaining(1)
-          (evidence / "mhd-source.json").write_text(json.dumps({"schema": 1, "url": source_url,
-              "sha256": source_sha, "bytes": source.stat().st_size,
-              "historical_recipe_revision": "1b4f34899cbf67edba1cfc5ba7ed08ea97269f66"}, indent=2) + "\n")
-          PYTHON
-      - name: Materialize the reviewed fixture and original package source
+        with:
+          persist-credentials: false
+      - name: Install the native headers recorded by the failed run
         timeout-minutes: 3
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$ASM_FIXTURE_REVISION" 04c93b3f0200173298d24f22a06393bc359a1af0
-          python3 tools/riscv64_server_observations.py --prepare-context "$ASM_CONTEXT" \
-            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION" --phase-probe
-          cp "$ASM_CONTEXT/input-manifest.json" "$ASM_EVIDENCE/input-manifest.json"
-      - name: Install the pinned emulator and diagnostic build tools
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          set -euo pipefail
-          ASM_QEMU_DEB="$RUNNER_TEMP/asm-qemu-user-static.deb"
-          curl -q --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
-            --output "$ASM_QEMU_DEB" \
-            https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb
-          printf '%s  %s\n' 5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0 "$ASM_QEMU_DEB" | sha256sum --check --strict
-          test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
+          mkdir -p native-compile-evidence
+          printf '%s\n' '{"schema":1,"qualification":"UNQUALIFIED","outcome":"fail","phase":"not-completed"}' > native-compile-evidence/initial-report.json
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB" \
-            gcc-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
-          printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
-          if ! test -e /proc/sys/fs/binfmt_misc/register; then
-            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
-          fi
-          sudo /usr/lib/systemd/systemd-binfmt /usr/lib/binfmt.d/qemu-riscv64.conf
-          grep -Fx 'interpreter /usr/libexec/qemu-binfmt/riscv64-binfmt-P' /proc/sys/fs/binfmt_misc/qemu-riscv64
-          test "$(readlink -f /usr/libexec/qemu-binfmt/riscv64-binfmt-P)" = /usr/bin/qemu-riscv64-static
-          grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
-          {
-            uname -a
-            docker version
-            cat /proc/sys/fs/binfmt_misc/qemu-riscv64
-            /usr/bin/qemu-riscv64-static --version
-            dpkg-query --show qemu-user-static systemd
-            dpkg-query --show gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
-            /usr/bin/riscv64-linux-gnu-gcc --version
-            sha256sum /usr/bin/riscv64-linux-gnu-gcc
-            sha256sum /usr/bin/qemu-riscv64-static
-          } > "$ASM_EVIDENCE/environment.txt"
-      - name: Check trace forwarding, source capture, and bounded build tooling
+          sudo apt-get install --no-install-recommends --yes \
+            libmicrohttpd-dev=1.0.0-2.1ubuntu2 libpq-dev=18.6-1.pgdg24.04+2
+          dpkg-query --show gcc gcc-13 libmicrohttpd-dev libpq-dev > native-compile-evidence/packages.txt
+      - name: Compile the unchanged synthetic provider and retain its diagnosis
         timeout-minutes: 1
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests/riscv64 -p 'test_reference_*.py' -v \
-            2>&1 | tee "$ASM_EVIDENCE/reference-self-tests.log"
-      - name: Observe the exact failed binary with the reviewed phase fixture
-        timeout-minutes: 12
+          python3 - <<'PYTHON'
+          from datetime import datetime, timezone
+          import hashlib
+          import importlib.util
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shlex
+          import shutil
+          import sys
+          import tempfile
+          import time
+          sys.path.insert(0, "tools")
+          from riscv64_combined import bounded_process
+
+          output = Path("native-compile-evidence").resolve()
+          deadline = time.monotonic() + 45
+          report = {"schema": 1, "scope": "native-synthetic-provider-compile", "qualification": "UNQUALIFIED",
+              "outcome": "fail", "probe_revision": os.environ["GITHUB_SHA"],
+              "failed_run": 42087407347, "failed_source": "cf250b9815a2113914e723222f7da2617a45f75f",
+              "commands": [], "application_executed": False, "target_executed": False,
+              "original_19_test_gate": "fail", "separate_canonical_16_failure_run": 42077456215}
+          try:
+              source = Path("tests/riscv64/test_reference_trace.py").read_bytes()
+              report["fixture_source_sha256"] = hashlib.sha256(source).hexdigest()
+              if report["fixture_source_sha256"] != "bdb8907850fe0da8ffff138636645f980b643e64d529a1dc690b05828a7179dd":
+                  raise ValueError("The fixed synthetic fixture differs.")
+              spec = importlib.util.spec_from_file_location("frozen_reference_trace", "tests/riscv64/test_reference_trace.py")
+              fixture = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(fixture)
+              provider = fixture.PROVIDER.encode()
+              if not 0 < len(provider) <= 262144:
+                  raise ValueError("The provider literal exceeds its bound.")
+              report["provider_sha256"] = hashlib.sha256(provider).hexdigest()
+              compiler = Path(shutil.which("cc")).resolve(strict=True)
+              if not compiler.is_file() or compiler.stat().st_size > 134217728:
+                  raise ValueError("The native compiler is unavailable or oversized.")
+              report["compiler"] = {"path": str(compiler), "bytes": compiler.stat().st_size,
+                  "sha256": hashlib.sha256(compiler.read_bytes()).hexdigest()}
+              with tempfile.TemporaryDirectory(prefix="asm-native-provider-") as private:
+                  private = Path(private)
+                  environment = ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "LC_ALL=C", "LANG=C",
+                      "HOME=" + str(private), "TMPDIR=" + str(private)]
+                  def command(label, arguments, limit=16384):
+                      remaining = min(20, deadline - time.monotonic())
+                      if remaining <= 0:
+                          raise ValueError("The native probe deadline expired.")
+                      log = output / (label + ".log")
+                      result = bounded_process([*environment, *map(str, arguments)], log,
+                          timeout=remaining, max_bytes=limit)
+                      report["commands"].append({"label": label, "arguments": list(map(str, arguments)),
+                          **result, "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest()})
+                      return result, log
+                  for label, args in (("compiler-version", [compiler, "--version"]),
+                      ("compiler-target", [compiler, "-dumpmachine"]),
+                      ("header-versions", ["/usr/bin/pkg-config", "--modversion", "libmicrohttpd", "libpq"])):
+                      result, _ = command(label, args)
+                      if result["outcome"] != "pass":
+                          raise ValueError("Native compiler or header identification failed.")
+                  result, flags = command("header-flags", ["/usr/bin/pkg-config", "--cflags", "libmicrohttpd", "libpq"])
+                  if result["outcome"] != "pass":
+                      raise ValueError("Native header flags are unavailable.")
+                  provider_path = private / "provider.c"
+                  provider_path.write_bytes(provider)
+                  arguments = [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC", "-pthread",
+                      *shlex.split(flags.read_text()), "-shared", provider_path, "-o", private / "libprovider.so", "-ldl"]
+                  result, log = command("provider-compile", arguments, 65536)
+                  report["outcome"] = result["outcome"]
+                  if result["outcome"] == "pass":
+                      library = private / "libprovider.so"
+                      if not library.is_file() or library.stat().st_size > 1048576:
+                          raise ValueError("The synthetic library is unavailable or oversized.")
+                      report["library"] = {"bytes": library.stat().st_size,
+                          "sha256": hashlib.sha256(library.read_bytes()).hexdigest()}
+                  headers = ("/usr/include/microhttpd.h", "/usr/include/postgresql/libpq-fe.h",
+                      "/usr/include/postgresql/postgres_ext.h", "/usr/include/postgresql/pg_config_ext.h")
+                  report["headers"], report["missing_header_paths"] = {}, []
+                  for name in headers:
+                      path = Path(name)
+                      try:
+                          size = path.stat().st_size
+                      except FileNotFoundError:
+                          report["missing_header_paths"].append(name)
+                          continue
+                      if not 0 < size <= 1048576:
+                          raise ValueError("A native public header exceeds its byte bound.")
+                      report["headers"][name] = {"bytes": size,
+                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                  report["diagnostics"] = []
+                  for line in log.read_text(errors="replace").splitlines():
+                      match = re.match(r".*provider\.c:([0-9]+):([0-9]+): (error|warning|note):", line)
+                      if match:
+                          category = re.search(r"\[(-W[a-zA-Z0-9=\-]+)\]", line)
+                          report["diagnostics"].append({"file": "provider.c", "line": int(match[1]),
+                              "column": int(match[2]), "severity": match[3],
+                              "category": category[1] if category else "unclassified"})
+          except Exception as error:
+              report.update(outcome="fail", failure_type=type(error).__name__)
+          finally:
+              if time.monotonic() > deadline:
+                  report.update(outcome="fail", deadline_exceeded=True)
+              report["recorded_at"] = datetime.now(timezone.utc).isoformat()
+              (output / "probe.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+              print("ASM_NATIVE_COMPILE_PROBE=" + json.dumps(report, separators=(",", ":")))
+          raise SystemExit(0 if report["outcome"] == "pass" else 1)
+          PYTHON
+      - name: Run all 53 native reference checks with bounded compiler diagnostics
+        timeout-minutes: 1
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/riscv64_server_observations.py --run-image \
-            --image-zip "$ASM_INPUTS/image.zip" --server-zip "$ASM_INPUTS/server.zip" \
-            --context "$ASM_CONTEXT" --output "$ASM_EVIDENCE" --phase-probe \
-            --mhd-source "$ASM_INPUTS/mhd-source.tar.gz"
-      - name: Retain bounded observations from success or failure
-        timeout-minutes: 2
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "tools")
+          from riscv64_combined import bounded_process
+          child = r'''
+          import hashlib, json, subprocess, unittest
+          from pathlib import Path
+          output = Path("native-compile-evidence")
+          diagnostics = []
+          class Result(unittest.TextTestResult):
+              def addError(self, test, error):
+                  failure = error[1]
+                  if (isinstance(failure, subprocess.CalledProcessError) and
+                          isinstance(failure.cmd, list) and failure.cmd and failure.cmd[0] == "cc"):
+                      if len(diagnostics) >= 3:
+                          raise RuntimeError("The native compiler error count exceeds its bound.")
+                      raw = (failure.stdout or b"") + (failure.stderr or b"")
+                      name = "native-compiler-error-" + str(len(diagnostics) + 1) + ".log"
+                      with (output / name).open("xb") as stream:
+                          stream.write(raw[:65536])
+                      diagnostics.append({"path": name, "exit_code": failure.returncode,
+                          "arguments": failure.cmd, "bytes": len(raw), "retained_bytes": min(len(raw), 65536),
+                          "sha256": hashlib.sha256(raw).hexdigest(), "truncated": len(raw) > 65536})
+                  super().addError(test, error)
+          suite = unittest.defaultTestLoader.discover("tests/riscv64", pattern="test_reference_*.py")
+          if suite.countTestCases() != 53:
+              raise RuntimeError("Require the selected 53 native reference checks.")
+          result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(suite)
+          report = {"schema": 1, "qualification": "UNQUALIFIED", "tests_run": result.testsRun,
+              "failures": len(result.failures), "errors": len(result.errors), "skipped": len(result.skipped),
+              "expected_failures": len(result.expectedFailures), "compiler_diagnostics": diagnostics}
+          passed = result.wasSuccessful() and result.testsRun == 53 and not result.skipped and not result.expectedFailures
+          report["outcome"] = "pass" if passed else "fail"
+          (output / "native-tests.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          raise SystemExit(0 if passed else 1)
+          '''
+          # Dedent the fixed child without changing its statements or assertions.
+          import textwrap
+          source = Path(os.environ["RUNNER_TEMP"]) / "asm-native-reference-selftests.py"
+          source.write_text(textwrap.dedent(child))
+          output = Path("native-compile-evidence")
+          result = bounded_process([sys.executable, source], output / "reference-self-tests.log",
+              cwd=Path.cwd(), timeout=50, max_bytes=1048576)
+          (output / "native-test-process.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+          print("ASM_NATIVE_REFERENCE_TESTS=" + json.dumps(result, separators=(",", ":")))
+          raise SystemExit(0 if result["outcome"] == "pass" else 1)
+          PYTHON
+      - name: Retain bounded host compile evidence
+        timeout-minutes: 1
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: UNQUALIFIED-server-phase-probe-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: server-observations-evidence/
+          name: UNQUALIFIED-native-provider-compile-${{ github.sha }}-${{ github.run_id }}
+          path: native-compile-evidence/
           if-no-files-found: error
           retention-days: 14
