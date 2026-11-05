@@ -2,8 +2,9 @@
 
 On 5 November 2026, this review read the complete available commit ancestry of the RISC-V branch and `origin/main`.
 The checkout was not shallow.
-The review starts at initial commit `93487e3aeca0e5815e21083bd3e4e282a28375f6` and includes main `6d7c7df53b1ae17a44c13b038cf95cc798fffa94`.
+The review starts at initial commit `93487e3aeca0e5815e21083bd3e4e282a28375f6` and includes main `295342d02d1ec940c8131d8413ce0c527e10fd88`.
 The raw commit messages remain in `build/riscv64/complete-history-review.txt`.
+The distribution merge retains the broad catalog, narrow published CLI-host admission, four compatibility feeds, schema 2 release fan-in, and separate CLI/reference test suites.
 The final main merge also retains the 0.6.0 compiler-input guard and inactive-recipe response-file regression.
 The implementation review also inspected affected current parsers, archive boundaries, lock readers, target builders, syscall adapters, and retained failure evidence.
 

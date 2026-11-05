@@ -156,7 +156,8 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         write_reference(repo, commit, stage / "reference")
         destination = stage / "registry/v1"
         registry.write_atomic(destination / "index.tsv", registry.legacy_tsv(tsv).encode("ascii"))
-        registry.write_atomic(destination / "index-macos.tsv", tsv.encode("ascii"))
+        registry.write_atomic(destination / "index-macos.tsv", registry.macos_compat_tsv(tsv).encode("ascii"))
+        registry.write_atomic(destination / "index-all.tsv", tsv.encode("ascii"))
         registry.write_atomic(destination / "index.json", registry.json_bytes(index))
         registry.write_atomic(destination / "dependencies.json", declaration_bytes)
         registry.write_atomic(destination / "downloads.json", registry.json_bytes(counts))
