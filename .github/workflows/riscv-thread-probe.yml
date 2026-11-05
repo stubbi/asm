@@ -1,0 +1,294 @@
+name: RISC-V emulator startup thread diagnostic
+
+on:
+  push:
+    branches: [codex/riscv-thread-probe]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      ASM_EVIDENCE: ${{ github.workspace }}/riscv-thread-probe-evidence
+    steps:
+      - name: Initialize failure evidence before tool checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$ASM_EVIDENCE"
+          printf '%s\n' '{"schema":1,"scope":"qemu-riscv64-startup-threads","outcome":"fail","hypothesis_outcome":"uncertain","application_qualified":false,"native_qualified":false,"release_qualified":false,"error":"The diagnostic has not completed."}' > "$ASM_EVIDENCE/report.json"
+      - name: Measure pinned QEMU before guest execution
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import signal
+          import stat
+          import struct
+          import subprocess
+          import sys
+          import tempfile
+          import time
+          from datetime import datetime, timezone
+
+          evidence = Path(os.environ["ASM_EVIDENCE"])
+          report = json.loads((evidence / "report.json").read_text())
+          report.update({
+              "recorded_at": datetime.now(timezone.utc).isoformat(),
+              "workflow_revision": os.environ["GITHUB_SHA"],
+              "workflow_definition_revision": os.environ["GITHUB_WORKFLOW_SHA"],
+              "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "kernel": dict(zip(("sysname", "nodename", "release", "version", "machine"), os.uname())),
+              "python_version": sys.version,
+              "hypothesis": "Pinned QEMU starts one helper thread before guest execution.",
+              "limits": [
+                  "This measures emulator startup on this Linux x86-64 runner only.",
+                  "The x86-64 input is data for the RISC-V loader; no guest executes.",
+                  "This does not qualify application thread limits, hardware, or a release.",
+                  "No observed count changes an application test threshold.",
+                  "Upstream source notes do not establish Ubuntu patch equivalence.",
+                  "Observed thread names do not establish a helper routine's identity.",
+              ],
+              "source_notes": {
+                  "version": "QEMU v8.2.2", "checked_on": "2026-11-05",
+                  "linux-user/main.c": {
+                      "url": "https://raw.githubusercontent.com/qemu/qemu/v8.2.2/linux-user/main.c",
+                      "sha256": "4a6852d5a2193dbd7b1eb18010aa7996d084143eacda67e7f84a6d48e84d5ba1",
+                      "finding": "main sets the log before opening the target, loader_exec, and cpu_loop.",
+                  },
+                  "util/log.c": {
+                      "url": "https://raw.githubusercontent.com/qemu/qemu/v8.2.2/util/log.c",
+                      "sha256": "06875e7b021cc52f8a3b1b70742a8a74d4891b5279743bcd700f64929aac865a",
+                      "finding": "Enabled non-thread logging opens the named file with fopen for writing.",
+                  },
+                  "util/rcu.c": {
+                      "url": "https://raw.githubusercontent.com/qemu/qemu/v8.2.2/util/rcu.c",
+                      "sha256": "27e337d9c44bd1171542cb2ee10605b2cd8cabd14ac9bc3db85f67af81c32000",
+                      "finding": "The rcu_init constructor starts a detached call_rcu thread.",
+                  },
+              },
+          })
+          package_url = "https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb"
+          package_sha = "5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0"
+          executable_sha = "be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65"
+          child = None
+
+          def digest(path):
+              with path.open("rb") as stream:
+                  return hashlib.file_digest(stream, "sha256").hexdigest()
+
+          def identity(path):
+              path = path.resolve(strict=True)
+              return {"path": str(path), "bytes": path.stat().st_size, "sha256": digest(path)}
+
+          def interrupt(signum, frame):
+              raise InterruptedError(f"Diagnostic interrupted by signal {signum}.")
+
+          signal.signal(signal.SIGTERM, interrupt)
+          signal.signal(signal.SIGINT, interrupt)
+
+          def stop_group(process, cleanup):
+              cleanup.update({"pid": process.pid, "termination_requested": False, "forced": False, "reaped": False})
+              previous = {signum: signal.signal(signum, signal.SIG_IGN) for signum in (signal.SIGTERM, signal.SIGINT)}
+              try:
+                  try:
+                      os.killpg(process.pid, signal.SIGTERM)
+                      cleanup["termination_requested"] = True
+                  except ProcessLookupError:
+                      pass
+                  deadline = time.monotonic() + 0.5
+                  while True:
+                      process.poll()
+                      try:
+                          os.killpg(process.pid, 0)
+                      except ProcessLookupError:
+                          break
+                      if time.monotonic() >= deadline:
+                          try:
+                              os.killpg(process.pid, signal.SIGKILL)
+                              cleanup["forced"] = True
+                          except ProcessLookupError:
+                              pass
+                          break
+                      time.sleep(0.02)
+                  process.wait(timeout=1)
+                  cleanup.update({"reaped": True, "returncode": process.returncode})
+              finally:
+                  for signum, handler in previous.items():
+                      signal.signal(signum, handler)
+
+          try:
+              if sys.platform != "linux" or os.uname().machine != "x86_64":
+                  raise RuntimeError("This diagnostic requires Linux x86-64.")
+              report["os_release"] = Path("/etc/os-release").read_text()
+              report["tools"] = {name: identity(Path(path)) for name, path in {
+                  "python": sys.executable, "curl": "/usr/bin/curl", "dpkg-deb": "/usr/bin/dpkg-deb",
+              }.items()}
+              with tempfile.TemporaryDirectory(prefix="asm-thread-probe-", dir=os.environ["RUNNER_TEMP"]) as temporary:
+                  stage = Path(temporary)
+                  clean_env = {"PATH": "/usr/bin:/bin", "HOME": str(stage), "LC_ALL": "C", "LANG": "C"}
+                  report["child_environment"] = clean_env
+
+                  def run(label, command, timeout):
+                      with (evidence / f"{label}.stdout.log").open("wb") as out, (evidence / f"{label}.stderr.log").open("wb") as err:
+                          process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                                                     env=clean_env, cwd=stage, start_new_session=True)
+                          try:
+                              returncode = process.wait(timeout=timeout)
+                          finally:
+                              cleanup = {}
+                              report.setdefault("tool_cleanup", {})[label] = cleanup
+                              stop_group(process, cleanup)
+                      for suffix in ("stdout", "stderr"):
+                          if (evidence / f"{label}.{suffix}.log").stat().st_size > 16384:
+                              raise RuntimeError(f"Unexpectedly large {label} output.")
+                      return returncode
+
+                  for name, command in {
+                      "curl-version": ["/usr/bin/curl", "-q", "--version"],
+                      "dpkg-version": ["/usr/bin/dpkg-deb", "--version"],
+                  }.items():
+                      if run(name, command, 3) != 0:
+                          raise RuntimeError(f"Cannot record {name}.")
+                  package = stage / "qemu.deb"
+                  if run("download", ["/usr/bin/curl", "-q", "--fail", "--silent", "--show-error", "--location",
+                                      "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10",
+                                      "--max-time", "90", "--max-filesize", "104857600", "--output", str(package), package_url], 95) != 0:
+                      raise RuntimeError("The pinned Ubuntu emulator download failed.")
+                  report["package"] = {"url": package_url, **identity(package), "expected_sha256": package_sha}
+                  if report["package"]["sha256"] != package_sha:
+                      raise RuntimeError("The Ubuntu package digest differs from the pin.")
+                  if run("package-version", ["/usr/bin/dpkg-deb", "--field", str(package), "Version"], 3) != 0:
+                      raise RuntimeError("Cannot read the Ubuntu package version.")
+                  version = (evidence / "package-version.stdout.log").read_text().strip()
+                  report["package"]["version"] = version
+                  if version != "1:8.2.2+ds-0ubuntu1.18":
+                      raise RuntimeError("The Ubuntu package version differs from the pin.")
+                  if run("extract", ["/usr/bin/dpkg-deb", "--extract", str(package), str(stage / "root")], 30) != 0:
+                      raise RuntimeError("The pinned Ubuntu package extraction failed.")
+                  qemu = stage / "root/usr/bin/qemu-riscv64-static"
+                  report["emulator"] = {**identity(qemu), "expected_sha256": executable_sha}
+                  if report["emulator"]["sha256"] != executable_sha:
+                      raise RuntimeError("The extracted emulator digest differs from the pin.")
+                  if run("qemu-version", [str(qemu), "--version"], 3) != 0:
+                      raise RuntimeError("Cannot record the emulator version.")
+                  report["emulator"]["version"] = (evidence / "qemu-version.stdout.log").read_text().strip()
+                  if not report["emulator"]["version"].startswith("qemu-riscv64 version 8.2.2 "):
+                      raise RuntimeError("The emulator version differs from the pin.")
+
+                  target = Path("/usr/bin/true").resolve(strict=True)
+                  header = target.read_bytes()[:64]
+                  if not stat.S_ISREG(target.stat().st_mode) or header[:6] != b"\x7fELF\x02\x01" or len(header) != 64:
+                      raise RuntimeError("The data input must be a little-endian ELF64 regular file.")
+                  machine = struct.unpack_from("<H", header, 18)[0]
+                  report["input"] = {**identity(target), "elf_machine": machine, "role": "wrong-ISA data only"}
+                  if machine != 62:
+                      raise RuntimeError("The data input must have ELF machine 62 (x86-64), not RISC-V.")
+
+                  # A regular log must let the same command reach, and fail, the RISC-V loader.
+                  control_log = evidence / "negative-control.log"
+                  control_rc = run("negative-control", [str(qemu), "-d", "in_asm", "-D", str(control_log), str(target)], 3)
+                  control_output = (evidence / "negative-control.stdout.log").read_text() + (evidence / "negative-control.stderr.log").read_text()
+                  report["negative_control"] = {"returncode": control_rc, "log_bytes": control_log.stat().st_size,
+                                                "wrong_isa_rejected": control_rc > 0 and "Invalid ELF image for this architecture" in control_output}
+                  if not report["negative_control"]["wrong_isa_rejected"] or control_log.stat().st_size != 0:
+                      raise RuntimeError("The regular-log control did not reject the wrong-ISA input without guest instruction logs.")
+
+                  fifo = stage / "startup-log.fifo"
+                  os.mkfifo(fifo, 0o600)
+                  if not stat.S_ISFIFO(fifo.stat().st_mode) or stat.S_IMODE(fifo.stat().st_mode) != 0o600:
+                      raise RuntimeError("The startup log is not a private FIFO.")
+                  command = [str(qemu), "-d", "in_asm", "-D", str(fifo), str(target)]
+                  report["probe_command"] = command
+                  report["fifo"] = {"mode": "0600", "parent_mode": oct(stat.S_IMODE(stage.stat().st_mode)), "reader_opened": False}
+                  with (evidence / "probe.stdout.log").open("wb") as out, (evidence / "probe.stderr.log").open("wb") as err:
+                      child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                                               env=clean_env, cwd=stage, start_new_session=True)
+                      try:
+                          proc = Path(f"/proc/{child.pid}")
+
+                          def snapshot():
+                              status = proc.joinpath("status").read_text()
+                              fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+                              tasks = []
+                              for task in sorted(proc.joinpath("task").iterdir(), key=lambda path: int(path.name)):
+                                  tasks.append({"tid": int(task.name), "name": task.joinpath("comm").read_text().strip(),
+                                                "wchan": task.joinpath("wchan").read_text().strip()})
+                              return {"pid": child.pid, "alive": child.poll() is None, "state": fields["State"].strip(),
+                                      "proc_status_threads": int(fields["Threads"]), "task_count": len(tasks), "tasks": tasks,
+                                      "main_wchan": proc.joinpath("wchan").read_text().strip(),
+                                      "main_syscall": proc.joinpath("syscall").read_text().strip()}
+
+                          def blocked(sample):
+                              syscall = sample["main_syscall"].split()
+                              return (sample["alive"] and sample["state"].startswith("S")
+                                      and sample["main_wchan"] == "wait_for_partner" and len(syscall) >= 4
+                                      and int(syscall[0]) == 257 and int(syscall[3], 0) & os.O_WRONLY)
+
+                          report["startup_polls"] = []
+                          deadline = time.monotonic() + 3
+                          while time.monotonic() < deadline:
+                              if child.poll() is not None:
+                                  raise RuntimeError("QEMU exited before the FIFO observation.")
+                              sample = snapshot()
+                              report["startup_polls"].append(sample)
+                              if blocked(sample):
+                                  break
+                              time.sleep(0.05)
+                          else:
+                              raise RuntimeError("The live FIFO-blocked startup stage could not be established.")
+                          report["measurements"] = []
+                          for index in range(3):
+                              if index:
+                                  time.sleep(0.1)
+                              sample = snapshot()
+                              report["measurements"].append(sample)
+                              if not blocked(sample) or sample["proc_status_threads"] != sample["task_count"]:
+                                  raise RuntimeError("The startup observation is not live, blocked, and consistent.")
+                              sample["emulator_only_threads_beyond_main"] = sample["task_count"] - 1
+                          if digest(proc / "exe") != executable_sha:
+                              raise RuntimeError("The running process does not match the pinned emulator.")
+                          (evidence / "blocked-status.log").write_text(proc.joinpath("status").read_text())
+                          report["stage"] = "live emulator blocked opening its FIFO log before target loading"
+                          report["hypothesis_outcome"] = "supported" if all(
+                              sample["task_count"] == 2
+                              for sample in report["measurements"]) else "refuted"
+                          report["outcome"] = "pass"
+                          report.pop("error", None)
+                      finally:
+                          cleanup = {}
+                          report["cleanup"] = cleanup
+                          stop_group(child, cleanup)
+                          child = None
+          except Exception as error:
+              report.update({"outcome": "fail", "error": f"{type(error).__name__}: {error}"})
+          finally:
+              # Keep evidence small even when a trusted tool returns unexpected output.
+              for path in evidence.glob("*.log"):
+                  if path.stat().st_size > 16384:
+                      with path.open("r+b") as stream:
+                          stream.truncate(16384)
+                      report.setdefault("truncated_logs", []).append(path.name)
+              (evidence / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps({key: report[key] for key in ("outcome", "hypothesis_outcome", "application_qualified", "release_qualified")}))
+          sys.exit(0 if report["outcome"] == "pass" else 1)
+          PYTHON
+      - name: Retain successful and failed diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: riscv-thread-probe-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: riscv-thread-probe-evidence/
+          if-no-files-found: error
+          retention-days: 14
