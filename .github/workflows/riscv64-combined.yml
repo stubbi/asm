@@ -1,0 +1,126 @@
+name: RISC-V CLI and extracted server package
+
+on:
+  pull_request:
+    paths:
+      - 'cli/**'
+      - 'tests/**'
+      - 'tools/riscv64*.py'
+      - 'containers/riscv64-combined.Dockerfile*'
+      - 'Makefile'
+      - '.github/workflows/riscv64-combined.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: riscv64-combined-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    name: Build the extracted server with the candidate RISC-V CLI (emulated)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      ASM_HOSTED_REVISION: 4fe2c25277ed40a163b48b727ab814225d227cf8
+      ASM_PACKAGE_REVISION: fb72db4b59038801b41a5b4b314007cfcf158d33
+      ASM_EVIDENCE: ${{ github.workspace }}/riscv64-combined-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Initialize failure evidence and check the evidence contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ASM_EVIDENCE"
+          printf 'ASM_CONTEXT=%s/riscv64-combined-context\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          report = {"schema": 1, "scope": "riscv64-cli-extracted-server-package", "outcome": "fail",
+                    "execution": "qemu-user", "native_qualified": False, "release_qualified": False,
+                    "candidate_revision": os.environ["GITHUB_SHA"],
+                    "hosted_revision": os.environ["ASM_HOSTED_REVISION"],
+                    "package_revision": os.environ["ASM_PACKAGE_REVISION"],
+                    "error": "The combined runtime gate has not completed."}
+          Path(os.environ["ASM_EVIDENCE"], "combined-report.json").write_text(json.dumps(report, indent=2) + "\n")
+          PYTHON
+          PYTHONDONTWRITEBYTECODE=1 python3 tools/riscv64_combined.py --self-test \
+            2>&1 | tee "$ASM_EVIDENCE/self-tests.log"
+      - name: Materialize the exact source contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$ASM_HOSTED_REVISION" "$ASM_PACKAGE_REVISION"
+          python3 tools/riscv64_combined.py --prepare-context "$ASM_CONTEXT" --revision "$GITHUB_SHA"
+          cp "$ASM_CONTEXT/input-manifest.json" "$ASM_EVIDENCE/input-manifest.json"
+          cp "$ASM_CONTEXT/hosted.tar" "$ASM_CONTEXT/package-source.tar" "$ASM_CONTEXT/candidate.tar" "$ASM_EVIDENCE/"
+      - name: Install the pinned Ubuntu RISC-V user emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_QEMU_DEB="$RUNNER_TEMP/asm-qemu-user-static.deb"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_QEMU_DEB" \
+            https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb
+          printf '%s  %s\n' 5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0 "$ASM_QEMU_DEB" | sha256sum --check --strict
+          test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB"
+          printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
+          if ! test -e /proc/sys/fs/binfmt_misc/register; then
+            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+          fi
+          sudo /usr/lib/systemd/systemd-binfmt /usr/lib/binfmt.d/qemu-riscv64.conf
+          grep -Fx 'interpreter /usr/libexec/qemu-binfmt/riscv64-binfmt-P' /proc/sys/fs/binfmt_misc/qemu-riscv64
+          test "$(readlink -f /usr/libexec/qemu-binfmt/riscv64-binfmt-P)" = /usr/bin/qemu-riscv64-static
+          grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
+          {
+            uname -a
+            docker version
+            docker buildx version
+            cat /proc/sys/fs/binfmt_misc/qemu-riscv64
+            /usr/bin/qemu-riscv64-static --version
+            dpkg-query --show qemu-user-static systemd
+            sha256sum /usr/bin/qemu-riscv64-static
+          } > "$ASM_EVIDENCE/environment.txt"
+      - name: Reuse the pinned hosted image build stage
+        timeout-minutes: 90
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --platform linux/riscv64 --file "$ASM_CONTEXT/hosted/containers/server.Dockerfile" \
+            --target build --build-arg ASM_SOURCE_REVISION="$ASM_HOSTED_REVISION" \
+            --tag "asm-riscv64-hosted-build:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            "$ASM_CONTEXT/hosted" 2>&1 | tee "$ASM_EVIDENCE/hosted-build.log"
+          ASM_BUILD_ID="$(docker image inspect "asm-riscv64-hosted-build:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --format '{{.Id}}')"
+          printf '%s\n' "$ASM_BUILD_ID" > "$ASM_EVIDENCE/hosted-build-image-id.txt"
+          docker build --pull=false --platform linux/riscv64 \
+            --file "$GITHUB_WORKSPACE/containers/riscv64-combined.Dockerfile" \
+            --build-arg "ASM_BUILD_IMAGE=asm-riscv64-hosted-build:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --build-arg ASM_HOSTED_BUILD_ID="$ASM_BUILD_ID" --build-arg ASM_CANDIDATE_REVISION="$GITHUB_SHA" \
+            --tag "asm-riscv64-combined:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            "$ASM_CONTEXT" 2>&1 | tee "$ASM_EVIDENCE/qualification-build.log"
+          test "$(docker image inspect "asm-riscv64-hosted-build:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --format '{{.Id}}')" = "$ASM_BUILD_ID"
+      - name: Run native guest tools and all 19 extracted package tests
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/riscv64_combined.py \
+            --run-image "asm-riscv64-combined:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --build-image "asm-riscv64-hosted-build:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --output "$ASM_EVIDENCE"
+      - name: Retain successful and failed scoped evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: riscv64-combined-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: riscv64-combined-evidence/
+          if-no-files-found: error
+          retention-days: 14
