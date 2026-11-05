@@ -9,6 +9,7 @@ import io
 import json
 import os
 import platform
+import re
 from pathlib import Path, PureWindowsPath
 import struct
 import shutil
@@ -23,6 +24,15 @@ MODULE = Path(__file__).resolve().parents[2] / "tools/windows_test.py"
 SPEC = importlib.util.spec_from_file_location("windows_test", MODULE)
 driver = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(driver)
+
+
+def _fault_harness_api_names(source):
+    # Rename both the extracted C declarations/calls and harness definitions.
+    # The CRT can still import the real APIs without a strong-symbol clash.
+    names = ('GetEnvironmentVariableW', 'CreateFileW', 'WriteFile', 'FlushFileBuffers',
+             'CloseHandle', 'OpenEventW', 'SetEvent', 'WaitForSingleObject', 'ExitProcess')
+    return re.sub(r'\b(' + '|'.join(names) + r')\b',
+                  lambda match: 'asm_test_mock_' + match.group(0), source)
 
 
 class EvidenceDriverTests(unittest.TestCase):
@@ -144,6 +154,96 @@ class EvidenceDriverTests(unittest.TestCase):
 
 
 class FaultObservationTests(unittest.TestCase):
+    def test_fault_mocks_do_not_collide_with_real_kernel32_imports(self):
+        # A separate startup needs the real import thunk. A strong mock with
+        # that API name collides even when the mock translation unit compiles.
+        root = Path(__file__).resolve().parents[2]
+        compiler, linker = shutil.which('clang'), shutil.which('lld-link')
+        cases = [('x86_64', 'x86_64-pc-windows-msvc', 'x64', 0x8664),
+                 ('aarch64', 'aarch64-pc-windows-msvc', 'arm64', 0xaa64)]
+        if os.name == 'nt':
+            fixed = Path('C:/Program Files/LLVM/bin')
+            compiler = str(fixed / 'clang.exe') if (fixed / 'clang.exe').is_file() else shutil.which('clang.exe')
+            linker = str(fixed / 'lld-link.exe') if (fixed / 'lld-link.exe').is_file() else shutil.which('lld-link.exe')
+            target = os.environ.get('ASM_WINDOWS_TARGET') or os.environ.get('ASM_TARGET')
+            if not target:
+                target = 'aarch64-windows' if platform.machine().lower() in ('arm64', 'aarch64') else 'x86_64-windows'
+            cases = [case for case in cases if target == case[0] + '-windows']
+            self.assertEqual(len(cases), 1, 'The COFF check requires a supported Windows target.')
+        self.assertIsNotNone(compiler, 'The COFF link regression requires clang.')
+        self.assertIsNotNone(linker, 'The COFF link regression requires lld-link.')
+        imported_names = ('ExitProcess', 'WriteFile', 'CloseHandle', 'FlushFileBuffers', 'CreateFileW')
+        with tempfile.TemporaryDirectory(prefix='asm-fault-imports-') as temporary:
+            for name, triple, machine, pe_machine in cases:
+                directory = Path(temporary) / name
+                directory.mkdir()
+                if os.name == 'nt':
+                    libraries = [Path(path) / 'kernel32.lib' for path in os.environ.get('LIB', '').split(';') if path]
+                    library = next((path for path in libraries if path.is_file()), None)
+                    self.assertIsNotNone(library, 'The native preflight requires its existing SDK kernel32.lib.')
+                else:
+                    library = root / 'build/windows' / name / 'kernel32.lib'
+                    if not library.is_file():
+                        # A clean non-Windows checkout has no SDK archive. A
+                        # generated import archive exercises the same symbol
+                        # collision; it never supplies Windows runtime proof.
+                        definition = directory / 'kernel32.def'
+                        definition.write_text('LIBRARY KERNEL32.dll\nEXPORTS\n' + '\n'.join(imported_names) + '\n')
+                        library = directory / 'kernel32.lib'
+                        made = subprocess.run([linker, '/lib', '/machine:' + machine,
+                                               '/def:' + str(definition), '/out:' + str(library)],
+                                              capture_output=True, timeout=30)
+                        self.assertEqual(made.returncode, 0, made.stderr.decode(errors='replace'))
+                importing = '''
+__declspec(dllimport) void ExitProcess(unsigned);
+__declspec(dllimport) int WriteFile(void *, const void *, unsigned, unsigned *, void *);
+__declspec(dllimport) int CloseHandle(void *);
+__declspec(dllimport) int FlushFileBuffers(void *);
+__declspec(dllimport) void *CreateFileW(const unsigned short *, unsigned, unsigned, void *, unsigned, unsigned, void *);
+void startup(void) {
+    unsigned count;
+    void *file = CreateFileW(0, 0, 0, 0, 0, 0, 0);
+    WriteFile(file, 0, 0, &count, 0);
+    FlushFileBuffers(file);
+    CloseHandle(file);
+    ExitProcess(0);
+}
+'''
+                mock = '''
+void ExitProcess(unsigned value) { (void)value; }
+int WriteFile(void *a, const void *b, unsigned c, unsigned *d, void *e) { return 0; }
+int CloseHandle(void *a) { return 0; }
+int FlushFileBuffers(void *a) { return 0; }
+void *CreateFileW(const unsigned short *a, unsigned b, unsigned c, void *d, unsigned e, unsigned f, void *g) { return 0; }
+'''
+                objects = []
+                for role, text in (('startup', importing), ('old-mock', mock),
+                                   ('namespaced-mock', _fault_harness_api_names(mock))):
+                    source, obj = directory / (role + '.c'), directory / (role + '.obj')
+                    source.write_text(text)
+                    built = subprocess.run([compiler, '--no-default-config', '--target=' + triple,
+                                            '-ffreestanding', '-fno-builtin', '-fno-stack-protector',
+                                            '-c', str(source), '-o', str(obj)], capture_output=True, timeout=30)
+                    self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+                    objects.append(obj)
+                prefix = [linker, '/entry:startup', '/machine:' + machine, '/subsystem:console', '/nodefaultlib', '/Brepro']
+                collided = subprocess.run(prefix + ['/out:' + str(directory / 'old.exe'),
+                                                     str(objects[0]), str(objects[1]), str(library)],
+                                         capture_output=True, timeout=30)
+                self.assertNotEqual(collided.returncode, 0)
+                for api in imported_names:
+                    self.assertIn(b'duplicate symbol: ' + api.encode('ascii'), collided.stdout + collided.stderr)
+                binary = directory / 'namespaced.exe'
+                linked = subprocess.run(prefix + ['/out:' + str(binary), str(objects[0]),
+                                                   str(objects[2]), str(library)], capture_output=True, timeout=30)
+                self.assertEqual(linked.returncode, 0, linked.stderr.decode(errors='replace'))
+                image = binary.read_bytes()
+                offset = struct.unpack_from('<I', image, 60)[0]
+                self.assertEqual(image[offset:offset + 4], b'PE\0\0')
+                self.assertEqual(struct.unpack_from('<H', image, offset + 4)[0], pe_machine)
+                for api in imported_names:
+                    self.assertIn(api.encode('ascii') + b'\0', image)
+
     def test_observation_wrapper_preserves_live_registers_vectors_and_flags(self):
         # The callback deliberately changes every volatile integer/vector and
         # condition flag. An unprotected call is a required failing control.
@@ -332,13 +432,15 @@ int main(int argc, char **argv) {
     return 0;
 }
 '''
+        harness = _fault_harness_api_names(harness)
         with tempfile.TemporaryDirectory(prefix='asm-fault-marker-') as temporary:
             root = Path(temporary)
             source, binary = root / 'marker.c', root / 'marker.exe'
             source.write_text(harness)
             built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
                                     '-o', str(binary)], capture_output=True, timeout=30)
-            self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+            self.assertEqual(built.returncode, 0, (built.stdout.decode(errors='replace'),
+                                                  built.stderr.decode(errors='replace')))
             stages = ((1, b'payload_flush'), (2, b'record_write'),
                       (3, b'record_flush'), (4, b'activation_rename'))
             for stage, name in stages:
