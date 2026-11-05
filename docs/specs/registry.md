@@ -38,7 +38,7 @@ The native CLI accepts a small TOML subset. The publication record is separate. 
 Asm 0.6.0 also accepts `[target.<id>]` tables with independent source, test, and native-library fields.
 The [multi-target contract](../multi-target-projects.md) defines the seven declaration IDs, target selection, output paths, and v2 locks.
 All declared inputs, including inactive implementations, must be valid and present in the source archive.
-Registry artifact target support remains the four targets listed below.
+Registry artifact target support uses the six targets listed below.
 The existing schema-1 dependency metadata validator remains unchanged.
 Combining that metadata schema with named target tables remains unsupported.
 
@@ -55,14 +55,14 @@ The canonical path is `registry/packages/<owner>/<name>/<version>.json`.
 | `source.repository` | Canonical `https://github.com/<owner>/<repo>` URL, without `.git` |
 | `source.commit` | Full 40-character lowercase Git commit ID; an all-zero ID is rejected |
 | `source.path` | Relative source directory within that commit, or `.` |
-| `artifacts` | 1 to 6 artifact records, with one entry per target and kind |
+| `artifacts` | 1 to 14 artifact records, with one entry per target and kind |
 | `yanked` | Boolean; a yanked record also needs a `yank_reason` |
 
 An artifact has exactly these fields:
 
 | Field | Meaning |
 | --- | --- |
-| `target` | `x86_64-linux`, `aarch64-linux`, `riscv64-linux`, or `aarch64-macos` |
+| `target` | `x86_64-linux`, `aarch64-linux`, `riscv64-linux`, `aarch64-macos`, `x86_64-windows`, or `aarch64-windows` |
 | `kind` | `source` or `executable` |
 | `sha256` | 64 lowercase hexadecimal characters |
 | `url` | Absolute HTTPS GitHub release-asset URL |
@@ -91,10 +91,12 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 
 ## Targets
 
-The registry describes three Linux targets and Apple Silicon macOS.
+Catalog validation recognizes three Linux targets, Apple Silicon macOS, and two Windows targets.
 Asm 0.6.0 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
 Each CLI selects its native host target by default and supports explicit standalone Linux cross builds.
 Each CLI can fetch artifacts for other registry targets.
+Released 0.5.0 CLIs and the 0.6.0 profile recognize the four original registry targets.
+Their compatibility feeds exclude new Windows target rows.
 The example README files give the commands for GNU cross assemblers and linkers.
 
 Target names do not yet encode every ISA extension, ABI revision, dialect, or linker option. A package must state these requirements in its documentation. An ELF header check verifies the architecture and basic segment bounds. It does not prove that the program will work on every machine with that architecture.
@@ -109,6 +111,21 @@ Native validation checks bounded commands, segment protections, entry points, de
 Linux executable publication rejects a macOS declaration; prepare macOS executables on the qualified Mac host.
 These format checks do not establish publisher identity or program behavior.
 
+### Windows container validation
+
+The validator recognizes PE32+ containers for `x86_64-windows` and `aarch64-windows`.
+This format support does not qualify or release a Windows CLI.
+Windows runtime, filesystem, update, and first-project qualification remain separate gates.
+
+The profile requires a matching machine, user executable, bounded headers, page-aligned sections, and declared non-executable memory compatibility.
+It rejects writable executable sections, overlapping file ranges, unordered or nonadjacent virtual sections, and entries outside initialized executable bytes.
+It checks directory extents and the distinct certificate-table and global-pointer encodings.
+It does not validate imported functions, instructions, Authenticode signatures, or runtime compatibility.
+A format check must not become a publisher-identity or code-safety claim.
+
+Source: [Microsoft PE/COFF specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format), PE32+ format, read 5 November 2026.
+No new Windows package record or CLI host is published by these validator changes.
+
 ## Static layout
 
 ```text
@@ -116,6 +133,7 @@ registry/
   packages/<owner>/<name>/<version>.json
   v1/index.tsv
   v1/index-macos.tsv
+  v1/index-all.tsv
   v1/index.json
   v1/downloads.json
 ```
@@ -124,10 +142,17 @@ Linux uses `https://asm.build/registry/v1/index.tsv`. macOS uses `https://asm.bu
 
 GitHub Pages serves the index and website. It does not accept uploads or run checks. The publication route uses repository review and CI. Artifact storage is separate from Pages. Capacity planning must follow [GitHub Pages' limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
 
-The primary `index.tsv` retains Linux rows for released 0.3 clients.
-`index-macos.tsv` includes the additional macOS target.
-The JSON index describes all published targets.
-Both native feeds use the same format below.
+The compatibility feed `index.tsv` retains the three Linux targets recognized by released 0.3 clients.
+Those targets are `x86_64-linux`, `aarch64-linux`, and `riscv64-linux`.
+The compatibility feed `index-macos.tsv` retains those targets and `aarch64-macos`.
+Both vocabularies stay fixed when the registry accepts additional targets.
+Unknown target labels would cause older parsers to reject an entire feed.
+
+The expanded `index-all.tsv` contains every active artifact accepted by the current registry validator.
+Its current vocabulary contains the same four targets as `index-macos.tsv`.
+The JSON index describes all published targets and retains yanked versions.
+All three native feeds use the same bounded v1 format below.
+The expanded feed does not change accepted release targets, declared CLI hosts, or existing CLI defaults.
 
 ### Native index
 
@@ -266,9 +291,10 @@ Use `tools/registry.py` with Python 3.11 or later. It uses the standard library.
 4. Upload the exact artifacts to a public GitHub release. Keep the existing bytes when you retry a release.
 5. Use `prepare` to compute sizes and SHA-256 digests, check each artifact, and write the publication record.
 6. Submit that record as a pull request. Include the source commit, test instructions, namespace claim, and any relevant check reports.
-7. Maintainers review the claim and validate against the published history. A trusted deployment job checks accepted bytes again and generates both indexes.
+7. Maintainers review the claim and validate against the published history. A trusted deployment job checks accepted bytes again and generates the registry indexes.
 
-`pack` can make a local archive for inspection. It does not provide commit binding. `prepare` writes a local file; it does not upload, reserve a name, or publish a package. The native `asm publish` command prepares the same record without Python. Concrete commands are in the [registry contributor guide](../../registry/README.md).
+`pack` can make a local archive for inspection. It does not provide commit binding. `prepare` writes a local file; it does not upload, reserve a name, or publish a package. The native `asm publish` command prepares a local record without Python.
+Released 0.5.0 publication commands recognize the four original targets and accept up to six artifacts. Concrete commands are in the [registry contributor guide](../../registry/README.md).
 
 Archives use deterministic USTAR and gzip: sorted paths, normalized modes, zero timestamps and ownership, and no links or special files. The inspector reads the archive without extracting or executing it. It rejects traversal, duplicate paths, case collisions, file/directory conflicts, invalid checksums, and hidden trailing content. It also rejects sensitive file names and resource-limit violations.
 

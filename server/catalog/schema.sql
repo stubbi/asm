@@ -56,7 +56,8 @@ CREATE TABLE asm_catalog.snapshots (
 CREATE TABLE asm_catalog.exports (
     revision bigint NOT NULL REFERENCES asm_catalog.snapshots(revision),
     route text COLLATE "C" NOT NULL CHECK (route IN (
-        '/registry/v1/index.tsv', '/registry/v1/index-macos.tsv', '/registry/v1/index.json')),
+        '/registry/v1/index.tsv', '/registry/v1/index-macos.tsv',
+        '/registry/v1/index-all.tsv', '/registry/v1/index.json')),
     media_type text NOT NULL,
     body text NOT NULL,
     sha256 text NOT NULL CHECK (sha256 = encode(pg_catalog.sha256(convert_to(body, 'UTF8')), 'hex')),
@@ -213,14 +214,15 @@ BEGIN
         OR jsonb_typeof(source->'path') <> 'string' OR NOT asm_catalog.portable_path(source->>'path') THEN
         RAISE EXCEPTION 'Catalog source fields are invalid' USING ERRCODE = '22023';
     END IF;
-    IF jsonb_typeof(d->'artifacts') <> 'array' OR jsonb_array_length(d->'artifacts') NOT BETWEEN 1 AND 6 THEN
+    IF jsonb_typeof(d->'artifacts') <> 'array' OR jsonb_array_length(d->'artifacts') NOT BETWEEN 1 AND 14 THEN
         RAISE EXCEPTION 'Catalog artifact count is invalid' USING ERRCODE = '22023';
     END IF;
     FOR artifact IN SELECT value FROM jsonb_array_elements(d->'artifacts') LOOP
         IF jsonb_typeof(artifact) <> 'object' OR NOT artifact ?& ARRAY['target','kind','sha256','url','bytes']
             OR artifact - ARRAY['target','kind','sha256','url','bytes'] <> '{}'::jsonb
             OR jsonb_typeof(artifact->'target') <> 'string'
-            OR NOT artifact->>'target' = ANY(ARRAY['x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos'])
+            OR NOT artifact->>'target' = ANY(ARRAY['x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos',
+                'x86_64-windows','aarch64-windows'])
             OR jsonb_typeof(artifact->'kind') <> 'string' OR NOT artifact->>'kind' = ANY(ARRAY['source','executable'])
             OR jsonb_typeof(artifact->'sha256') <> 'string' OR artifact->>'sha256' COLLATE "C" !~ '^[0-9a-f]{64}$'
             OR jsonb_typeof(artifact->'bytes') <> 'number' OR artifact->>'bytes' COLLATE "C" !~ '^[1-9][0-9]*$'
@@ -301,9 +303,9 @@ END;
 $$;
 
 CREATE FUNCTION asm_catalog.publish(p_acceptance_commit text, p_expected_revision bigint, p_records text[],
-    p_linux_tsv text, p_full_tsv text, p_index_json text) RETURNS bigint
+    p_linux_tsv text, p_macos_tsv text, p_full_tsv text, p_index_json text) RETURNS bigint
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,pg_temp SET standard_conforming_strings = on AS $$
-DECLARE records jsonb; r jsonb; raw text; full_feed text; linux_feed text; payload_sha text;
+DECLARE records jsonb; r jsonb; raw text; full_feed text; linux_feed text; macos_feed text; payload_sha text;
     existing asm_catalog.snapshots%ROWTYPE; old_revision bigint; new_revision bigint;
 BEGIN
     IF session_user <> 'asm_operator' THEN RAISE EXCEPTION 'Use the catalog operator identity' USING ERRCODE = '42501'; END IF;
@@ -311,6 +313,7 @@ BEGIN
         OR p_expected_revision IS NULL OR p_expected_revision < 0 OR p_records IS NULL
         OR cardinality(p_records) > 4096 OR (cardinality(p_records) > 0 AND (array_ndims(p_records) <> 1 OR array_lower(p_records,1) <> 1))
         OR p_linux_tsv IS NULL OR octet_length(p_linux_tsv) NOT BETWEEN 1 AND 1048576
+        OR p_macos_tsv IS NULL OR octet_length(p_macos_tsv) NOT BETWEEN 1 AND 1048576
         OR p_full_tsv IS NULL OR octet_length(p_full_tsv) NOT BETWEEN 1 AND 1048576
         OR p_index_json IS NULL OR octet_length(p_index_json) NOT BETWEEN 1 AND 4194304 OR right(p_index_json,1) <> chr(10)
         OR coalesce((SELECT sum(octet_length(v)) FROM unnest(p_records) AS v),0) > 16777216 THEN
@@ -338,15 +341,21 @@ BEGIN
             artifact->>'target' COLLATE "C",artifact->>'kind' COLLATE "C"),''),
         '# asm-registry-v1' || chr(10) || coalesce(string_agg(line || chr(10),'' ORDER BY name COLLATE "C",
             split_part(version,'.',1)::integer,split_part(version,'.',2)::integer,split_part(version,'.',3)::integer,
-            artifact->>'target' COLLATE "C",artifact->>'kind' COLLATE "C") FILTER (WHERE artifact->>'target' <> 'aarch64-macos'),'')
-        INTO full_feed, linux_feed FROM lines;
+            artifact->>'target' COLLATE "C",artifact->>'kind' COLLATE "C") FILTER (WHERE artifact->>'target' IN
+                ('x86_64-linux','aarch64-linux','riscv64-linux')),''),
+        '# asm-registry-v1' || chr(10) || coalesce(string_agg(line || chr(10),'' ORDER BY name COLLATE "C",
+            split_part(version,'.',1)::integer,split_part(version,'.',2)::integer,split_part(version,'.',3)::integer,
+            artifact->>'target' COLLATE "C",artifact->>'kind' COLLATE "C") FILTER (WHERE artifact->>'target' IN
+                ('x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos')),'')
+        INTO full_feed, linux_feed, macos_feed FROM lines;
     PERFORM asm_catalog.check_json(p_index_json::json);
     IF full_feed IS DISTINCT FROM p_full_tsv OR linux_feed IS DISTINCT FROM p_linux_tsv
+        OR macos_feed IS DISTINCT FROM p_macos_tsv
         OR asm_catalog.expected_index(records) IS DISTINCT FROM p_index_json::jsonb
         OR asm_catalog.canonical_json(asm_catalog.expected_index(records)) || chr(10) <> p_index_json THEN
         RAISE EXCEPTION 'Catalog exports do not match the retained records' USING ERRCODE = '22023';
     END IF;
-    payload_sha := encode(pg_catalog.sha256(convert_to(json_build_array(p_records,p_linux_tsv,p_full_tsv,p_index_json)::text,'UTF8')),'hex');
+    payload_sha := encode(pg_catalog.sha256(convert_to(json_build_array(p_records,p_linux_tsv,p_macos_tsv,p_full_tsv,p_index_json)::text,'UTF8')),'hex');
     PERFORM pg_advisory_xact_lock(1095978307, 1);
     SELECT * INTO existing FROM asm_catalog.snapshots WHERE acceptance_commit = p_acceptance_commit;
     IF FOUND THEN
@@ -380,7 +389,8 @@ BEGIN
     INSERT INTO asm_catalog.snapshots(revision,acceptance_commit,payload_sha256) VALUES(new_revision,p_acceptance_commit,payload_sha);
     INSERT INTO asm_catalog.exports(revision,route,media_type,body,sha256) VALUES
         (new_revision,'/registry/v1/index.tsv','text/tab-separated-values; charset=utf-8',p_linux_tsv,encode(pg_catalog.sha256(convert_to(p_linux_tsv,'UTF8')),'hex')),
-        (new_revision,'/registry/v1/index-macos.tsv','text/tab-separated-values; charset=utf-8',p_full_tsv,encode(pg_catalog.sha256(convert_to(p_full_tsv,'UTF8')),'hex')),
+        (new_revision,'/registry/v1/index-macos.tsv','text/tab-separated-values; charset=utf-8',p_macos_tsv,encode(pg_catalog.sha256(convert_to(p_macos_tsv,'UTF8')),'hex')),
+        (new_revision,'/registry/v1/index-all.tsv','text/tab-separated-values; charset=utf-8',p_full_tsv,encode(pg_catalog.sha256(convert_to(p_full_tsv,'UTF8')),'hex')),
         (new_revision,'/registry/v1/index.json','application/json',p_index_json,encode(pg_catalog.sha256(convert_to(p_index_json,'UTF8')),'hex'));
     INSERT INTO asm_catalog.audit(action,acceptance_commit,detail)
         VALUES('catalog_imported',p_acceptance_commit,jsonb_build_object('revision',new_revision,'releases',cardinality(p_records),'payload_sha256',payload_sha));
@@ -402,4 +412,4 @@ GRANT USAGE ON SCHEMA asm_catalog TO asm_reader,asm_operator;
 GRANT SELECT ON asm_catalog.current_exports,asm_catalog.schema_version TO asm_reader,asm_operator;
 GRANT SELECT ON asm_catalog.releases,asm_catalog.head,asm_catalog.snapshots,asm_catalog.namespaces TO asm_operator;
 GRANT EXECUTE ON FUNCTION asm_catalog.bind_namespace(text,bigint,text),
-    asm_catalog.publish(text,bigint,text[],text,text,text) TO asm_operator;
+    asm_catalog.publish(text,bigint,text[],text,text,text,text) TO asm_operator;
