@@ -406,6 +406,7 @@ win_managed_build_record:
     ldp x29,x30,[sp],#64
     ret
 win_managed_incompatible:
+    ARM_CALL win_managed_release_stage_files
     ARM_ADDR x0,wm_compat_error
     mov w1,#1
     b self_fail

@@ -851,6 +851,24 @@ win_managed_lock:
     cbz w0,self_busy
     ldp x29,x30,[sp],#48
     ret
+/* Close owned candidate/next-record files before shared stage deletion.
+ * No inputs or result. Each slot becomes -1 before close; repeated calls are
+ * safe. Preserve other contexts and the original error. Changes x0/x9-x11,
+ * x16 and flags; stack16 plus arm_close. No name-based deletion occurs here.
+ * Legacy FileDispositionInfo retains names while these file handles remain.
+ */
+win_managed_release_stage_files:
+    WM_LOAD x0,wm_candidate_fd
+    mov x10,#-1
+    WM_STORE x10,wm_candidate_fd
+    tbnz x0,#63,1f
+    ARM_CALL arm_close
+1:  WM_LOAD x0,wm_newrecord_fd
+    mov x10,#-1
+    WM_STORE x10,wm_newrecord_fd
+    tbnz x0,#63,2f
+    ARM_CALL arm_close
+2:  ret
 /* Close only owned contexts. Idempotent; never reports cleanup as activation
  * failure. Shared updater cleanup may already have closed current/store. */
 win_managed_cleanup:
@@ -870,6 +888,7 @@ win_managed_cleanup:
     ldp x29,x30,[sp],#32
     ret
 win_managed_fail:
+    ARM_CALL win_managed_release_stage_files
     ARM_ADDR x0,wm_error
     mov w1,#1
     b self_fail

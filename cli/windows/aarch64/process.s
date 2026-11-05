@@ -150,6 +150,12 @@ win_startup:
     ldp x29, x30, [sp], #80
     ret
 .Lwsu_bad:
+    /* arm_write resolves borrowed stderr directly through GetStdHandle.
+     * No argv, environment, or managed-layout initialization is required.
+     * Preserve the documented status even if the complete write fails. */
+    mov w0, #2
+    ARM_ADDR x1, win_startup_error
+    ARM_CALL write_cstr
     mov w0, #2
     bl ExitProcess
     brk #0
@@ -479,6 +485,8 @@ win_spawn_wait:
     ret
 
 .section .rdata,"dr"
+win_startup_error:
+    .asciz "asm: cannot initialize Windows arguments, paths, or user permissions. Check the command line and HOME.\n"
 .p2align 1
 win_home_name: .hword 72,79,77,69,0
 .p2align 1

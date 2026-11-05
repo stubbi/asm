@@ -49,6 +49,8 @@ managed-test:
 	$(PYTHON) managed_hash_test.py --output $(ROOT)/build/windows/aarch64/managed-hash-evidence.json
 	$(PYTHON) managed_launcher_test.py --output $(ROOT)/build/windows/aarch64/managed-launcher-evidence.json
 	$(PYTHON) managed_mutation_test.py --output $(ROOT)/build/windows/aarch64/managed-mutation-evidence.json
+	$(PYTHON) managed_cleanup_test.py --output $(ROOT)/build/windows/aarch64/managed-cleanup-evidence.json
+	$(PYTHON) startup_error_test.py --output $(ROOT)/build/windows/aarch64/startup-error-evidence.json
 	$(PYTHON) image_test.py --output $(ROOT)/build/windows/aarch64/managed-image-evidence.json
 
 clean:
