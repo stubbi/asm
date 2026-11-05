@@ -74,7 +74,7 @@ cmd_self:
     RV_ADDR s6, self_has_update
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lself_arguments
+    RV_JUMP .Lself_arguments
 .Lself_version_argument:
     RV_ADDR s6, registry_exact_version
     mv s8, s6
@@ -93,13 +93,13 @@ cmd_self:
     RV_ADDR s6, registry_exact_version
     mv s8, s6
     RV_STORE s2, 8
-    tail .Lself_arguments
+    RV_JUMP .Lself_arguments
 .Lself_json_option:
     RV_IMM t1, 1, 32
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lself_arguments
+    RV_JUMP .Lself_arguments
 .Lself_arguments_done:
     RV_ADDR s6, self_has_update
     mv s8, s6
@@ -343,7 +343,7 @@ cmd_self:
     RV_ADDR s6, self_updated_suffix
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lself_success_json:
     RV_ADDR s6, self_success_json
     mv a0, s6
@@ -362,7 +362,7 @@ cmd_self:
     RV_ADDR s6, self_success_suffix
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 self_unchanged:
     RV_CALL self_update_cleanup
     RV_ADDR s6, self_unchanged_text
@@ -370,96 +370,96 @@ self_unchanged:
     RV_ADDR s6, self_unchanged_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 self_help:
     RV_ADDR s6, self_help_text
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 self_bad_arguments:
     RV_ADDR s6, self_error_arguments
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_downgrade:
     RV_ADDR s6, self_error_downgrade
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_installation_error:
     RV_ADDR s6, self_error_installation
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_permissions_error:
     RV_ADDR s6, self_error_permissions
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_busy:
     RV_ADDR s6, self_error_busy
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_changed:
     RV_ADDR s6, self_error_changed
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_filesystem_error:
     RV_ADDR s6, self_error_filesystem
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_io_error:
     RV_ADDR s6, self_error_io
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_download_error:
     RV_ADDR s6, self_error_download
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_release_error:
     RV_ADDR s6, self_error_release
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_not_found:
     RV_ADDR s6, self_error_not_found
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_fail:
     RV_SAVE a0
     RV_SAVE a1
     RV_CALL self_update_cleanup
     RV_RESTORE a1
     RV_RESTORE a0
-    tail die
+    RV_JUMP die
 /* Read the trusted version_text prefix. Output: self_version (33 bytes).
  * No duplicated release version constant is introduced. Scratch: caller-save
  * registers; stack 16 alignment bytes. A malformed version fails closed. */
@@ -532,7 +532,7 @@ self_current_version:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lself_current_character
+    RV_JUMP .Lself_current_character
 .Lself_current_end:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -665,7 +665,7 @@ self_open_installation:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lself_find_home
+    RV_JUMP .Lself_find_home
 .Lself_home_found:
     mv s6, a0
     li s10, 5
@@ -740,7 +740,7 @@ self_open_installation:
     mv a3, s11
     mv s8, a3
     bnez s8, .Lrv_cb_skip_self_update531
-    tail .Lport_self_update_1_end
+    RV_JUMP .Lport_self_update_1_end
 .Lrv_cb_skip_self_update531:
 .Lport_self_update_1:
     mv s8, a1
@@ -755,7 +755,7 @@ self_open_installation:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_self_update536
-    tail .Lport_self_update_1
+    RV_JUMP .Lport_self_update_1
 .Lrv_cb_skip_self_update536:
 .Lport_self_update_1_end:
     RV_IMM t1, 0, 32
@@ -1066,7 +1066,7 @@ self_open_parent:
     mv s10, t2
     RV_FLAGS add, 64
     mv s4, s11
-    tail .Lself_walk_scan
+    RV_JUMP .Lself_walk_scan
 .Lself_walk_open:
     mv s8, s4
     mv s10, s3
@@ -1231,7 +1231,7 @@ self_open_parent:
     RV_IMM t1, 1, 32
     mv s0, t1
     RV_ZEXT s0
-    tail .Lself_component_next
+    RV_JUMP .Lself_component_next
 .Lself_component_protected:
     mv s10, s0
     xor s0, s0, s10
@@ -1244,11 +1244,11 @@ self_open_parent:
     li s10, 1
     add s6, s6, s10
     mv s3, s6
-    tail .Lself_walk_component
+    RV_JUMP .Lself_walk_component
 .Lself_walk_complete:
     /* The final component was constructed as asm, never supplied by input. */
     mv t0, s5
-    tail .Lself_walk_return
+    RV_JUMP .Lself_walk_return
 .Lself_walk_bad_component:
     RV_IMM t1, 47, 32
     mv s6, s4
@@ -1258,7 +1258,7 @@ self_open_parent:
     RV_IMM t1, -1, 32
     mv s0, t1
     RV_ZEXT s0
-    tail .Lself_walk_close
+    RV_JUMP .Lself_walk_close
 .Lself_walk_bad_permissions:
     RV_IMM t1, -2, 32
     mv s0, t1
@@ -1267,7 +1267,7 @@ self_open_parent:
     mv a0, s5
     RV_CALL rv_close
     sext.w t0, s0
-    tail .Lself_walk_return
+    RV_JUMP .Lself_walk_return
 .Lself_walk_open_error:
     RV_IMM t1, -1, 64
     mv t0, t1
@@ -1335,7 +1335,7 @@ self_check_absolute_installation:
 .Lself_absolute_changed:
     mv a0, s2
     RV_CALL rv_close
-    tail self_changed
+    RV_JUMP self_changed
 /* a0=Linux RISC-V64 stat structure (128 bytes). t0=1 only for a single-link
  * regular executable owned by this UID, with no set-ID or unsafe write bits.
  * Reads only; clobbers t0/a2. */
@@ -1643,7 +1643,7 @@ self_commit_update:
 .Lself_commit_close_fail:
     mv a0, s2
     RV_CALL rv_close
-    tail self_io_error
+    RV_JUMP self_io_error
 /* Cleanup only the held private stage and descriptors owned by this command.
  * Native descriptor-relative traversal does not follow links. Never delete a
  * substituted stage directory entry. Cleanup errors do not turn a committed
@@ -1742,7 +1742,7 @@ self_update_cleanup:
     RV_ADDR s6, self_stage_fd
     mv s8, s6
     RV_STORE t1, 8
-    tail .Lself_cleanup_descriptors
+    RV_JUMP .Lself_cleanup_descriptors
 .Lself_cleanup_without_stage:
     RV_ADDR s6, registry_has_workspace
     mv s8, s6

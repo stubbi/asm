@@ -44,7 +44,7 @@ res_solve:
     RV_ADDR s6, res_conflict_reason
     mv s8, s6
     RV_STORE zero, 8
-    tail res_search
+    RV_JUMP res_search
 res_search:
     RV_SAVE s0
     RV_SAVE s1
@@ -57,7 +57,7 @@ res_search:
     RV_CALL res_rebuild
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph45
-    tail .Lrg_search_fail
+    RV_JUMP .Lrg_search_fail
 .Lrv_cb_skip_resolver_graph45:
     li s2, 0
     RV_ADDR s0, res_nodes + 4096
@@ -75,11 +75,11 @@ res_search:
     RV_LOAD t1, 8
     mv s8, t1
     beqz s8, .Lrv_cb_skip_resolver_graph55
-    tail .Lrg_unresolved_next
+    RV_JUMP .Lrg_unresolved_next
 .Lrv_cb_skip_resolver_graph55:
     mv s8, s2
     bnez s8, .Lrv_cb_skip_resolver_graph56
-    tail .Lrg_unresolved_choose
+    RV_JUMP .Lrg_unresolved_choose
 .Lrv_cb_skip_resolver_graph56:
     mv s8, s0
     RV_LOAD a0, 8
@@ -97,14 +97,14 @@ res_search:
     add s1, s1, s10
     li s10, 4096
     add s0, s0, s10
-    tail .Lrg_unresolved
+    RV_JUMP .Lrg_unresolved
 .Lrg_unresolved_done:
     mv s8, s2
     beqz s8, .Lrv_cb_skip_resolver_graph69
-    tail .Lrg_choose_start
+    RV_JUMP .Lrg_choose_start
 .Lrv_cb_skip_resolver_graph69:
     RV_CALL res_check_cycles
-    tail .Lrg_search_return
+    RV_JUMP .Lrg_search_return
 .Lrg_choose_start:
     li s3, 0
     RV_ADDR s6, res_assign_count
@@ -115,7 +115,7 @@ res_search:
     RV_CALL res_rebuild
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph79
-    tail .Lrg_search_fail
+    RV_JUMP .Lrg_search_fail
 .Lrv_cb_skip_resolver_graph79:
     mv a0, s2
     RV_CALL res_find_node
@@ -140,7 +140,7 @@ res_search:
     RV_CALL streq
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph95
-    tail .Lrg_candidate_next
+    RV_JUMP .Lrg_candidate_next
 .Lrv_cb_skip_resolver_graph95:
     li s10, 16
     add s8, s0, s10
@@ -149,7 +149,7 @@ res_search:
     RV_CALL streq
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph99
-    tail .Lrg_candidate_next
+    RV_JUMP .Lrg_candidate_next
 .Lrv_cb_skip_resolver_graph99:
     li s10, 24
     add s8, s0, s10
@@ -158,11 +158,11 @@ res_search:
     RV_CALL streq
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph103
-    tail .Lrg_candidate_next
+    RV_JUMP .Lrg_candidate_next
 .Lrv_cb_skip_resolver_graph103:
     mv s8, s3
     bnez s8, .Lrv_cb_skip_resolver_graph104
-    tail .Lrg_candidate_upper_ok
+    RV_JUMP .Lrg_candidate_upper_ok
 .Lrv_cb_skip_resolver_graph104:
     li s10, 8
     add s8, s0, s10
@@ -176,7 +176,7 @@ res_search:
 .Lrg_candidate_upper_ok:
     mv s8, s4
     bnez s8, .Lrv_cb_skip_resolver_graph111
-    tail .Lrg_candidate_ranges
+    RV_JUMP .Lrg_candidate_ranges
 .Lrv_cb_skip_resolver_graph111:
     li s10, 8
     add s8, s0, s10
@@ -195,7 +195,7 @@ res_search:
     RV_CALL res_row_matches
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph121
-    tail .Lrg_candidate_next
+    RV_JUMP .Lrg_candidate_next
 .Lrv_cb_skip_resolver_graph121:
     mv s4, s0
 .Lrg_candidate_next:
@@ -207,11 +207,11 @@ res_search:
     RV_STORE t1, 8
     li s10, 64
     add s0, s0, s10
-    tail .Lrg_candidate_scan
+    RV_JUMP .Lrg_candidate_scan
 .Lrg_candidate_selected:
     mv s8, s4
     bnez s8, .Lrv_cb_skip_resolver_graph130
-    tail .Lrg_no_candidate
+    RV_JUMP .Lrg_no_candidate
 .Lrv_cb_skip_resolver_graph130:
     RV_ADDR s6, res_decisions
     mv s8, s6
@@ -254,7 +254,7 @@ res_search:
     RV_CALL res_search
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph153
-    tail .Lrg_search_return
+    RV_JUMP .Lrg_search_return
 .Lrv_cb_skip_resolver_graph153:
     RV_ADDR s6, res_assign_count
     mv s8, s6
@@ -262,7 +262,7 @@ res_search:
     li s10, 8
     add s8, s4, s10
     RV_LOAD s3, 8
-    tail .Lrg_candidate_round
+    RV_JUMP .Lrg_candidate_round
 .Lrg_no_candidate:
     mv a0, s2
     li a1, 0
@@ -271,7 +271,7 @@ res_search:
     RV_LOAD t1, 8
     mv s8, t1
     bnez s8, .Lrv_cb_skip_resolver_graph162
-    tail .Lrg_no_candidate_report
+    RV_JUMP .Lrg_no_candidate_report
 .Lrv_cb_skip_resolver_graph162:
     li s10, 648
     add s8, s1, s10
@@ -351,7 +351,7 @@ res_rebuild:
     RV_CALL res_add_request
     li s10, 1
     add s1, s1, s10
-    tail .Lrg_root_request
+    RV_JUMP .Lrg_root_request
 .Lrg_propagate_start:
     RV_ADDR s6, res_changed
     mv s8, s6
@@ -371,21 +371,21 @@ res_rebuild:
     RV_LOAD s2, 8
     mv s8, s2
     bnez s8, .Lrv_cb_skip_resolver_graph230
-    tail .Lrg_propagate_next
+    RV_JUMP .Lrg_propagate_next
 .Lrv_cb_skip_resolver_graph230:
     li s10, 40
     add s8, s0, s10
     RV_LOAD t1, 8
     mv s8, t1
     bnez s8, .Lrv_cb_skip_resolver_graph232
-    tail .Lrg_requests
+    RV_JUMP .Lrg_requests
 .Lrv_cb_skip_resolver_graph232:
     mv a0, s2
     RV_ADDR a1, res_default_feature
     RV_CALL res_meta_feature
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph236
-    tail .Lrg_requests
+    RV_JUMP .Lrg_requests
 .Lrv_cb_skip_resolver_graph236:
     li t1, 1
     sll t1, t1, a2
@@ -425,7 +425,7 @@ res_rebuild:
     RV_CALL res_meta_feature
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph257
-    tail .Lrg_unknown_feature
+    RV_JUMP .Lrg_unknown_feature
 .Lrv_cb_skip_resolver_graph257:
     mv s10, s2
     sub t0, t0, s10
@@ -460,7 +460,7 @@ res_rebuild:
 .Lrg_request_next:
     li s10, 1
     add s3, s3, s10
-    tail .Lrg_request
+    RV_JUMP .Lrg_request
 .Lrg_feature_expand_start:
     li s3, 0
 .Lrg_feature_expand:
@@ -519,15 +519,15 @@ res_rebuild:
     RV_CALL res_expand_member
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph306
-    tail .Lrg_rebuild_bad
+    RV_JUMP .Lrg_rebuild_bad
 .Lrv_cb_skip_resolver_graph306:
     li s10, 1
     add s5, s5, s10
-    tail .Lrg_feature_member
+    RV_JUMP .Lrg_feature_member
 .Lrg_feature_next:
     li s10, 1
     add s3, s3, s10
-    tail .Lrg_feature_expand
+    RV_JUMP .Lrg_feature_expand
 .Lrg_nonoptional_start:
     li s3, 0
 .Lrg_nonoptional:
@@ -548,7 +548,7 @@ res_rebuild:
     RV_LOAD t1, 8
     mv s8, t1
     beqz s8, .Lrv_cb_skip_resolver_graph322
-    tail .Lrg_nonoptional_next
+    RV_JUMP .Lrg_nonoptional_next
 .Lrv_cb_skip_resolver_graph322:
     li t1, 1
     sll t1, t1, s3
@@ -563,7 +563,7 @@ res_rebuild:
 .Lrg_nonoptional_next:
     li s10, 1
     add s3, s3, s10
-    tail .Lrg_nonoptional
+    RV_JUMP .Lrg_nonoptional
 .Lrg_edges_start:
     li s3, 0
 .Lrg_edge:
@@ -604,14 +604,14 @@ res_rebuild:
     RV_LOAD t1, 8
     mv s8, t1
     bnez s8, .Lrv_cb_skip_resolver_graph353
-    tail .Lrg_edge_requests
+    RV_JUMP .Lrg_edge_requests
 .Lrv_cb_skip_resolver_graph353:
     li s10, 40
     add s8, s5, s10
     RV_LOAD t1, 8
     mv s8, t1
     beqz s8, .Lrv_cb_skip_resolver_graph355
-    tail .Lrg_edge_requests
+    RV_JUMP .Lrg_edge_requests
 .Lrv_cb_skip_resolver_graph355:
     li t1, 1
     li s10, 40
@@ -647,24 +647,24 @@ res_rebuild:
     add t1, t1, s10
     mv s8, sp
     RV_STORE t1, 8
-    tail .Lrg_edge_request
+    RV_JUMP .Lrg_edge_request
 .Lrg_edge_next:
     li s10, 1
     add s3, s3, s10
-    tail .Lrg_edge
+    RV_JUMP .Lrg_edge
 .Lrg_propagate_next:
     li s10, 1
     add s1, s1, s10
     li s10, 4096
     add s0, s0, s10
-    tail .Lrg_propagate_node
+    RV_JUMP .Lrg_propagate_node
 .Lrg_propagate_done:
     RV_ADDR s6, res_changed
     mv s8, s6
     RV_LOAD t1, 8
     mv s8, t1
     beqz s8, .Lrv_cb_skip_resolver_graph385
-    tail .Lrg_propagate_start
+    RV_JUMP .Lrg_propagate_start
 .Lrv_cb_skip_resolver_graph385:
     RV_ADDR s0, res_nodes + 4096
     li s1, 1
@@ -681,20 +681,20 @@ res_rebuild:
     RV_LOAD a1, 8
     mv s8, a1
     bnez s8, .Lrv_cb_skip_resolver_graph394
-    tail .Lrg_validate_next
+    RV_JUMP .Lrg_validate_next
 .Lrv_cb_skip_resolver_graph394:
     mv a0, s0
     RV_CALL res_row_matches
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph397
-    tail .Lrg_rebuild_bad
+    RV_JUMP .Lrg_rebuild_bad
 .Lrv_cb_skip_resolver_graph397:
 .Lrg_validate_next:
     li s10, 1
     add s1, s1, s10
     li s10, 4096
     add s0, s0, s10
-    tail .Lrg_validate_assigned
+    RV_JUMP .Lrg_validate_assigned
 .Lrg_unknown_feature:
     mv s8, s0
     RV_LOAD a0, 8
@@ -708,7 +708,7 @@ res_rebuild:
     RV_CALL res_set_conflict
 .Lrg_rebuild_bad:
     li t0, 0
-    tail .Lrg_rebuild_return
+    RV_JUMP .Lrg_rebuild_return
 .Lrg_rebuild_good:
     li t0, 1
 .Lrg_rebuild_return:
@@ -754,7 +754,7 @@ res_row_matches:
     RV_BCOND ne, .Lrg_match_bad
     li s10, 1
     add s2, s2, s10
-    tail .Lrg_match_range
+    RV_JUMP .Lrg_match_range
 .Lrg_match_bad:
     /* Rejecting an unassigned index candidate is not a failed requirement. */
     li s10, 8
@@ -762,7 +762,7 @@ res_row_matches:
     RV_LOAD t1, 8
     mv s8, t1
     bnez s8, .Lrv_cb_skip_resolver_graph447
-    tail .Lrg_match_no_report
+    RV_JUMP .Lrg_match_no_report
 .Lrv_cb_skip_resolver_graph447:
     mv s8, s0
     RV_LOAD a0, 8
@@ -776,7 +776,7 @@ res_row_matches:
     RV_CALL res_set_conflict
 .Lrg_match_no_report:
     li t0, 0
-    tail .Lrg_match_return
+    RV_JUMP .Lrg_match_return
 .Lrg_match_good:
     li t0, 1
 .Lrg_match_return:
@@ -813,7 +813,7 @@ res_expand_member:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolver_graph485
-    tail .Lrg_expand_classify
+    RV_JUMP .Lrg_expand_classify
 .Lrv_cb_skip_resolver_graph485:
     mv s8, t0
     li s10, '/'
@@ -823,11 +823,11 @@ res_expand_member:
 .Lrg_expand_char:
     li s10, 1
     add a0, a0, s10
-    tail .Lrg_expand_slash
+    RV_JUMP .Lrg_expand_slash
 .Lrg_expand_classify:
     mv s8, s2
     beqz s8, .Lrv_cb_skip_resolver_graph493
-    tail .Lrg_expand_external
+    RV_JUMP .Lrg_expand_external
 .Lrv_cb_skip_resolver_graph493:
     li s10, 16
     add s8, s0, s10
@@ -836,13 +836,13 @@ res_expand_member:
     RV_CALL res_meta_feature
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph497
-    tail .Lrg_expand_bad
+    RV_JUMP .Lrg_expand_bad
 .Lrv_cb_skip_resolver_graph497:
     mv s8, t0
     RV_LOAD a1, 8
     mv a0, s0
     RV_CALL res_add_request
-    tail .Lrg_expand_good
+    RV_JUMP .Lrg_expand_good
 .Lrg_expand_external:
     mv s8, s2
     RV_STORE zero, 1
@@ -855,7 +855,7 @@ res_expand_member:
     RV_CALL res_meta_dep
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph508
-    tail .Lrg_expand_bad
+    RV_JUMP .Lrg_expand_bad
 .Lrv_cb_skip_resolver_graph508:
     mv s1, t0
     li t1, 1
@@ -890,7 +890,7 @@ res_expand_member:
     sub a1, a1, s10
     mv a0, s0
     RV_CALL res_add_request
-    tail .Lrg_expand_good
+    RV_JUMP .Lrg_expand_good
 .Lrg_expand_optional:
     li s10, 16
     add s8, s0, s10
@@ -900,7 +900,7 @@ res_expand_member:
     RV_CALL res_meta_dep
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph537
-    tail .Lrg_expand_bad
+    RV_JUMP .Lrg_expand_bad
 .Lrv_cb_skip_resolver_graph537:
     li t1, 1
     sll t1, t1, a2
@@ -914,7 +914,7 @@ res_expand_member:
     RV_STORE t2, 8
 .Lrg_expand_good:
     li t0, 1
-    tail .Lrg_expand_return
+    RV_JUMP .Lrg_expand_return
 .Lrg_expand_bad:
     li t0, 0
 .Lrg_expand_return:
@@ -931,7 +931,7 @@ res_meta_feature:
     RV_IMM t1, RM_FEATURES, 64
     mv s10, t1
     add a0, a0, s10
-    tail res_meta_find
+    RV_JUMP res_meta_find
 res_meta_dep:
     li s10, 8
     add s8, a0, s10
@@ -960,16 +960,16 @@ res_meta_find:
     RV_CALL streq
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph580
-    tail .Lrg_meta_found
+    RV_JUMP .Lrg_meta_found
 .Lrv_cb_skip_resolver_graph580:
     li s10, 1
     add s3, s3, s10
     li s10, RM_STRIDE
     add s0, s0, s10
-    tail .Lrg_meta_loop
+    RV_JUMP .Lrg_meta_loop
 .Lrg_meta_absent:
     li t0, 0
-    tail .Lrg_meta_return
+    RV_JUMP .Lrg_meta_return
 .Lrg_meta_found:
     mv t0, s0
     mv a2, s3
@@ -1004,16 +1004,16 @@ res_find_node:
     RV_CALL streq
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph615
-    tail .Lrg_find_yes
+    RV_JUMP .Lrg_find_yes
 .Lrv_cb_skip_resolver_graph615:
     li s10, 1
     add s2, s2, s10
     li s10, 4096
     add s1, s1, s10
-    tail .Lrg_find_node
+    RV_JUMP .Lrg_find_node
 .Lrg_find_none:
     li t0, 0
-    tail .Lrg_find_return
+    RV_JUMP .Lrg_find_return
 .Lrg_find_yes:
     mv t0, s1
 .Lrg_find_return:
@@ -1031,7 +1031,7 @@ res_get_node:
     RV_CALL res_find_node
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph638
-    tail .Lrg_get_return
+    RV_JUMP .Lrg_get_return
 .Lrv_cb_skip_resolver_graph638:
     RV_ADDR s6, res_node_count
     mv s8, s6
@@ -1073,13 +1073,13 @@ res_get_node:
     RV_CALL streq
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph663
-    tail .Lrg_attach_found
+    RV_JUMP .Lrg_attach_found
 .Lrv_cb_skip_resolver_graph663:
     li s10, 1
     add s0, s0, s10
     li s10, 24
     add s2, s2, s10
-    tail .Lrg_attach
+    RV_JUMP .Lrg_attach
 .Lrg_attach_found:
     li s10, 8
     add s8, s2, s10
@@ -1108,7 +1108,7 @@ res_add_request:
     li s10, 56
     add a3, a0, s10
     li a4, 64
-    tail res_add_fact
+    RV_JUMP res_add_fact
 res_add_range:
     li s10, 640
     add a2, a0, s10
@@ -1141,11 +1141,11 @@ res_add_fact:
     RV_CALL streq
     mv s8, t0
     beqz s8, .Lrv_cb_skip_resolver_graph709
-    tail .Lrg_fact_return
+    RV_JUMP .Lrg_fact_return
 .Lrv_cb_skip_resolver_graph709:
     li s10, 1
     add s4, s4, s10
-    tail .Lrg_fact_loop
+    RV_JUMP .Lrg_fact_loop
 .Lrg_fact_add:
     mv s8, s4
     mv s10, s3
@@ -1193,13 +1193,13 @@ res_check_cycles:
     RV_CALL res_cycle_visit
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph745
-    tail .Lrg_cycle_all_return
+    RV_JUMP .Lrg_cycle_all_return
 .Lrv_cb_skip_resolver_graph745:
     li s10, 4096
     add s0, s0, s10
     li s10, 1
     add s1, s1, s10
-    tail .Lrg_cycle_root
+    RV_JUMP .Lrg_cycle_root
 .Lrg_cycle_all_good:
     li t0, 1
 .Lrg_cycle_all_return:
@@ -1262,18 +1262,18 @@ res_cycle_visit:
     RV_CALL res_find_node
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph786
-    tail .Lrg_cycle_bad
+    RV_JUMP .Lrg_cycle_bad
 .Lrv_cb_skip_resolver_graph786:
     mv a0, t0
     RV_CALL res_cycle_visit
     mv s8, t0
     bnez s8, .Lrv_cb_skip_resolver_graph789
-    tail .Lrg_cycle_return
+    RV_JUMP .Lrg_cycle_return
 .Lrv_cb_skip_resolver_graph789:
 .Lrg_cycle_next:
     li s10, 1
     add s1, s1, s10
-    tail .Lrg_cycle_edge
+    RV_JUMP .Lrg_cycle_edge
 .Lrg_cycle_complete:
     li t1, 2
     li s10, 608
@@ -1281,7 +1281,7 @@ res_cycle_visit:
     RV_STORE t1, 8
 .Lrg_cycle_good:
     li t0, 1
-    tail .Lrg_cycle_return
+    RV_JUMP .Lrg_cycle_return
 .Lrg_cycle_bad:
     mv s8, s0
     RV_LOAD a0, 8
@@ -1340,11 +1340,11 @@ res_text_compare:
     mv s8, a2
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolver_graph840
-    tail .Lrg_text_done
+    RV_JUMP .Lrg_text_done
 .Lrv_cb_skip_resolver_graph840:
     li s10, 1
     add a3, a3, s10
-    tail .Lrg_text
+    RV_JUMP .Lrg_text
 .Lrg_text_done:
     ret
 .section .rodata

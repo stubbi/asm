@@ -37,25 +37,25 @@ cmd_search:
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_info:
     RV_IMM t1, 2, 32
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_versions:
     RV_IMM t1, 3, 32
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_fetch:
     RV_IMM t1, 4, 32
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_install:
     RV_IMM t1, 5, 32
     RV_ADDR s6, registry_mode
@@ -238,19 +238,19 @@ registry_command:
     RV_ADDR s6, registry_has_query
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_json:
     RV_IMM t1, 1, 32
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_separator:
     RV_IMM t1, 1, 32
     RV_ADDR s6, registry_literal
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_index:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
@@ -276,7 +276,7 @@ registry_command:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_registry:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
@@ -304,7 +304,7 @@ registry_command:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_target:
     RV_CALL registry_arg_value
     RV_ADDR s6, registry_target
@@ -316,7 +316,7 @@ registry_command:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_kind:
     RV_CALL registry_arg_value
     RV_ADDR s6, registry_kind
@@ -328,7 +328,7 @@ registry_command:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_output:
     RV_ADDR s6, registry_output
     mv s8, s6
@@ -342,7 +342,7 @@ registry_command:
     RV_ADDR s6, registry_output
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_arg_artifact:
     RV_ADDR s6, registry_local_artifact
     mv s8, s6
@@ -356,7 +356,7 @@ registry_command:
     RV_ADDR s6, registry_local_artifact
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lregistry_args
+    RV_JUMP .Lregistry_args
 .Lregistry_args_done:
     RV_ADDR s6, registry_mode
     mv s8, s6
@@ -407,7 +407,7 @@ registry_command:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lregistry_load
+    RV_JUMP .Lregistry_load
 .Lregistry_fetch_args:
     RV_ADDR s6, registry_selector
     mv a0, s6
@@ -463,7 +463,7 @@ registry_command:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail .Lselector_scan
+    RV_JUMP .Lselector_scan
 .Lselector_version:
     RV_IMM t1, 0, 32
     mv s6, a1
@@ -539,7 +539,7 @@ registry_command:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lregistry_load
+    RV_JUMP .Lregistry_load
 .Ldependency_args:
     RV_ADDR s6, registry_exact_version
     mv s8, s6
@@ -630,7 +630,7 @@ registry_command:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hs, registry_fetch
-    tail registry_list
+    RV_JUMP registry_list
 /* Input: argv cursor follows a value option. Output: t0=borrowed nonempty
  * string <=4095 bytes. Advances the cursor; exits 2 if absent or out of bounds.
  * Stack: one saved pointer. No filesystem or network effect. */
@@ -658,42 +658,42 @@ registry_help:
     RV_ADDR s6, registry_help_text
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 registry_bad_args:
     RV_ADDR s6, registry_err_args
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_bad_index:
     RV_ADDR s6, registry_err_index
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_download_error:
     RV_ADDR s6, registry_err_download
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_io_error:
     RV_ADDR s6, registry_err_io
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_not_found:
     RV_ADDR s6, registry_err_not_found
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* Input: a0=static JSON-safe error, a1=status 1..255. Removes owned temporary
  * files before calling die. No return. Stack: saves the two inputs (32 bytes). */
 registry_fail:
@@ -702,7 +702,7 @@ registry_fail:
     RV_CALL registry_cleanup
     RV_RESTORE a1
     RV_RESTORE a0
-    tail die
+    RV_JUMP die
 /* Input: current working directory. Creates mode-0700 .asm-registry-<pid> only
  * if absent. Output: owned workspace and its three fixed paths, or fatal error.
  * Buffer capacities: directory=64, file paths=96; PID is <=20 decimal digits.
@@ -944,14 +944,14 @@ registry_download:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lcurl_return
+    RV_JUMP .Lcurl_return
 .Lcurl_signaled:
     mv s6, a2
     li s10, 128
     add s6, s6, s10
     mv t0, s6
     RV_ZEXT t0
-    tail .Lcurl_return
+    RV_JUMP .Lcurl_return
 .Lcurl_child:
     RV_IMM t1, 1, 32
     mv a0, t1
@@ -1030,7 +1030,7 @@ registry_download:
     RV_IMM t1, 127, 32
     mv a0, t1
     RV_ZEXT a0
-    tail exit_code
+    RV_JUMP exit_code
 .Lcurl_failed:
     RV_IMM t1, 127, 32
     mv t0, t1
@@ -1047,7 +1047,7 @@ registry_download:
     RV_IMM t1, 127, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* Input: registry_index_path. Reads only a regular non-symlink file, bounded to
  * 1 MiB. Output: index bytes plus NUL, registry_index_end exclusive. Retries
  * EINTR/short reads; growth beyond the bound fails. Stack: 32 saved bytes. */
@@ -1147,7 +1147,7 @@ registry_read_index:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lindex_read_error
-    tail .Lindex_read_loop
+    RV_JUMP .Lindex_read_loop
 .Lindex_read_done:
     mv a0, s2
     RV_CALL rv_close
@@ -1172,7 +1172,7 @@ registry_read_index:
 .Lindex_read_error:
     mv a0, s2
     RV_CALL rv_close
-    tail registry_bad_index
+    RV_JUMP registry_bad_index
 /* Input: bounded index/end from registry_read_index. Output: <=4096 records,
  * each eight borrowed pointers into index. Replaces TAB/LF with NUL. Rejects
  * invalid headers, controls, non-ASCII, missing LF, >2048-byte rows, malformed
@@ -1240,7 +1240,7 @@ registry_parse_index:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lindex_header
+    RV_JUMP .Lindex_header
 .Lindex_header_done:
     mv s6, s2
     mv s10, a3
@@ -1254,7 +1254,7 @@ registry_parse_index:
     RV_RESTORE s4
     RV_RESTORE s3
     RV_RESTORE s2
-    tail registry_parse_records
+    RV_JUMP registry_parse_records
 /* Input: a0=start of bounded TSV records, a1=exclusive end. Shared by index
  * and lock parsers after their headers. Output: registry_rows/count. Replaces
  * delimiters with NUL; validates every record before returning. Stack: 64 saved bytes. */
@@ -1389,7 +1389,7 @@ registry_parse_records:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lindex_char
+    RV_JUMP .Lindex_char
 .Lindex_tab:
     RV_IMM t2, 7, 32
     mv s8, s4
@@ -1416,7 +1416,7 @@ registry_parse_records:
     add s6, s6, s10
     mv s8, s6
     RV_STORE s2, 8
-    tail .Lindex_char
+    RV_JUMP .Lindex_char
 .Lindex_newline:
     RV_IMM t2, 7, 32
     mv s8, s4
@@ -1445,7 +1445,7 @@ registry_parse_records:
     RV_ADDR s6, registry_row_count
     mv s8, s6
     RV_STORE t3, 8
-    tail .Lindex_row
+    RV_JUMP .Lindex_row
 .Lindex_parsed:
     RV_CALL registry_check_unique
     RV_RESTORE s5
@@ -1764,7 +1764,7 @@ registry_identity_compare:
     mv s10, t2
     RV_FLAGS add, 64
     mv a5, s11
-    tail .Lidentity_byte
+    RV_JUMP .Lidentity_byte
 .Lidentity_next_field:
     RV_IMM t2, 8, 32
     mv s8, a3
@@ -1878,7 +1878,7 @@ registry_identity_sift:
     mv s8, s6
     RV_STORE t0, 8
     mv s2, s4
-    tail .Lidentity_sift_loop
+    RV_JUMP .Lidentity_sift_loop
 .Lidentity_sift_done:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -2196,7 +2196,7 @@ registry_component:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hi, registry_invalid
-    tail .Lcomponent_next
+    RV_JUMP .Lcomponent_next
 .Lcomponent_dash:
     mv s8, a2
     mv s10, a2
@@ -2211,7 +2211,7 @@ registry_component:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lcomponent_loop
+    RV_JUMP .Lcomponent_loop
 .Lcomponent_end:
     mv s8, a2
     mv s10, a2
@@ -2277,7 +2277,7 @@ registry_valid_package:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, registry_invalid
-    tail registry_valid
+    RV_JUMP registry_valid
 /* Input: a0=version. Output: t0=1 for exactly three decimal components, each
  * <=2147483647, no leading zeroes. Maximum accepted length is 32. No overflow:
  * each multiply starts from a value <=2147483647. Stack: none. */
@@ -2402,7 +2402,7 @@ registry_valid_version:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lreg_version_digit
+    RV_JUMP .Lreg_version_digit
 .Lreg_version_zero:
     RV_IMM t2, 1, 32
     mv s8, a3
@@ -2462,14 +2462,14 @@ registry_valid_version:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lreg_version_component
+    RV_JUMP .Lreg_version_component
 .Lreg_version_end:
     RV_IMM t2, 2, 32
     mv s8, a4
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, registry_invalid
-    tail registry_valid
+    RV_JUMP registry_valid
 /* Input: a0=string. Output: t0=1 only for one of the three published targets.
  * This is artifact selection, not a claim that the host can execute it. */
 registry_valid_target:
@@ -2480,7 +2480,7 @@ registry_valid_target:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_registry1602
-    tail registry_valid
+    RV_JUMP registry_valid
 .Lrv_cb_skip_registry1602:
     RV_SAVE a0
     RV_ADDR s6, registry_x86_64
@@ -2502,7 +2502,7 @@ registry_valid_target:
     RV_BCOND ne, registry_valid
     RV_ADDR s6, registry_riscv64
     mv a1, s6
-    tail streq
+    RV_JUMP streq
 /* Input: a0=string. Output: t0=1 for source/executable, else zero.
  * Stack: one saved pointer. Does not authorize execution. */
 registry_valid_kind:
@@ -2517,7 +2517,7 @@ registry_valid_kind:
     RV_BCOND ne, registry_valid
     RV_ADDR s6, registry_executable_kind
     mv a1, s6
-    tail streq
+    RV_JUMP streq
 /* Input: a0=decimal string. Output: t0=size 1..64 MiB, or zero on failure.
  * Rejects signs and leading zeroes. Checks each multiply against the bound.
  * Scratch: t0/a3/a2. Stack: none. */
@@ -2602,7 +2602,7 @@ registry_size_value:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lsize_digit
+    RV_JUMP .Lsize_digit
 .Lsize_done:
     ret
 /* Input: a0=index URL already bounded to 4095 chars. Output: t0=1 for a
@@ -2664,7 +2664,7 @@ registry_https_url:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lhttps_prefix
+    RV_JUMP .Lhttps_prefix
 .Lhttps_body:
     mv s6, a0
     mv s10, a3
@@ -2759,7 +2759,7 @@ registry_https_url:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lhttps_char
+    RV_JUMP .Lhttps_char
 /* GitHub release URLs have exactly six path components. Restrict the alphabet
  * and reject dot components, query strings, fragments and percent encoding. */
 /* Input: a0=bounded artifact URL. Output: t0=1 or zero. Read-only validation;
@@ -2826,7 +2826,7 @@ registry_release_url:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lrelease_prefix
+    RV_JUMP .Lrelease_prefix
 .Lrelease_path:
     mv s8, a0
     mv s10, a3
@@ -3084,7 +3084,7 @@ registry_release_url:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lrelease_char
+    RV_JUMP .Lrelease_char
 .Lrelease_segment:
     mv s6, a0
     mv s10, a3
@@ -3129,14 +3129,14 @@ registry_release_url:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, registry_invalid
-    tail .Lrelease_delimiter
+    RV_JUMP .Lrelease_delimiter
 .Lrelease_owner:
     RV_IMM t2, 39, 64
     mv s8, a7
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, registry_invalid
-    tail .Lrelease_delimiter
+    RV_JUMP .Lrelease_delimiter
 .Lrelease_repository:
     RV_IMM t2, 100, 64
     mv s8, a7
@@ -3158,7 +3158,7 @@ registry_release_url:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, registry_invalid
-    tail .Lrelease_delimiter
+    RV_JUMP .Lrelease_delimiter
 .Lrelease_label_releases:
     RV_IMM t2, 8, 64
     mv s8, a7
@@ -3174,7 +3174,7 @@ registry_release_url:
     mv s10, a2
     RV_FLAGS sub, 64
     RV_BCOND ne, registry_invalid
-    tail .Lrelease_delimiter
+    RV_JUMP .Lrelease_delimiter
 .Lrelease_label_download:
     RV_IMM t2, 8, 64
     mv s8, a7
@@ -3219,14 +3219,14 @@ registry_release_url:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lrelease_segment_start
+    RV_JUMP .Lrelease_segment_start
 .Lrelease_end:
     RV_IMM t2, 6, 32
     mv s8, a4
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, registry_invalid
-    tail registry_valid
+    RV_JUMP registry_valid
 registry_valid:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -3341,7 +3341,7 @@ registry_list:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, .Llist_next
-    tail .Llist_match
+    RV_JUMP .Llist_match
 .Llist_search:
     RV_CALL registry_contains
     mv s8, t0
@@ -3402,7 +3402,7 @@ registry_list:
     RV_BCOND eq, .Llist_json_version
     mv a0, s2
     RV_CALL registry_print_json_row
-    tail .Llist_count
+    RV_JUMP .Llist_count
 .Llist_json_version:
     mv s6, s2
     li s10, 8
@@ -3411,7 +3411,7 @@ registry_list:
     RV_LOAD t1, 8
     mv a0, t1
     RV_CALL registry_json_string
-    tail .Llist_count
+    RV_JUMP .Llist_count
 .Llist_human:
     RV_ADDR s6, registry_mode
     mv s8, s6
@@ -3427,7 +3427,7 @@ registry_list:
     RV_BCOND eq, .Llist_human_version
     mv a0, s2
     RV_CALL registry_print_text_row
-    tail .Llist_count
+    RV_JUMP .Llist_count
 .Llist_human_version:
     mv s6, s2
     li s10, 8
@@ -3462,7 +3462,7 @@ registry_list:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Llist_row
+    RV_JUMP .Llist_row
 .Llist_done:
     RV_ADDR s6, json_mode
     mv s8, s6
@@ -3542,7 +3542,7 @@ registry_list:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, registry_not_found
-    tail exit_ok
+    RV_JUMP exit_ok
 /* Input: a0=accessible NUL-terminated text. Output: writes through out when
  * listing is inactive; otherwise appends to the owned 64 KiB output buffer.
  * Each copy is bounded by remaining capacity and string length. A full buffer
@@ -3600,7 +3600,7 @@ registry_emit:
     mv a3, s3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_registry2257
-    tail .Lport_registry_1_end
+    RV_JUMP .Lport_registry_1_end
 .Lrv_cb_skip_registry2257:
 .Lport_registry_1:
     mv s8, a1
@@ -3615,7 +3615,7 @@ registry_emit:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_registry2262
-    tail .Lport_registry_1
+    RV_JUMP .Lport_registry_1
 .Lrv_cb_skip_registry2262:
 .Lport_registry_1_end:
     RV_ADDR s6, registry_output_size
@@ -3645,7 +3645,7 @@ registry_emit:
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lemit_chunk
     RV_CALL registry_flush
-    tail .Lemit_chunk
+    RV_JUMP .Lemit_chunk
 .Lemit_done:
     RV_RESTORE s3
     RV_RESTORE s2
@@ -3692,7 +3692,7 @@ registry_flush:
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* Input: a0=haystack, a1=needle, both bounded strings. Output: t0=1 for a
  * case-sensitive substring (including empty needle), else zero. Read-only.
  * Scratch: t0/a3/a4. Stack: none. */
@@ -3776,14 +3776,14 @@ registry_contains:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lcontains_chars
+    RV_JUMP .Lcontains_chars
 .Lcontains_next:
     RV_IMM t2, 1, 64
     mv s8, a4
     mv s10, t2
     RV_FLAGS add, 64
     mv a4, s11
-    tail .Lcontains_start
+    RV_JUMP .Lcontains_start
 /* Current row is s2. Suppress versions already printed for this package. */
 /* Input: s2=current row in registry_rows. Output: t0=1 if an earlier row has
  * the same package and version. Read-only; scan ends before s2. Stack: 16 saved bytes. */
@@ -3832,7 +3832,7 @@ registry_version_seen:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lversion_seen_row
+    RV_JUMP .Lversion_seen_row
 .Lversion_unseen:
     mv s10, t0
     xor t0, t0, s10
@@ -3936,7 +3936,7 @@ registry_print_json_row:
     RV_FLAGS sub, 32
     RV_BCOND eq, .Ljson_number
     RV_CALL registry_json_string
-    tail .Ljson_next
+    RV_JUMP .Ljson_next
 .Ljson_number:
     RV_CALL registry_emit
 .Ljson_next:
@@ -4047,7 +4047,7 @@ registry_json_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv a0, s11
-    tail .Lquote_char
+    RV_JUMP .Lquote_char
 .Lquote_escape:
     RV_IMM t1, 92, 32
     mv s6, a0
@@ -4066,7 +4066,7 @@ registry_json_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv a0, s11
-    tail .Lquote_char
+    RV_JUMP .Lquote_char
 .Lquote_control:
     RV_IMM t1, 92, 32
     mv s6, a0
@@ -4149,7 +4149,7 @@ registry_json_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv a0, s11
-    tail .Lquote_char
+    RV_JUMP .Lquote_char
 .Lquote_end:
     RV_IMM t1, 34, 32
     mv s6, a0
@@ -4163,7 +4163,7 @@ registry_json_string:
     RV_STORE t1, 1
     RV_ADDR s6, registry_json_buffer
     mv a0, s6
-    tail registry_emit
+    RV_JUMP registry_emit
 /* Input: validated rows plus query/target/kind/exact-version globals.
  * Output: t0=selected eight-pointer row, or zero. Stores registry_selected.
  * Numeric version order is shared by package fetch and self update.
@@ -4255,7 +4255,7 @@ registry_select:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lfetch_next
-    tail .Lfetch_choose
+    RV_JUMP .Lfetch_choose
 .Lfetch_latest:
     RV_ADDR s6, registry_selected
     mv s8, s6
@@ -4298,7 +4298,7 @@ registry_select:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Lfetch_select
+    RV_JUMP .Lfetch_select
 .Lfetch_selected:
     RV_ADDR s6, registry_selected
     mv s8, s6
@@ -4389,7 +4389,7 @@ registry_fetch:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, registry_download_error
-    tail .Lfetch_verify
+    RV_JUMP .Lfetch_verify
 .Lfetch_local:
     RV_CALL registry_copy_local
 .Lfetch_verify:
@@ -4438,7 +4438,7 @@ registry_fetch:
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lfetch_output_ready
     RV_CALL registry_install_output
-    tail .Lfetch_output_ready
+    RV_JUMP .Lfetch_output_ready
 .Lfetch_default_output:
     RV_ADDR s6, registry_output
     mv s8, s6
@@ -4514,7 +4514,7 @@ registry_fetch:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail .Loutput_package
+    RV_JUMP .Loutput_package
 .Loutput_version:
     RV_IMM t1, 45, 32
     mv s6, a0
@@ -4584,7 +4584,7 @@ registry_fetch:
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lp_registry_original_output
     RV_CALL program_commit_install
-    tail .Lp_registry_committed
+    RV_JUMP .Lp_registry_committed
 .Lp_registry_original_output:
     /* Only the explicit install command grants execute permission. */
     RV_ADDR s6, registry_temp_payload
@@ -4642,7 +4642,7 @@ registry_fetch:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_registry2920
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lrv_cb_skip_registry2920:
 .Lp_registry_report:
     RV_ADDR s6, json_mode
@@ -4683,7 +4683,7 @@ registry_fetch:
     RV_ADDR s6, registry_verified_text
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lfetch_json:
     RV_ADDR s6, registry_fetch_json_prefix
     mv a0, s6
@@ -4714,42 +4714,42 @@ registry_fetch:
     RV_ADDR s6, registry_fetch_json_suffix
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lfetch_output_error:
     RV_ADDR s6, registry_err_output
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 .Lsha_missing:
     RV_ADDR s6, registry_err_sha
     mv a0, s6
     RV_IMM t1, 127, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_integrity_error:
     RV_ADDR s6, registry_err_integrity
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_install_target_error:
     RV_ADDR s6, registry_err_install_target
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 registry_install_elf_error:
     RV_ADDR s6, registry_err_elf
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* Input: selected registry row in s0; no explicit output was supplied.
  * Output: registry_output points to HOME/.local/bin/<unscoped package name>.
  * HOME is read, never changed. Requires an absolute HOME <=4000 bytes. Creates
@@ -4844,7 +4844,7 @@ registry_install_output:
     mv s10, t2
     RV_FLAGS add, 64
     mv a4, s11
-    tail .Linstall_env
+    RV_JUMP .Linstall_env
 .Linstall_home:
     RV_IMM t2, 5, 64
     mv s8, a0
@@ -4944,7 +4944,7 @@ registry_install_output:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail .Linstall_name
+    RV_JUMP .Linstall_name
 .Linstall_name_start:
     RV_IMM t2, 1, 64
     mv s8, a1
@@ -4964,7 +4964,7 @@ registry_install_output:
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* Input: registry_selected and expected_size describe the private payload.
  * Check its regular-file type and exact length, then run sha256sum with fixed
  * arguments. Returns only on success; failure cleans the private workspace.
@@ -5191,7 +5191,7 @@ registry_copy_local:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND mi, registry_io_error
-    tail .Lcopy_artifact_read
+    RV_JUMP .Lcopy_artifact_read
 .Lcopy_artifact_done:
     mv a0, s2
     RV_CALL rv_close
@@ -5290,7 +5290,7 @@ registry_version_compare:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lcompare_left
+    RV_JUMP .Lcompare_left
 .Lcompare_right:
     mv s6, a1
     mv s10, a2
@@ -5340,7 +5340,7 @@ registry_version_compare:
     mv s10, t2
     RV_FLAGS add, 32
     mv a2, s11
-    tail .Lcompare_right
+    RV_JUMP .Lcompare_right
 .Lcompare_values:
     mv s8, a4
     mv s10, a5
@@ -5371,7 +5371,7 @@ registry_version_compare:
     mv s10, t2
     RV_FLAGS add, 32
     mv a2, s11
-    tail .Lcompare_component
+    RV_JUMP .Lcompare_component
 .Lcompare_greater:
     RV_IMM t1, 1, 32
     mv t0, t1

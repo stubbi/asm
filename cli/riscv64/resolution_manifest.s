@@ -135,7 +135,7 @@ rm_parse_manifest:
     mv t3, s11
     mv a3, t3
     RV_ZEXT a3
-    tail .Lrm_preflight
+    RV_JUMP .Lrm_preflight
 .Lrm_preflight_done:
     RV_ADDR s6, rm_ascii
     mv s8, s6
@@ -157,7 +157,7 @@ rm_parse_manifest:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolution_manifest105
-    tail .Lrm_arm_zero_done1
+    RV_JUMP .Lrm_arm_zero_done1
 .Lrv_cb_skip_resolution_manifest105:
 .Lrm_arm_zero1:
     mv s8, a0
@@ -168,7 +168,7 @@ rm_parse_manifest:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolution_manifest109
-    tail .Lrm_arm_zero1
+    RV_JUMP .Lrm_arm_zero1
 .Lrv_cb_skip_resolution_manifest109:
 .Lrm_arm_zero_done1:
     RV_ADDR t1, rm_empty
@@ -303,7 +303,7 @@ rm_parse_manifest:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_resolution_manifest186
-    tail .Lrm_target
+    RV_JUMP .Lrm_target
 .Lrv_cb_skip_resolution_manifest186:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_link
@@ -311,7 +311,7 @@ rm_parse_manifest:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_resolution_manifest190
-    tail .Lrm_link
+    RV_JUMP .Lrm_link
 .Lrv_cb_skip_resolution_manifest190:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_libraries
@@ -319,7 +319,7 @@ rm_parse_manifest:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_resolution_manifest194
-    tail .Lrm_libraries
+    RV_JUMP .Lrm_libraries
 .Lrv_cb_skip_resolution_manifest194:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_check
@@ -327,45 +327,45 @@ rm_parse_manifest:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_resolution_manifest198
-    tail .Lrm_check
+    RV_JUMP .Lrm_check
 .Lrv_cb_skip_resolution_manifest198:
-    tail .Lrm_bad
+    RV_JUMP .Lrm_bad
 .Lrm_link:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolution_manifest202
-    tail .Lrm_bad
+    RV_JUMP .Lrm_bad
 .Lrv_cb_skip_resolution_manifest202:
     li a2, 32
     RV_ZEXT a2
     RV_IMM a3, RM_LINK, 64
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_libraries:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolution_manifest208
-    tail .Lrm_bad
+    RV_JUMP .Lrm_bad
 .Lrv_cb_skip_resolution_manifest208:
     li a2, 64
     RV_ZEXT a2
     RV_IMM a3, RM_LIBRARIES, 64
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_check:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolution_manifest214
-    tail .Lrm_bad
+    RV_JUMP .Lrm_bad
 .Lrv_cb_skip_resolution_manifest214:
     li a2, 128
     RV_ZEXT a2
     RV_IMM a3, RM_CHECK, 64
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_target:
     RV_IMM t1, 8, 32
     mv a2, t1
@@ -373,7 +373,7 @@ rm_parse_manifest:
     RV_IMM t1, 48, 32
     mv a3, t1
     RV_ZEXT a3
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_source:
     RV_IMM t1, 4, 32
     mv a2, t1
@@ -381,7 +381,7 @@ rm_parse_manifest:
     RV_IMM t1, 40, 32
     mv a3, t1
     RV_ZEXT a3
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_package:
     RV_ADDR s6, rm_key
     mv a0, s6
@@ -407,7 +407,7 @@ rm_parse_manifest:
     RV_IMM t1, 32, 32
     mv a3, t1
     RV_ZEXT a3
-    tail .Lrm_scalar
+    RV_JUMP .Lrm_scalar
 .Lrm_name:
     RV_IMM t1, 1, 32
     mv a2, t1
@@ -433,7 +433,7 @@ rm_parse_manifest:
     add s6, s6, s10
     mv s8, s6
     RV_STORE s1, 8
-    tail .Lrm_line_end
+    RV_JUMP .Lrm_line_end
 .Lrm_schema:
     RV_ADDR s6, rm_key
     mv a0, s6
@@ -470,7 +470,7 @@ rm_parse_manifest:
     mv s6, s3
     mv s8, s6
     RV_STORE t1, 8
-    tail .Lrm_line_end
+    RV_JUMP .Lrm_line_end
 .Lrm_section:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -547,7 +547,7 @@ rm_parse_manifest:
     RV_FLAGS add, 64
     mv t3, s11
     mv s1, t3
-    tail .Lrm_section_find
+    RV_JUMP .Lrm_section_find
 .Lrm_section_found:
     mv a3, s4
     RV_ZEXT a3
@@ -581,7 +581,7 @@ rm_parse_manifest:
     RV_FLAGS and, 32
     mv s5, t3
     RV_ZEXT s5
-    tail .Lrm_line_end
+    RV_JUMP .Lrm_line_end
 .Lrm_dependency:
     RV_CALL rm_string
     mv s8, t0
@@ -685,7 +685,7 @@ rm_parse_manifest:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_bad
-    tail .Lrm_line_end
+    RV_JUMP .Lrm_line_end
 .Lrm_inline:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -827,7 +827,7 @@ rm_parse_manifest:
     mv t3, s11
     mv a2, t3
     RV_ZEXT a2
-    tail .Lrm_dep_feature_name
+    RV_JUMP .Lrm_dep_feature_name
 .Lrm_inline_version:
     RV_ADDR s6, rm_table_fields
     mv s8, s6
@@ -866,7 +866,7 @@ rm_parse_manifest:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_bad
-    tail .Lrm_inline_end
+    RV_JUMP .Lrm_inline_end
 .Lrm_inline_optional:
     RV_IMM t1, 2, 32
     mv a2, t1
@@ -874,7 +874,7 @@ rm_parse_manifest:
     RV_IMM t1, 16, 32
     mv a3, t1
     RV_ZEXT a3
-    tail .Lrm_inline_bool
+    RV_JUMP .Lrm_inline_bool
 .Lrm_inline_defaults:
     RV_IMM t1, 4, 32
     mv a2, t1
@@ -952,7 +952,7 @@ rm_parse_manifest:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lrm_bad
-    tail .Lrm_inline_field
+    RV_JUMP .Lrm_inline_field
 .Lrm_inline_done:
     RV_ADDR s6, rm_table_fields
     mv s8, s6
@@ -962,7 +962,7 @@ rm_parse_manifest:
     mv s10, t2
     RV_FLAGS and, 64
     RV_BCOND eq, .Lrm_bad
-    tail .Lrm_line_end
+    RV_JUMP .Lrm_line_end
 .Lrm_feature:
     mv s6, s3
     RV_IMM s7, 16, 64
@@ -1037,7 +1037,7 @@ rm_parse_manifest:
     mv t3, s11
     mv s2, t3
     mv t0, s1
-    tail .Lrm_feature_key
+    RV_JUMP .Lrm_feature_key
 .Lrm_feature_quoted:
     RV_CALL rm_string
     mv s8, t0
@@ -1167,7 +1167,7 @@ rm_parse_manifest:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrm_line
+    RV_JUMP .Lrm_line
 .Lrm_comment:
     mv s6, s2
     mv s8, s6
@@ -1196,7 +1196,7 @@ rm_parse_manifest:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrm_comment
+    RV_JUMP .Lrm_comment
 .Lrm_finish:
     mv t0, s0
     RV_ZEXT t0
@@ -1286,7 +1286,7 @@ rm_parse_manifest:
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lrm_strict_version
     RV_CALL valid_version
-    tail .Lrm_version_checked
+    RV_JUMP .Lrm_version_checked
 .Lrm_strict_version:
     RV_CALL registry_valid_version
 .Lrm_version_checked:
@@ -1333,7 +1333,7 @@ rm_parse_manifest:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_resolution_manifest832
-    tail .Lrm_bad
+    RV_JUMP .Lrm_bad
 .Lrv_cb_skip_resolution_manifest832:
     mv s10, s1
     xor t3, s1, s10
@@ -1377,7 +1377,7 @@ rm_parse_manifest:
     mv t3, s11
     mv s1, t3
     RV_ZEXT s1
-    tail .Lrm_feature_check
+    RV_JUMP .Lrm_feature_check
 .Lrm_good:
     mv s10, t0
     xor t3, t0, s10
@@ -1387,7 +1387,7 @@ rm_parse_manifest:
     RV_FLAGS and, 32
     mv t0, t3
     RV_ZEXT t0
-    tail .Lrm_return
+    RV_JUMP .Lrm_return
 .Lrm_bad:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1437,7 +1437,7 @@ rm_horizontal:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail rm_horizontal
+    RV_JUMP rm_horizontal
 .Lrm_hdone:
     ret
 rm_expect:
@@ -1560,7 +1560,7 @@ rm_key_identifier:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrm_key_char
+    RV_JUMP .Lrm_key_char
 .Lrm_key_end:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1679,7 +1679,7 @@ rm_string:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrm_string_char
+    RV_JUMP .Lrm_string_char
 .Lrm_string_end:
     RV_IMM t1, 0, 32
     mv s6, s2
@@ -1772,7 +1772,7 @@ rm_bool:
     mv t3, s11
     mv a3, t3
     RV_ZEXT a3
-    tail .Lrm_bool_char
+    RV_JUMP .Lrm_bool_char
 .Lrm_bool_end:
     mv s8, s2
     mv s10, a3
@@ -1871,7 +1871,7 @@ rm_array:
     mv t3, s11
     mv s4, t3
     RV_ZEXT s4
-    tail .Lrm_array_duplicate
+    RV_JUMP .Lrm_array_duplicate
 .Lrm_array_store:
     mv s6, s0
     mv s10, s1
@@ -1923,7 +1923,7 @@ rm_array:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lrm_array_empty
-    tail .Lrm_array_item
+    RV_JUMP .Lrm_array_item
 .Lrm_array_empty:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -1934,7 +1934,7 @@ rm_array:
 .Lrm_array_done:
     mv t0, s1
     RV_ZEXT t0
-    tail .Lrm_array_return
+    RV_JUMP .Lrm_array_return
 .Lrm_array_bad:
     RV_IMM t1, -1, 64
     mv t0, t1
@@ -2027,7 +2027,7 @@ rm_valid_feature:
     mv t3, s11
     mv a3, t3
     RV_ZEXT a3
-    tail .Lrm_feature_char
+    RV_JUMP .Lrm_feature_char
 .Lrm_feature_end:
     mv s10, t0
     xor t3, t0, s10
@@ -2083,7 +2083,7 @@ rm_find_dep:
     RV_FLAGS add, 64
     mv t3, s11
     mv a1, t3
-    tail rm_find_record
+    RV_JUMP rm_find_record
 rm_find_feature:
     RV_ADDR s6, rm_output
     mv s8, s6
@@ -2136,7 +2136,7 @@ rm_find_record:
     RV_FLAGS sub, 64
     mv t3, s11
     mv s3, t3
-    tail .Lrm_find_loop
+    RV_JUMP .Lrm_find_loop
 .Lrm_find_absent:
     mv s10, t0
     xor t3, t0, s10
@@ -2146,7 +2146,7 @@ rm_find_record:
     RV_FLAGS and, 32
     mv t0, t3
     RV_ZEXT t0
-    tail .Lrm_find_return
+    RV_JUMP .Lrm_find_return
 .Lrm_find_found:
     mv t0, s1
 .Lrm_find_return:
@@ -2288,7 +2288,7 @@ rm_feature_visit:
     RV_FLAGS add, 64
     mv t3, s11
     mv a0, t3
-    tail .Lrm_visit_slash
+    RV_JUMP .Lrm_visit_slash
 .Lrm_visit_classify:
     mv s8, a3
     mv s10, a3
@@ -2319,7 +2319,7 @@ rm_feature_visit:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND eq, .Lrm_visit_bad
-    tail .Lrm_visit_next
+    RV_JUMP .Lrm_visit_next
 .Lrm_visit_optional:
     mv s6, s3
     RV_IMM s7, 4, 64
@@ -2342,7 +2342,7 @@ rm_feature_visit:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lrm_visit_bad
-    tail .Lrm_visit_next
+    RV_JUMP .Lrm_visit_next
 .Lrm_visit_own:
     mv a0, s3
     RV_CALL rm_valid_feature
@@ -2370,7 +2370,7 @@ rm_feature_visit:
     mv t3, s11
     mv s1, t3
     RV_ZEXT s1
-    tail .Lrm_visit_item
+    RV_JUMP .Lrm_visit_item
 .Lrm_visit_complete:
     RV_IMM t1, 2, 64
     mv s6, s0
@@ -2383,7 +2383,7 @@ rm_feature_visit:
     RV_IMM t1, 1, 32
     mv t0, t1
     RV_ZEXT t0
-    tail .Lrm_visit_return
+    RV_JUMP .Lrm_visit_return
 .Lrm_visit_bad:
     mv s10, t0
     xor t3, t0, s10
@@ -2560,7 +2560,7 @@ rm_range_matches:
     mv t3, s11
     mv a3, t3
     RV_ZEXT a3
-    tail .Lrq_ascii
+    RV_JUMP .Lrq_ascii
 .Lrq_start:
     mv s8, s4
     mv s10, s4
@@ -2642,7 +2642,7 @@ rm_range_matches:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lrq_eq
-    tail .Lrq_version
+    RV_JUMP .Lrq_version
 .Lrq_caret:
     RV_IMM t1, 5, 32
     mv s1, t1
@@ -2653,7 +2653,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_version
+    RV_JUMP .Lrq_version
 .Lrq_tilde:
     RV_IMM t1, 6, 32
     mv s1, t1
@@ -2664,7 +2664,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_version
+    RV_JUMP .Lrq_version
 .Lrq_gt:
     RV_IMM t1, 2, 32
     mv s1, t1
@@ -2696,7 +2696,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_spaces
+    RV_JUMP .Lrq_spaces
 .Lrq_lt:
     RV_IMM t1, 4, 32
     mv s1, t1
@@ -2728,7 +2728,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_spaces
+    RV_JUMP .Lrq_spaces
 .Lrq_eq:
     RV_IMM t1, 7, 32
     mv s1, t1
@@ -2754,7 +2754,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_spaces
+    RV_JUMP .Lrq_spaces
 .Lrq_version:
     RV_ADDR s6, rm_range_token
     mv s0, s6
@@ -2818,7 +2818,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_version_char
+    RV_JUMP .Lrq_version_char
 .Lrq_version_end:
     RV_IMM t1, 0, 32
     mv s6, s0
@@ -2931,7 +2931,7 @@ rm_range_matches:
     RV_FLAGS and, 32
     mv a2, t3
     RV_ZEXT a2
-    tail .Lrq_upper
+    RV_JUMP .Lrq_upper
 .Lrq_upper_zero:
     mv s8, a3
     mv s10, a3
@@ -2943,7 +2943,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv a2, t3
-    tail .Lrq_upper
+    RV_JUMP .Lrq_upper
 .Lrq_upper_minor:
     RV_IMM t2, 1, 64
     mv s8, a3
@@ -2984,37 +2984,37 @@ rm_range_matches:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ge, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_exact:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_ge:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND lt, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_greater:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND le, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_le:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND gt, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_less:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ge, .Lrq_mismatch
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_mismatch:
     mv s10, s3
     xor t3, s3, s10
@@ -3039,7 +3039,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_next
+    RV_JUMP .Lrq_next
 .Lrq_separator:
     mv s6, s2
     mv s8, s6
@@ -3093,7 +3093,7 @@ rm_range_matches:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lrq_after_comma
+    RV_JUMP .Lrq_after_comma
 .Lrq_require_comparator:
     mv s6, s2
     mv s8, s6
@@ -3122,7 +3122,7 @@ rm_range_matches:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lrq_term
-    tail .Lrq_bad
+    RV_JUMP .Lrq_bad
 .Lrq_wildcard:
     RV_IMM t2, 1, 32
     mv s8, s5
@@ -3143,7 +3143,7 @@ rm_range_matches:
 .Lrq_done:
     mv t0, s3
     RV_ZEXT t0
-    tail .Lrq_return
+    RV_JUMP .Lrq_return
 .Lrq_bad:
     RV_IMM t1, -1, 64
     mv t0, t1
@@ -3214,7 +3214,7 @@ rm_range_numbers:
     RV_FLAGS add, 64
     mv t3, s11
     mv a0, t3
-    tail .Lrq_number_digit
+    RV_JUMP .Lrq_number_digit
 .Lrq_number_store:
     mv s6, a1
     mv s10, a3
@@ -3240,7 +3240,7 @@ rm_range_numbers:
     RV_FLAGS add, 64
     mv t3, s11
     mv a0, t3
-    tail .Lrq_number_component
+    RV_JUMP .Lrq_number_component
 .Lrq_number_done:
     ret
 /* a0/a1=three unsigned qwords. t0=-1,0,1 lexical numeric order. */

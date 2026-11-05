@@ -96,7 +96,7 @@ self_parse_release:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_self_update_metadata79
-    tail .Lport_self_update_metadata_1_end
+    RV_JUMP .Lport_self_update_metadata_1_end
 .Lrv_cb_skip_self_update_metadata79:
 .Lport_self_update_metadata_1:
     mv s8, a0
@@ -107,7 +107,7 @@ self_parse_release:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_self_update_metadata83
-    tail .Lport_self_update_metadata_1
+    RV_JUMP .Lport_self_update_metadata_1
 .Lrv_cb_skip_self_update_metadata83:
 .Lport_self_update_metadata_1_end:
     mv s8, a1
@@ -252,7 +252,7 @@ self_parse_release:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, .Lsmp_root_assets
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_schema:
     mv s6, s5
     mv s8, s6
@@ -297,7 +297,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_project:
     RV_ADDR s6, smp_project
     mv a1, s6
@@ -314,7 +314,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_repository:
     RV_ADDR s6, smp_repository
     mv a1, s6
@@ -331,7 +331,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_version:
     RV_ADDR s6, smp_row
     mv s8, s6
@@ -356,7 +356,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_tag:
     RV_ADDR s6, smp_expected_tag
     mv a1, s6
@@ -373,7 +373,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_commit:
     mv a0, s5
     RV_IMM t1, 40, 32
@@ -488,7 +488,7 @@ self_parse_release:
     mv s8, s4
     mv s10, s4
     RV_FLAGS and, 32
-    tail .Lsmp_root_next
+    RV_JUMP .Lsmp_root_next
 .Lsmp_root_assets:
     mv a0, s5
     RV_CALL smp_assets
@@ -510,7 +510,7 @@ self_parse_release:
     mv s8, s6
     RV_LOAD t1, 8
     mv s3, t1
-    tail .Lsmp_root_member
+    RV_JUMP .Lsmp_root_member
 .Lsmp_root_done:
     RV_IMM t2, 127, 32
     mv s8, s4
@@ -536,7 +536,7 @@ self_parse_release:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_self_update_metadata336
-    tail .Lport_self_update_metadata_2_end
+    RV_JUMP .Lport_self_update_metadata_2_end
 .Lrv_cb_skip_self_update_metadata336:
 .Lport_self_update_metadata_2:
     mv s8, a1
@@ -551,7 +551,7 @@ self_parse_release:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_self_update_metadata341
-    tail .Lport_self_update_metadata_2
+    RV_JUMP .Lport_self_update_metadata_2
 .Lrv_cb_skip_self_update_metadata341:
 .Lport_self_update_metadata_2_end:
     RV_IMM t1, 0, 32
@@ -564,7 +564,7 @@ self_parse_release:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lsmp_entry_done
+    RV_JUMP .Lsmp_entry_done
 .Lsmp_entry_fail:
     RV_ADDR s6, self_source_commit
     mv a0, s6
@@ -579,7 +579,7 @@ self_parse_release:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_self_update_metadata356
-    tail .Lport_self_update_metadata_3_end
+    RV_JUMP .Lport_self_update_metadata_3_end
 .Lrv_cb_skip_self_update_metadata356:
 .Lport_self_update_metadata_3:
     mv s8, a0
@@ -590,7 +590,7 @@ self_parse_release:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_self_update_metadata360
-    tail .Lport_self_update_metadata_3
+    RV_JUMP .Lport_self_update_metadata_3
 .Lrv_cb_skip_self_update_metadata360:
 .Lport_self_update_metadata_3_end:
     RV_IMM t1, 1, 32
@@ -737,7 +737,7 @@ smp_expected_names:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lsmp_names_copy
+    RV_JUMP .Lsmp_names_copy
 .Lsmp_names_suffix:
     mv s8, a3
     mv s10, a3
@@ -797,7 +797,7 @@ smp_expected_names:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lsmp_names_done
+    RV_JUMP .Lsmp_names_done
 .Lsmp_names_fail:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -950,21 +950,21 @@ smp_value:
     RV_IMM t1, SMP_NULL, 32
     mv a0, t1
     RV_ZEXT a0
-    tail smp_literal
+    RV_JUMP smp_literal
 .Lsmp_value_true:
     RV_ADDR s6, smp_true
     mv a1, s6
     RV_IMM t1, SMP_TRUE, 32
     mv a0, t1
     RV_ZEXT a0
-    tail smp_literal
+    RV_JUMP smp_literal
 .Lsmp_value_false:
     RV_ADDR s6, smp_false
     mv a1, s6
     RV_IMM t1, SMP_FALSE, 32
     mv a0, t1
     RV_ZEXT a0
-    tail smp_literal
+    RV_JUMP smp_literal
 .Lsmp_value_string:
     mv s10, a0
     xor a0, a0, s10
@@ -972,7 +972,7 @@ smp_value:
     mv s8, a0
     mv s10, a0
     RV_FLAGS and, 32
-    tail smp_string
+    RV_JUMP smp_string
 /* Input: cursor at object, a0=depth. Output: zero/one. Stores member keys as
  * tokens, then compares each key with this object's previous keys. Plain
  * ASCII unescaped keys make raw equality semantic equality. Stack: 80 bytes.
@@ -1127,7 +1127,7 @@ smp_object:
     mv s8, s6
     RV_LOAD t1, 8
     mv s0, t1
-    tail .Lsmp_object_previous
+    RV_JUMP .Lsmp_object_previous
 .Lsmp_object_colon:
     RV_CALL smp_space
     RV_ADDR s6, smp_cursor
@@ -1222,7 +1222,7 @@ smp_object:
     mv s8, s6
     RV_STORE t3, 8
     RV_CALL smp_space
-    tail .Lsmp_object_member
+    RV_JUMP .Lsmp_object_member
 .Lsmp_object_close:
     RV_ADDR s6, smp_cursor
     mv s8, s6
@@ -1259,7 +1259,7 @@ smp_object:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lsmp_object_done
+    RV_JUMP .Lsmp_object_done
 .Lsmp_object_fail:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1410,7 +1410,7 @@ smp_array:
     RV_ADDR s6, smp_cursor
     mv s8, s6
     RV_STORE t3, 8
-    tail .Lsmp_array_element
+    RV_JUMP .Lsmp_array_element
 .Lsmp_array_close:
     RV_ADDR s6, smp_cursor
     mv s8, s6
@@ -1447,7 +1447,7 @@ smp_array:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lsmp_array_done
+    RV_JUMP .Lsmp_array_done
 .Lsmp_array_fail:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1591,7 +1591,7 @@ smp_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lsmp_string_byte
+    RV_JUMP .Lsmp_string_byte
 .Lsmp_string_escape:
     mv s8, s4
     mv s10, s4
@@ -1735,7 +1735,7 @@ smp_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lsmp_string_byte
+    RV_JUMP .Lsmp_string_byte
 .Lsmp_string_unicode:
     mv s6, s2
     li s10, 5
@@ -1778,7 +1778,7 @@ smp_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lsmp_string_byte
+    RV_JUMP .Lsmp_string_byte
 .Lsmp_string_surrogate:
     mv s6, s2
     li s10, 11
@@ -1839,7 +1839,7 @@ smp_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lsmp_string_byte
+    RV_JUMP .Lsmp_string_byte
 .Lsmp_string_utf8:
     mv s8, s4
     mv s10, s4
@@ -1859,7 +1859,7 @@ smp_string:
     RV_FLAGS and, 64
     RV_BCOND eq, .Lsmp_string_fail
     mv s2, t0
-    tail .Lsmp_string_byte
+    RV_JUMP .Lsmp_string_byte
 .Lsmp_string_close:
     mv s6, s2
     li s10, 1
@@ -1892,7 +1892,7 @@ smp_string:
     mv s10, a0
     RV_FLAGS and, 32
     RV_CALL smp_emit
-    tail .Lsmp_string_done
+    RV_JUMP .Lsmp_string_done
 .Lsmp_string_fail:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2034,7 +2034,7 @@ smp_utf8:
     RV_IMM t1, 160, 32
     mv a4, t1
     RV_ZEXT a4
-    tail .Lsmp_utf8_count
+    RV_JUMP .Lsmp_utf8_count
 .Lsmp_utf8_not_e0:
     RV_IMM t2, 237, 32
     mv s8, t0
@@ -2044,7 +2044,7 @@ smp_utf8:
     RV_IMM t1, 159, 32
     mv a5, t1
     RV_ZEXT a5
-    tail .Lsmp_utf8_count
+    RV_JUMP .Lsmp_utf8_count
 .Lsmp_utf8_not_ed:
     RV_IMM t2, 239, 32
     mv s8, t0
@@ -2062,7 +2062,7 @@ smp_utf8:
     RV_IMM t1, 144, 32
     mv a4, t1
     RV_ZEXT a4
-    tail .Lsmp_utf8_count
+    RV_JUMP .Lsmp_utf8_count
 .Lsmp_utf8_not_f0:
     RV_IMM t2, 244, 32
     mv s8, t0
@@ -2130,7 +2130,7 @@ smp_utf8:
     mv s10, t2
     RV_FLAGS add, 32
     mv a4, s11
-    tail .Lsmp_utf8_continuation
+    RV_JUMP .Lsmp_utf8_continuation
 .Lsmp_utf8_done:
     ret
 .Lsmp_utf8_fail:
@@ -2235,7 +2235,7 @@ smp_number:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ls, .Lsmp_number_integer_digits
-    tail .Lsmp_number_fraction
+    RV_JUMP .Lsmp_number_fraction
 .Lsmp_number_zero:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -2493,7 +2493,7 @@ smp_number:
     mv a0, t1
     RV_ZEXT a0
     RV_CALL smp_emit
-    tail .Lsmp_number_done
+    RV_JUMP .Lsmp_number_done
 .Lsmp_number_fail:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2573,7 +2573,7 @@ smp_literal:
     mv s10, t2
     RV_FLAGS add, 32
     mv a2, s11
-    tail .Lsmp_literal_byte
+    RV_JUMP .Lsmp_literal_byte
 .Lsmp_literal_done:
     mv s6, a4
     mv s10, a2
@@ -2583,7 +2583,7 @@ smp_literal:
     mv s8, s6
     RV_STORE t0, 8
     mv a1, a4
-    tail smp_emit
+    RV_JUMP smp_emit
 /* Input: cursor/end. Advances over SP/TAB/LF/CR only. t0/a3 scratch. */
 smp_space:
     RV_ADDR s6, smp_cursor
@@ -2657,7 +2657,7 @@ smp_space:
     mv s10, t2
     RV_FLAGS add, 64
     mv t0, s11
-    tail .Lsmp_space_byte
+    RV_JUMP .Lsmp_space_byte
 .Lsmp_space_done:
     RV_ADDR s6, smp_cursor
     mv s8, s6
@@ -2797,7 +2797,7 @@ smp_token_equal:
     mv s10, t2
     RV_FLAGS add, 64
     mv a2, s11
-    tail .Lsmp_equal_byte
+    RV_JUMP .Lsmp_equal_byte
 .Lsmp_equal_yes:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2883,7 +2883,7 @@ smp_token_text_equal:
     mv s10, t2
     RV_FLAGS add, 64
     mv a2, s11
-    tail .Lsmp_text_byte
+    RV_JUMP .Lsmp_text_byte
 .Lsmp_text_end:
     mv s6, a1
     mv s10, a2
@@ -2899,7 +2899,7 @@ smp_token_text_equal:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lsmp_equal_no
-    tail .Lsmp_equal_yes
+    RV_JUMP .Lsmp_equal_yes
 smp_plain_equal:
     mv s6, a0
     mv s8, s6
@@ -2909,7 +2909,7 @@ smp_plain_equal:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lsmp_equal_no
-    tail smp_token_text_equal
+    RV_JUMP smp_token_text_equal
 /* Input: two borrowed NUL-terminated validated/static strings. Output: 1/0.
  * No local stack or writes. Used only for the row's fixed identity fields. */
 smp_cstr_equal:
@@ -2960,7 +2960,7 @@ smp_cstr_equal:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail smp_cstr_equal
+    RV_JUMP smp_cstr_equal
 /* Input: a0=token, a1=required hex length. Output: 1/0. Requires a plain
  * ASCII string and lowercase hex digits. No local stack or memory writes. */
 smp_lower_hex:
@@ -3038,7 +3038,7 @@ smp_lower_hex:
     mv s10, a1
     RV_FLAGS sub, 64
     RV_BCOND lo, .Lsmp_lower_hex_digit
-    tail .Lsmp_equal_yes
+    RV_JUMP .Lsmp_equal_yes
 /* Input: bytes token. Output: 1 for canonical decimal 1..64 MiB, else zero.
  * Rejects signs, fractions, exponents, and leading zeroes. No local stack/writes. */
 smp_asset_size:
@@ -3134,7 +3134,7 @@ smp_asset_size:
     mv s10, a3
     RV_FLAGS sub, 64
     RV_BCOND lo, .Lsmp_asset_size_digit
-    tail .Lsmp_equal_yes
+    RV_JUMP .Lsmp_equal_yes
 /* Input: filename token. Output: 1/0. Accepts 1..160 plain ASCII bytes:
  * letters/digits plus '.', '_' and '-'; first byte is a letter or digit.
  * Names are compared, never used as paths. No local stack or writes. */
@@ -3310,7 +3310,7 @@ smp_asset_filename:
     mv s10, a3
     RV_FLAGS sub, 64
     RV_BCOND lo, .Lsmp_filename_byte
-    tail .Lsmp_equal_yes
+    RV_JUMP .Lsmp_equal_yes
 /* Input: assets array token. Output: zero/one. Requires 1..256 objects with
  * exactly bytes/file/sha256. Validates every record and rejects repeated
  * filenames. Binds selected filename/bytes/hash to the validated registry row.
@@ -3480,7 +3480,7 @@ smp_assets:
     mv s8, s5
     mv s10, s5
     RV_FLAGS and, 32
-    tail .Lsmp_asset_next_member
+    RV_JUMP .Lsmp_asset_next_member
 .Lsmp_asset_bytes:
     mv s6, s0
     li s10, 32
@@ -3501,7 +3501,7 @@ smp_assets:
     mv s8, s5
     mv s10, s5
     RV_FLAGS and, 32
-    tail .Lsmp_asset_next_member
+    RV_JUMP .Lsmp_asset_next_member
 .Lsmp_asset_file:
     mv s6, s0
     li s10, 32
@@ -3531,7 +3531,7 @@ smp_assets:
     mv s8, s6
     RV_LOAD t1, 8
     mv s3, t1
-    tail .Lsmp_asset_member
+    RV_JUMP .Lsmp_asset_member
 .Lsmp_asset_checked:
     RV_IMM t2, 7, 32
     mv s8, s5
@@ -3577,7 +3577,7 @@ smp_assets:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lsmp_asset_previous
+    RV_JUMP .Lsmp_asset_previous
 .Lsmp_asset_remember:
     RV_ADDR s6, smp_asset_names
     mv t0, s6
@@ -3663,7 +3663,7 @@ smp_assets:
     RV_ADDR s6, smp_matching_assets
     mv s8, s6
     RV_STORE t3, 8
-    tail .Lsmp_assets_item
+    RV_JUMP .Lsmp_assets_item
 .Lsmp_assets_done:
     RV_ADDR s6, smp_matching_assets
     mv s8, s6
@@ -3679,7 +3679,7 @@ smp_assets:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lsmp_assets_return
+    RV_JUMP .Lsmp_assets_return
 .Lsmp_assets_fail:
     RV_IMM t1, 1, 32
     mv t0, t1

@@ -192,7 +192,7 @@ self_prepare_verifier:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lself_gh_version_character
+    RV_JUMP .Lself_gh_version_character
 .Lself_gh_version_end:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -291,7 +291,7 @@ self_copy_proxy_environment:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND lo, .Lself_proxy_name
-    tail .Lself_proxy_next
+    RV_JUMP .Lself_proxy_next
 .Lself_proxy_found:
     RV_IMM t3, 1, 64
     sll t3, t3, s0
@@ -344,7 +344,7 @@ self_copy_proxy_environment:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lself_proxy_entry
+    RV_JUMP .Lself_proxy_entry
 .Lself_proxy_done:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -403,7 +403,7 @@ self_prefix:
     mv s10, t2
     RV_FLAGS add, 64
     mv a0, s11
-    tail self_prefix
+    RV_JUMP self_prefix
 .Lself_prefix_match:
     mv t0, a0
     ret
@@ -704,7 +704,7 @@ self_load_manifest:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lself_manifest_close_error
-    tail .Lself_manifest_read
+    RV_JUMP .Lself_manifest_read
 .Lself_manifest_end:
     mv s8, s3
     mv s10, s4
@@ -734,7 +734,7 @@ self_load_manifest:
 .Lself_manifest_close_error:
     mv a0, s2
     RV_CALL rv_close
-    tail self_metadata_error
+    RV_JUMP self_metadata_error
 /* a0=fixed executable, a1=argv, a2=explicit environment. Fork and capture
  * stdout into self_capture_buffer[4098], rejecting >4096 bytes. Child stdin
  * is /dev/null, stderr is inherited, and alarm bounds each child to 120s.
@@ -839,7 +839,7 @@ self_capture:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lself_capture_kill
-    tail .Lself_capture_read
+    RV_JUMP .Lself_capture_read
 .Lself_capture_kill:
     RV_IMM t1, 1, 32
     mv s1, t1
@@ -924,19 +924,19 @@ self_capture:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lself_capture_return
+    RV_JUMP .Lself_capture_return
 .Lself_capture_signaled:
     mv s6, a2
     li s10, 128
     add s6, s6, s10
     mv t0, s6
     RV_ZEXT t0
-    tail .Lself_capture_return
+    RV_JUMP .Lself_capture_return
 .Lself_capture_failed:
     RV_IMM t1, 1, 32
     mv t0, t1
     RV_ZEXT t0
-    tail .Lself_capture_return
+    RV_JUMP .Lself_capture_return
 .Lself_capture_pipe_error:
     RV_ADDR s6, self_capture_pipe
     mv s8, s6
@@ -1111,35 +1111,35 @@ self_capture:
     RV_IMM t1, 127, 32
     mv a0, t1
     RV_ZEXT a0
-    tail exit_code
+    RV_JUMP exit_code
 self_verifier_missing:
     RV_ADDR s6, self_error_verifier
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_attestation_error:
     RV_ADDR s6, self_error_attestation
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_metadata_error:
     RV_ADDR s6, self_error_metadata
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 self_proxy_error:
     RV_ADDR s6, self_error_proxy
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail self_fail
+    RV_JUMP self_fail
 .section .rodata
 self_gh_path: .asciz "/usr/bin/gh"
 self_dev_null: .asciz "/dev/null"

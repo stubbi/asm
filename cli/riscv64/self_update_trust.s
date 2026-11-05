@@ -39,7 +39,7 @@ self_prepare_embedded_verifier:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_self_update_trust31
-    tail self_io_error
+    RV_JUMP self_io_error
 .Lrv_tb_skip_self_update_trust31:
     mv s0, t0
     mv a0, t0
@@ -51,21 +51,21 @@ self_prepare_embedded_verifier:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_self_update_trust38
-    tail .Lself_helper_write_error
+    RV_JUMP .Lself_helper_write_error
 .Lrv_tb_skip_self_update_trust38:
     mv a0, s0
     RV_CALL rv_close
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_self_update_trust41
-    tail self_io_error
+    RV_JUMP self_io_error
 .Lrv_tb_skip_self_update_trust41:
     RV_RESTORE s0
     ret
 .Lself_helper_write_error:
     mv a0, s0
     RV_CALL rv_close
-    tail self_io_error
+    RV_JUMP self_io_error
 /* No arguments. Each operation preserves s0-s5 and uses only RV_CALL
  * frames. self_capture applies the independent deadline and installation
  * identity checks. All nonzero child statuses fail before installation. */
@@ -77,7 +77,7 @@ self_authenticated_index:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_self_update_trust57
-    tail self_metadata_error
+    RV_JUMP self_metadata_error
 .Lrv_cb_skip_self_update_trust57:
     ret
 self_authorize_candidate:
@@ -88,7 +88,7 @@ self_authorize_candidate:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_self_update_trust64
-    tail self_metadata_error
+    RV_JUMP self_metadata_error
 .Lrv_cb_skip_self_update_trust64:
     ret
 /* Use the native parser's artifact slot and source commit. Before parsing the
@@ -107,7 +107,7 @@ self_embedded_provenance:
     mv s8, t2
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_self_update_trust77
-    tail .Lself_provenance_commit
+    RV_JUMP .Lself_provenance_commit
 .Lrv_cb_skip_self_update_trust77:
     RV_ADDR t1, self_unknown_commit
 .Lself_provenance_commit:

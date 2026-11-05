@@ -90,7 +90,7 @@ cmd_resolve:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_arg_index:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
@@ -112,7 +112,7 @@ cmd_resolve:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_arg_registry:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
@@ -136,7 +136,7 @@ cmd_resolve:
     RV_ADDR s6, registry_origin_seen
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_arg_artifacts:
     RV_ADDR s6, res_artifacts
     mv s8, s6
@@ -150,7 +150,7 @@ cmd_resolve:
     RV_ADDR s6, res_artifacts
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_arg_features:
     RV_ADDR s6, res_cli_features
     mv s8, s6
@@ -164,7 +164,7 @@ cmd_resolve:
     RV_ADDR s6, res_cli_features
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_arg_no_default:
     RV_ADDR s6, res_no_default_seen
     mv s8, s6
@@ -182,7 +182,7 @@ cmd_resolve:
     RV_ADDR s6, res_default
     mv s8, s6
     RV_STORE t1, 8
-    tail .Lres_args
+    RV_JUMP .Lres_args
 .Lres_start:
     RV_CALL read_manifest
     RV_ADDR s6, rm_root_metadata
@@ -290,12 +290,12 @@ cmd_resolve:
     RV_CALL release_dependency_lock
     RV_ADDR s6, res_done
     mv a0, s6
-    tail res_report
+    RV_JUMP res_report
 res_help:
     RV_ADDR s6, res_help_text
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 /* a0=optional comma list, <=2111 bytes. Store at most64 unique borrowed names
  * in owned res_feature_buffer[2113]. Sort them for a canonical lock header.
  * Empty input is represented by NULL; explicit empty/duplicate names fail.
@@ -419,7 +419,7 @@ res_parse_features:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hi, registry_bad_args
-    tail .Lres_feature_chars
+    RV_JUMP .Lres_feature_chars
 .Lres_feature_end:
     mv s8, s4
     mv s10, s4
@@ -481,7 +481,7 @@ res_parse_features:
     RV_FLAGS add, 64
     mv t3, s11
     mv a6, t3
-    tail .Lres_feature_duplicate
+    RV_JUMP .Lres_feature_duplicate
 .Lres_feature_insert:
     mv s6, s4
     mv s10, s0
@@ -512,7 +512,7 @@ res_parse_features:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_feature_name
+    RV_JUMP .Lres_feature_name
 .Lres_feature_sort:
     RV_IMM t1, 1, 32
     mv s2, t1
@@ -591,7 +591,7 @@ res_parse_features:
     RV_FLAGS sub, 64
     mv t3, s11
     mv s3, t3
-    tail .Lres_feature_sort_inner
+    RV_JUMP .Lres_feature_sort_inner
 .Lres_feature_sort_next:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -599,7 +599,7 @@ res_parse_features:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_feature_sort_outer
+    RV_JUMP .Lres_feature_sort_outer
 .Lres_features_done:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -649,7 +649,7 @@ res_strcmp:
     RV_FLAGS add, 64
     mv t3, s11
     mv a3, t3
-    tail .Lres_strcmp_loop
+    RV_JUMP .Lres_strcmp_loop
 .Lres_strcmp_done:
     ret
 /* Hash the exact unmodified bytes retained by read_manifest. The parser and
@@ -683,7 +683,7 @@ res_hash_root:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver473
-    tail .Lres_arm_repeat_done1
+    RV_JUMP .Lres_arm_repeat_done1
 .Lrv_cb_skip_resolver473:
 .Lres_arm_repeat1:
     mv s8, a1
@@ -698,7 +698,7 @@ res_hash_root:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver478
-    tail .Lres_arm_repeat1
+    RV_JUMP .Lres_arm_repeat1
 .Lrv_cb_skip_resolver478:
 .Lres_arm_repeat_done1:
     RV_IMM t1, 0, 32
@@ -820,7 +820,7 @@ res_read_previous:
     RV_FLAGS and, 32
     RV_BCOND eq, .Lres_previous_v1
     RV_CALL res_read_v2
-    tail .Lres_previous_copy
+    RV_JUMP .Lres_previous_copy
 .Lres_previous_v1:
     RV_CALL dependency_load_lock
     mv s8, t0
@@ -854,7 +854,7 @@ res_read_previous:
     mv a1, s6
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver591
-    tail .Lres_arm_repeat_done2
+    RV_JUMP .Lres_arm_repeat_done2
 .Lrv_cb_skip_resolver591:
 .Lres_arm_repeat2:
     mv s8, a1
@@ -869,7 +869,7 @@ res_read_previous:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver596
-    tail .Lres_arm_repeat2
+    RV_JUMP .Lres_arm_repeat2
 .Lrv_cb_skip_resolver596:
 .Lres_arm_repeat_done2:
 .Lres_previous_none:
@@ -981,7 +981,7 @@ res_read_v2:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, res_lock_error
-    tail .Lres_lock_read
+    RV_JUMP .Lres_lock_read
 .Lres_lock_read_end:
     mv a0, s2
     RV_CALL rv_close
@@ -997,7 +997,7 @@ res_read_v2:
     mv a0, s6
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver679
-    tail .Lres_arm_repeat_done3
+    RV_JUMP .Lres_arm_repeat_done3
 .Lrv_cb_skip_resolver679:
 .Lres_arm_repeat3:
     mv s8, a1
@@ -1012,7 +1012,7 @@ res_read_v2:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver684
-    tail .Lres_arm_repeat3
+    RV_JUMP .Lres_arm_repeat3
 .Lrv_cb_skip_resolver684:
 .Lres_arm_repeat_done3:
     RV_IMM t1, 0, 32
@@ -1173,7 +1173,7 @@ res_read_v2:
     mv a0, t0
     RV_CALL res_line
     mv s2, t0
-    tail .Lres_lock_comments
+    RV_JUMP .Lres_lock_comments
 .Lres_lock_records:
     RV_IMM t1, 0, 64
     RV_ADDR s6, registry_row_count
@@ -1262,7 +1262,7 @@ res_read_v2:
     RV_FLAGS add, 64
     mv t3, s11
     mv s0, t3
-    tail .Lres_lock_duplicate
+    RV_JUMP .Lres_lock_duplicate
 .Lres_lock_next:
     RV_IMM t2, 64, 64
     mv s8, s2
@@ -1276,7 +1276,7 @@ res_read_v2:
     RV_FLAGS add, 64
     mv t3, s11
     mv s3, t3
-    tail .Lres_lock_validate
+    RV_JUMP .Lres_lock_validate
 .Lres_lock_loaded:
     RV_RESTORE s4
     RV_RESTORE s3
@@ -1351,7 +1351,7 @@ res_line:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hi, res_lock_error
-    tail .Lres_line_loop
+    RV_JUMP .Lres_line_loop
 .Lres_line_end:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1385,7 +1385,7 @@ res_copy_rows:
     mv a1, s6
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver940
-    tail .Lres_arm_repeat_done4
+    RV_JUMP .Lres_arm_repeat_done4
 .Lrv_cb_skip_resolver940:
 .Lres_arm_repeat4:
     mv s8, a1
@@ -1400,7 +1400,7 @@ res_copy_rows:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver945
-    tail .Lres_arm_repeat4
+    RV_JUMP .Lres_arm_repeat4
 .Lrv_cb_skip_resolver945:
 .Lres_arm_repeat_done4:
     ret
@@ -1449,7 +1449,7 @@ res_load_candidate:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_loaded_find
+    RV_JUMP .Lres_loaded_find
 .Lres_load_new:
     RV_IMM t2, 256, 64
     mv s8, s2
@@ -1561,7 +1561,7 @@ res_load_candidate:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, registry_download_error
-    tail .Lres_candidate_verify
+    RV_JUMP .Lres_candidate_verify
 .Lres_candidate_cached:
     RV_ADDR s6, dependency_archive_path
     mv t0, s6
@@ -1569,7 +1569,7 @@ res_load_candidate:
     mv s8, s6
     RV_STORE t0, 8
     RV_CALL registry_copy_local
-    tail .Lres_candidate_verify
+    RV_JUMP .Lres_candidate_verify
 .Lres_candidate_offline:
     RV_CALL res_offline_path
     RV_ADDR s6, res_artifact_path
@@ -1589,7 +1589,7 @@ res_load_candidate:
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lres_candidate_check
     RV_CALL dependency_accept_payload
-    tail .Lres_candidate_manifest
+    RV_JUMP .Lres_candidate_manifest
 .Lres_candidate_check:
     RV_ADDR s6, registry_temp_payload
     mv a0, s6
@@ -1663,7 +1663,7 @@ res_load_candidate:
     mv a0, s4
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver1125
-    tail .Lres_arm_repeat_done5
+    RV_JUMP .Lres_arm_repeat_done5
 .Lrv_cb_skip_resolver1125:
 .Lres_arm_repeat5:
     mv s8, a1
@@ -1678,7 +1678,7 @@ res_load_candidate:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver1130
-    tail .Lres_arm_repeat5
+    RV_JUMP .Lres_arm_repeat5
 .Lrv_cb_skip_resolver1130:
 .Lres_arm_repeat_done5:
     RV_IMM t1, 0, 32
@@ -1790,7 +1790,7 @@ res_offline_path:
     RV_FLAGS add, 64
     mv t3, s11
     mv s3, t3
-    tail .Lres_dir_component
+    RV_JUMP .Lres_dir_component
 .Lres_dir_final:
     RV_CALL res_check_artifact_dir
     mv a0, s3
@@ -1980,7 +1980,7 @@ res_check_immutable:
     RV_FLAGS add, 64
     mv t3, s11
     mv s4, t3
-    tail .Lres_immutable_row
+    RV_JUMP .Lres_immutable_row
 .Lres_immutable_next:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -1988,7 +1988,7 @@ res_check_immutable:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_immutable_node
+    RV_JUMP .Lres_immutable_node
 .Lres_immutable_done:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -2098,7 +2098,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_render_features
+    RV_JUMP .Lres_render_features
 .Lres_render_hash:
     RV_ADDR s6, registry_newline
     mv a0, s6
@@ -2155,7 +2155,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_order_fill
+    RV_JUMP .Lres_order_fill
 .Lres_order_sort_start:
     RV_IMM t1, 1, 32
     mv s2, t1
@@ -2249,7 +2249,7 @@ res_render_lock:
     RV_FLAGS sub, 64
     mv t3, s11
     mv s4, t3
-    tail .Lres_order_inner
+    RV_JUMP .Lres_order_inner
 .Lres_order_next:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -2257,7 +2257,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_order_sort
+    RV_JUMP .Lres_order_sort
 .Lres_enabled_start:
     mv s10, s2
     xor t3, s2, s10
@@ -2367,7 +2367,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s0, t3
-    tail .Lres_enabled_feature
+    RV_JUMP .Lres_enabled_feature
 .Lres_enabled_next:
     RV_IMM t2, 1, 64
     mv s8, s2
@@ -2375,7 +2375,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_enabled_node
+    RV_JUMP .Lres_enabled_node
 .Lres_render_rows:
     mv s10, s2
     xor t3, s2, s10
@@ -2460,7 +2460,7 @@ res_render_lock:
     RV_FLAGS add, 64
     mv t3, s11
     mv s2, t3
-    tail .Lres_render_row
+    RV_JUMP .Lres_render_row
 .Lres_render_done:
     RV_ADDR s6, res_render_cursor
     mv s8, s6
@@ -2527,7 +2527,7 @@ res_append:
     RV_FLAGS add, 64
     mv t3, s11
     mv a1, t3
-    tail .Lres_append_byte
+    RV_JUMP .Lres_append_byte
 .Lres_append_done:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -2625,7 +2625,7 @@ verify_project_dependencies:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, res_lock_error
-    tail verify_legacy_project_dependencies
+    RV_JUMP verify_legacy_project_dependencies
 res_verify_project:
     RV_IMM t1, 1, 32
     RV_ADDR s6, res_check_mode
@@ -2677,7 +2677,7 @@ cmd_sync:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Lres_sync_args
+    RV_JUMP .Lres_sync_args
 .Lres_sync_artifacts:
     RV_ADDR s6, res_artifacts
     mv s8, s6
@@ -2691,7 +2691,7 @@ cmd_sync:
     RV_ADDR s6, res_artifacts
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lres_sync_args
+    RV_JUMP .Lres_sync_args
 .Lres_sync_start:
     RV_IMM t1, 6, 32
     mv a0, t1
@@ -2704,7 +2704,7 @@ cmd_sync:
     RV_CALL release_dependency_lock
     RV_ADDR s6, res_sync_done
     mv a0, s6
-    tail res_report
+    RV_JUMP res_report
 /* Reconstruct and compare the entire graph from locked artifacts. No current
  * index is consulted. Verification mode refuses missing cache; sync can fetch
  * exact locked URLs. Re-rendering detects omitted, extra or edited metadata.
@@ -2811,7 +2811,7 @@ res_check_locked_graph:
     mv a1, s6
     mv s8, a3
     bnez s8, .Lrv_cb_skip_resolver1918
-    tail .Lres_arm_repeat_done6
+    RV_JUMP .Lres_arm_repeat_done6
 .Lrv_cb_skip_resolver1918:
 .Lres_arm_repeat6:
     mv s8, a0
@@ -2830,7 +2830,7 @@ res_check_locked_graph:
     RV_BCOND ne, .Lres_arm_repeat_done6
     mv s8, a3
     beqz s8, .Lrv_cb_skip_resolver1925
-    tail .Lres_arm_repeat6
+    RV_JUMP .Lres_arm_repeat6
 .Lrv_cb_skip_resolver1925:
 .Lres_arm_repeat_done6:
     RV_BCOND ne, res_lock_error
@@ -2867,7 +2867,7 @@ res_report:
     mv a0, s6
 .Lres_report_text:
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 res_conflict_error:
     /* JSON stays structured through registry_fail; package text has already
      * passed canonical ASCII validation, so no credential-bearing input leaks. */
@@ -2898,7 +2898,7 @@ res_conflict_error:
     RV_LOAD a1, 8
     mv s8, a1
     beqz s8, .Lrv_cb_skip_resolver1981
-    tail .Lres_conflict_reason_ready
+    RV_JUMP .Lres_conflict_reason_ready
 .Lrv_cb_skip_resolver1981:
     RV_ADDR a1, res_reason_version
 .Lres_conflict_reason_ready:
@@ -2909,7 +2909,7 @@ res_conflict_error:
     RV_LOAD t1, 8
     mv s8, t1
     bnez s8, .Lrv_cb_skip_resolver1988
-    tail .Lres_conflict_advice
+    RV_JUMP .Lres_conflict_advice
 .Lrv_cb_skip_resolver1988:
     RV_ADDR a1, res_requirement_prefix
     RV_CALL copy_string
@@ -2930,35 +2930,35 @@ res_conflict_error:
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 res_limit_error:
     RV_ADDR s6, res_err_limit
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 res_manifest_error:
     RV_ADDR s6, res_err_manifest
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 res_lock_error:
     RV_ADDR s6, res_err_lock
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 res_use_resolve_error:
     RV_ADDR s6, res_err_legacy
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 .section .rodata
 res_header: .asciz "# asm-lock-v2\n"
 res_default_prefix: .asciz "# default "

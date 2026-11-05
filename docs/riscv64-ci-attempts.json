@@ -62,6 +62,124 @@
       "runner_image": "ubuntu-24.04",
       "runner_image_version": "20261025.353",
       "scope": "runtime not reached"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 602992,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "b618bb39b400de3d62ef3667598ac13718edcd1054fa40b733db9c2a7454fb33"
+      },
+      "checkout_commit": "6f603219bbb10be84ef0e606c2fadeb7e8ddd87e",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 1,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "c9c5ca3831b4faf11d6aea5901a08c08f159103e760ab3525035a839661ac6af",
+          "outcome": "fail",
+          "seconds": 0.164,
+          "skipped_checks": false,
+          "tests_run": 6,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "ea79fe293979f144a6400c0611cbe168b4c837583e33c17c57b2f327c7fbeaf6",
+          "outcome": "fail",
+          "seconds": 58.307,
+          "skipped_checks": false,
+          "tests_run": 285,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "4bd2ac6414de1dbdea12a2acc3d7c20bf22c7d932b6a654af3782c3d6a847bdc",
+          "outcome": "pass",
+          "seconds": 0.004,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-sfwsj5bo/probe"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "confirmed_corrections_not_runtime_revalidated": [
+        "Replace tail pseudoinstruction branches, which clobber live t1, with an explicit reserved-register PC-relative jump.",
+        "Define starter message_len before the RISC-V li pseudoinstruction consumes it.",
+        "Allow explicitly labelled Linux user-mode ALU execution without declaring the x86 control host native RISC-V."
+      ],
+      "execution_mode": "emulated",
+      "head_commit": "252b8729d3ee1cd054c5dd8e4e6e3cc2a39b6923",
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 2,
+        "failures": 92,
+        "tests": 285
+      },
+      "observed_focused_suite": {
+        "errors": 1,
+        "failures": 2,
+        "tests": 6
+      },
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/41940165957/artifacts/riscv64-emulated-6f603219bbb10be84ef0e606c2fadeb7e8ddd87e/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "b81087159c7da78f71c8a5f4092eeb80a4fd52c2c1a43d3408e54eebebd3e576"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/41940165957/full.log",
+        "sha256": "0c49d70e11a78866f1144079a3e410e75e3f63e0f0b2726d8a08664c2c1a4f9c"
+      },
+      "release_qualified": false,
+      "remaining_failures": "The next full run must distinguish remaining source defects, fixture assumptions, and emulator syscall boundaries. No failure was disabled or relabelled as passing.",
+      "run_id": 41940165957,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41940165957"
     }
   ],
   "execution_mode": "emulated",

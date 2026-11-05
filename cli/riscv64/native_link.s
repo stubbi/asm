@@ -28,7 +28,7 @@ native_link_validate:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link22
-    tail .Lnative_validate_absent
+    RV_JUMP .Lnative_validate_absent
 .Lrv_cb_skip_native_link22:
     mv s8, t1
     li s10, 'c'
@@ -40,7 +40,7 @@ native_link_validate:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link26
-    tail .Lnative_validate_bad
+    RV_JUMP .Lnative_validate_bad
 .Lrv_cb_skip_native_link26:
     mv a0, s0
     li a4, 0
@@ -52,7 +52,7 @@ native_link_validate:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link31
-    tail .Lnative_validate_check
+    RV_JUMP .Lnative_validate_check
 .Lrv_cb_skip_native_link31:
 .Lnative_library_start:
     li s10, 1
@@ -96,7 +96,7 @@ native_link_validate:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link50
-    tail .Lnative_validate_check
+    RV_JUMP .Lnative_validate_check
 .Lrv_cb_skip_native_link50:
     mv s8, t1
     li s10, ' '
@@ -128,7 +128,7 @@ native_link_validate:
     li s10, '-'
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lnative_library_chars
-    tail .Lnative_validate_bad
+    RV_JUMP .Lnative_validate_bad
 .Lnative_library_separator:
     li s10, 1
     add a4, a4, s10
@@ -137,14 +137,14 @@ native_link_validate:
     li s10, 255
     RV_FLAGS sub, 32
     RV_BCOND hs, .Lnative_validate_bad
-    tail .Lnative_library_start
+    RV_JUMP .Lnative_library_start
 .Lnative_validate_check:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link75
-    tail .Lnative_validate_good
+    RV_JUMP .Lnative_validate_good
 .Lrv_cb_skip_native_link75:
     li s2, 0
 .Lnative_check_length:
@@ -154,7 +154,7 @@ native_link_validate:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link79
-    tail .Lnative_check_suffix
+    RV_JUMP .Lnative_check_suffix
 .Lrv_cb_skip_native_link79:
     mv s8, t1
     li s10, ' '
@@ -174,7 +174,7 @@ native_link_validate:
     li s10, 255
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lnative_validate_bad
-    tail .Lnative_check_length
+    RV_JUMP .Lnative_check_length
 .Lnative_check_suffix:
     mv s8, s2
     li s10, 2
@@ -203,28 +203,28 @@ native_link_validate:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link103
-    tail .Lnative_validate_bad
+    RV_JUMP .Lnative_validate_bad
 .Lrv_cb_skip_native_link103:
-    tail .Lnative_validate_good
+    RV_JUMP .Lnative_validate_good
 .Lnative_validate_absent:
     mv s8, s0
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link107
-    tail .Lnative_validate_bad
+    RV_JUMP .Lnative_validate_bad
 .Lrv_cb_skip_native_link107:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link109
-    tail .Lnative_validate_bad
+    RV_JUMP .Lnative_validate_bad
 .Lrv_cb_skip_native_link109:
 .Lnative_validate_good:
     li t0, 1
     RV_ZEXT t0
-    tail .Lnative_validate_return
+    RV_JUMP .Lnative_validate_return
 .Lnative_validate_bad:
     li t0, 0
     RV_ZEXT t0
@@ -249,7 +249,7 @@ native_link_option:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link134
-    tail .Lnative_include_option
+    RV_JUMP .Lnative_include_option
 .Lrv_cb_skip_native_link134:
     mv a0, s0
     RV_ADDR a1, native_opt_library
@@ -257,15 +257,15 @@ native_link_option:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link138
-    tail .Lnative_library_option
+    RV_JUMP .Lnative_library_option
 .Lrv_cb_skip_native_link138:
     li t0, 0
     RV_ZEXT t0
-    tail .Lnative_option_return
+    RV_JUMP .Lnative_option_return
 .Lnative_include_option:
     RV_ADDR s1, native_include_count
     RV_ADDR s2, native_include_dirs
-    tail .Lnative_directory_option
+    RV_JUMP .Lnative_directory_option
 .Lnative_library_option:
     RV_ADDR s1, native_library_count
     RV_ADDR s2, native_library_dirs
@@ -276,7 +276,7 @@ native_link_option:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link151
-    tail bad_args
+    RV_JUMP bad_args
 .Lrv_cb_skip_native_link151:
     mv s8, s1
     RV_LOAD t1, 8
@@ -287,7 +287,7 @@ native_link_option:
     RV_CALL next_arg
     mv s8, t0
     bnez s8, .Lrv_cb_skip_native_link156
-    tail bad_args
+    RV_JUMP bad_args
 .Lrv_cb_skip_native_link156:
     mv s0, t0
     mv s8, s0
@@ -304,7 +304,7 @@ native_link_option:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link164
-    tail .Lnative_directory_valid
+    RV_JUMP .Lnative_directory_valid
 .Lrv_cb_skip_native_link164:
     mv s8, a3
     li s10, 255
@@ -328,7 +328,7 @@ native_link_option:
     RV_BCOND eq, bad_args
     li s10, 1
     add a3, a3, s10
-    tail .Lnative_directory_chars
+    RV_JUMP .Lnative_directory_chars
 .Lnative_directory_valid:
     mv s8, s1
     RV_LOAD t1, 8
@@ -357,7 +357,7 @@ native_link_check_options:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link195
-    tail .Lnative_options_done
+    RV_JUMP .Lnative_options_done
 .Lrv_cb_skip_native_link195:
     RV_ADDR s6, native_include_count
     mv s8, s6
@@ -369,7 +369,7 @@ native_link_check_options:
     or t1, t1, s10
     mv s8, t1
     beqz s8, .Lrv_cb_skip_native_link201
-    tail bad_args
+    RV_JUMP bad_args
 .Lrv_cb_skip_native_link201:
 .Lnative_options_done:
     ret
@@ -393,7 +393,7 @@ native_link_compile_check:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link219
-    tail .Lnative_compile_check
+    RV_JUMP .Lnative_compile_check
 .Lrv_cb_skip_native_link219:
     li t0, 0
     RV_ZEXT t0
@@ -431,7 +431,7 @@ native_link_compile_check:
     add s0, s0, s10
     li s10, 1
     add s1, s1, s10
-    tail .Lnative_compile_includes
+    RV_JUMP .Lnative_compile_includes
 .Lnative_compile_source:
     NATIVE_ARG package_check
     mv s8, s0
@@ -507,7 +507,7 @@ native_link_build:
     add s0, s0, s10
     li s10, 1
     add s1, s1, s10
-    tail .Lnative_link_directories
+    RV_JUMP .Lnative_link_directories
 .Lnative_link_libraries_begin:
     RV_ADDR s2, package_libraries
     li s1, 0
@@ -517,7 +517,7 @@ native_link_build:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link312
-    tail .Lnative_link_execute
+    RV_JUMP .Lnative_link_execute
 .Lrv_cb_skip_native_link312:
     li t1, 34
     mv s10, t1
@@ -549,7 +549,7 @@ native_link_build:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_native_link324
-    tail .Lnative_link_library_last
+    RV_JUMP .Lnative_link_library_last
 .Lrv_cb_skip_native_link324:
     mv s8, t1
     li s10, ' '
@@ -559,13 +559,13 @@ native_link_build:
     RV_STORE t1, 1
     li s10, 1
     add s3, s3, s10
-    tail .Lnative_link_library_copy
+    RV_JUMP .Lnative_link_library_copy
 .Lnative_link_library_next:
     mv s8, s3
     RV_STORE zero, 1
     li s10, 1
     add s1, s1, s10
-    tail .Lnative_link_libraries
+    RV_JUMP .Lnative_link_libraries
 .Lnative_link_library_last:
     mv s8, s3
     RV_STORE zero, 1
@@ -603,7 +603,7 @@ native_link_child_environment:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_native_link361
-    tail .Lnative_fixed_environment
+    RV_JUMP .Lnative_fixed_environment
 .Lrv_cb_skip_native_link361:
 .endif
 .Lnative_inherited_environment:

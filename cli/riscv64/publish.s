@@ -137,7 +137,7 @@ cmd_publish:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_option_match
+    RV_JUMP .Lpub_option_match
 .Lpub_option_value:
     mv s6, s0
     li s10, 16
@@ -175,13 +175,13 @@ cmd_publish:
     mv s6, a2
     mv s8, s6
     RV_STORE t0, 8
-    tail .Lpub_argument
+    RV_JUMP .Lpub_argument
 .Lpub_json_mode:
     RV_IMM t1, 1, 32
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lpub_argument
+    RV_JUMP .Lpub_argument
 .Lpub_artifact_argument:
     RV_ADDR s6, pub_artifact_count
     mv s8, s6
@@ -237,7 +237,7 @@ cmd_publish:
     RV_ADDR s6, pub_artifact_count
     mv s8, s6
     RV_STORE t3, 8
-    tail .Lpub_argument
+    RV_JUMP .Lpub_argument
 .Lpub_arguments_done:
     RV_ADDR s6, pub_fields
     mv s8, s6
@@ -357,7 +357,7 @@ cmd_publish:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lpub_summary_character
+    RV_JUMP .Lpub_summary_character
 .Lpub_license:
     RV_ADDR s6, pub_license
     mv s8, s6
@@ -669,14 +669,14 @@ cmd_publish:
     mv s10, t2
     RV_FLAGS add, 64
     mv s4, s11
-    tail .Lpub_duplicate_loop
+    RV_JUMP .Lpub_duplicate_loop
 .Lpub_artifact_next:
     RV_IMM t2, 1, 64
     mv s8, s2
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lpub_artifact_metadata
+    RV_JUMP .Lpub_artifact_metadata
 .Lpub_check_bytes:
     RV_CALL registry_workspace
     mv s10, s2
@@ -799,7 +799,7 @@ cmd_publish:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, pub_bad_project
-    tail .Lpub_hash
+    RV_JUMP .Lpub_hash
 .Lpub_check_elf:
     mv s6, s3
     mv s8, s6
@@ -833,7 +833,7 @@ cmd_publish:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_publish537
-    tail .Lport_publish_1_end
+    RV_JUMP .Lport_publish_1_end
 .Lrv_cb_skip_publish537:
 .Lport_publish_1:
     mv s8, a1
@@ -848,7 +848,7 @@ cmd_publish:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_publish542
-    tail .Lport_publish_1
+    RV_JUMP .Lport_publish_1
 .Lrv_cb_skip_publish542:
 .Lport_publish_1_end:
     RV_IMM t1, 0, 32
@@ -867,7 +867,7 @@ cmd_publish:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lpub_artifact_bytes
+    RV_JUMP .Lpub_artifact_bytes
 .Lpub_write_record:
     RV_CALL pub_make_json
     RV_ADDR s6, registry_temp_index
@@ -923,7 +923,7 @@ cmd_publish:
     RV_ADDR s6, pub_review_text
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lpub_report_json:
     RV_ADDR s6, pub_report_prefix
     mv a0, s6
@@ -936,12 +936,12 @@ cmd_publish:
     RV_ADDR s6, pub_report_suffix
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lpub_help:
     RV_ADDR s6, pub_help
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 pub_arg_value:
     RV_CALL next_arg
     mv s8, t0
@@ -968,35 +968,35 @@ pub_bad_arguments:
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 pub_bad_metadata:
     RV_ADDR s6, pub_error_metadata
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 pub_bad_artifact:
     RV_ADDR s6, pub_error_artifact
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 pub_bad_project:
     RV_ADDR s6, pub_error_project
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 pub_output_error:
     RV_ADDR s6, pub_error_output
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 /* a0=input string, a1=set of NUL strings followed by a second NUL.
  * t0=1 for a match, 0 otherwise. Read-only; 32 saved stack bytes. */
 pub_in_strings:
@@ -1041,7 +1041,7 @@ pub_in_strings:
     add s6, s6, s10
     mv s0, s6
     RV_BCOND ne, .Lpub_set_next
-    tail .Lpub_set_entry
+    RV_JUMP .Lpub_set_entry
 .Lpub_set_absent:
     mv s10, t0
     xor t0, t0, s10
@@ -1146,7 +1146,7 @@ pub_portable_path:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_path_stem
+    RV_JUMP .Lpub_path_stem
 .Lpub_path_check_stem:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1178,7 +1178,7 @@ pub_portable_path:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_path_segment
+    RV_JUMP .Lpub_path_segment
 .Lpub_portable_return:
     RV_RESTORE s2
     RV_RESTORE s1
@@ -1287,7 +1287,7 @@ pub_source_paths:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_source_component_copy
+    RV_JUMP .Lpub_source_component_copy
 .Lpub_source_component_check:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1342,7 +1342,7 @@ pub_source_paths:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_source_component
+    RV_JUMP .Lpub_source_component
 .Lpub_source_extension:
     mv a0, s3
     RV_CALL strlen
@@ -1383,7 +1383,7 @@ pub_source_paths:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lpub_source_path
+    RV_JUMP .Lpub_source_path
 .Lpub_source_paths_ok:
     mv s10, t0
     xor t0, t0, s10
@@ -1391,7 +1391,7 @@ pub_source_paths:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lpub_source_paths_return
+    RV_JUMP .Lpub_source_paths_return
 .Lpub_source_paths_bad:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1523,7 +1523,7 @@ pub_check_project:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_publish984
-    tail .Lpub_project_bad
+    RV_JUMP .Lpub_project_bad
 .Lrv_cb_skip_publish984:
     RV_ADDR a0, pub_project_name
     RV_ADDR s6, rm_archive_metadata + 24
@@ -1567,7 +1567,7 @@ pub_check_project:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail .Lpub_unscoped_name
+    RV_JUMP .Lpub_unscoped_name
 .Lpub_unscoped_found:
     RV_IMM t2, 1, 64
     mv s8, a1
@@ -1685,13 +1685,13 @@ pub_check_project:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_publish1087
-    tail .Lpub_project_valid
+    RV_JUMP .Lpub_project_valid
 .Lrv_cb_skip_publish1087:
     RV_CALL pub_portable_path
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_publish1089
-    tail .Lpub_project_bad
+    RV_JUMP .Lpub_project_bad
 .Lrv_cb_skip_publish1089:
     RV_ADDR s6, rm_archive_metadata + RM_CHECK
     mv s8, s6
@@ -1699,12 +1699,12 @@ pub_check_project:
     RV_CALL source_archive_member
     mv s8, t0
     bnez s8, .Lrv_cb_skip_publish1093
-    tail .Lpub_project_bad
+    RV_JUMP .Lpub_project_bad
 .Lrv_cb_skip_publish1093:
     mv s8, a3
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_publish1094
-    tail .Lpub_project_bad
+    RV_JUMP .Lpub_project_bad
 .Lrv_cb_skip_publish1094:
 .Lpub_project_valid:
     mv s10, t0
@@ -1713,7 +1713,7 @@ pub_check_project:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lpub_project_return
+    RV_JUMP .Lpub_project_return
 .Lpub_project_bad:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1755,7 +1755,7 @@ pub_any_member:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Lpub_any_member_loop
+    RV_JUMP .Lpub_any_member_loop
 .Lpub_member_present:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -1787,7 +1787,7 @@ pub_validate_elf:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_publish1153
-    tail .Lpub_linux_executable
+    RV_JUMP .Lpub_linux_executable
 .Lrv_cb_skip_publish1153:
     li t0, 1
     RV_ZEXT t0
@@ -2118,7 +2118,7 @@ pub_validate_elf:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lpub_elf_return
+    RV_JUMP .Lpub_elf_return
 .Lpub_elf_bad:
     mv a0, s2
     RV_CALL arc_close
@@ -2268,7 +2268,7 @@ pub_hash_payload:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lpub_hash_kill
-    tail .Lpub_hash_read
+    RV_JUMP .Lpub_hash_read
 .Lpub_hash_wait:
     mv a0, s5
     RV_ADDR s6, pub_child_status
@@ -2369,7 +2369,7 @@ pub_hash_payload:
     mv s8, s1
     mv s10, s1
     RV_FLAGS and, 32
-    tail .Lpub_hash_close
+    RV_JUMP .Lpub_hash_close
 .Lpub_hash_kill:
     mv a0, s5
     RV_IMM t1, 9, 32
@@ -2519,7 +2519,7 @@ pub_append:
     mv s10, t2
     RV_FLAGS add, 64
     mv a0, s11
-    tail .Lpub_append_character
+    RV_JUMP .Lpub_append_character
 .Lpub_append_done:
     RV_IMM t1, 0, 32
     mv s6, a4
@@ -2626,7 +2626,7 @@ pub_quote:
     mv s10, t2
     RV_FLAGS add, 64
     mv a5, s11
-    tail .Lpub_quote_character
+    RV_JUMP .Lpub_quote_character
 .Lpub_quote_end:
     RV_IMM t1, 34, 32
     mv s6, a4
@@ -2809,7 +2809,7 @@ pub_make_json:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Lpub_json_artifact
+    RV_JUMP .Lpub_json_artifact
 .Lpub_json_done:
     RV_ADDR s6, pub_json_suffix
     mv a0, s6

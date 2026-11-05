@@ -26,13 +26,13 @@ cmd_add:
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_update:
     RV_IMM t1, 7, 32
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 /* Input: registry_selected is validated and points into the registry buffer.
  * Save its eight pointers before loading the independent lock buffer. Require
  * a project and a single registry origin. Take a nonblocking exclusive project
@@ -56,7 +56,7 @@ dependency_prepare_selection:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_dependencies50
-    tail .Lport_dependencies_1_end
+    RV_JUMP .Lport_dependencies_1_end
 .Lrv_cb_skip_dependencies50:
 .Lport_dependencies_1:
     mv s8, a1
@@ -71,7 +71,7 @@ dependency_prepare_selection:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_dependencies55
-    tail .Lport_dependencies_1
+    RV_JUMP .Lport_dependencies_1
 .Lrv_cb_skip_dependencies55:
 .Lport_dependencies_1_end:
     RV_ADDR s6, dependency_new_record
@@ -120,7 +120,7 @@ dependency_prepare_selection:
     RV_ADDR s6, dependency_origin
     mv s8, s6
     RV_STORE t0, 8
-    tail .Ldep_find_previous
+    RV_JUMP .Ldep_find_previous
 .Ldep_check_origin:
     RV_ADDR s6, dependency_origin
     mv s8, s6
@@ -250,7 +250,7 @@ dependency_prepare_selection:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, dependency_changed_release
-    tail .Ldep_previous_done
+    RV_JUMP .Ldep_previous_done
 .Ldep_previous_next:
     RV_IMM t2, 64, 64
     mv s8, s2
@@ -262,7 +262,7 @@ dependency_prepare_selection:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_previous_loop
+    RV_JUMP .Ldep_previous_loop
 .Ldep_previous_done:
     RV_ADDR s6, registry_mode
     mv s8, s6
@@ -388,7 +388,7 @@ dependency_finish_add:
     RV_LOAD t1, 8
     mv s8, t1
     beqz s8, .Lrv_cb_skip_dependencies268
-    tail res_use_resolve_error
+    RV_JUMP res_use_resolve_error
 .Lrv_cb_skip_dependencies268:
     RV_ADDR s6, dependency_replace_row
     mv s8, s6
@@ -436,7 +436,7 @@ dependency_finish_add:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_dependencies296
-    tail .Lport_dependencies_2_end
+    RV_JUMP .Lport_dependencies_2_end
 .Lrv_cb_skip_dependencies296:
 .Lport_dependencies_2:
     mv s8, a1
@@ -451,7 +451,7 @@ dependency_finish_add:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_dependencies301
-    tail .Lport_dependencies_2
+    RV_JUMP .Lport_dependencies_2
 .Lrv_cb_skip_dependencies301:
 .Lport_dependencies_2_end:
     RV_CALL dependency_write_lock
@@ -487,7 +487,7 @@ dependency_finish_add:
     mv a0, s6
 .Ldep_add_text:
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Ldep_add_json:
     RV_ADDR s6, dependency_result_prefix
     mv a0, s6
@@ -514,7 +514,7 @@ dependency_finish_add:
     RV_ADDR s6, dependency_result_suffix
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 /* Input: a0=flock operation 5(shared/nonblocking) or 6(exclusive/nonblocking),
  * a1=allow creating .asm. Output: held descriptor in dependency_lock_fd.
  * The empty coordination file is regular, non-symlink, and has one hard link.
@@ -535,7 +535,7 @@ dependency_acquire:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND mi, dependency_io_error
-    tail .Ldep_open_lock
+    RV_JUMP .Ldep_open_lock
 .Ldep_existing_root:
     RV_ADDR s6, dependency_root
     mv a0, s6
@@ -755,7 +755,7 @@ dependency_load_lock:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Ldep_read_bad
-    tail .Ldep_read_loop
+    RV_JUMP .Ldep_read_loop
 .Ldep_read_done:
     mv a0, s2
     RV_CALL rv_close
@@ -859,7 +859,7 @@ dependency_load_lock:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hi, dependency_lock_error
-    tail .Ldep_origin_scan
+    RV_JUMP .Ldep_origin_scan
 .Ldep_origin_end:
     RV_IMM t1, 0, 32
     mv s6, s2
@@ -961,7 +961,7 @@ dependency_load_lock:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Ldep_duplicate_package
+    RV_JUMP .Ldep_duplicate_package
 .Ldep_record_next:
     RV_IMM t2, 64, 64
     mv s8, s2
@@ -973,7 +973,7 @@ dependency_load_lock:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_validate_record
+    RV_JUMP .Ldep_validate_record
 .Ldep_loaded:
     mv s10, t0
     xor t0, t0, s10
@@ -981,7 +981,7 @@ dependency_load_lock:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Ldep_load_return
+    RV_JUMP .Ldep_load_return
 .Ldep_no_lock:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -995,7 +995,7 @@ dependency_load_lock:
 .Ldep_read_bad:
     mv a0, s2
     RV_CALL rv_close
-    tail dependency_lock_error
+    RV_JUMP dependency_lock_error
 /* Input: a0=input, a1=constant prefix. Output: t0=first byte after prefix,
  * or zero on mismatch. Read-only; inputs point into bounded NUL buffers. */
 dependency_prefix:
@@ -1052,7 +1052,7 @@ dependency_prefix:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Ldep_prefix_loop
+    RV_JUMP .Ldep_prefix_loop
 .Ldep_prefix_done:
     mv s6, a0
     mv s10, a3
@@ -1150,7 +1150,7 @@ dependency_paths:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_owner_copy
+    RV_JUMP .Ldep_owner_copy
 .Ldep_owner_done:
     RV_IMM t1, 0, 32
     mv s6, s2
@@ -1359,7 +1359,7 @@ dependency_accept_payload:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, dependency_cache_changed
-    tail .Ldep_store_archive
+    RV_JUMP .Ldep_store_archive
 .Ldep_extract_new:
     RV_ADDR s6, registry_temp_payload
     mv a0, s6
@@ -1487,7 +1487,7 @@ dependency_write_lock:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_measure_record
+    RV_JUMP .Ldep_measure_record
 .Ldep_measure_done:
     RV_IMM t2, 1048576, 64
     mv s8, s5
@@ -1601,7 +1601,7 @@ dependency_write_lock:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_write_record
+    RV_JUMP .Ldep_write_record
 .Ldep_write_end:
     mv a0, s0
     RV_CALL rv_fsync
@@ -1676,7 +1676,7 @@ verify_legacy_project_dependencies:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, dependency_lock_missing
-    tail .Ldep_verify_done
+    RV_JUMP .Ldep_verify_done
 .Ldep_verify_present:
     mv s8, t0
     mv s10, t0
@@ -1790,7 +1790,7 @@ verify_legacy_project_dependencies:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_verify_row
+    RV_JUMP .Ldep_verify_row
 .Ldep_verify_done:
     RV_RESTORE s3
     RV_RESTORE s2
@@ -1807,7 +1807,7 @@ cmd_lock:
     RV_CALL release_dependency_lock
     RV_ADDR s6, dependency_locked_text
     mv a0, s6
-    tail dependency_count_report
+    RV_JUMP dependency_count_report
 cmd_remove:
     RV_CALL dependency_parse_name
     RV_CALL read_manifest
@@ -1870,7 +1870,7 @@ cmd_remove:
     RV_ZEXT a3
     mv s8, a3
     bnez s8, .Lrv_cb_skip_dependencies1263
-    tail .Lport_dependencies_3_end
+    RV_JUMP .Lport_dependencies_3_end
 .Lrv_cb_skip_dependencies1263:
 .Lport_dependencies_3:
     mv s8, a1
@@ -1885,7 +1885,7 @@ cmd_remove:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_dependencies1268
-    tail .Lport_dependencies_3
+    RV_JUMP .Lport_dependencies_3
 .Lrv_cb_skip_dependencies1268:
 .Lport_dependencies_3_end:
     RV_IMM t2, 64, 64
@@ -1893,7 +1893,7 @@ cmd_remove:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_remove_next
+    RV_JUMP .Ldep_remove_next
 .Ldep_remove_match:
     RV_IMM t2, 1, 32
     mv s8, s5
@@ -1911,7 +1911,7 @@ cmd_remove:
     mv s10, t2
     RV_FLAGS add, 64
     mv s4, s11
-    tail .Ldep_remove_row
+    RV_JUMP .Ldep_remove_row
 .Ldep_remove_done:
     mv s8, s5
     mv s10, s5
@@ -1932,7 +1932,7 @@ cmd_remove:
     RV_CALL release_dependency_lock
     RV_ADDR s6, dependency_removed_text
     mv a0, s6
-    tail dependency_count_report
+    RV_JUMP dependency_count_report
 /* Parse remove's one owner/name operand and common output options. Input:
  * argv cursor follows command. Output: borrowed dependency_remove_name.
  * Unknown arguments or selectors with versions exit 2 before file changes. */
@@ -1965,7 +1965,7 @@ dependency_parse_name:
     RV_ADDR s6, dependency_remove_name
     mv s8, s6
     RV_STORE s2, 8
-    tail dependency_parse_name
+    RV_JUMP dependency_parse_name
 .Ldep_remove_args_done:
     RV_ADDR s6, dependency_remove_name
     mv s8, s6
@@ -2007,7 +2007,7 @@ cmd_sync_legacy:
     RV_ADDR s6, dependency_sync_artifact
     mv s8, s6
     RV_STORE t0, 8
-    tail .Ldep_sync_args
+    RV_JUMP .Ldep_sync_args
 .Ldep_sync_common:
     mv t0, s2
     RV_CALL common_option
@@ -2015,7 +2015,7 @@ cmd_sync_legacy:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
-    tail .Ldep_sync_args
+    RV_JUMP .Ldep_sync_args
 .Ldep_sync_start:
     RV_CALL read_manifest
     RV_IMM t1, 6, 32
@@ -2093,7 +2093,7 @@ cmd_sync_legacy:
     mv s8, s6
     RV_STORE t0, 8
     RV_CALL registry_copy_local
-    tail .Ldep_sync_verified
+    RV_JUMP .Ldep_sync_verified
 .Ldep_sync_remote:
     mv s6, s2
     li s10, 40
@@ -2128,12 +2128,12 @@ cmd_sync_legacy:
     mv s10, t2
     RV_FLAGS add, 64
     mv s3, s11
-    tail .Ldep_sync_row
+    RV_JUMP .Ldep_sync_row
 .Ldep_sync_done:
     RV_CALL release_dependency_lock
     RV_ADDR s6, dependency_synced_text
     mv a0, s6
-    tail dependency_count_report
+    RV_JUMP dependency_count_report
 /* Terminal report. Input: a0=plain success text; row_count is the exact locked
  * count. JSON writes a numeric count, not a package-safety claim. */
 dependency_count_report:
@@ -2165,91 +2165,91 @@ dependency_count_report:
     mv a0, s6
 .Ldep_report_text:
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 dependency_io_error:
     RV_ADDR s6, dependency_err_io
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_lock_error:
     RV_ADDR s6, dependency_err_lock
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_lock_missing:
     RV_ADDR s6, dependency_err_lock_missing
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_cache_missing:
     RV_ADDR s6, dependency_err_cache_missing
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_cache_changed:
     RV_ADDR s6, dependency_err_cache_changed
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_archive_error:
     RV_ADDR s6, dependency_err_archive
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_origin_error:
     RV_ADDR s6, dependency_err_origin
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_already_locked:
     RV_ADDR s6, dependency_err_already
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_changed_release:
     RV_ADDR s6, dependency_err_changed
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_missing_selection:
     RV_ADDR s6, dependency_err_selection
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_busy:
     RV_ADDR s6, dependency_err_busy
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 dependency_lock_too_large:
     RV_ADDR s6, dependency_err_large
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail registry_fail
+    RV_JUMP registry_fail
 .section .rodata
 dependency_header: .asciz "# asm-lock-v1\n"
 dependency_origin_prefix: .asciz "# registry "

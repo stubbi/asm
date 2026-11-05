@@ -142,14 +142,14 @@ source_archive_member:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_lookup_compare
+    RV_JUMP .Larc_lookup_compare
 .Larc_lookup_next:
     RV_IMM t2, 1, 64
     mv s8, a4
     mv s10, t2
     RV_FLAGS add, 64
     mv a4, s11
-    tail .Larc_member_lookup
+    RV_JUMP .Larc_member_lookup
 .Larc_lookup_found:
     slli a4, a4, 5
     mv s8, a4
@@ -199,7 +199,7 @@ extract_source_archive:
     mv s8, a2
     mv s10, a2
     RV_FLAGS and, 32
-    tail arc_operation_start
+    RV_JUMP arc_operation_start
 verify_source_archive:
     RV_IMM t1, 1, 32
     mv a2, t1
@@ -262,7 +262,7 @@ arc_operation_start:
     RV_FLAGS and, 32
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive174
-    tail .Lport_archive_1_end
+    RV_JUMP .Lport_archive_1_end
 .Lrv_cb_skip_archive174:
 .Lport_archive_1:
     mv s8, a0
@@ -273,7 +273,7 @@ arc_operation_start:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive178
-    tail .Lport_archive_1
+    RV_JUMP .Lport_archive_1
 .Lrv_cb_skip_archive178:
 .Lport_archive_1_end:
     RV_CALL arc_decompress
@@ -375,7 +375,7 @@ arc_operation_start:
     mv s10, t2
     RV_FLAGS add, 64
     mv a3, s11
-    tail .Larc_check_seen
+    RV_JUMP .Larc_check_seen
 .Larc_extract:
     RV_CALL arc_create_stage
     mv s8, t0
@@ -469,7 +469,7 @@ arc_operation_start:
     RV_BCOND mi, .Larc_extract_parent_error
     mv a0, t0
     RV_CALL arc_close
-    tail .Larc_extract_next
+    RV_JUMP .Larc_extract_next
 .Larc_extract_file:
     mv a0, s3
     mv a1, s4
@@ -524,7 +524,7 @@ arc_operation_start:
     mv s10, t0
     RV_FLAGS sub, 64
     mv a2, s11
-    tail .Larc_write
+    RV_JUMP .Larc_write
 .Larc_file_mode:
     mv a0, s1
     mv s6, s5
@@ -549,14 +549,14 @@ arc_operation_start:
     mv s10, t2
     RV_FLAGS add, 64
     mv s2, s11
-    tail .Larc_extract_entry
+    RV_JUMP .Larc_extract_entry
 .Larc_extract_file_error:
     mv a0, s1
     RV_CALL arc_close
 .Larc_extract_parent_error:
     mv a0, s3
     RV_CALL arc_close
-    tail .Larc_finish
+    RV_JUMP .Larc_finish
 .Larc_publish_stage:
     RV_ADDR s6, arc_root_fd
     mv s8, s6
@@ -883,7 +883,7 @@ arc_decompress:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Larc_decompress_kill
-    tail .Larc_gzip_read
+    RV_JUMP .Larc_gzip_read
 .Larc_gzip_eof:
     RV_ADDR s6, arc_raw_size
     mv s8, s6
@@ -934,7 +934,7 @@ arc_decompress:
     mv s8, s1
     mv s10, s1
     RV_FLAGS and, 32
-    tail .Larc_decompress_close
+    RV_JUMP .Larc_decompress_close
 .Larc_decompress_kill:
     mv a0, s5
     RV_IMM t1, 9, 32
@@ -1039,7 +1039,7 @@ arc_is_zero:
     RV_FLAGS and, 32
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive687
-    tail .Lport_archive_2_end
+    RV_JUMP .Lport_archive_2_end
 .Lrv_cb_skip_archive687:
 .Lport_archive_2:
     li s10, 255
@@ -1061,7 +1061,7 @@ arc_is_zero:
     RV_BCOND ne, .Lport_archive_2_end
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive696
-    tail .Lport_archive_2
+    RV_JUMP .Lport_archive_2
 .Lrv_cb_skip_archive696:
 .Lport_archive_2_end:
     RV_BCOND eq, .Lrv_cset_true_archive698
@@ -1120,7 +1120,7 @@ arc_octal:
     mv s10, t2
     RV_FLAGS sub, 32
     mv a3, s11
-    tail .Larc_octal_leading
+    RV_JUMP .Larc_octal_leading
 .Larc_octal_digits:
     mv s8, a3
     mv s10, a3
@@ -1176,7 +1176,7 @@ arc_octal:
     mv s10, t2
     RV_FLAGS sub, 32
     mv a3, s11
-    tail .Larc_octal_digits
+    RV_JUMP .Larc_octal_digits
 .Larc_octal_suffix:
     mv s8, a2
     mv s10, a2
@@ -1204,7 +1204,7 @@ arc_octal:
     RV_LOAD t1, 1
     mv a2, t1
     RV_ZEXT a2
-    tail .Larc_octal_suffix
+    RV_JUMP .Larc_octal_suffix
 .Larc_octal_end:
     mv s8, a4
     mv s10, a4
@@ -1254,7 +1254,7 @@ arc_field_length:
     mv s10, t2
     RV_FLAGS add, 32
     mv t0, s11
-    tail .Larc_field_scan
+    RV_JUMP .Larc_field_scan
 .Larc_field_tail:
     mv a2, t0
     RV_ZEXT a2
@@ -1282,7 +1282,7 @@ arc_field_length:
     mv s10, t2
     RV_FLAGS add, 32
     mv a2, s11
-    tail .Larc_field_tail_loop
+    RV_JUMP .Larc_field_tail_loop
 .Larc_field_ok:
     mv s8, zero
     mv s10, zero
@@ -1365,7 +1365,7 @@ arc_path_valid:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ls, .Larc_path_advance
-    tail .Larc_path_bad
+    RV_JUMP .Larc_path_bad
 .Larc_path_digit:
     RV_IMM t2, 48, 32
     mv s8, t0
@@ -1404,7 +1404,7 @@ arc_path_valid:
     mv s10, t2
     RV_FLAGS add, 32
     mv a4, s11
-    tail .Larc_path_loop
+    RV_JUMP .Larc_path_loop
 .Larc_path_separator:
     mv s8, a4
     mv s10, a4
@@ -1437,7 +1437,7 @@ arc_path_valid:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_path_loop
+    RV_JUMP .Larc_path_loop
 .Larc_path_last:
     mv s8, a4
     mv s10, a4
@@ -1569,7 +1569,7 @@ arc_check_conflicts:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_conflict_char
+    RV_JUMP .Larc_conflict_char
 .Larc_conflict_new_end:
     mv s8, a2
     mv s10, a2
@@ -1584,7 +1584,7 @@ arc_check_conflicts:
     mv s10, a1
     RV_FLAGS and, 32
     RV_BCOND eq, .Larc_conflict_bad
-    tail .Larc_conflict_next
+    RV_JUMP .Larc_conflict_next
 .Larc_conflict_old_end:
     RV_IMM t2, 47, 32
     mv s8, t0
@@ -1616,7 +1616,7 @@ arc_check_conflicts:
     mv s10, t2
     RV_FLAGS add, 64
     mv a4, s11
-    tail .Larc_conflict_entry
+    RV_JUMP .Larc_conflict_entry
 .Larc_conflict_ok:
     mv s10, t0
     xor t0, t0, s10
@@ -1866,7 +1866,7 @@ arc_validate:
     mv a3, s1
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive1159
-    tail .Lport_archive_3_end
+    RV_JUMP .Lport_archive_3_end
 .Lrv_cb_skip_archive1159:
 .Lport_archive_3:
     mv s8, a1
@@ -1881,7 +1881,7 @@ arc_validate:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive1164
-    tail .Lport_archive_3
+    RV_JUMP .Lport_archive_3
 .Lrv_cb_skip_archive1164:
 .Lport_archive_3_end:
     mv s8, s1
@@ -1927,7 +1927,7 @@ arc_validate:
     mv a3, t0
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive1193
-    tail .Lport_archive_4_end
+    RV_JUMP .Lport_archive_4_end
 .Lrv_cb_skip_archive1193:
 .Lport_archive_4:
     mv s8, a1
@@ -1942,7 +1942,7 @@ arc_validate:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive1198
-    tail .Lport_archive_4
+    RV_JUMP .Lport_archive_4
 .Lrv_cb_skip_archive1198:
 .Lport_archive_4_end:
     mv s1, a2
@@ -1980,7 +1980,7 @@ arc_validate:
     mv s10, t2
     RV_FLAGS sub, 64
     mv s1, s11
-    tail .Larc_trim_directory
+    RV_JUMP .Larc_trim_directory
 .Larc_path_terminate:
     RV_IMM t1, 0, 32
     mv s6, s5
@@ -2083,7 +2083,7 @@ arc_validate:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND ne, .Larc_validate_bad
-    tail .Larc_size_ok
+    RV_JUMP .Larc_size_ok
 .Larc_size_file:
     RV_ADDR s6, arc_file_count
     mv s8, s6
@@ -2208,7 +2208,7 @@ arc_validate:
     mv s8, s6
     RV_STORE t3, 8
     mv s3, s1
-    tail .Larc_header
+    RV_JUMP .Larc_header
 .Larc_tar_end:
     mv a1, s4
     mv s8, a1
@@ -2240,7 +2240,7 @@ arc_validate:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Larc_validate_return
+    RV_JUMP .Larc_validate_return
 .Larc_validate_bad:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2321,7 +2321,7 @@ arc_open_parent:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_copy_output
+    RV_JUMP .Larc_copy_output
 .Larc_output_copied:
     mv s8, a3
     mv s10, a3
@@ -2424,7 +2424,7 @@ arc_open_parent:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Larc_parent_bad
-    tail .Larc_parent_find_end
+    RV_JUMP .Larc_parent_find_end
 .Larc_parent_descend:
     mv s8, s3
     mv s10, s3
@@ -2506,7 +2506,7 @@ arc_open_parent:
     RV_ADDR s6, arc_parent_fd
     mv s8, s6
     RV_STORE s4, 8
-    tail .Larc_parent_component
+    RV_JUMP .Larc_parent_component
 .Larc_parent_leaf:
     mv s8, s3
     mv s10, s3
@@ -2560,7 +2560,7 @@ arc_open_parent:
     mv a3, s6
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive1572
-    tail .Lport_archive_5_end
+    RV_JUMP .Lport_archive_5_end
 .Lrv_cb_skip_archive1572:
 .Lport_archive_5:
     mv s8, a1
@@ -2575,7 +2575,7 @@ arc_open_parent:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive1577
-    tail .Lport_archive_5
+    RV_JUMP .Lport_archive_5
 .Lrv_cb_skip_archive1577:
 .Lport_archive_5_end:
     mv s10, t0
@@ -2584,7 +2584,7 @@ arc_open_parent:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Larc_parent_return
+    RV_JUMP .Larc_parent_return
 .Larc_parent_bad:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2864,7 +2864,7 @@ arc_member_parent:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Larc_member_find
+    RV_JUMP .Larc_member_find
 .Larc_member_descend:
     RV_IMM t1, 0, 32
     mv s6, s0
@@ -2911,11 +2911,11 @@ arc_member_parent:
     mv a0, s2
     RV_CALL arc_close
     mv s2, s3
-    tail .Larc_member_component
+    RV_JUMP .Larc_member_component
 .Larc_member_done:
     mv t0, s2
     mv a2, s1
-    tail .Larc_member_return
+    RV_JUMP .Larc_member_return
 .Larc_member_fail:
     mv a0, s2
     RV_CALL arc_close
@@ -3018,7 +3018,7 @@ arc_find_entry:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_find_compare
+    RV_JUMP .Larc_find_compare
 .Larc_find_path_end:
     mv s6, a2
     mv s10, a3
@@ -3057,7 +3057,7 @@ arc_find_entry:
     mv s10, t2
     RV_FLAGS add, 64
     mv a4, s11
-    tail .Larc_find_loop
+    RV_JUMP .Larc_find_loop
 .Larc_find_exact:
     mv t0, a4
     slli t0, t0, 5
@@ -3223,7 +3223,7 @@ arc_compare_file:
     mv a0, s5
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive1972
-    tail .Lport_archive_6_end
+    RV_JUMP .Lport_archive_6_end
 .Lrv_cb_skip_archive1972:
 .Lport_archive_6:
     mv s8, a1
@@ -3246,7 +3246,7 @@ arc_compare_file:
     RV_BCOND ne, .Lport_archive_6_end
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive1981
-    tail .Lport_archive_6
+    RV_JUMP .Lport_archive_6
 .Lrv_cb_skip_archive1981:
 .Lport_archive_6_end:
     RV_BCOND ne, .Larc_compare_bad
@@ -3258,7 +3258,7 @@ arc_compare_file:
     mv s10, s1
     RV_FLAGS sub, 64
     mv s4, s11
-    tail .Larc_compare_read
+    RV_JUMP .Larc_compare_read
 .Larc_compare_eof:
     mv a0, s3
     RV_ADDR s6, arc_compare_buffer
@@ -3292,7 +3292,7 @@ arc_compare_file:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Larc_compare_return
+    RV_JUMP .Larc_compare_return
 .Larc_compare_bad:
     mv a0, s3
     RV_CALL arc_close
@@ -3438,7 +3438,7 @@ arc_walk_tree:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Larc_walk_name
+    RV_JUMP .Larc_walk_name
 .Larc_walk_name_end:
     mv s8, a3
     mv s10, a3
@@ -3506,7 +3506,7 @@ arc_walk_tree:
     mv a3, s11
     mv s8, a3
     bnez s8, .Lrv_cb_skip_archive2146
-    tail .Lport_archive_7_end
+    RV_JUMP .Lport_archive_7_end
 .Lrv_cb_skip_archive2146:
 .Lport_archive_7:
     mv s8, a1
@@ -3521,7 +3521,7 @@ arc_walk_tree:
     sub a3, a3, s10
     mv s8, a3
     beqz s8, .Lrv_cb_skip_archive2151
-    tail .Lport_archive_7
+    RV_JUMP .Lport_archive_7
 .Lrv_cb_skip_archive2151:
 .Lport_archive_7_end:
     mv a0, s2
@@ -3650,7 +3650,7 @@ arc_walk_tree:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND mi, .Larc_walk_bad
-    tail .Larc_walk_next
+    RV_JUMP .Larc_walk_next
 .Larc_walk_directory_bad:
     mv s6, sp
     RV_IMM s7, 4112, 64
@@ -3660,7 +3660,7 @@ arc_walk_tree:
     RV_LOAD t1, 8
     mv a0, t1
     RV_CALL arc_close
-    tail .Larc_walk_bad
+    RV_JUMP .Larc_walk_bad
 .Larc_walk_file:
     mv s6, sp
     RV_IMM s7, 4104, 64
@@ -3686,7 +3686,7 @@ arc_walk_tree:
     mv s10, t0
     RV_FLAGS and, 64
     RV_BCOND mi, .Larc_walk_bad
-    tail .Larc_walk_next
+    RV_JUMP .Larc_walk_next
 .Larc_walk_compare_file:
     mv s10, a1
     xor a1, a1, s10
@@ -3728,7 +3728,7 @@ arc_walk_tree:
     mv s10, t0
     RV_FLAGS add, 64
     mv s5, s11
-    tail .Larc_walk_entry
+    RV_JUMP .Larc_walk_entry
 .Larc_walk_ok:
     mv s10, t0
     xor t0, t0, s10
@@ -3736,7 +3736,7 @@ arc_walk_tree:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Larc_walk_return
+    RV_JUMP .Larc_walk_return
 .Larc_walk_bad:
     RV_IMM t1, 1, 32
     mv t0, t1

@@ -142,7 +142,7 @@ _start:
     mv s10, t2
     RV_FLAGS add, 64
     mv s0, s11
-    tail .Ldispatch
+    RV_JUMP .Ldispatch
 .Ldispatch_match:
     mv s6, s0
     li s10, 8
@@ -155,7 +155,7 @@ _start:
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lglobals
+    RV_JUMP .Lglobals
 /* Input: global argc/argv/argi from the initial Linux stack. Output: t0 is the
  * next borrowed argv pointer, or zero. Advances argi only for an existing arg.
  * Stack: none. Bounds: argi is checked against argc before the pointer load. */
@@ -299,7 +299,7 @@ strlen:
     mv s10, t2
     RV_FLAGS add, 64
     mv t0, s11
-    tail .Llen_loop
+    RV_JUMP .Llen_loop
 .Llen_done:
     ret
 /* Input: a0=destination, a1=source. Caller owns both buffers and proves
@@ -347,7 +347,7 @@ copy_string:
     mv s10, t2
     RV_FLAGS add, 64
     mv t0, s11
-    tail .Lcopy_loop
+    RV_JUMP .Lcopy_loop
 .Lcopy_done:
     ret
 /* Input: a0=file descriptor; a1=valid string. Output: zero or negative errno.
@@ -380,7 +380,7 @@ write_cstr:
     mv s10, t2
     RV_FLAGS add, 64
     mv a2, s11
-    tail .Lwrite_len
+    RV_JUMP .Lwrite_len
 write_all:
     mv s8, a2
     mv s10, a2
@@ -405,7 +405,7 @@ write_all:
     mv s10, t0
     RV_FLAGS sub, 64
     mv a2, s11
-    tail write_all
+    RV_JUMP write_all
 .Lwrite_ok:
     mv s10, t0
     xor t0, t0, s10
@@ -438,7 +438,7 @@ out:
     RV_ADDR a0, err_output
     li a1, 1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: a0=text, a1=JSON, both static strings with a trailing LF. Selects the
  * global output mode and uses out's complete-write or fatal-error contract.
  * Stack: none beyond out's frame. */
@@ -456,7 +456,7 @@ report:
     RV_FLAGS sub, 32
     RV_BCOND eq, out
     mv a0, a1
-    tail out
+    RV_JUMP out
 /* Input: a0=static JSON-safe error string without LF; a1=exit status 1..255.
  * Writes stderr and exits. Does not return. JSON escaping is not performed;
  * callers must not supply untrusted text, quotes, backslashes or controls. */
@@ -493,7 +493,7 @@ die:
     RV_ADDR s6, error_json_suffix
     mv a1, s6
     RV_CALL write_cstr
-    tail .Ldie_exit
+    RV_JUMP .Ldie_exit
 .Ldie_plain:
     RV_IMM t1, 2, 32
     mv a0, t1
@@ -515,7 +515,7 @@ die:
 .Ldie_exit:
     mv a0, s2
     RV_ZEXT a0
-    tail exit_code
+    RV_JUMP exit_code
 exit_ok:
     mv s10, a0
     xor a0, a0, s10
@@ -531,21 +531,21 @@ unknown_command:
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 bad_args:
     RV_ADDR s6, err_arguments
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 unsupported_target:
     RV_ADDR s6, err_target
     mv a0, s6
     RV_IMM t1, 2, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: t0=current argv string. Output: t0=1 if consumed, otherwise zero.
  * --target consumes one more argument and accepts the host or its alias.
  * Malformed options exit. Stack: 16 saved bytes plus nested calls. */
@@ -589,7 +589,7 @@ common_option:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_asm403
-    tail .Lopt_yes
+    RV_JUMP .Lopt_yes
 .Lrv_cb_skip_asm403:
     mv a0, s0
     RV_ADDR s6, opt_help
@@ -638,7 +638,7 @@ common_option:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, unsupported_target
-    tail .Lopt_yes
+    RV_JUMP .Lopt_yes
 .Lopt_locked:
     RV_ADDR s6, allow_locked
     mv s8, s6
@@ -656,7 +656,7 @@ common_option:
     RV_ADDR s6, require_lock
     mv s8, s6
     RV_STORE t1, 1
-    tail .Lopt_yes
+    RV_JUMP .Lopt_yes
 /* Input: a0=target string. Output: t0=1 for the host or alias, else zero.
  * Stack: 16 saved bytes. Strings are borrowed; no memory is changed. */
 validate_target:
@@ -687,7 +687,7 @@ parse_options_only:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, bad_args
-    tail parse_options_only
+    RV_JUMP parse_options_only
 .Lopts_done:
     ret
 cmd_help:
@@ -697,7 +697,7 @@ cmd_help:
     RV_ADDR s6, help_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_version:
     RV_CALL parse_options_only
     RV_ADDR s6, version_text
@@ -705,7 +705,7 @@ cmd_version:
     RV_ADDR s6, version_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_license:
     RV_CALL parse_options_only
     RV_ADDR s6, license_text
@@ -713,7 +713,7 @@ cmd_license:
     RV_ADDR s6, license_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_targets:
     RV_CALL parse_options_only
     RV_ADDR s6, targets_text
@@ -721,13 +721,13 @@ cmd_targets:
     RV_ADDR s6, targets_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_status:
     RV_CALL parse_options_only
     RV_ADDR s6, status_json
     mv a0, s6
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_doctor:
     RV_CALL parse_options_only
     RV_CALL check_tools
@@ -766,14 +766,14 @@ cmd_doctor:
     RV_ADDR s6, doctor_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 .Ldoctor_registry_missing:
     RV_ADDR s6, err_registry_tools
     mv a0, s6
     RV_IMM t1, 127, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Check execute access to fixed GNU tool paths. No files are changed. Returns
  * on success; exits 127 with a recovery message if a tool is unavailable. */
 check_tools:
@@ -804,7 +804,7 @@ check_tools:
     RV_IMM t1, 127, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 cmd_unimplemented:
     RV_CALL parse_unimplemented_options
     RV_ADDR s6, err_unimplemented
@@ -812,7 +812,7 @@ cmd_unimplemented:
     RV_IMM t1, 69, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 parse_unimplemented_options:
     RV_CALL next_arg
     mv s8, t0
@@ -831,7 +831,7 @@ parse_unimplemented_options:
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail parse_unimplemented_options
+    RV_JUMP parse_unimplemented_options
 .Lunimplemented_done:
     ret
 /* Project creation: preflight all files, use O_EXCL|O_NOFOLLOW, roll back only
@@ -878,7 +878,7 @@ cmd_init:
     RV_ADDR s6, literal_path
     mv s8, s6
     RV_STORE t1, 1
-    tail .Linit_parse
+    RV_JUMP .Linit_parse
 .Linit_options:
     mv t0, s2
     RV_CALL common_option
@@ -929,7 +929,7 @@ cmd_init:
     RV_ADDR s6, path_seen
     mv s8, s6
     RV_STORE t1, 1
-    tail .Linit_parse
+    RV_JUMP .Linit_parse
 .Linit_parsed:
     RV_ADDR s6, new_mode
     mv s8, s6
@@ -1105,7 +1105,7 @@ cmd_init:
     mv s10, t2
     RV_FLAGS add, 64
     mv a1, s11
-    tail .Lbasename_scan
+    RV_JUMP .Lbasename_scan
 .Lbasename_ready:
     mv a0, s2
     RV_CALL valid_name
@@ -1169,14 +1169,14 @@ cmd_init:
     RV_ADDR s6, init_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 .Linit_path_error:
     RV_ADDR s6, err_init_path
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: a0=initialization output path. Returns only for ENOENT from lstat.
  * Every other result triggers initialization rollback. Scratch: stat_buffer
  * (128 bytes), syscall registers. No symlink is followed for the final path. */
@@ -1289,7 +1289,7 @@ create_exclusive_file:
     mv s10, s2
     RV_FLAGS and, 64
     RV_BCOND mi, .Lcreate_write_error
-    tail .Lcreate_end
+    RV_JUMP .Lcreate_end
 .Lcreate_write_error:
     mv t0, s2
 .Lcreate_end:
@@ -1413,7 +1413,7 @@ init_rollback:
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Strict, documented TOML subset. Sections and string fields are parsed, not
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
 /* Input: cwd is the project. Output: package_* buffers contain validated fields.
@@ -1522,7 +1522,7 @@ read_manifest:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hs, .Lmanifest_close_error
-    tail .Lmanifest_read
+    RV_JUMP .Lmanifest_read
 .Lmanifest_read_done:
     RV_ADDR s6, manifest_buffer
     mv t0, s6
@@ -1556,7 +1556,7 @@ read_manifest:
     mv s10, t2
     RV_FLAGS add, 64
     mv a3, s11
-    tail .Lmanifest_no_nul
+    RV_JUMP .Lmanifest_no_nul
 .Lmanifest_terminate:
     RV_IMM t1, 0, 32
     mv s6, t0
@@ -1575,7 +1575,7 @@ read_manifest:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_asm1119
-    tail manifest_error
+    RV_JUMP manifest_error
 .Lrv_cb_skip_asm1119:
     RV_ADDR a0, package_name
     RV_ADDR s6, rm_root_metadata + 24
@@ -1618,7 +1618,7 @@ read_manifest:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_asm1151
-    tail unsupported_target
+    RV_JUMP unsupported_target
 .Lrv_cb_skip_asm1151:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -1634,7 +1634,7 @@ manifest_error:
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: a0=project name. Output: t0=1 for [a-z][a-z0-9-]{0,63}, else zero.
  * Scratch: t0/a3. Registry namespace validation is a separate stricter rule. */
 valid_name:
@@ -1771,7 +1771,7 @@ valid_name:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lname_loop
+    RV_JUMP .Lname_loop
 /* Input: a0=bounded manifest version (at most 63 chars). Output: t0=1 for
  * numeric major.minor.patch without leading zeroes, else zero. No integer
  * conversion occurs here. Registry versions impose a separate numeric limit. */
@@ -1896,7 +1896,7 @@ valid_version:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND hs, .Linvalid
-    tail .Lversion_digits
+    RV_JUMP .Lversion_digits
 .Lversion_sep:
     mv s6, a0
     mv s10, a3
@@ -1950,14 +1950,14 @@ valid_version:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lversion_component
+    RV_JUMP .Lversion_component
 .Lversion_final:
     RV_IMM t2, 2, 32
     mv s8, a2
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lvalid
-    tail .Linvalid
+    RV_JUMP .Linvalid
 /* Input: a0=source path already bounded to 255 chars. Output: t0=1 for a
  * relative path with no empty/. /.. or option-like segments, else zero. This
  * validates syntax; assembly and included files remain trusted local input. */
@@ -2067,7 +2067,7 @@ valid_source:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lsource_loop
+    RV_JUMP .Lsource_loop
 .Lsource_end_segment:
     mv a4, a3
     RV_ZEXT a4
@@ -2136,7 +2136,7 @@ valid_source:
     mv s10, t2
     RV_FLAGS add, 32
     mv a3, s11
-    tail .Lsource_segment
+    RV_JUMP .Lsource_segment
 .Lvalid:
     RV_IMM t1, 1, 32
     mv t0, t1
@@ -2170,7 +2170,7 @@ cmd_build:
     RV_ADDR s6, build_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 cmd_run:
     RV_ADDR s6, native_allow
     li t1, 1
@@ -2206,7 +2206,7 @@ cmd_run:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, bad_args
-    tail .Lrun_options
+    RV_JUMP .Lrun_options
 .Lrun_args_done:
     RV_ADDR s6, argi
     mv s8, s6
@@ -2244,7 +2244,7 @@ cmd_run:
     RV_CALL spawn_wait
     mv a0, t0
     RV_ZEXT a0
-    tail exit_code
+    RV_JUMP exit_code
 cmd_test:
     RV_ADDR s6, native_allow
     li t1, 1
@@ -2283,13 +2283,13 @@ cmd_test:
     RV_ADDR s6, test_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 .Ltest_failed:
     mv a1, t0
     RV_ZEXT a1
     RV_ADDR s6, err_test
     mv a0, s6
-    tail die
+    RV_JUMP die
 /* Input: cwd is a trusted local project; package_source was parsed and bounded.
  * test_mode selects tests/main.s. Output: build/app or build/test, plus object.
  * Object rename occurs first; binary rename is the final publication step.
@@ -2352,7 +2352,7 @@ build_project:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_asm1585
-    tail build_child_error
+    RV_JUMP build_child_error
 .Lrv_cb_skip_asm1585:
     RV_CALL rv_prepare_assembly
     RV_ADDR s6, as_path
@@ -2370,15 +2370,15 @@ build_project:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_asm1596
-    tail .Lbuild_standalone_link
+    RV_JUMP .Lbuild_standalone_link
 .Lrv_cb_skip_asm1596:
     RV_CALL native_link_build
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_asm1598
-    tail build_child_error
+    RV_JUMP build_child_error
 .Lrv_cb_skip_asm1598:
-    tail .Lbuild_linked
+    RV_JUMP .Lbuild_linked
 .Lbuild_standalone_link:
     RV_ADDR s6, ld_path
     mv t0, s6
@@ -2484,7 +2484,7 @@ build_child_error:
     mv a0, s6
     mv a1, s5
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 build_io_error:
     RV_CALL cleanup_stage
 build_directory_error:
@@ -2493,7 +2493,7 @@ build_directory_error:
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: stage paths refer to the directory this process created. Removes only
  * its two known files and then its empty directory. Scratch: syscall registers.
  * Cleanup errors do not replace the original failure status. Stack: none. */
@@ -2646,14 +2646,14 @@ spawn_wait:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    tail .Lspawn_return
+    RV_JUMP .Lspawn_return
 .Lspawn_signal:
     mv s6, a2
     li s10, 128
     add s6, s6, s10
     mv t0, s6
     RV_ZEXT t0
-    tail .Lspawn_return
+    RV_JUMP .Lspawn_return
 .Lspawn_child:
     mv a0, s2
     RV_CALL native_link_child_environment
@@ -2664,7 +2664,7 @@ spawn_wait:
     RV_IMM t1, 127, 32
     mv a0, t1
     RV_ZEXT a0
-    tail exit_code
+    RV_JUMP exit_code
 .Lspawn_failed:
     RV_IMM t1, 127, 32
     mv t0, t1
@@ -2743,14 +2743,14 @@ cmd_clean:
     RV_ADDR s6, clean_json
     mv a1, s6
     RV_CALL report
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lclean_error:
     RV_ADDR s6, err_clean
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
     RV_ZEXT a1
-    tail die
+    RV_JUMP die
 /* Input: a0=one fixed Asm artifact path. Unlinks the final entry, not its
  * symlink target. Returns for success or ENOENT; other errors exit. */
 clean_file:

@@ -98,7 +98,14 @@
     slli s8, s8, 2
     or s9, s9, s8
 .endm
-/* The condition is checked locally; tail supplies a full PC-relative reach. */
+/* Unlike the generic tail pseudo-instruction, this branch changes only
+ * reserved scratch. GNU tail uses t1, which holds a live source value here. */
+.macro RV_JUMP target
+.Lrv_jump\@:
+    auipc s8, %pcrel_hi(\target)
+    jalr zero, %pcrel_lo(.Lrv_jump\@)(s8)
+.endm
+/* The condition is checked locally; RV_JUMP supplies PC-relative reach. */
 .macro RV_BCOND condition,target
     .ifc \condition,eq
         andi s8, s9, 4
@@ -196,7 +203,7 @@
     .endif
     .endif
 .Lrv_take\@:
-    tail \target
+    RV_JUMP \target
 .Lrv_skip\@:
 .endm
 /* Address s8 is stable before these macros. Preserve arithmetic conditions.

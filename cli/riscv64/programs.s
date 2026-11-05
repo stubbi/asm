@@ -41,9 +41,9 @@ cmd_upgrade:
     RV_ADDR s6, registry_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail registry_command
+    RV_JUMP registry_command
 cmd_installed:
-    tail program_local_command
+    RV_JUMP program_local_command
 cmd_uninstall:
     P_SET 1, program_remove
 /* Parse local-only commands before touching the filesystem. Inputs are argv;
@@ -52,7 +52,7 @@ program_local_command:
     RV_CALL next_arg
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs45
-    tail .Lp_local_done
+    RV_JUMP .Lp_local_done
 .Lrv_cb_skip_programs45:
     P_STORE t0, program_arg
     mv a0, t0
@@ -61,7 +61,7 @@ program_local_command:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs50
-    tail .Lp_local_json
+    RV_JUMP .Lp_local_json
 .Lrv_cb_skip_programs50:
     P_LOAD a0, program_arg
     RV_ADDR a1, registry_opt_no_color
@@ -69,7 +69,7 @@ program_local_command:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs54
-    tail program_local_command
+    RV_JUMP program_local_command
 .Lrv_cb_skip_programs54:
     P_LOAD a0, program_arg
     RV_ADDR a1, registry_opt_help
@@ -77,7 +77,7 @@ program_local_command:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs58
-    tail program_help
+    RV_JUMP program_help
 .Lrv_cb_skip_programs58:
     P_LOAD a0, program_arg
     mv s8, a0
@@ -89,40 +89,40 @@ program_local_command:
     P_LOAD t1, program_query
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs64
-    tail program_bad_args
+    RV_JUMP program_bad_args
 .Lrv_cb_skip_programs64:
     P_LOAD t1, program_remove
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs66
-    tail program_bad_args
+    RV_JUMP program_bad_args
 .Lrv_cb_skip_programs66:
     P_LOAD a0, program_arg
     RV_CALL registry_valid_package
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs69
-    tail program_bad_args
+    RV_JUMP program_bad_args
 .Lrv_cb_skip_programs69:
     P_LOAD t1, program_arg
     P_STORE t1, program_query
-    tail program_local_command
+    RV_JUMP program_local_command
 .Lp_local_json:
     li t1, 1
     RV_ZEXT t1
     RV_ADDR s6, json_mode
     mv s8, s6
     RV_STORE t1, 1
-    tail program_local_command
+    RV_JUMP program_local_command
 .Lp_local_done:
     P_LOAD t1, program_remove
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs80
-    tail .Lp_local_open
+    RV_JUMP .Lp_local_open
 .Lrv_cb_skip_programs80:
     P_LOAD t1, program_query
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs82
-    tail program_bad_args
+    RV_JUMP program_bad_args
 .Lrv_cb_skip_programs82:
 .Lp_local_open:
     li a0, 0
@@ -132,13 +132,13 @@ program_local_command:
     P_LOAD t1, program_remove
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs88
-    tail program_list
+    RV_JUMP program_list
 .Lrv_cb_skip_programs88:
     P_LOAD a0, program_query
     RV_CALL program_find
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs91
-    tail program_not_managed
+    RV_JUMP program_not_managed
 .Lrv_cb_skip_programs91:
     P_STORE t0, program_found
     li s10, 40
@@ -159,14 +159,14 @@ program_local_command:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs106
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs106:
     P_SET 1, program_mutated
     RV_CALL program_commit_state
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs109
-    tail .Lp_uninstall_rollback
+    RV_JUMP .Lp_uninstall_rollback
 .Lrv_tb_skip_programs109:
     P_SET 0, program_mutated
     RV_CALL registry_cleanup
@@ -174,11 +174,11 @@ program_local_command:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs113
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lrv_cb_skip_programs113:
     RV_ADDR a0, program_ok_json
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lp_uninstall_rollback:
     P_LOAD a0, program_stage_fd
     RV_ADDR a1, program_previous
@@ -190,10 +190,10 @@ program_local_command:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs124
-    tail program_recovery_error
+    RV_JUMP program_recovery_error
 .Lrv_tb_skip_programs124:
     P_SET 0, program_mutated
-    tail program_io_error
+    RV_JUMP program_io_error
 /* mode=5 preflight, called after arguments are validated but before index IO.
  * Acquires the inventory lock; its descriptor remains held until cleanup.
  * Upgrade reuses its recorded HTTPS origin unless explicitly overridden.
@@ -204,12 +204,12 @@ program_before_load:
     P_LOAD t1, program_upgrade
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs136
-    tail .Lp_preflight_open
+    RV_JUMP .Lp_preflight_open
 .Lrv_cb_skip_programs136:
     P_LOAD t1, registry_output
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs138
-    tail program_bad_args
+    RV_JUMP program_bad_args
 .Lrv_cb_skip_programs138:
 .Lp_preflight_open:
     li a0, 1
@@ -222,11 +222,11 @@ program_before_load:
     P_LOAD t1, program_upgrade
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs147
-    tail .Lp_preflight_upgrade
+    RV_JUMP .Lp_preflight_upgrade
 .Lrv_cb_skip_programs147:
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs148
-    tail program_already_managed
+    RV_JUMP program_already_managed
 .Lrv_cb_skip_programs148:
     P_LOAD t1, program_count
     mv s8, t1
@@ -238,7 +238,7 @@ program_before_load:
 .Lp_preflight_upgrade:
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs155
-    tail program_not_managed
+    RV_JUMP program_not_managed
 .Lrv_cb_skip_programs155:
     mv s0, t0
     li s10, 40
@@ -249,7 +249,7 @@ program_before_load:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs160
-    tail .Lp_preflight_origin
+    RV_JUMP .Lp_preflight_origin
 .Lrv_cb_skip_programs160:
     li s10, 48
     add s8, s0, s10
@@ -259,7 +259,7 @@ program_before_load:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs164
-    tail program_local_index_error
+    RV_JUMP program_local_index_error
 .Lrv_cb_skip_programs164:
     li s10, 48
     add s8, s0, s10
@@ -270,10 +270,10 @@ program_before_load:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs169
-    tail .Lp_preflight_https
+    RV_JUMP .Lp_preflight_https
 .Lrv_cb_skip_programs169:
     RV_ADDR a0, program_local
-    tail .Lp_preflight_compare
+    RV_JUMP .Lp_preflight_compare
 .Lp_preflight_https:
     P_LOAD a0, registry_url
 .Lp_preflight_compare:
@@ -284,7 +284,7 @@ program_before_load:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs177
-    tail program_origin_error
+    RV_JUMP program_origin_error
 .Lrv_cb_skip_programs177:
     RV_RESTORE s0
     ret
@@ -300,7 +300,7 @@ program_prepare_selection:
     P_LOAD t1, program_upgrade
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs191
-    tail .Lp_prepare_done
+    RV_JUMP .Lp_prepare_done
 .Lrv_cb_skip_programs191:
     li s10, 40
     add s8, s1, s10
@@ -331,7 +331,7 @@ program_prepare_selection:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs206
-    tail program_changed_release
+    RV_JUMP program_changed_release
 .Lrv_cb_skip_programs206:
     li s10, 48
     add s8, s0, s10
@@ -343,18 +343,18 @@ program_prepare_selection:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs210
-    tail program_changed_release
+    RV_JUMP program_changed_release
 .Lrv_cb_skip_programs210:
     RV_CALL registry_cleanup
     P_BYTE t1, json_mode
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs213
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lrv_cb_skip_programs213:
     RV_ADDR a0, program_unchanged_json
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 .Lp_prepare_done:
     RV_RESTORE s1
     RV_RESTORE s0
@@ -374,7 +374,7 @@ program_commit_install:
     P_LOAD t1, program_upgrade
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs235
-    tail .Lp_commit_opened
+    RV_JUMP .Lp_commit_opened
 .Lrv_cb_skip_programs235:
     P_LOAD a1, registry_output
     RV_CALL program_absolute_path
@@ -398,7 +398,7 @@ program_commit_install:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs253
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs253:
     mv s2, t0
     P_LOAD a0, program_stage_fd
@@ -410,12 +410,12 @@ program_commit_install:
     RV_CALL rv_close
     mv s8, s3
     beqz s8, .Lrv_cb_skip_programs262
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_cb_skip_programs262:
     P_LOAD t1, program_upgrade
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs264
-    tail .Lp_commit_new_row
+    RV_JUMP .Lp_commit_new_row
 .Lrv_cb_skip_programs264:
     P_LOAD a0, program_current_fd
     li a1, 0
@@ -424,7 +424,7 @@ program_commit_install:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs269
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs269:
     P_LOAD s2, program_current_fd
     P_LOAD a0, program_stage_fd
@@ -435,7 +435,7 @@ program_commit_install:
     RV_CALL program_copy_into_stage
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs276
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_cb_skip_programs276:
 .Lp_commit_new_row:
     RV_ADDR s1, program_new_row
@@ -473,10 +473,10 @@ program_commit_install:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs290
-    tail .Lp_commit_https
+    RV_JUMP .Lp_commit_https
 .Lrv_cb_skip_programs290:
     RV_ADDR t1, program_local
-    tail .Lp_commit_origin_set
+    RV_JUMP .Lp_commit_origin_set
 .Lp_commit_https:
     P_LOAD t1, registry_url
 .Lp_commit_origin_set:
@@ -487,7 +487,7 @@ program_commit_install:
     P_LOAD t1, program_upgrade
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs299
-    tail .Lp_commit_absent
+    RV_JUMP .Lp_commit_absent
 .Lrv_cb_skip_programs299:
     RV_CALL program_recheck_destination
     P_LOAD a0, program_stage_fd
@@ -495,7 +495,7 @@ program_commit_install:
     P_LOAD a2, program_dest_fd
     P_LOAD a6, program_dest_name
     RV_CALL rv_renameat
-    tail .Lp_commit_payload_result
+    RV_JUMP .Lp_commit_payload_result
 .Lp_commit_absent:
     P_LOAD a0, program_stage_fd
     RV_ADDR a1, program_candidate
@@ -507,14 +507,14 @@ program_commit_install:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs315
-    tail program_destination_exists
+    RV_JUMP program_destination_exists
 .Lrv_tb_skip_programs315:
     P_SET 1, program_mutated
     RV_CALL program_commit_state
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs318
-    tail .Lp_commit_rollback
+    RV_JUMP .Lp_commit_rollback
 .Lrv_tb_skip_programs318:
     P_SET 0, program_mutated
     RV_ADDR t1, program_path
@@ -528,14 +528,14 @@ program_commit_install:
     P_LOAD t1, program_upgrade
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs329
-    tail .Lp_commit_rollback_install
+    RV_JUMP .Lp_commit_rollback_install
 .Lrv_cb_skip_programs329:
     P_LOAD a0, program_stage_fd
     RV_ADDR a1, program_previous
     P_LOAD a2, program_dest_fd
     P_LOAD a6, program_dest_name
     RV_CALL rv_renameat
-    tail .Lp_commit_rollback_result
+    RV_JUMP .Lp_commit_rollback_result
 .Lp_commit_rollback_install:
     P_LOAD a0, program_dest_fd
     P_LOAD a1, program_dest_name
@@ -545,10 +545,10 @@ program_commit_install:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs342
-    tail program_recovery_error
+    RV_JUMP program_recovery_error
 .Lrv_tb_skip_programs342:
     P_SET 0, program_mutated
-    tail program_io_error
+    RV_JUMP program_io_error
 /* a1=nonempty relative/absolute output <=4095. Produces absolute program_path
  * without resolving symlinks. The descriptor walk rejects '.'/'..' and empty
  * components. Buffers: cwd/path 4096 each. Stack: two saved registers. */
@@ -571,7 +571,7 @@ program_absolute_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs362
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs362:
     RV_ADDR a0, program_cwd
     RV_CALL strlen
@@ -595,7 +595,7 @@ program_absolute_path:
     mv a0, t0
     mv a1, s0
     RV_CALL copy_string
-    tail .Lp_absolute_done
+    RV_JUMP .Lp_absolute_done
 .Lp_absolute_copy:
     mv s8, s1
     li s10, 4095
@@ -632,7 +632,7 @@ program_open_state:
     add s0, s0, s10
     mv s8, a0
     bnez s8, .Lrv_cb_skip_programs406
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_cb_skip_programs406:
     mv s8, a0
     RV_LOAD t1, 1
@@ -704,7 +704,7 @@ program_open_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs445
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs445:
     P_STORE t0, program_state_fd
     mv a0, t0
@@ -713,7 +713,7 @@ program_open_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs450
-    tail program_busy_error
+    RV_JUMP program_busy_error
 .Lrv_tb_skip_programs450:
 .Lp_state_missing:
     RV_RESTORE s1
@@ -745,7 +745,7 @@ program_walk_parent:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs477
-    tail .Lp_walk_bad_initial
+    RV_JUMP .Lp_walk_bad_initial
 .Lrv_cb_skip_programs477:
     mv s8, s0
     RV_LOAD t1, 1
@@ -760,7 +760,7 @@ program_walk_parent:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs485
-    tail .Lp_walk_return
+    RV_JUMP .Lp_walk_return
 .Lrv_tb_skip_programs485:
     mv s2, t0
     mv a0, s2
@@ -769,7 +769,7 @@ program_walk_parent:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs490
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_tb_skip_programs490:
     RV_ADDR s6, program_walk_stat
     li s10, RV_STAT_MODE
@@ -787,7 +787,7 @@ program_walk_parent:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs497
-    tail .Lp_walk_root_owned
+    RV_JUMP .Lp_walk_root_owned
 .Lrv_cb_skip_programs497:
     P_LOAD t2, program_uid
     mv s8, t1
@@ -808,7 +808,7 @@ program_walk_parent:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs508
-    tail .Lp_walk_home_prefix_end
+    RV_JUMP .Lp_walk_home_prefix_end
 .Lrv_cb_skip_programs508:
     mv s8, a2
     RV_LOAD t2, 1
@@ -818,7 +818,7 @@ program_walk_parent:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lp_walk_outside_home
-    tail .Lp_walk_home_prefix
+    RV_JUMP .Lp_walk_home_prefix
 .Lp_walk_home_prefix_end:
     mv s8, a2
     RV_LOAD t1, 1
@@ -827,7 +827,7 @@ program_walk_parent:
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lp_walk_outside_home
     P_LOAD s5, program_home_length
-    tail .Lp_walk_component
+    RV_JUMP .Lp_walk_component
 .Lp_walk_outside_home:
     li s5, -1
 .Lp_walk_component:
@@ -838,7 +838,7 @@ program_walk_parent:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs525
-    tail .Lp_walk_final
+    RV_JUMP .Lp_walk_final
 .Lrv_cb_skip_programs525:
     mv s8, t1
     li s10, 47
@@ -860,7 +860,7 @@ program_walk_parent:
     RV_BCOND hi, .Lp_walk_bad
     li s10, 1
     add s4, s4, s10
-    tail .Lp_walk_scan
+    RV_JUMP .Lp_walk_scan
 .Lp_walk_separator:
     mv s8, s4
     mv s10, s3
@@ -872,7 +872,7 @@ program_walk_parent:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs542
-    tail .Lp_walk_bad_restore
+    RV_JUMP .Lp_walk_bad_restore
 .Lrv_cb_skip_programs542:
     mv a0, s2
     mv a1, s3
@@ -885,7 +885,7 @@ program_walk_parent:
     RV_BCOND ne, .Lp_walk_open_result
     mv s8, s1
     bnez s8, .Lrv_cb_skip_programs550
-    tail .Lp_walk_open_result
+    RV_JUMP .Lp_walk_open_result
 .Lrv_cb_skip_programs550:
     mv s10, s0
     sub t1, s3, s10
@@ -899,7 +899,7 @@ program_walk_parent:
     RV_CALL rv_mkdirat
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs558
-    tail .Lp_walk_open_result
+    RV_JUMP .Lp_walk_open_result
 .Lrv_cb_skip_programs558:
     mv a0, s2
     mv a1, s3
@@ -915,7 +915,7 @@ program_walk_parent:
     srli s8, t1, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs568
-    tail .Lp_walk_close_error
+    RV_JUMP .Lp_walk_close_error
 .Lrv_tb_skip_programs568:
     mv a0, s2
     mv s2, t1
@@ -926,7 +926,7 @@ program_walk_parent:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs575
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_tb_skip_programs575:
     /* A directory identity, rather than its spelling, reserves state on
      * case-insensitive filesystems too. Refuse its entire descendant tree. */
@@ -934,14 +934,14 @@ program_walk_parent:
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs579
-    tail .Lp_walk_not_state
+    RV_JUMP .Lp_walk_not_state
 .Lrv_tb_skip_programs579:
     RV_ADDR a1, program_check_stat
     RV_CALL rv_fstat
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs582
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_tb_skip_programs582:
     RV_ADDR a0, program_walk_stat
     RV_ADDR a1, program_check_stat
@@ -991,12 +991,12 @@ program_walk_parent:
     RV_LOAD t5, 8
     mv s8, t5
     beqz s8, .Lrv_cb_skip_programs605
-    tail .Lp_walk_user
+    RV_JUMP .Lp_walk_user
 .Lrv_cb_skip_programs605:
     mv s8, t2
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs606
-    tail .Lp_walk_mode
+    RV_JUMP .Lp_walk_mode
 .Lrv_cb_skip_programs606:
 .Lp_walk_user:
     mv s8, t2
@@ -1013,7 +1013,7 @@ program_walk_parent:
     mv s8, t2
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs614
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_cb_skip_programs614:
     mv s8, t1
     li s10, 512
@@ -1032,7 +1032,7 @@ program_walk_parent:
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lp_walk_bad
     RV_ADDR a1, program_private_tmp
-    tail .Lp_walk_check_tmp
+    RV_JUMP .Lp_walk_check_tmp
 .Lp_walk_tmp4:
     RV_ADDR a1, program_tmp
 .Lp_walk_check_tmp:
@@ -1049,19 +1049,19 @@ program_walk_parent:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs634
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_cb_skip_programs634:
     li t1, 1
     mv s8, sp
     RV_STORE t1, 8
-    tail .Lp_walk_next
+    RV_JUMP .Lp_walk_next
 .Lp_walk_protected:
     mv s8, sp
     RV_STORE zero, 8
 .Lp_walk_next:
     li s10, 1
     add s3, s4, s10
-    tail .Lp_walk_component
+    RV_JUMP .Lp_walk_component
 .Lp_walk_final:
     mv s8, s4
     mv s10, s3
@@ -1071,11 +1071,11 @@ program_walk_parent:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs647
-    tail .Lp_walk_bad
+    RV_JUMP .Lp_walk_bad
 .Lrv_cb_skip_programs647:
     P_STORE s3, program_basename
     mv t0, s2
-    tail .Lp_walk_return
+    RV_JUMP .Lp_walk_return
 .Lp_walk_bad_restore:
     li t1, 47
     RV_ZEXT t1
@@ -1092,7 +1092,7 @@ program_walk_parent:
     li s10, 8
     add s8, sp, s10
     RV_LOAD t0, 8
-    tail .Lp_walk_return
+    RV_JUMP .Lp_walk_return
 .Lp_walk_bad_initial:
     li t0, -22
 .Lp_walk_return:
@@ -1119,7 +1119,7 @@ program_component_valid:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs679
-    tail .Lp_component_bad
+    RV_JUMP .Lp_component_bad
 .Lrv_cb_skip_programs679:
     mv s8, t1
     li s10, 46
@@ -1131,7 +1131,7 @@ program_component_valid:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs683
-    tail .Lp_component_bad
+    RV_JUMP .Lp_component_bad
 .Lrv_cb_skip_programs683:
 .Lp_component_good:
     li t0, 1
@@ -1158,7 +1158,7 @@ program_open_destination:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs705
-    tail program_reserved_error
+    RV_JUMP program_reserved_error
 .Lrv_cb_skip_programs705:
     RV_ADDR a0, program_state_path
     RV_CALL strlen
@@ -1169,7 +1169,7 @@ program_open_destination:
 .Lp_destination_internal:
     mv s8, a2
     bnez s8, .Lrv_cb_skip_programs712
-    tail program_internal_error
+    RV_JUMP program_internal_error
 .Lrv_cb_skip_programs712:
     mv s8, a0
     RV_LOAD t1, 1
@@ -1185,7 +1185,7 @@ program_open_destination:
     RV_BCOND ne, .Lp_destination_external
     li s10, 1
     sub a2, a2, s10
-    tail .Lp_destination_internal
+    RV_JUMP .Lp_destination_internal
 .Lp_destination_external:
     RV_ADDR a0, program_path
     li a1, 0
@@ -1193,7 +1193,7 @@ program_open_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs723
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs723:
     P_STORE t0, program_dest_fd
     P_LOAD t1, program_basename
@@ -1203,7 +1203,7 @@ program_open_destination:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs729
-    tail .Lp_destination_workspace_safe
+    RV_JUMP .Lp_destination_workspace_safe
 .Lrv_cb_skip_programs729:
     RV_ADDR a0, registry_temp_dir
     RV_IMM a1, O_DIRECTORY + O_CLOEXEC + O_NOFOLLOW, 64
@@ -1212,7 +1212,7 @@ program_open_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs734
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs734:
     mv s0, t0
     mv a0, s0
@@ -1225,7 +1225,7 @@ program_open_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs743
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs743:
     P_LOAD a0, program_dest_fd
     RV_ADDR a1, program_check_stat
@@ -1233,7 +1233,7 @@ program_open_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs747
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs747:
     RV_ADDR a0, program_walk_stat
     RV_ADDR a1, program_check_stat
@@ -1303,7 +1303,7 @@ program_check_cli_destination:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs783
-    tail .Lp_cli_destination_safe
+    RV_JUMP .Lp_cli_destination_safe
 .Lrv_cb_skip_programs783:
     RV_ADDR a0, program_reserved_path
     li a1, 0
@@ -1311,7 +1311,7 @@ program_check_cli_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs787
-    tail .Lp_cli_destination_safe
+    RV_JUMP .Lp_cli_destination_safe
 .Lrv_tb_skip_programs787:
     mv s0, t0
     mv a0, s0
@@ -1323,7 +1323,7 @@ program_check_cli_destination:
     srli s8, s1, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs795
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs795:
     P_LOAD a0, program_dest_fd
     RV_ADDR a1, program_check_stat
@@ -1331,7 +1331,7 @@ program_check_cli_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs799
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs799:
     RV_ADDR a0, program_walk_stat
     RV_ADDR a1, program_check_stat
@@ -1371,7 +1371,7 @@ program_read_state:
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs824
-    tail .Lp_read_done
+    RV_JUMP .Lp_read_done
 .Lrv_tb_skip_programs824:
     RV_ADDR a1, program_state_name
     RV_IMM a2, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK, 64
@@ -1384,7 +1384,7 @@ program_read_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs831
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_tb_skip_programs831:
     mv s0, t0
     mv a0, s0
@@ -1393,14 +1393,14 @@ program_read_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs836
-    tail .Lp_read_bad
+    RV_JUMP .Lp_read_bad
 .Lrv_tb_skip_programs836:
     RV_ADDR a0, program_check_stat
     RV_CALL program_regular_stat
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs839
-    tail .Lp_read_bad
+    RV_JUMP .Lp_read_bad
 .Lrv_cb_skip_programs839:
     RV_ADDR s6, program_check_stat
     li s10, RV_STAT_SIZE
@@ -1428,11 +1428,11 @@ program_read_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs855
-    tail .Lp_read_bad
+    RV_JUMP .Lp_read_bad
 .Lrv_tb_skip_programs855:
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs856
-    tail .Lp_read_eof
+    RV_JUMP .Lp_read_eof
 .Lrv_cb_skip_programs856:
     mv s10, t0
     add s1, s1, s10
@@ -1441,7 +1441,7 @@ program_read_state:
     mv s10, t1
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lp_read_bad
-    tail .Lp_read_loop
+    RV_JUMP .Lp_read_loop
 .Lp_read_eof:
     mv a0, s0
     RV_CALL rv_close
@@ -1454,7 +1454,7 @@ program_read_state:
 .Lp_read_bad:
     mv a0, s0
     RV_CALL rv_close
-    tail program_state_error
+    RV_JUMP program_state_error
 /* Parses seven TSV fields per record; metadata is printable ASCII, <=128 records. Borrowed
  * pointers have process lifetime in program_input. Every field is validated,
  * including duplicates, before any mutation. Stack: six saved registers. */
@@ -1478,7 +1478,7 @@ program_parse_state:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs892
-    tail .Lp_parse_row
+    RV_JUMP .Lp_parse_row
 .Lrv_cb_skip_programs892:
     mv s8, s0
     mv s10, s1
@@ -1492,7 +1492,7 @@ program_parse_state:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND ne, program_state_error
-    tail .Lp_parse_header
+    RV_JUMP .Lp_parse_header
 .Lp_parse_row:
     mv s8, s0
     mv s10, s1
@@ -1548,7 +1548,7 @@ program_parse_state:
     RV_BCOND hi, program_state_error
     li s10, 1
     add s0, s0, s10
-    tail .Lp_parse_char
+    RV_JUMP .Lp_parse_char
 .Lp_parse_tab:
     mv s8, s0
     mv s10, s5
@@ -1569,7 +1569,7 @@ program_parse_state:
     add s8, s2, s10
     RV_STORE s0, 8
     mv s5, s0
-    tail .Lp_parse_char
+    RV_JUMP .Lp_parse_char
 .Lp_parse_newline:
     mv s8, s3
     li s10, 6
@@ -1588,7 +1588,7 @@ program_parse_state:
     li s10, 1
     add s4, s4, s10
     P_STORE s4, program_count
-    tail .Lp_parse_row
+    RV_JUMP .Lp_parse_row
 .Lp_parse_done:
     RV_RESTORE s5
     RV_RESTORE s4
@@ -1610,7 +1610,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs970
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs970:
     li s10, 8
     add s8, s0, s10
@@ -1619,7 +1619,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs973
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs973:
     li s10, 16
     add s8, s0, s10
@@ -1628,7 +1628,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs976
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs976:
     li s10, 24
     add s8, s0, s10
@@ -1675,7 +1675,7 @@ program_validate_row:
     mv s8, t1
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs998
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs998:
     li s10, 32
     add s8, s0, s10
@@ -1683,7 +1683,7 @@ program_validate_row:
     RV_CALL registry_size_value
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs1001
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1001:
     li s10, 40
     add s8, s0, s10
@@ -1692,7 +1692,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1004
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1004:
     li s10, 40
     add s8, s0, s10
@@ -1711,7 +1711,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1012
-    tail .Lp_validate_unique
+    RV_JUMP .Lp_validate_unique
 .Lrv_cb_skip_programs1012:
     li s10, 48
     add s8, s0, s10
@@ -1720,7 +1720,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1015
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1015:
 .Lp_validate_unique:
     RV_ADDR s1, program_rows
@@ -1737,7 +1737,7 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1024
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1024:
     li s10, 40
     add s8, s0, s10
@@ -1749,11 +1749,11 @@ program_validate_row:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1028
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1028:
     li s10, 64
     add s1, s1, s10
-    tail .Lp_validate_duplicate
+    RV_JUMP .Lp_validate_duplicate
 .Lp_validate_done:
     RV_RESTORE s2
     RV_RESTORE s1
@@ -1770,7 +1770,7 @@ program_find:
 .Lp_find_loop:
     mv s8, s2
     bnez s8, .Lrv_cb_skip_programs1046
-    tail .Lp_find_absent
+    RV_JUMP .Lp_find_absent
 .Lrv_cb_skip_programs1046:
     mv a0, s0
     mv s8, s1
@@ -1779,16 +1779,16 @@ program_find:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1050
-    tail .Lp_find_found
+    RV_JUMP .Lp_find_found
 .Lrv_cb_skip_programs1050:
     li s10, 64
     add s1, s1, s10
     li s10, 1
     sub s2, s2, s10
-    tail .Lp_find_loop
+    RV_JUMP .Lp_find_loop
 .Lp_find_absent:
     li t0, 0
-    tail .Lp_find_done
+    RV_JUMP .Lp_find_done
 .Lp_find_found:
     mv t0, s1
 .Lp_find_done:
@@ -1808,7 +1808,7 @@ program_valid_utf8:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1071
-    tail .Lp_utf8_good
+    RV_JUMP .Lp_utf8_good
 .Lrv_cb_skip_programs1071:
     mv s8, t1
     li s10, 128
@@ -1862,7 +1862,7 @@ program_valid_utf8:
 .Lp_utf8_four_tail:
     li a2, 2
     RV_ZEXT a2
-    tail .Lp_utf8_tail
+    RV_JUMP .Lp_utf8_tail
 .Lp_utf8_three:
     mv s8, a0
     RV_LOAD t2, 1
@@ -1914,7 +1914,7 @@ program_valid_utf8:
     RV_FLAGS sub, 32
     mv a2, s11
     RV_BCOND ne, .Lp_utf8_tail
-    tail .Lp_utf8_next
+    RV_JUMP .Lp_utf8_next
 .Lp_utf8_good:
     li t0, 1
     RV_ZEXT t0
@@ -1934,7 +1934,7 @@ program_valid_absolute_path:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1140
-    tail .Lp_path_invalid
+    RV_JUMP .Lp_path_invalid
 .Lrv_cb_skip_programs1140:
     mv s8, s0
     RV_LOAD t1, 1
@@ -1951,7 +1951,7 @@ program_valid_absolute_path:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1148
-    tail .Lp_path_component
+    RV_JUMP .Lp_path_component
 .Lrv_cb_skip_programs1148:
     mv s8, t1
     li s10, 47
@@ -1967,13 +1967,13 @@ program_valid_absolute_path:
     RV_BCOND eq, .Lp_path_invalid
     li s10, 1
     add a2, a2, s10
-    tail .Lp_path_scan
+    RV_JUMP .Lp_path_scan
 .Lp_path_component:
     mv s10, a1
     sub a3, a2, s10
     mv s8, a3
     bnez s8, .Lrv_cb_skip_programs1159
-    tail .Lp_path_invalid
+    RV_JUMP .Lp_path_invalid
 .Lrv_cb_skip_programs1159:
     mv s8, a3
     li s10, 255
@@ -2004,12 +2004,12 @@ program_valid_absolute_path:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1173
-    tail .Lp_path_valid
+    RV_JUMP .Lp_path_valid
 .Lrv_cb_skip_programs1173:
     li s10, 1
     add a1, a2, s10
     mv a2, a1
-    tail .Lp_path_scan
+    RV_JUMP .Lp_path_scan
 .Lp_path_invalid:
     li t0, 0
     RV_ZEXT t0
@@ -2044,7 +2044,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1207
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs1207:
     RV_ADDR s0, program_rows
     P_LOAD s1, program_count
@@ -2052,7 +2052,7 @@ program_check_new_path:
 .Lp_new_path_loop:
     mv s8, s1
     bnez s8, .Lrv_cb_skip_programs1212
-    tail .Lp_new_path_cli
+    RV_JUMP .Lp_new_path_cli
 .Lrv_cb_skip_programs1212:
     RV_ADDR a0, program_path
     li s10, 40
@@ -2062,7 +2062,7 @@ program_check_new_path:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1216
-    tail program_destination_exists
+    RV_JUMP program_destination_exists
 .Lrv_cb_skip_programs1216:
     li s10, 40
     add s8, s0, s10
@@ -2076,7 +2076,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1222
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs1222:
     mv s2, t0
     mv a0, s2
@@ -2088,7 +2088,7 @@ program_check_new_path:
     srli s8, s4, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1230
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs1230:
     RV_ADDR a0, program_alias_parent_stat
     RV_ADDR a1, program_alias_record_stat
@@ -2096,7 +2096,7 @@ program_check_new_path:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1234
-    tail .Lp_new_path_next
+    RV_JUMP .Lp_new_path_next
 .Lrv_cb_skip_programs1234:
     P_LOAD t1, program_basename
     RV_ADDR s6, program_alias_names
@@ -2111,7 +2111,7 @@ program_check_new_path:
     add s0, s0, s10
     li s10, 1
     sub s1, s1, s10
-    tail .Lp_new_path_loop
+    RV_JUMP .Lp_new_path_loop
 .Lp_new_path_cli:
     /* Reserve filesystem aliases of asm, including Unicode case aliases. */
     RV_ADDR a0, program_reserved_path
@@ -2120,7 +2120,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1248
-    tail .Lp_new_path_probe
+    RV_JUMP .Lp_new_path_probe
 .Lrv_tb_skip_programs1248:
     mv s2, t0
     mv a0, s2
@@ -2132,7 +2132,7 @@ program_check_new_path:
     srli s8, s4, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1256
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs1256:
     RV_ADDR a0, program_alias_parent_stat
     RV_ADDR a1, program_alias_record_stat
@@ -2140,7 +2140,7 @@ program_check_new_path:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1260
-    tail .Lp_new_path_probe
+    RV_JUMP .Lp_new_path_probe
 .Lrv_cb_skip_programs1260:
     RV_ADDR t1, program_cli_name
     RV_ADDR s6, program_alias_names
@@ -2153,7 +2153,7 @@ program_check_new_path:
 .Lp_new_path_probe:
     mv s8, s3
     bnez s8, .Lrv_cb_skip_programs1266
-    tail .Lp_new_path_done
+    RV_JUMP .Lp_new_path_done
 .Lrv_cb_skip_programs1266:
     P_STORE s3, program_alias_count
     P_LOAD a0, program_dest_fd
@@ -2168,7 +2168,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1275
-    tail program_probe_error
+    RV_JUMP program_probe_error
 .Lrv_tb_skip_programs1275:
     P_STORE t0, program_probe_fd
     P_SET 1, program_probe_active
@@ -2178,7 +2178,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1281
-    tail program_probe_error
+    RV_JUMP program_probe_error
 .Lrv_tb_skip_programs1281:
     li s5, 0
 .Lp_new_path_lookup:
@@ -2198,7 +2198,7 @@ program_check_new_path:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1292
-    tail program_probe_error
+    RV_JUMP program_probe_error
 .Lrv_tb_skip_programs1292:
     RV_ADDR a0, program_probe_stat
     RV_ADDR a1, program_probe_entry_stat
@@ -2206,7 +2206,7 @@ program_check_new_path:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1296
-    tail .Lp_new_path_collision
+    RV_JUMP .Lp_new_path_collision
 .Lrv_cb_skip_programs1296:
 .Lp_new_path_lookup_next:
     li s10, 1
@@ -2218,7 +2218,7 @@ program_check_new_path:
     RV_CALL program_remove_probe
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs1302
-    tail program_probe_error
+    RV_JUMP program_probe_error
 .Lrv_cb_skip_programs1302:
 .Lp_new_path_done:
     RV_RESTORE s5
@@ -2232,7 +2232,7 @@ program_check_new_path:
     RV_CALL program_remove_probe
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs1313
-    tail program_probe_error
+    RV_JUMP program_probe_error
 .Lrv_cb_skip_programs1313:
     RV_ADDR s6, program_alias_names
     mv s10, s5
@@ -2244,7 +2244,7 @@ program_check_new_path:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND eq, program_reserved_error
-    tail program_destination_exists
+    RV_JUMP program_destination_exists
 /* a0/a1=normalized stat structures. t0=1 only for equal device and inode.
  * Identity comparison grants no ownership, permission, or digest result.
  * No stack or writes; scratch t1/t2. */
@@ -2290,13 +2290,13 @@ program_remove_probe:
     P_LOAD t1, program_probe_active
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs1351
-    tail .Lp_probe_remove_done
+    RV_JUMP .Lp_probe_remove_done
 .Lrv_cb_skip_programs1351:
     P_LOAD s0, program_probe_fd
     srli s8, s0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1353
-    tail .Lp_probe_remove_bad
+    RV_JUMP .Lp_probe_remove_bad
 .Lrv_tb_skip_programs1353:
     mv a0, s0
     RV_ADDR a1, program_probe_stat
@@ -2304,7 +2304,7 @@ program_remove_probe:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1357
-    tail .Lp_probe_remove_bad
+    RV_JUMP .Lp_probe_remove_bad
 .Lrv_tb_skip_programs1357:
 .Lp_probe_remove_check:
     P_LOAD a0, program_dest_fd
@@ -2319,7 +2319,7 @@ program_remove_probe:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1366
-    tail .Lp_probe_remove_bad
+    RV_JUMP .Lp_probe_remove_bad
 .Lrv_tb_skip_programs1366:
     RV_ADDR a0, program_probe_stat
     RV_ADDR a1, program_probe_entry_stat
@@ -2327,7 +2327,7 @@ program_remove_probe:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1370
-    tail .Lp_probe_remove_bad
+    RV_JUMP .Lp_probe_remove_bad
 .Lrv_cb_skip_programs1370:
     P_LOAD a0, program_dest_fd
     P_LOAD a1, program_dest_name
@@ -2340,9 +2340,9 @@ program_remove_probe:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1377
-    tail .Lp_probe_remove_bad
+    RV_JUMP .Lp_probe_remove_bad
 .Lrv_tb_skip_programs1377:
-    tail .Lp_probe_remove_close
+    RV_JUMP .Lp_probe_remove_close
 .Lp_probe_remove_bad:
     li s1, -1
 .Lp_probe_remove_close:
@@ -2350,13 +2350,13 @@ program_remove_probe:
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1383
-    tail .Lp_probe_remove_clear
+    RV_JUMP .Lp_probe_remove_clear
 .Lrv_tb_skip_programs1383:
     RV_CALL rv_close
     srli s8, t0, 63
     andi s8, s8, 1
     bnez s8, .Lrv_tb_skip_programs1385
-    tail .Lp_probe_remove_clear
+    RV_JUMP .Lp_probe_remove_clear
 .Lrv_tb_skip_programs1385:
     li s1, -1
 .Lp_probe_remove_clear:
@@ -2426,7 +2426,7 @@ program_check_existing:
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1432
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_cb_skip_programs1432:
     P_LOAD a0, program_dest_fd
     P_LOAD a1, program_dest_name
@@ -2436,7 +2436,7 @@ program_check_existing:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1438
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_tb_skip_programs1438:
     mv s2, t0
     P_STORE t0, program_current_fd
@@ -2446,14 +2446,14 @@ program_check_existing:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1444
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_tb_skip_programs1444:
     RV_ADDR a0, program_current_stat
     RV_CALL program_regular_stat
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1447
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_cb_skip_programs1447:
     RV_ADDR s6, program_current_stat
     li s10, RV_STAT_MODE
@@ -2484,7 +2484,7 @@ program_check_existing:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1464
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1464:
     mv s3, t0
     mv a0, s2
@@ -2495,13 +2495,13 @@ program_check_existing:
     RV_CALL rv_close
     mv s8, s1
     beqz s8, .Lrv_cb_skip_programs1472
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_cb_skip_programs1472:
     RV_CALL pub_hash_payload
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1474
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_cb_skip_programs1474:
     RV_ADDR a0, pub_hash_buffer
     li s10, 24
@@ -2531,7 +2531,7 @@ program_check_existing:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1487
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1487:
     RV_CALL program_check_existing_claims
     RV_CALL program_recheck_destination
@@ -2559,7 +2559,7 @@ program_check_existing_claims:
 .Lp_existing_claim_loop:
     mv s8, s1
     bnez s8, .Lrv_cb_skip_programs1513
-    tail .Lp_existing_claim_done
+    RV_JUMP .Lp_existing_claim_done
 .Lrv_cb_skip_programs1513:
     P_LOAD t1, program_found
     mv s8, s0
@@ -2578,7 +2578,7 @@ program_check_existing_claims:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1522
-    tail program_path_error
+    RV_JUMP program_path_error
 .Lrv_tb_skip_programs1522:
     mv s2, t0
     mv a0, s2
@@ -2596,7 +2596,7 @@ program_check_existing_claims:
     srli s8, s3, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1534
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_tb_skip_programs1534:
     RV_ADDR a0, program_current_stat
     RV_ADDR a1, program_alias_record_stat
@@ -2604,14 +2604,14 @@ program_check_existing_claims:
     mv s8, t0
     RV_ZEXT s8
     beqz s8, .Lrv_cb_skip_programs1538
-    tail program_state_error
+    RV_JUMP program_state_error
 .Lrv_cb_skip_programs1538:
 .Lp_existing_claim_next:
     li s10, 64
     add s0, s0, s10
     li s10, 1
     sub s1, s1, s10
-    tail .Lp_existing_claim_loop
+    RV_JUMP .Lp_existing_claim_loop
 .Lp_existing_claim_done:
     RV_RESTORE s3
     RV_RESTORE s2
@@ -2629,14 +2629,14 @@ program_recheck_destination:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1558
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_tb_skip_programs1558:
     RV_ADDR a0, program_check_stat
     RV_CALL program_regular_stat
     mv s8, t0
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1561
-    tail program_changed_file
+    RV_JUMP program_changed_file
 .Lrv_cb_skip_programs1561:
     RV_ADDR a0, program_current_stat
     RV_ADDR a1, program_check_stat
@@ -2703,11 +2703,11 @@ program_copy_fds:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1599
-    tail .Lp_copy_bad
+    RV_JUMP .Lp_copy_bad
 .Lrv_tb_skip_programs1599:
     mv s8, t0
     bnez s8, .Lrv_cb_skip_programs1600
-    tail .Lp_copy_ok
+    RV_JUMP .Lp_copy_ok
 .Lrv_cb_skip_programs1600:
     mv s10, t0
     add s2, s2, s10
@@ -2723,12 +2723,12 @@ program_copy_fds:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1609
-    tail .Lp_copy_bad
+    RV_JUMP .Lp_copy_bad
 .Lrv_tb_skip_programs1609:
-    tail .Lp_copy_read
+    RV_JUMP .Lp_copy_read
 .Lp_copy_bad:
     li t0, -1
-    tail .Lp_copy_done
+    RV_JUMP .Lp_copy_done
 .Lp_copy_ok:
     li t0, 0
 .Lp_copy_done:
@@ -2758,7 +2758,7 @@ program_make_stage:
     RV_CALL rv_mkdirat
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs1642
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_cb_skip_programs1642:
     P_SET 1, program_stage_created
     P_LOAD a0, program_dest_fd
@@ -2769,7 +2769,7 @@ program_make_stage:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1649
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1649:
     P_STORE t0, program_stage_fd
     ret
@@ -2787,7 +2787,7 @@ program_copy_into_stage:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1664
-    tail .Lp_stage_copy_bad
+    RV_JUMP .Lp_stage_copy_bad
 .Lrv_tb_skip_programs1664:
     mv s0, t0
     mv a0, s2
@@ -2795,7 +2795,7 @@ program_copy_into_stage:
     RV_CALL program_copy_fds
     mv s8, t0
     beqz s8, .Lrv_cb_skip_programs1669
-    tail .Lp_stage_copy_close_bad
+    RV_JUMP .Lp_stage_copy_close_bad
 .Lrv_cb_skip_programs1669:
     mv a0, s0
     mv a1, s1
@@ -2803,24 +2803,24 @@ program_copy_into_stage:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1673
-    tail .Lp_stage_copy_close_bad
+    RV_JUMP .Lp_stage_copy_close_bad
 .Lrv_tb_skip_programs1673:
     mv a0, s0
     RV_CALL rv_fsync
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1676
-    tail .Lp_stage_copy_close_bad
+    RV_JUMP .Lp_stage_copy_close_bad
 .Lrv_tb_skip_programs1676:
     mv a0, s0
     RV_CALL rv_close
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1679
-    tail .Lp_stage_copy_bad
+    RV_JUMP .Lp_stage_copy_bad
 .Lrv_tb_skip_programs1679:
     li t0, 0
-    tail .Lp_stage_copy_done
+    RV_JUMP .Lp_stage_copy_done
 .Lp_stage_copy_close_bad:
     mv a0, s0
     RV_CALL rv_close
@@ -2859,7 +2859,7 @@ program_write_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1718
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1718:
     mv s0, t0
     P_STORE t0, program_temp_fd
@@ -2872,7 +2872,7 @@ program_write_state:
 .Lp_write_row:
     mv s8, s2
     bnez s8, .Lrv_cb_skip_programs1728
-    tail .Lp_write_append
+    RV_JUMP .Lp_write_append
 .Lrv_cb_skip_programs1728:
     P_LOAD t1, program_found
     mv s8, s1
@@ -2882,10 +2882,10 @@ program_write_state:
     P_LOAD t1, program_remove
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs1733
-    tail .Lp_write_next
+    RV_JUMP .Lp_write_next
 .Lrv_cb_skip_programs1733:
     RV_ADDR a0, program_new_row
-    tail .Lp_write_emit
+    RV_JUMP .Lp_write_emit
 .Lp_write_old:
     mv a0, s1
 .Lp_write_emit:
@@ -2895,12 +2895,12 @@ program_write_state:
     add s1, s1, s10
     li s10, 1
     sub s2, s2, s10
-    tail .Lp_write_row
+    RV_JUMP .Lp_write_row
 .Lp_write_append:
     P_LOAD t1, program_found
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs1746
-    tail .Lp_write_sync
+    RV_JUMP .Lp_write_sync
 .Lrv_cb_skip_programs1746:
     RV_ADDR a0, program_new_row
     RV_CALL program_write_row
@@ -2910,7 +2910,7 @@ program_write_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1752
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1752:
     mv a0, s0
     RV_CALL rv_close
@@ -2918,7 +2918,7 @@ program_write_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1756
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1756:
     RV_RESTORE s3
     RV_RESTORE s2
@@ -2945,7 +2945,7 @@ program_write_row:
     RV_BCOND eq, .Lp_write_row_end
     RV_ADDR a1, registry_tab
     RV_CALL program_write_piece
-    tail .Lp_write_field
+    RV_JUMP .Lp_write_field
 .Lp_write_row_end:
     RV_ADDR a1, registry_newline
     RV_CALL program_write_piece
@@ -2973,7 +2973,7 @@ program_write_piece:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1798
-    tail program_io_error
+    RV_JUMP program_io_error
 .Lrv_tb_skip_programs1798:
     RV_RESTORE s1
     ret
@@ -2988,7 +2988,7 @@ program_commit_state:
     srli s8, t0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1809
-    tail .Lp_state_commit_done
+    RV_JUMP .Lp_state_commit_done
 .Lrv_tb_skip_programs1809:
     P_SET 0, program_state_created
 .Lp_state_commit_done:
@@ -3003,7 +3003,7 @@ program_list:
     mv s8, t1
     RV_ZEXT s8
     bnez s8, .Lrv_cb_skip_programs1821
-    tail .Lp_list_text
+    RV_JUMP .Lp_list_text
 .Lrv_cb_skip_programs1821:
     RV_ADDR a0, program_list_prefix
     RV_CALL out
@@ -3013,11 +3013,11 @@ program_list:
 .Lp_list_json_row:
     mv s8, s1
     bnez s8, .Lrv_cb_skip_programs1828
-    tail .Lp_list_json_done
+    RV_JUMP .Lp_list_json_done
 .Lrv_cb_skip_programs1828:
     mv s8, s2
     bnez s8, .Lrv_cb_skip_programs1829
-    tail .Lp_list_json_first
+    RV_JUMP .Lp_list_json_first
 .Lrv_cb_skip_programs1829:
     RV_ADDR a0, registry_comma
     RV_CALL out
@@ -3070,20 +3070,20 @@ program_list:
     li s10, 1
     sub s1, s1, s10
     li s2, 1
-    tail .Lp_list_json_row
+    RV_JUMP .Lp_list_json_row
 .Lp_list_json_done:
     RV_ADDR a0, program_list_suffix
     RV_CALL out
-    tail .Lp_list_done
+    RV_JUMP .Lp_list_done
 .Lp_list_text:
     P_LOAD s1, program_count
     mv s8, s1
     beqz s8, .Lrv_cb_skip_programs1873
-    tail .Lp_list_text_rows
+    RV_JUMP .Lp_list_text_rows
 .Lrv_cb_skip_programs1873:
     RV_ADDR a0, program_empty_text
     RV_CALL out
-    tail .Lp_list_done
+    RV_JUMP .Lp_list_done
 .Lp_list_text_rows:
     RV_ADDR s0, program_rows
 .Lp_list_text_row:
@@ -3119,7 +3119,7 @@ program_list:
     RV_BCOND ne, .Lp_list_text_row
 .Lp_list_done:
     RV_CALL registry_cleanup
-    tail exit_ok
+    RV_JUMP exit_ok
 /* Cleanup closes only owned descriptors and removes only invocation-owned
  * stage names. A failed rollback retains its backup directory for recovery.
  * Cleanup failure cannot replace an earlier error. Stack: one saved register. */
@@ -3130,7 +3130,7 @@ program_cleanup:
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1910
-    tail .Lp_cleanup_temp_name
+    RV_JUMP .Lp_cleanup_temp_name
 .Lrv_tb_skip_programs1910:
     RV_CALL rv_close
     P_SET -1, program_temp_fd
@@ -3138,7 +3138,7 @@ program_cleanup:
     P_LOAD t1, program_state_created
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs1915
-    tail .Lp_cleanup_stage
+    RV_JUMP .Lp_cleanup_stage
 .Lrv_cb_skip_programs1915:
     P_LOAD a0, program_state_fd
     RV_ADDR a1, program_state_temp
@@ -3149,13 +3149,13 @@ program_cleanup:
     P_LOAD t1, program_keep_stage
     mv s8, t1
     beqz s8, .Lrv_cb_skip_programs1923
-    tail .Lp_cleanup_close
+    RV_JUMP .Lp_cleanup_close
 .Lrv_cb_skip_programs1923:
     P_LOAD a0, program_stage_fd
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1925
-    tail .Lp_cleanup_stage_dir
+    RV_JUMP .Lp_cleanup_stage_dir
 .Lrv_tb_skip_programs1925:
     RV_ADDR a1, program_candidate
     li a2, 0
@@ -3168,7 +3168,7 @@ program_cleanup:
     P_LOAD t1, program_stage_created
     mv s8, t1
     bnez s8, .Lrv_cb_skip_programs1935
-    tail .Lp_cleanup_close
+    RV_JUMP .Lp_cleanup_close
 .Lrv_cb_skip_programs1935:
     P_LOAD a0, program_dest_fd
     RV_ADDR a1, program_stage_name
@@ -3185,7 +3185,7 @@ program_cleanup:
     srli s8, a0, 63
     andi s8, s8, 1
     beqz s8, .Lrv_tb_skip_programs1947
-    tail .Lp_cleanup_fd_next
+    RV_JUMP .Lp_cleanup_fd_next
 .Lrv_tb_skip_programs1947:
     RV_CALL rv_close
     li t1, -1
@@ -3206,62 +3206,62 @@ program_cleanup:
 program_help:
     RV_ADDR a0, program_help_text
     RV_CALL out
-    tail exit_ok
+    RV_JUMP exit_ok
 program_bad_args:
     RV_ADDR a0, program_error_args
     li a1, 2
-    tail registry_fail
+    RV_JUMP registry_fail
 program_path_error:
     RV_ADDR a0, program_error_path
-    tail program_error
+    RV_JUMP program_error
 program_state_error:
     RV_ADDR a0, program_error_state
-    tail program_error
+    RV_JUMP program_error
 program_busy_error:
     RV_ADDR a0, program_error_busy
-    tail program_error
+    RV_JUMP program_error
 program_not_managed:
     RV_ADDR a0, program_error_unmanaged
-    tail program_error
+    RV_JUMP program_error
 program_already_managed:
     RV_ADDR a0, program_error_already
-    tail program_error
+    RV_JUMP program_error
 program_local_index_error:
     RV_ADDR a0, program_error_local
-    tail program_error
+    RV_JUMP program_error
 program_origin_error:
     RV_ADDR a0, program_error_origin
-    tail program_error
+    RV_JUMP program_error
 program_downgrade_error:
     RV_ADDR a0, program_error_downgrade
-    tail program_error
+    RV_JUMP program_error
 program_changed_release:
     RV_ADDR a0, program_error_release
-    tail program_error
+    RV_JUMP program_error
 program_changed_file:
     RV_ADDR a0, program_error_changed
-    tail program_error
+    RV_JUMP program_error
 program_destination_exists:
     RV_ADDR a0, program_error_exists
-    tail program_error
+    RV_JUMP program_error
 program_reserved_error:
     RV_ADDR a0, program_error_reserved
-    tail program_error
+    RV_JUMP program_error
 program_internal_error:
     RV_ADDR a0, program_error_internal
-    tail program_error
+    RV_JUMP program_error
 program_recovery_error:
     P_SET 1, program_keep_stage
     RV_ADDR a0, program_error_recovery
-    tail program_error
+    RV_JUMP program_error
 program_probe_error:
     RV_ADDR a0, program_error_probe
-    tail program_error
+    RV_JUMP program_error
 program_io_error:
     RV_ADDR a0, program_error_io
 program_error:
     li a1, 1
-    tail registry_fail
+    RV_JUMP registry_fail
 .section .rodata
 program_header: .asciz "# asm-installed-v1\n"
 program_state_suffix: .asciz "/.local/state/asm/installed.tsv"

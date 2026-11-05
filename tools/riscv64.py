@@ -101,7 +101,7 @@ def address(value):
 def instruction(op, args, serial):
     a=split_operands(args) if args else []
     if op=="RV_ELF_FLAGS":
-        return [f"andi s8, {register(a[0])}, -6", f"beqz s8, .Lrv_flags_ok_{serial}", f"tail {a[1]}", f".Lrv_flags_ok_{serial}:"]
+        return [f"andi s8, {register(a[0])}, -6", f"beqz s8, .Lrv_flags_ok_{serial}", f"RV_JUMP {a[1]}", f".Lrv_flags_ok_{serial}:"]
     if op=="ARM_ADDR":return [f"RV_ADDR {register(a[0])}, {a[1]}"]
     if op=="ARM_IMM":return [f"RV_IMM {register(a[0])}, {a[1]}, {width(a[0])}"]
     if op in ("ARM_SAVE","ARM_RESTORE","ARM_CALL_REG"):
@@ -148,17 +148,17 @@ def instruction(op, args, serial):
         return [f"li s10, {signed}",f"slli s11, {src}, {low}","and s11, s11, s10","not s10, s10",f"and {dest}, {dest}, s10",f"or {dest}, {dest}, s11"]+zext(dest,width(a[0]))
     if op.startswith("b."):return [f"RV_BCOND {op[2:]}, {args}"]
     if op in ("b","bl"):
-        return [f"{'tail' if op=='b' else 'call'} {args}"]
+        return [f"{'RV_JUMP' if op=='b' else 'call'} {args}"]
     if op=="br":return [f"jr {register(a[0])}"]
     if op=="ret":return ["ret"]
     if op=="brk":return ["ebreak"]
     if op in ("cbz","cbnz"):
         out=materialize(a[0],"s8")+zext("s8",width(a[0]))
         inverse="bnez" if op=="cbz" else "beqz"
-        return out+[f"{inverse} s8, .Lrv_cb_skip_{serial}",f"tail {a[1]}",f".Lrv_cb_skip_{serial}:"]
+        return out+[f"{inverse} s8, .Lrv_cb_skip_{serial}",f"RV_JUMP {a[1]}",f".Lrv_cb_skip_{serial}:"]
     if op in ("tbz","tbnz"):
         inverse="bnez" if op=="tbz" else "beqz"
-        return [f"srli s8, {register(a[0])}, {a[1].lstrip('#')}","andi s8, s8, 1",f"{inverse} s8, .Lrv_tb_skip_{serial}",f"tail {a[2]}",f".Lrv_tb_skip_{serial}:"]
+        return [f"srli s8, {register(a[0])}, {a[1].lstrip('#')}","andi s8, s8, 1",f"{inverse} s8, .Lrv_tb_skip_{serial}",f"RV_JUMP {a[2]}",f".Lrv_tb_skip_{serial}:"]
     if op=="cset":
         dest=register(a[0])
         return [f"RV_BCOND {a[1]}, .Lrv_cset_true_{serial}",f"li {dest}, 0",f"j .Lrv_cset_done_{serial}",f".Lrv_cset_true_{serial}:",f"li {dest}, 1",f".Lrv_cset_done_{serial}:"]
@@ -254,10 +254,11 @@ def prepare_templates(source):
     for line in main.splitlines():
         if '.ascii' in line:notice.append(ast.literal_eval(line.split('.ascii',1)[1].strip()))
     header=''.join(notice).split('.arch armv8-a',1)[0]
-    body=header+('.option norelax\n.global _start\n.section .text\n_start:\n'
-                 '    li a0, 1\n    lla a1, message\n    li a2, message_len\n    li a7, 64\n    ecall\n'
-                 '    li a0, 0\n    li a7, 93\n    ecall\n.section .rodata\n'
+    body=header+('.option norelax\n.section .rodata\n'
                  'message: .ascii "Hello from asm!\\n"\n.equ message_len, . - message\n'
+                 '.global _start\n.section .text\n_start:\n'
+                 '    li a0, 1\n    lla a1, message\n    li a2, message_len\n    li a7, 64\n    ecall\n'
+                 '    li a0, 0\n    li a7, 93\n    ecall\n'
                  '.section .note.GNU-stack,"",@progbits\n')
     test=header+('.option norelax\n.global _start\n.section .text\n_start:\n'
                  '    li a0, 0\n    li a7, 93\n    ecall\n.section .note.GNU-stack,"",@progbits\n')

@@ -245,7 +245,7 @@ validate_host_elf:
     RV_LOAD t1, 4
     andi s8, t1, -6
     beqz s8, .Lrv_flags_ok_elf150
-    tail .Lelf_fail
+    RV_JUMP .Lelf_fail
 .Lrv_flags_ok_elf150:
     mv s6, s3
     li s10, 52
@@ -566,7 +566,7 @@ validate_host_elf:
     RV_IMM t1, 1, 32
     mv t0, t1
     RV_ZEXT t0
-    tail .Lelf_return
+    RV_JUMP .Lelf_return
 .Lelf_fail:
     mv a0, s2
     RV_CALL rv_close
@@ -610,7 +610,7 @@ elf_read_exact:
     mv s10, t0
     RV_FLAGS sub, 64
     mv a2, s11
-    tail elf_read_exact
+    RV_JUMP elf_read_exact
 .Lelf_read_done:
     mv s10, t0
     xor t0, t0, s10
