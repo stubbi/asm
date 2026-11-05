@@ -121,7 +121,6 @@ jobs:
 
   publish:
     needs: qualify
-    # Publish only a trusted main push after all three exact-source image gates pass.
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
@@ -189,7 +188,6 @@ jobs:
 
   publish-index:
     needs: publish
-    # Form the index only from the qualified children of a trusted main push.
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15

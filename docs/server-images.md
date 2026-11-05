@@ -306,7 +306,7 @@ Operator deployment, service discovery, metrics, private capacity, startup integ
 The reviewed four-export catalog contract from PR #29 is integrated.
 Later source revisions and artifacts require fresh exact-source results.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
-No cluster, DNS, credential, release, or live service changes follow from this image workflow.
+The workflow does not change clusters, DNS, credential consumers, or live deployments.
 
 The separate [operator image contract](operator-images.md) describes migration and import packaging.
 Its qualification remains separate from the reader image's retained results.
