@@ -17,6 +17,32 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SystemEvidenceTests(unittest.TestCase):
+    def test_source_refusal_prevents_generation_and_build(self):
+        spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        script = getattr(module, "guest_qualification_commands", None)
+        self.assertTrue(callable(script), "The pre-build guest source guard is absent")
+        commit = "1" * 40
+        for identity, accepted in (({"commit": "2" * 40, "clean": True}, False),
+                                   ({"commit": commit, "clean": False}, False),
+                                   ({"commit": commit, "clean": True}, True)):
+            with self.subTest(identity=identity), tempfile.TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                (work / "tools").mkdir()
+                (work / "tools/riscv64_test.py").write_text(
+                    "from pathlib import Path\n"
+                    f"def source_identity(): return {identity!r}\n"
+                    "if __name__ == '__main__': Path('qualification.marker').touch()\n")
+                (work / "tools/riscv64.py").write_text(
+                    "from pathlib import Path\nPath('generation.marker').touch()\n")
+                (work / "Makefile").write_text("build/asm-riscv64-linux:\n\ttouch build.marker\n")
+                result = subprocess.run(["/bin/bash", "-se"], input=script(commit), cwd=work,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                for marker in ("generation.marker", "build.marker", "qualification.marker"):
+                    self.assertEqual((work / marker).exists(), accepted, (identity, marker))
+
     def test_root_module_metadata_cannot_omit_or_change_a_source(self):
         spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
         module = importlib.util.module_from_spec(spec)

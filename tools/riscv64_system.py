@@ -88,6 +88,24 @@ def bind_root_modules(record, directory):
         raise ValueError("Guest root CLI module metadata does not bind every host module")
 
 
+def guest_qualification_commands(commit):
+    """Return the commands executed in the clean guest root environment."""
+    return ("python3 - <<'ASM_SOURCE'\n"
+            "import sys\n"
+            "sys.path.insert(0, 'tools')\n"
+            "from riscv64_test import source_identity\n"
+            "identity = source_identity()\n"
+            f"if identity.get('commit') != {commit!r} or identity.get('clean') is not True:\n"
+            "    raise SystemExit('The guest checkout must match the clean recorded commit before the build.')\n"
+            "ASM_SOURCE\n"
+            "python3 tools/riscv64.py --check\n"
+            "make ARCH=riscv64 build/asm-riscv64-linux\n"
+            "python3 tools/riscv64_test.py --asm build/asm-riscv64-linux "
+            "--execution-mode emulated --emulation-kind system "
+            "--emulator-provenance build/riscv64-system-provenance.json --suite-timeout 1800 "
+            "--evidence build/riscv64-qualification.json\n")
+
+
 class Runner:
     def __init__(self, output, private):
         self.output, self.private = output, private
@@ -442,12 +460,7 @@ def execute(args, report):
                 write_report(output, report)
                 script = (f"cd {GUEST}\nsudo -n env -i HOME=/root PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 "
                           "/bin/bash -se <<'ASM_GUEST'\n"
-                          "python3 tools/riscv64.py --check\n"
-                          "make ARCH=riscv64 build/asm-riscv64-linux\n"
-                          "python3 tools/riscv64_test.py --asm build/asm-riscv64-linux "
-                          "--execution-mode emulated --emulation-kind system "
-                          "--emulator-provenance build/riscv64-system-provenance.json --suite-timeout 1800 "
-                          "--evidence build/riscv64-qualification.json\nASM_GUEST\n")
+                          + guest_qualification_commands(args.commit) + "ASM_GUEST\n")
                 result = runner.ssh(script, "guest-qualification.log", LIMITS["test_seconds"], check=False)
                 report["checks"][current] = {"outcome": "pass" if result == 0 else "fail", "exit_code": result}
                 current = "binding"
