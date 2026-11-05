@@ -325,9 +325,9 @@ class ServerTests(unittest.TestCase):
         cls.port = cls.unused_port()
         cls.server = subprocess.Popen([str(BINARY), str(cls.port), str(cls.proxy_file)], stdout=cls.log, stderr=cls.log)
         cls.addClassCleanup(cls.stop_server)
+        cls.wait_server(cls.server, cls.port)
         cls.diagnostic = ReferenceDiagnostic(cls.server.pid, [cls.password.encode()] +
             [path.read_bytes().strip() for path in (*cls.url_files.values(), cls.proxy_file)])
-        cls.wait_server(cls.server, cls.port)
         cls.evidence = {"binary_sha256": hashlib.sha256(BINARY.read_bytes()).hexdigest(),
                         "libpq_version": cls.admin.lib.PQlibVersion(), "database_version": cls.fixture_admin.execute("SHOW server_version")[0][0],
                         "schema_sha384": MIGRATION_SHA384, "fixture": "owned-local-cluster", "measurements": {}}
@@ -581,21 +581,33 @@ class ServerTests(unittest.TestCase):
         # Closing the client sockets starts asynchronous library cleanup.
         # ITC wakes listener cleanup. Worker exit alone did not prove that the
         # admission slots were released when that wake channel was disabled.
-        self.diagnostic.data["connection_cap"]["recovery"] = "reached"
+        cap = self.diagnostic.data["connection_cap"]
+        def require_recovery_budget(stage):
+            observed = time.monotonic()
+            budget["last_checked_monotonic"] = observed
+            budget["remaining_seconds"] = deadline - observed
+            if observed >= deadline:
+                cap["recovery"] = ("inconclusive_observer_budget_exhausted" if stage == "post_snapshot"
+                                   else "inconclusive_recovery_deadline_exhausted")
+                cap["recovery_failure"] = {"stage": stage, "observed_monotonic": observed,
+                                           "deadline_monotonic": deadline}
+                raise RuntimeError("The diagnostic exhausted the existing recovery deadline.")
+        cap["recovery"] = "reached"
+        liveness_status = None
         try:
-            if budget["remaining_seconds_after_snapshot"] <= 0:
-                self.diagnostic.data["connection_cap"]["recovery"] = "inconclusive_observer_budget_exhausted"
-                raise RuntimeError("The diagnostic snapshot exhausted the existing recovery budget.")
+            require_recovery_budget("post_snapshot")
             while threads() > 2 and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertEqual(threads(), 2)
+            require_recovery_budget("thread_count")
             self.assertEqual(self.request("/health/live")[0], 200)
+            liveness_status = 200
+            require_recovery_budget("liveness")
             self.evidence["measurements"]["connection_cap_recovery_seconds"] = time.monotonic() - recovery_start
-            self.diagnostic.data["connection_cap"]["recovery"] = "observed_success"
+            cap["recovery"] = "observed_success"
         finally:
-            self.diagnostic.snapshot("recovery", liveness_status=200 if
-                self.diagnostic.data["connection_cap"]["recovery"] == "observed_success" else None,
-                elapsed_seconds=time.monotonic() - recovery_start)
+            self.diagnostic.snapshot("recovery", liveness_status=liveness_status,
+                                     elapsed_seconds=time.monotonic() - recovery_start)
 
     def test_a_stalled_database_does_not_stall_liveness(self):
         self.proxy.closed_gate.set()
