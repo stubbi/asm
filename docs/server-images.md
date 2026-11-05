@@ -207,3 +207,6 @@ These images still contain the incomplete registry foundation.
 Canonical exports, operator commands, service discovery, metrics, and recovery remain unqualified.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
 No cluster, DNS, credential, release, or live service changes follow from this image workflow.
+
+The separate [operator image contract](operator-images.md) describes migration and import packaging.
+Its qualification remains separate from the reader image's retained results.
