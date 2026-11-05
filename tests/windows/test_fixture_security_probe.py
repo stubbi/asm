@@ -2,9 +2,11 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import importlib.util
+import ctypes
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('windows_fixture_security_probe',
@@ -14,6 +16,34 @@ SPEC.loader.exec_module(probe)
 
 
 class FixtureSecurityProbeTests(unittest.TestCase):
+    def test_failed_token_queries_retain_each_raw_status_without_hiding_paths(self):
+        # This checks diagnostic error retention, never Windows API success.
+        class Kernel:
+            def GetCurrentProcess(self):
+                return -1
+            def CloseHandle(self, handle):
+                self.closed = handle.value
+                return True
+        class Advapi:
+            def OpenProcessToken(self, process, access, handle):
+                handle._obj.value = 123
+                return True
+            def GetTokenInformation(self, handle, kind, buffer, capacity, size):
+                size._obj.value = 4
+                return False
+        reader = probe.Reader.__new__(probe.Reader)
+        reader.k, reader.a = Kernel(), Advapi()
+        with patch.object(ctypes, 'get_last_error', return_value=24, create=True):
+            result = reader.token()
+        self.assertEqual(reader.k.closed, 123)
+        self.assertEqual(set(result), {'user', 'default_owner', 'elevation_type', 'elevation'})
+        for row in result.values():
+            self.assertFalse(row['size_query_accepted'])
+            self.assertEqual(row['size_query_error'], 24)
+            self.assertEqual(row['required_bytes'], 4)
+            self.assertIn('error', row)
+            self.assertNotIn('sid', row)
+
     def test_prefixes_include_every_workspace_ancestor_and_leaf(self):
         self.assertEqual(probe.path_chain('D:/a/asm/asm/build/HOME with spaces'), [
             'D:\\', 'D:\\a', 'D:\\a\\asm', 'D:\\a\\asm\\asm',

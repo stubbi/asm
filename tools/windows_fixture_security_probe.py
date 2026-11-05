@@ -89,22 +89,29 @@ class Reader:
         try:
             for name, kind in (('user', 1), ('default_owner', 4), ('elevation_type', 18), ('elevation', 20)):
                 size = ctypes.c_uint32()
-                if self.a.GetTokenInformation(handle, kind, None, 0, ctypes.byref(size)):
-                    raise RuntimeError('The zero-capacity token query unexpectedly succeeded.')
-                if ctypes.get_last_error() != 122 or not 4 <= size.value <= 65536:
-                    raise RuntimeError('Cannot bound the token observation.')
-                buffer = ctypes.create_string_buffer(size.value)
-                if not self.a.GetTokenInformation(handle, kind, buffer, len(buffer), ctypes.byref(size)):
-                    raise ctypes.WinError(ctypes.get_last_error())
-                row = {'raw_hex': buffer.raw.hex(), 'bytes': size.value}
-                if kind in (1, 4):
-                    pointer = ctypes.c_void_p.from_buffer(buffer).value
-                    if not ctypes.addressof(buffer) <= pointer < ctypes.addressof(buffer) + len(buffer):
-                        raise RuntimeError('The token SID pointer is outside its buffer.')
-                    row['sid'] = self.sid(pointer)
-                else:
-                    row['value'] = int.from_bytes(buffer.raw[:4], 'little')
+                row = {'information_class': kind}
                 rows[name] = row
+                try:
+                    accepted = self.a.GetTokenInformation(handle, kind, None, 0, ctypes.byref(size))
+                    row.update(size_query_accepted=bool(accepted), size_query_error=ctypes.get_last_error(),
+                               required_bytes=size.value)
+                    if accepted or row['size_query_error'] != 122 or not 4 <= size.value <= 65536:
+                        raise RuntimeError('Cannot bound this token observation.')
+                    buffer = ctypes.create_string_buffer(size.value)
+                    accepted = self.a.GetTokenInformation(handle, kind, buffer, len(buffer), ctypes.byref(size))
+                    row.update(data_query_accepted=bool(accepted), data_query_error=ctypes.get_last_error())
+                    if not accepted:
+                        raise ctypes.WinError(row['data_query_error'])
+                    row.update(raw_hex=buffer.raw.hex(), bytes=size.value)
+                    if kind in (1, 4):
+                        pointer = ctypes.c_void_p.from_buffer(buffer).value
+                        if not ctypes.addressof(buffer) <= pointer < ctypes.addressof(buffer) + len(buffer):
+                            raise RuntimeError('The token SID pointer is outside its buffer.')
+                        row['sid'] = self.sid(pointer)
+                    else:
+                        row['value'] = int.from_bytes(buffer.raw[:4], 'little')
+                except Exception as error:
+                    row['error'] = {'type': type(error).__name__, 'message': str(error)}
         finally:
             if not self.k.CloseHandle(handle):
                 raise ctypes.WinError(ctypes.get_last_error())
@@ -171,6 +178,8 @@ def snapshot(home, source, extra_paths=()):
               'qualifies_installer': False, 'observed_utc': datetime.now(timezone.utc).isoformat(),
               'scope': 'Owner and DACL snapshot; no effective-access or race-free claim',
               'token': reader.token(), 'paths': rows, 'complete': True}
+    if any('error' in row for row in report['token'].values()):
+        report['complete'] = False
     blocked = []
     for row in rows:
         path = PureWindowsPath(row['path'])
