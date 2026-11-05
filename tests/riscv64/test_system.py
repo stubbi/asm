@@ -27,6 +27,11 @@ class SystemEvidenceTests(unittest.TestCase):
                 runner.run([sys.executable, "-c", "import sys; sys.stdout.write('x'*100000)"],
                            "noisy.log", 5, maximum_log_bytes=1024)
             self.assertLessEqual((path / "noisy.log").stat().st_size, 1024)
+            with self.assertRaises(ValueError):
+                runner.run([sys.executable, "-c", "import sys; sys.stderr.write('x'*100000)"],
+                           "binary", 5, stderr_name="errors.log", maximum_log_bytes=1024)
+            self.assertEqual((path / "binary").read_bytes(), b"")
+            self.assertLessEqual((path / "errors.log").stat().st_size, 1024)
 
     def test_initial_report_preserves_unrun_checks_before_setup(self):
         with tempfile.TemporaryDirectory() as temporary:

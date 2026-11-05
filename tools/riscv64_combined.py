@@ -219,7 +219,7 @@ def inside(output):
         run("first_project", [sys.executable, "-m", "unittest", "discover", "-s", "tests/riscv64",
                               "-p", "test_native.py", "-v"], expected=3)
         native_count = test_count(candidate / "tests/test_native_link.py")
-        if native_count < 8:
+        if native_count < 9:
             raise ValueError("The candidate must retain the native library linking contract tests.")
         run("native_link", [sys.executable, "-m", "unittest", "test_native_link", "-v"], expected=native_count)
         for filename, count in SUITE_FILES.items():

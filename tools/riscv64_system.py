@@ -87,17 +87,19 @@ class Runner:
                             "-o", "ServerAliveCountMax=3", "-o", "LogLevel=ERROR",
                             "-p", "2222", "asmci@127.0.0.1"]
 
-    def run(self, command, name, timeout=60, *, data=None, check=True, maximum_log_bytes=67108864):
+    def run(self, command, name, timeout=60, *, data=None, check=True, maximum_log_bytes=67108864,
+            stderr_name=None):
         path = self.output / name
         timeout = min(timeout, max(1, self.deadline - time.monotonic()))
         process = subprocess.Popen(list(map(str, command)), cwd=ROOT, stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE if stderr_name else subprocess.STDOUT,
+                                   start_new_session=True)
         exceeded = []
 
-        def collect():
+        def collect(source, destination):
             total = 0
-            with path.open("wb") as stream:
-                while block := process.stdout.read(65536):
+            with destination.open("wb") as stream:
+                while block := source.read(65536):
                     remaining = maximum_log_bytes - total
                     stream.write(block[:remaining])
                     total += len(block)
@@ -117,9 +119,12 @@ class Runner:
             except BrokenPipeError:
                 pass
 
-        reader = threading.Thread(target=collect, daemon=True)
+        readers = [threading.Thread(target=collect, args=(process.stdout, path), daemon=True)]
+        if stderr_name:
+            readers.append(threading.Thread(target=collect, args=(process.stderr, self.output / stderr_name), daemon=True))
         writer = threading.Thread(target=feed, daemon=True)
-        reader.start()
+        for reader in readers:
+            reader.start()
         writer.start()
         timed_out = False
         try:
@@ -129,9 +134,12 @@ class Runner:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
         finally:
-            reader.join(timeout=5)
+            for reader in readers:
+                reader.join(timeout=5)
             writer.join(timeout=5)
             process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
         if timed_out:
             raise ValueError(f"Timed out: {name}")
         if exceeded:
@@ -158,18 +166,10 @@ class Runner:
                 f"b=os.fdopen(f,'rb').read({maximum + 1}); assert len(b)<= {maximum}; "
                 "sys.stdout.buffer.write(b)")
         command = "sudo -n /usr/bin/python3 -c " + shlex.quote(code)
-        # Binary stdout must stay separate from SSH diagnostics.
-        with (self.output / (destination + ".transport.log")).open("wb") as errors:
-            with (self.output / destination).open("wb") as output:
-                child = subprocess.Popen(["/usr/bin/ssh", *self.ssh_options, command], stdout=output,
-                                         stderr=errors, start_new_session=True)
-                try:
-                    child.wait(timeout=60)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
-                    return False
-        return child.returncode == 0 and (self.output / destination).stat().st_size <= maximum
+        # Host-side limits also apply if a guest root process changes its tools.
+        status = self.run(["/usr/bin/ssh", *self.ssh_options, command], destination, 60, check=False,
+                          maximum_log_bytes=maximum, stderr_name=destination + ".transport.log")
+        return status == 0 and (self.output / destination).stat().st_size <= maximum
 
     def stop(self):
         if self.qemu and self.qemu.poll() is None:
