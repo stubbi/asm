@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Synthetic ELF fixtures are inspected only; they are never executed.
 """
 import importlib.util
+from server_metrics_fixture import CASES
 import io
 import json
 from pathlib import Path
@@ -26,6 +27,24 @@ SPEC.loader.exec_module(record)
 FAILURE_SPEC = importlib.util.spec_from_file_location("server_build_failures", ROOT / "tools/test_server_build_failures.py")
 failures = importlib.util.module_from_spec(FAILURE_SPEC)
 FAILURE_SPEC.loader.exec_module(failures)
+IMAGE_SPEC = importlib.util.spec_from_file_location("server_image_evidence_tests", ROOT / "tools/test_server_image.py")
+image = importlib.util.module_from_spec(IMAGE_SPEC)
+sys.modules[IMAGE_SPEC.name] = image
+IMAGE_SPEC.loader.exec_module(image)
+
+
+def hosted_log(count=34, *, unit=True, missing=None, duplicate=None, descriptions=False):
+    # Synthetic records test validator rejection only, never native behavior.
+    record = {"schema": 1, "status": "pass", "scope": "assembly-metrics-unit",
+              "checks": list(image.REQUIRED_METRICS_UNIT_CHECKS)}
+    names = [name for name in CASES["baseline"] + CASES["capacity"] if name != missing]
+    if duplicate is not None:
+        names.append(duplicate)
+    lines = [json.dumps(record)] if unit else []
+    lines.extend(name.split(".")[-1] + " (__main__." + name + ")" +
+                 ("\nThe original admission assertion description." if descriptions and name.startswith("CapacityTests.") else "") +
+                 " ... ok" for name in names)
+    return "\n".join(lines) + f"\nRan {count} tests in 1.0s\n\nOK\n"
 
 
 def elf(machine=62, flags=0):
@@ -49,8 +68,14 @@ class ServerQualificationTests(unittest.TestCase):
     def recorder_inputs(self, work):
         binary = work / "server"
         binary.write_bytes(elf())
-        for name, count in (("native-link", 11), ("reference", 19), ("hosted", 28)):
-            (work / (name + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
+        for name, count in (("native-link", 11), ("reference", 19), ("hosted", 34)):
+            (work / (name + "-tests.log")).write_text(hosted_log(count) if name == "hosted" else
+                                                       f"Ran {count} tests in 1.0s\n\nOK\n")
+        for name in ("test-metrics", "metrics-faults.so"):
+            (work / name).write_bytes(elf())
+            (work / name).chmod(0o555)
+        (work / "connect-null.so").write_bytes(elf())
+        (work / "connect-null.so").chmod(0o444)
         (work / "build-failure-tests.log").write_text('{"status":"pass","tests":4}\n')
         output = work / "qualification.json"
         arguments = ["record_server_ports.py", "--target", "x86_64-linux", "--execution", "native",
@@ -58,6 +83,18 @@ class ServerQualificationTests(unittest.TestCase):
                      "--reference", str(binary), "--hosted", str(binary),
                      "--archive", str(work / "source.tar.gz"), "--output", str(output)]
         return arguments, output
+
+    def source_archive(self, work):
+        manifest = (b'[package]\nname = "asm-server"\nversion = "0.1.0"\n'
+                    b'[build]\nsource = "server.s"\ntarget = "x86_64-linux"\n')
+        files = {"asm.toml": manifest, "server.s": b".text\n",
+                 "README.md": b"Assembly server fixture.\n", "LICENSE": b"AGPL-3.0-or-later\n"}
+        with tarfile.open(work / "source.tar.gz", "w:gz") as archive:
+            for name, data in files.items():
+                member = tarfile.TarInfo(name)
+                member.mode = 0o644
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
 
     def run_recorder(self, arguments):
         def tool_result(command, **_):
@@ -72,26 +109,81 @@ class ServerQualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             arguments, output = self.recorder_inputs(work)
-            manifest = (b'[package]\nname = "asm-server"\nversion = "0.1.0"\n'
-                        b'[build]\nsource = "server.s"\ntarget = "x86_64-linux"\n')
-            files = {"asm.toml": manifest, "server.s": b".text\n",
-                     "README.md": b"Assembly server fixture.\n", "LICENSE": b"AGPL-3.0-or-later\n"}
-            with tarfile.open(work / "source.tar.gz", "w:gz") as archive:
-                for name, data in files.items():
-                    member = tarfile.TarInfo(name)
-                    member.mode = 0o644
-                    member.size = len(data)
-                    archive.addfile(member, io.BytesIO(data))
-            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 11, 10), ("hosted", 28, 27)):
+            self.source_archive(work)
+            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 11, 10), ("hosted", 34, 33)):
                 for count, expected, status in ((complete, 0, "pass"), (incomplete, 1, "fail")):
                     with self.subTest(suite=suite, count=count):
-                        for name, required in (("native-link", 11), ("reference", 19), ("hosted", 28)):
-                            (work / (name + "-tests.log")).write_text(f"Ran {required} tests in 1.0s\n\nOK\n")
-                        (work / (suite + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
+                        for name, required in (("native-link", 11), ("reference", 19), ("hosted", 34)):
+                            (work / (name + "-tests.log")).write_text(hosted_log(required) if name == "hosted" else
+                                                                       f"Ran {required} tests in 1.0s\n\nOK\n")
+                        (work / (suite + "-tests.log")).write_text(hosted_log(count) if suite == "hosted" else
+                                                                  f"Ran {count} tests in 1.0s\n\nOK\n")
                         self.assertEqual(self.run_recorder(arguments), expected)
                         report = json.loads(output.read_text())
                         self.assertEqual(report["status"], status)
                         self.assertEqual(report["tests"][suite]["status"], status)
+
+    def test_missing_metrics_unit_or_http_identity_cannot_receive_a_pass(self):
+        cases = [hosted_log(unit=False)]
+        cases.extend(hosted_log(missing=name) for name in image.REQUIRED_METRICS_HTTP_TESTS)
+        cases.append(hosted_log(duplicate=image.REQUIRED_METRICS_HTTP_TESTS[0]))
+        for log in cases:
+            with self.subTest(log=log[:120]), tempfile.TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                arguments, output = self.recorder_inputs(work)
+                self.source_archive(work)
+                (work / "hosted-tests.log").write_text(log)
+                self.assertEqual(self.run_recorder(arguments), 1)
+                self.assertEqual(json.loads(output.read_text())["status"], "fail")
+
+    def test_missing_baseline_or_capacity_identity_cannot_hide_behind_thirty_four_cases(self):
+        for name in CASES["baseline"] + CASES["capacity"]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                arguments, output = self.recorder_inputs(work)
+                self.source_archive(work)
+                (work / "hosted-tests.log").write_text(hosted_log(missing=name))
+                self.assertEqual(self.run_recorder(arguments), 1)
+                self.assertEqual(json.loads(output.read_text())["status"], "fail")
+
+    def test_native_receipt_accepts_verbose_case_descriptions_without_losing_identities(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            arguments, output = self.recorder_inputs(work)
+            self.source_archive(work)
+            (work / "hosted-tests.log").write_text(hosted_log(descriptions=True))
+            self.assertEqual(self.run_recorder(arguments), 0)
+            self.assertEqual(json.loads(output.read_text())["status"], "pass")
+
+    def test_native_receipt_binds_the_actual_null_connection_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            arguments, output = self.recorder_inputs(work)
+            self.source_archive(work)
+            fixture = work / "connect-null.so"
+            self.assertEqual(self.run_recorder(arguments), 0)
+            report = json.loads(output.read_text())
+            self.assertIn("admission_fixture", report, "The native receipt omitted the admission fault artifact.")
+            self.assertEqual(report["admission_fixture"]["bytes"], 320)
+            fixture.unlink()
+            self.assertEqual(self.run_recorder(arguments), 1)
+            self.assertEqual(json.loads(output.read_text())["status"], "fail")
+
+    def test_named_metrics_expected_failure_cannot_receive_a_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            arguments, output = self.recorder_inputs(work)
+            self.source_archive(work)
+            name = "RuntimeTests.test_metrics_fixed_exposition_and_route_labels"
+            log = hosted_log().replace(name + ") ... ok", name + ") ... expected failure")
+            log = log.replace("\nOK\n", "\nOK (expected failures=1)\n")
+            (work / "hosted-tests.log").write_text(log)
+            self.assertEqual(self.run_recorder(arguments), 1)
+            report = json.loads(output.read_text())
+            self.assertEqual(report["tests"]["hosted"]["tests"], 34)
+            self.assertEqual(report["tests"]["hosted"]["status"], "fail")
+            self.assertEqual(report["metrics"]["status"], "fail")
+            self.assertEqual(report["status"], "fail")
 
     def test_required_context_reports_every_native_matrix_outcome(self):
         workflow = (ROOT / ".github/workflows/assembly-server.yml").read_text()
@@ -130,13 +222,13 @@ class ServerQualificationTests(unittest.TestCase):
                 arguments, output = self.recorder_inputs(work)
                 unreadable = work / ("source.tar.gz" if archive else "native-link-tests.log")
                 unreadable.write_bytes(b"exists")
-                method = "read_bytes"
-                original = getattr(Path, method)
+                original = Path.read_bytes if archive else record.metrics_policy.bounded_file
                 def read(path, *args, **kwargs):
                     if path == unreadable:
                         raise PermissionError("fixture read denied")
                     return original(path, *args, **kwargs)
-                with patch.object(Path, method, autospec=True, side_effect=read):
+                owner, method = (Path, "read_bytes") if archive else (record.metrics_policy, "bounded_file")
+                with patch.object(owner, method, autospec=True, side_effect=read):
                     try:
                         result = self.run_recorder(arguments)
                     except OSError as error:

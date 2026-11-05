@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 The reports are controlled metadata. These tests execute no container.
 """
 import copy
+from server_metrics_fixture import CASES, metrics
 import argparse
 import importlib.util
 import json
@@ -37,17 +38,19 @@ def part(name, count):
                                  "/opt/asm/mhd/lib/libmicrohttpd.so.12": "b" * 64,
                                  "/opt/asm/postgres/lib/libpq.so.5": "f" * 64},
             "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"},
+            "metrics_test_tools": metrics()["test_tools"],
+            **({"metrics": metrics()} if name == "baseline" else {}),
             "fixture": {"path": "/qualification/fixtures/connect-null.so", "sha256": "1" * 64,
                         "bytes": 16408, "mode": "0444", "uid": 0, "gid": 0},
             "security": {"uid": 65532, "gid": 65532, "read_only_root": True,
                          "effective_capabilities": 0, "no_new_privileges": True},
             "container_limits": {"cpus": 2, "memory_bytes": 536870912, "pids": 128,
                                  "tmpfs_bytes": 268435456, "tmpfs_noexec": True, "watchdog_seconds": 180},
-            "tests_run": count, "tests_skipped": 0, "seconds": 2.0 if name == "baseline" else 3.0}
+            "tests_run": count, "tests_skipped": 0, "cases": list(CASES[name]) if name in CASES else [], "seconds": 2.0 if name == "baseline" else 3.0}
 
 
 def parts():
-    return {"baseline": part("baseline", 16), "capacity": part("capacity", 12)}
+    return {"baseline": part("baseline", 22), "capacity": part("capacity", 12)}
 
 
 class AdmissionImageContractTests(unittest.TestCase):
@@ -61,10 +64,10 @@ class AdmissionImageContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             image.runtime_evidence_contract(legacy, "amd64", "c" * 40)
 
-    def test_two_complete_parts_produce_twenty_eight_case_evidence(self):
+    def test_two_complete_parts_produce_thirty_four_case_evidence(self):
         report = self.aggregate()
         self.assertEqual(report["scope"], "assembly-canonical-exports-admission")
-        self.assertEqual(report["tests_run"], 28)
+        self.assertEqual(report["tests_run"], 34)
         self.assertEqual(report["tests_skipped"], 0)
         self.assertEqual(report["seconds"], 5.0)
         self.assertEqual(report["test_watchdog_seconds"], 360)
@@ -85,9 +88,9 @@ class AdmissionImageContractTests(unittest.TestCase):
                                            declared_target={"isa": isa, "os": "linux", "abi": abi, "cpu_profile": cpu})
                 report = image.aggregate_reports(candidate, arch, "c" * 40)
                 image.runtime_evidence_contract(report, arch, "c" * 40)
-                self.assertEqual(report["tests_run"], 28)
+                self.assertEqual(report["tests_run"], 34)
 
-    def test_twenty_seven_or_wrong_part_inventory_cannot_pass(self):
+    def test_incomplete_or_wrong_part_inventory_cannot_pass(self):
         invalid = [{"baseline": part("baseline", 16)}, {"capacity": part("capacity", 12)},
                    {"baseline": part("baseline", 16), "capacity": part("capacity", 11)},
                    {"baseline": part("baseline", 15), "capacity": part("capacity", 13)},
@@ -188,13 +191,13 @@ class AdmissionImageContractTests(unittest.TestCase):
             if command[:2] == ["docker", "run"]:
                 name = command[command.index("--suite") + 1]
                 runs.append((command, options["timeout"]))
-                output = image.REPORT_PREFIX + json.dumps(part(name, 16 if name == "baseline" else 12)) + "\n"
+                output = image.REPORT_PREFIX + json.dumps(part(name, 22 if name == "baseline" else 12)) + "\n"
                 return subprocess.CompletedProcess(command, 0, output.encode(), b"raw case log\n")
             return subprocess.CompletedProcess(command, 0, b"", b"")
         with tempfile.TemporaryDirectory() as temporary, patch.object(image.subprocess, "run", side_effect=engine):
             directory = Path(temporary)
             reports = {name: image.run_image_part(args, common, name, directory) for name in ("baseline", "capacity")}
-            self.assertEqual(self.aggregate(reports)["tests_run"], 28)
+            self.assertEqual(self.aggregate(reports)["tests_run"], 34)
             self.assertEqual((directory / "baseline.stderr.log").read_bytes(), b"raw case log\n")
             self.assertEqual((directory / "capacity.stderr.log").read_bytes(), b"raw case log\n")
         self.assertEqual([timeout for _, timeout in runs], [180, 180])
@@ -344,7 +347,7 @@ class AdmissionImageContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             evidence = Path(temporary) / "qualification.json"
             evidence.write_bytes(payload + b" " * (2_097_152 - len(payload)))
-            self.assertEqual(image.read_evidence(evidence)["tests_run"], 28)
+            self.assertEqual(image.read_evidence(evidence)["tests_run"], 34)
             with evidence.open("ab") as out:
                 out.write(b" ")
             with self.assertRaises(ValueError):

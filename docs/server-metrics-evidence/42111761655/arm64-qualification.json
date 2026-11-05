@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "scope": "linux-server-ports",
+  "source_revision": "dc37fb2292614f07c81580b7723cac3fd3b4497b",
+  "target": "aarch64-linux",
+  "isa": "AArch64",
+  "os": "Linux",
+  "server_abi": "AAPCS64 LP64",
+  "cpu_baseline": "ARMv8-A",
+  "cpu_features": [],
+  "execution": "native",
+  "host": {
+    "system": "Linux",
+    "node": "runnervmkb2gk",
+    "release": "7.0.0-1017-azure",
+    "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026",
+    "machine": "aarch64",
+    "processor": "aarch64"
+  },
+  "job_status": "failure",
+  "status": "fail",
+  "artifacts": {
+    "cli": {
+      "bytes": 168912,
+      "sha256": "90f44c324c8ab41dd92d3b131c44531fc338f6db54c66bbfab8205d25b11b1c4",
+      "elf_flags": 0,
+      "status": "pass"
+    },
+    "reference": {
+      "bytes": 74864,
+      "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+      "elf_flags": 0,
+      "hardening": [
+        "PIE",
+        "RELRO",
+        "immediate binding",
+        "non-executable stack"
+      ],
+      "status": "pass"
+    },
+    "hosted": {
+      "bytes": 82480,
+      "sha256": "e6e94b36520660d202041c11eea79d4e11fb0f6b9106e4502384ba83675e8e8f",
+      "elf_flags": 0,
+      "hardening": [
+        "PIE",
+        "RELRO",
+        "immediate binding",
+        "non-executable stack"
+      ],
+      "status": "pass"
+    },
+    "source_archive": {
+      "status": "pass",
+      "bytes": 69424,
+      "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+    }
+  },
+  "tests": {
+    "native-link": {
+      "status": "pass",
+      "tests": 10,
+      "seconds": 0.302,
+      "log_sha256": "8cf3b5c7a5acd5ce958cc3f5efbbd4608559e4764439fca2792da2300e3810d0"
+    },
+    "reference": {
+      "status": "pass",
+      "tests": 19,
+      "seconds": 6.191,
+      "log_sha256": "683f6fafad22b660efa4249baa254dc02cce7fdb5418d5cc379deceb39b47a12"
+    },
+    "hosted": {
+      "status": "fail",
+      "tests": 0,
+      "seconds": null,
+      "log_sha256": "ffa21fe92057d425e68ae625b4faac402fa38201b580f94d89ec5e7d9ca8c3fb"
+    },
+    "failure_preservation": {
+      "status": "fail",
+      "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+    }
+  },
+  "host_match": {
+    "status": "pass"
+  },
+  "source_match": {
+    "status": "pass",
+    "head": "dc37fb2292614f07c81580b7723cac3fd3b4497b",
+    "dirty": false
+  },
+  "metrics": {
+    "status": "fail",
+    "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/hosted-server-build/metrics-faults.so'"
+  },
+  "tools": [
+    {
+      "command": [
+        "/usr/bin/cc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+      "error": ""
+    },
+    {
+      "command": [
+        "/usr/bin/as",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `aarch64-linux-gnu'.\n",
+      "error": ""
+    },
+    {
+      "command": [
+        "/usr/bin/ld",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+      "error": ""
+    }
+  ],
+  "limits": [
+    "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+    "The source archive contains the reference experiment; source_revision identifies the hosted runtime source.",
+    "The execution mode is supplied by the CI job; it is not a hardware attestation."
+  ]
+}

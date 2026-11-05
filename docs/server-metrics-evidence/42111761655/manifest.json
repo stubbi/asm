@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "status": "fail",
+  "run": "https://github.com/stubbi/asm/actions/runs/42111761655",
+  "attempt": 1,
+  "source_revision": "dc37fb2292614f07c81580b7723cac3fd3b4497b",
+  "first_failure": "zero_exposition sample lookup boundary assertion before HTTP tests",
+  "jobs": {
+    "amd64": {
+      "target": "x86_64-linux",
+      "native_link_cases": 10,
+      "reference_cases": 19,
+      "http_cases_run": 0,
+      "complete_metrics_unit_result": "not-established",
+      "test_tool_inventory": "not-retained"
+    },
+    "arm64": {
+      "target": "aarch64-linux",
+      "native_link_cases": 10,
+      "reference_cases": 19,
+      "http_cases_run": 0,
+      "complete_metrics_unit_result": "not-established",
+      "test_tool_inventory": "not-retained"
+    }
+  },
+  "files": {
+    "amd64-qualification.json": {
+      "bytes": 4241,
+      "sha256": "39ee5c0fb83fa4b5615b752ef5c0902cb894dc1765ee913a8d6309e0cb677ba1"
+    },
+    "arm64-qualification.json": {
+      "bytes": 4240,
+      "sha256": "80f9f80c5a559c5b1f879dd42103c24e78a541ba003ea5cae359b01b17134757"
+    },
+    "hosted-tests.log": {
+      "bytes": 320,
+      "sha256": "ffa21fe92057d425e68ae625b4faac402fa38201b580f94d89ec5e7d9ca8c3fb",
+      "applies_to": [
+        "amd64",
+        "arm64"
+      ]
+    }
+  },
+  "limits": [
+    "The original run failed; no complete 19-unit or 22-HTTP result follows.",
+    "Catalog publication and build-failure-preservation steps skipped after unit failure.",
+    "These reports do not retain metrics test-tool hashes.",
+    "No runtime, image, resource, deployment, or recovery qualification follows."
+  ]
+}

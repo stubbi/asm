@@ -20,12 +20,19 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
 | Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | The recorded PostgreSQL 18.6 preflight covers AMD64 only. Deployment and other PostgreSQL 18 database architectures retain separate gates. |
+| Assembly request metrics | Candidate fixed-label counter and histogram implementation on the three Linux ports | Native metrics qualification and observed alert delivery remain pending. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
 | Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |
 
 The [README](../README.md#status) states the released CLI host support.
 Intel macOS and Windows remain separate host-port requirements.
+
+The combined source candidate adds metrics to the existing admission and PostgreSQL 18 test paths.
+Its HTTP baseline requires 22 cases, including all six metrics cases and the 19 named metrics unit checks.
+The separate [resource profile](deployment-envelope.md) requires 22 baseline, twelve admission, and three envelope cases.
+These 37 cases remain unqualified for the combined source.
+Earlier receipts retain their original source, case counts, image identities, and limits.
 
 [Runtime run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) and [image run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed on 5 November 2026.
 They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
@@ -59,6 +66,7 @@ Its read-only tool annotations do not replace enforced access boundaries.
 | Database TLS | Hostname and CA verification; new connections use projected certificate rotation |
 | Readiness | Actual schema, catalog, and least-privilege checks within two seconds |
 | Identity | Exact public source revision and source offer |
+| Internal metrics | Bounded fixed-route request counters and duration histograms; service-capacity `503` counts as `5xx` |
 | Compatibility | Exact Linux and macOS compatibility feeds, full-target TSV, and schema-1 JSON exports |
 | MCP | Explicit public Host/Origin policy, bounded HTTP, health probes, real SDK clients through HTTPS |
 | Discovery | Canonical hosted data; errors remain distinct from no matches; no unnoticed static fallback |

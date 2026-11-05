@@ -8,13 +8,15 @@ import json
 import os
 from pathlib import Path
 import signal
+import struct
 import subprocess
 import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests")]
+from server_metrics_fixture import CASES, metrics
 import test_postgres18_image as harness
 
 
@@ -39,9 +41,19 @@ def run(mode):
         for name, layers in zip(names, ([], ["original-tests"], ["original-tests", "pg18-tests"])):
             images[name] = copy.deepcopy(image)
             images[name]["RootFS"]["Layers"] += layers
+    tool = bytearray(120)
+    tool[:7] = b"\x7fELF\x02\x01\x01"
+    struct.pack_into("<HHI", tool, 16, 3, 62, 1)
+    struct.pack_into("<Q", tool, 32, 64)
+    struct.pack_into("<HHH", tool, 52, 64, 56, 1)
+    struct.pack_into("<II", tool, 64, 0x6474E551, 6)
+    tool_inventory = {name: {"sha256": hashlib.sha256(tool).hexdigest(), "bytes": len(tool)}
+                      for name in ("test-metrics", "metrics-faults.so")}
     containers, removed = {}, []
+    tool_reads = 0
 
     def docker(arguments, **options):
+        nonlocal tool_reads
         if arguments[0] != "docker":
             raise AssertionError("Unexpected test executable.")
         operation = arguments[1]
@@ -76,9 +88,12 @@ def run(mode):
         elif operation == "start":
             value = containers[arguments[-1]]
             if value["executable"] == "/usr/bin/stat":
-                body = b"444:0:0:1024\n"
+                body = b"555:0:0\n" if "%a:%u:%g" in value["arguments"] else b"444:0:0:1024\n"
             elif value["executable"] == "/usr/bin/sha256sum":
                 body = ("c" * 64 + "  /qualification/fixtures/connect-null.so\n").encode()
+            elif value["probe"] and value["probe"].startswith("/qualification/server/"):
+                tool_reads += 1
+                body = bytes(tool) + (b"changed" if mode == "envelope-metrics-tool-change" and tool_reads > 2 else b"")
             elif value["probe"]:
                 if mode == "terminate":
                     os.kill(os.getpid(), signal.SIGTERM)
@@ -89,15 +104,21 @@ def run(mode):
                 suite = value["suite"]
                 database_id = value["HostConfig"]["NetworkMode"].split(":", 1)[1]
                 report = {"schema": 1, "status": "pass", "scope": "selected-cnpg18-compatibility", "suite": suite,
-                          "source_revision": "a" * 40, "tests_run": 23 if suite == "operator" else 16, "not_applicable": [],
+                          "source_revision": "a" * 40, "tests_run": 23 if suite == "operator" else 22, "not_applicable": [],
                           "applicable_tests_skipped": 0, "client_libpq_version": 160015, "migration_sha384": migration,
                           "database": {"server_version_num": 180006, "data_directory": harness.fixture.DATA,
                               "nonce": declaration["nonce"], "system_identifier": str(7452238960987612345 + int(database_id, 16)),
                               "session_user": "asm_fixture_admin", "tls_protocol": "TLSv1.3"}}
+                if suite != "operator":
+                    report["metrics_test_tools"] = copy.deepcopy(tool_inventory)
+                    report["cases"] = list(CASES["baseline" if suite == "http" else suite])
+                if suite in {"http", "baseline"}:
+                    report["metrics"] = metrics()
+                    report["metrics"]["test_tools"] = copy.deepcopy(tool_inventory)
                 if constrained:
-                    counts = {"baseline": 16, "capacity": 12, "envelope": 3}
+                    counts = {"baseline": 22, "capacity": 12, "envelope": 3}
                     modules = {"baseline": "test_runtime.RuntimeTests", "capacity": "test_capacity.CapacityTests", "envelope": "test_envelope.EnvelopeTests"}
-                    cases = [modules[suite] + ".test_case_" + str(number) for number in range(counts[suite])]
+                    cases = [modules[suite].split(".")[0] + "." + name for name in CASES[suite]]
                     phases = ["before-suite"] + [phase + case for case in cases for phase in ("before:", "after:")] + ["after-suite"]
                     files = {"memory.max": "268435456\n", "memory.current": "48000000\n", "memory.peak": "64000000\n",
                         "memory.swap.max": "0\n", "memory.swap.current": "0\n", "cpu.max": "100000 100000\n",

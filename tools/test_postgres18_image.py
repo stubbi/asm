@@ -192,11 +192,15 @@ def cleanup_contract(results):
     need(all(result.get("status") == "removed" for result in results), "Owned resource cleanup failed; the gate failed.")
 
 
-def report_contract(value, suite, revision, nonce, migration, profile="compatibility", expected_fixture=None):
+def report_contract(value, suite, revision, nonce, migration, profile="compatibility", expected_fixture=None, expected_metrics_tools=None):
     need(profile in {"compatibility", envelope.PROFILE}, "Select a fixed qualification profile.")
     constrained = profile == envelope.PROFILE
     fields = {"schema", "status", "scope", "suite", "source_revision", "tests_run",
               "not_applicable", "applicable_tests_skipped", "client_libpq_version", "database", "migration_sha384"}
+    if suite != "operator":
+        fields |= {"metrics_test_tools", "cases"}
+    if suite in {"http", "baseline"}:
+        fields.add("metrics")
     if constrained:
         fields |= {"profile", "measurement_scope", "cgroup", "cases", "fixture", "requests", "availability"}
     need(isinstance(value, dict) and set(value) == fields,
@@ -204,7 +208,7 @@ def report_contract(value, suite, revision, nonce, migration, profile="compatibi
     need(type(value["schema"]) is int and value["schema"] == 1 and value["status"] == "pass" and
          value["scope"] == (envelope.SCOPE if constrained else "selected-cnpg18-compatibility") and
          value["suite"] == suite and value["source_revision"] == revision and
-         type(value["tests_run"]) is int and value["tests_run"] >= (envelope.SUITES[suite][2] if constrained else 23 if suite == "operator" else 16) and
+         type(value["tests_run"]) is int and value["tests_run"] >= (22 if suite in {"http", "baseline"} else envelope.SUITES[suite][2] if constrained else 23) and
          type(value["applicable_tests_skipped"]) is int and value["applicable_tests_skipped"] == 0 and
          type(value["client_libpq_version"]) is int and value["client_libpq_version"] == 160015 and
          value["migration_sha384"] == migration, "The compatibility report identity, versions, migration, or coverage differs.")
@@ -219,6 +223,16 @@ def report_contract(value, suite, revision, nonce, migration, profile="compatibi
          database["session_user"] == "asm_fixture_admin" and database["tls_protocol"] in {"TLSv1.2", "TLSv1.3"} and
          isinstance(database["system_identifier"], str) and re.fullmatch(r"[1-9][0-9]{0,19}", database["system_identifier"]) and
          int(database["system_identifier"]) < 2 ** 64, "The compatibility report lacks its actual owned TLS database identity.")
+    if suite != "operator":
+        server.runtime_case_contract(value["cases"], "baseline" if suite == "http" else suite)
+        need(value["tests_run"] == len(value["cases"]), "The PostgreSQL 18 count differs from its case identities.")
+        server.metrics_test_tools_contract(value["metrics_test_tools"])
+        need(expected_metrics_tools is not None and server.typed_equal(value["metrics_test_tools"], expected_metrics_tools),
+             "The PostgreSQL 18 report changed its actual metrics qualification tools.")
+    if suite in {"http", "baseline"}:
+        server.metrics_evidence_contract(value["metrics"])
+        need(server.typed_equal(value["metrics"]["test_tools"], value["metrics_test_tools"]),
+             "The PostgreSQL 18 metrics result identifies different qualification tools.")
     if constrained:
         need(value["profile"] == envelope.PROFILE and value["measurement_scope"] == envelope.MEASUREMENT_SCOPE and
              isinstance(value["cases"], list) and len(value["cases"]) == value["tests_run"] and
@@ -247,13 +261,22 @@ def load_profile_suite(name, factory):
     cls.postgres_factory = staticmethod(factory)
     records = []
     original = cls.raw_request.__func__
+    def valid_request(path, method="GET", body=None, headers=None):
+        return method == "GET" and body is None and not headers and path in {
+            "/health/live", "/health/ready", "/api/v2/status", "/metrics", *registry_admin_routes()}
     def observed(selected, path, method="GET", body=None):
-        valid = method == "GET" and body is None and path in {
-            "/health/live", "/health/ready", "/api/v2/status", *registry_admin_routes()}
-        return envelope.observe(records, path, lambda: original(selected, path, method, body), valid=valid)
+        return envelope.observe(records, path, lambda: original(selected, path, method, body),
+                                valid=valid_request(path, method, body))
     cls.raw_request = classmethod(observed)
+    if name == "baseline":
+        original_metrics = cls.metrics_request
+        def observed_metrics(selected, port, path, **arguments):
+            valid = valid_request(path, arguments.get("method", "GET"), arguments.get("body"), arguments.get("headers"))
+            return envelope.observe(records, path, lambda: original_metrics(selected, port, path, **arguments), valid=valid)
+        cls.metrics_request = observed_metrics
     cls.request_records = records
-    os.environ["ASM_SERVER_CONNECT_NULL_FIXTURE"] = server.FIXTURE_PATH
+    os.environ.update(ASM_SERVER_CONNECT_NULL_FIXTURE=server.FIXTURE_PATH,
+                      ASM_METRICS_TEST_DIRECTORY="/qualification/server")
     return unittest.defaultTestLoader.loadTestsFromModule(module)
 
 
@@ -312,7 +335,7 @@ def inside(args):
     if constrained:
         os.environ.update(ASM_SERVER_BINARY="/usr/local/bin/asm-hub", ASM_SERVER_SOURCE_REVISION=args.revision)
         suite = load_profile_suite(args.suite, factory)
-        minimum = envelope.SUITES[args.suite][2]
+        minimum = 22 if args.suite == "baseline" else envelope.SUITES[args.suite][2]
         mode = Path(server.FIXTURE_PATH).lstat()
         import stat
         need(stat.S_ISREG(mode.st_mode), "The fixed admission fixture must be a regular file.")
@@ -331,7 +354,15 @@ def inside(args):
         need(hasattr(test_runtime.RuntimeTests, "test_canonical_exports_preserve_exact_current_bytes_and_media_types"),
              "The canonical HTTP export assertions are unavailable.")
         suite = unittest.defaultTestLoader.loadTestsFromModule(test_runtime)
-        minimum = 16
+        minimum = 22
+    metrics = None
+    if args.suite != "operator":
+        case_ids = server.runtime_suite_names(suite, "baseline" if args.suite == "http" else args.suite)
+        tools_directory = Path("/qualification/server")
+        metrics_tools = server.metrics_tool_inventory(tools_directory, "amd64", root_owned=True)
+        os.environ["ASM_METRICS_TEST_DIRECTORY"] = str(tools_directory)
+        if args.suite in {"http", "baseline"}:
+            metrics = server.prepare_metrics(suite, tools_directory, "amd64", root_owned=True)
     count = suite.countTestCases()
     need(count >= minimum, "The complete compatibility suite is unavailable.")
     samples = []
@@ -343,6 +374,10 @@ def inside(args):
               "source_revision": args.revision, "tests_run": result.testsRun, "not_applicable": exclusions,
               "applicable_tests_skipped": 0, "client_libpq_version": 160015, "database": identities[0],
               "migration_sha384": hashlib.sha384(Path("/qualification/server/catalog/schema.sql").read_bytes()).hexdigest()}
+    if args.suite != "operator":
+        report.update(metrics_test_tools=metrics_tools, cases=case_ids)
+    if metrics is not None:
+        report["metrics"] = metrics
     if constrained:
         cls = getattr(sys.modules[envelope.SUITES[args.suite][0]], envelope.SUITES[args.suite][1])
         cases = [sample["phase"][len("before:"):] for sample in samples if sample["phase"].startswith("before:")]
@@ -458,6 +493,11 @@ def qualify_owned(args, termination):
             derived_contract(runtime, original, files, get_files(original["Id"]))
             derived_contract(original, qualifier, files, get_files(qualifier["Id"]))
             expected_fixture = None
+            expected_metrics_tools = None
+            if suite != "operator":
+                expected_metrics_tools = server.metrics_image_tools(original["Id"], "amd64", runner=probe)
+                need(server.typed_equal(expected_metrics_tools, server.metrics_image_tools(qualifier["Id"], "amd64", runner=probe)),
+                     "The PostgreSQL 18 derived image changed a metrics qualification tool.")
             if constrained:
                 expected_fixture = admission_fixture(original["Id"], probe)
                 need(expected_fixture == admission_fixture(qualifier["Id"], probe), "The derived image changed the admission fixture.")
@@ -489,7 +529,7 @@ def qualify_owned(args, termination):
             reports = [registry.strict_json(line[len(PREFIX):]) for line in result.stdout.decode().splitlines() if line.startswith(PREFIX)]
             need(len(reports) == 1, "Expected exactly one complete compatibility report.")
             migration = hashlib.sha384(Path("server/catalog/schema.sql").read_bytes()).hexdigest()
-            report_contract(reports[0], suite, args.revision, declaration["nonce"], migration, profile, expected_fixture)
+            report_contract(reports[0], suite, args.revision, declaration["nonce"], migration, profile, expected_fixture, expected_metrics_tools)
             report["suites"].append(dict(reports[0], runtime_image_id=runtime["Id"], qualification_image_id=qualifier["Id"],
                                          database_container_id=database_id, runtime_files=files))
         need(len({value["database"]["system_identifier"] for value in report["suites"]}) == (3 if constrained else 2), "The suites did not use fresh database clusters.")

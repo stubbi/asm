@@ -1,0 +1,5 @@
+make: Entering directory '/home/runner/work/asm/asm/server'
+"/home/runner/work/_temp/hosted-server-build/test-metrics"
+metrics test zero_exposition: test_metrics.c:138: found && (found == body || found[-1] == '\n')
+make: *** [Makefile:65: metrics-test] Error 1
+make: Leaving directory '/home/runner/work/asm/asm/server'

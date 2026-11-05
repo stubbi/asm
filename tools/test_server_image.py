@@ -9,12 +9,15 @@ import argparse
 import ctypes
 import hashlib
 import importlib
+import io
 import json
 import math
 import os
 from pathlib import Path
 import platform
 import re
+import selectors
+import signal
 import struct
 import stat
 import subprocess
@@ -38,8 +41,8 @@ EF_RISCV_FLOAT_ABI_DOUBLE = 0x4
 REPORT_PREFIX = "ASM_SERVER_QUALIFICATION="
 QUALIFICATION_SCOPE = "assembly-canonical-exports-admission"
 PART_SCOPE = "assembly-image-runtime-part"
-SUITES = {"baseline": ("test_runtime", 16), "capacity": ("test_capacity", 12)}
-MIN_RUNTIME_TESTS = 28
+SUITES = {"baseline": ("test_runtime", 22), "capacity": ("test_capacity", 12)}
+MIN_RUNTIME_TESTS = 34
 MAX_EVIDENCE_BYTES = 2 * 1024 * 1024
 FIXTURE_PATH = "/qualification/fixtures/connect-null.so"
 SECURITY = {"uid": 65532, "gid": 65532, "read_only_root": True,
@@ -48,9 +51,321 @@ CONTAINER_LIMITS = {"cpus": 2, "memory_bytes": 536870912, "pids": 128,
                     "tmpfs_bytes": 268435456, "tmpfs_noexec": True, "watchdog_seconds": 180}
 COMMON_FIELDS = {"architecture", "os", "execution", "source_revision", "runtime_image_id",
                  "qualification_image_id", "binary", "binary_permissions", "executable_files",
-                 "libraries", "fixture", "security", "container_limits"}
-PART_FIELDS = COMMON_FIELDS | {"schema", "status", "scope", "suite", "tests_run", "tests_skipped", "seconds"}
+                 "libraries", "fixture", "metrics_test_tools", "security", "container_limits"}
+PART_FIELDS = COMMON_FIELDS | {"schema", "status", "scope", "suite", "tests_run", "tests_skipped", "seconds", "cases"}
 REPOSITORY = "ghcr.io/stubbi/asm-hub"
+REQUIRED_CASE_IDS = {'baseline': ['RuntimeTests.test_canonical_exports_preserve_exact_current_bytes_and_media_types',
+              'RuntimeTests.test_cli_and_bind_configuration_fail_closed',
+              'RuntimeTests.test_concurrent_exports_keep_independent_response_ownership',
+              'RuntimeTests.test_encrypted_client_key_never_prompts_on_an_open_terminal',
+              'RuntimeTests.test_export_body_byte_limits_preserve_boundary_bytes',
+              'RuntimeTests.test_export_database_work_obeys_the_request_deadline',
+              'RuntimeTests.test_exports_reject_missing_null_duplicate_and_unready_results',
+              'RuntimeTests.test_health_and_exact_source_identity',
+              'RuntimeTests.test_metrics_aborts_preserve_queue_semantics',
+              'RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots',
+              'RuntimeTests.test_metrics_database_delay_and_failed_request_timing',
+              'RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting',
+              'RuntimeTests.test_metrics_fixed_exposition_and_route_labels',
+              'RuntimeTests.test_metrics_queue_failures_preserve_ownership',
+              'RuntimeTests.test_new_connections_load_replaced_certificate_files',
+              'RuntimeTests.test_private_configuration_file_is_required',
+              'RuntimeTests.test_reader_rejects_migrator_operator_and_wrong_tls_identities',
+              'RuntimeTests.test_readiness_checks_actual_permissions_after_start',
+              'RuntimeTests.test_stalled_database_handshake_has_a_deadline',
+              'RuntimeTests.test_tls_policy_rejects_ambient_options_and_ambiguous_connections',
+              'RuntimeTests.test_unimplemented_write_routes_do_not_claim_success',
+              'RuntimeTests.test_z_sigterm_closes_the_listener_within_three_seconds'],
+ 'capacity': ['CapacityTests.test_aborted_database_handshakes_release_admission',
+              'CapacityTests.test_eight_handshakes_refuse_ninth_and_recover_in_the_same_process',
+              'CapacityTests.test_guard_failures_release_admission_before_recovery',
+              'CapacityTests.test_http_disconnects_release_admission_by_the_database_deadline',
+              'CapacityTests.test_http_response_abort_preserves_database_capacity',
+              'CapacityTests.test_invalid_results_release_admission_before_recovery',
+              'CapacityTests.test_null_connection_creation_releases_admission',
+              'CapacityTests.test_replacement_acquisitions_overlap_individual_releases',
+              'CapacityTests.test_sixteen_contending_requests_never_hold_more_than_eight_connections',
+              'CapacityTests.test_statement_timeouts_release_admission_before_recovery',
+              'CapacityTests.test_successful_reads_release_admission_repeatedly',
+              'CapacityTests.test_tls_failures_release_admission_before_recovery'],
+ 'envelope': ['EnvelopeTests.test_eight_slow_maximum_exports_preserve_bytes_and_recover',
+              'EnvelopeTests.test_incomplete_headers_release_connections_after_inactivity',
+              'EnvelopeTests.test_sigterm_bounds_exit_during_observed_inflight_work']}
+
+REQUIRED_METRICS_HTTP_TESTS = tuple(sorted((
+    "RuntimeTests.test_metrics_fixed_exposition_and_route_labels",
+    "RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting",
+    "RuntimeTests.test_metrics_database_delay_and_failed_request_timing",
+    "RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots",
+    "RuntimeTests.test_metrics_queue_failures_preserve_ownership",
+    "RuntimeTests.test_metrics_aborts_preserve_queue_semantics",
+)))
+REQUIRED_METRICS_UNIT_CHECKS = (
+    "zero_exposition", "route_classification", "bucket_boundaries", "decimal_sum_and_capacity",
+    "queue_failure", "parallel_snapshot", "clock_failure_begin", "clock_failure_finish",
+    "clock_invalid_timespec", "clock_conversion_overflow", "clock_backwards", "overflow_count",
+    "overflow_request_counter", "overflow_bucket", "overflow_sum", "overflow_queue_failure",
+    "mutex_init_failure", "mutex_lock_failure", "mutex_unlock_failure",
+)
+METRICS_TOOLS = ("test-metrics", "metrics-faults.so")
+METRICS_TOOL_LIMIT = 1024 * 1024
+METRICS_OUTPUT_LIMIT = 65536
+METRICS_UNIT_TIMEOUT = 35
+TEST_LOG_LIMIT = 2 * 1024 * 1024
+
+
+def bounded_file(path, maximum, *, mode=None, owner=None):
+    """Read one regular descriptor without following a symbolic final entry."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as source:
+        info = os.fstat(source.fileno())
+        if (not stat.S_ISREG(info.st_mode) or (mode is not None and stat.S_IMODE(info.st_mode) != mode)
+                or (owner is not None and info.st_uid != owner)):
+            raise ValueError("A qualification file has an unexpected type, owner, or mode.")
+        data = source.read(maximum + 1)
+    if len(data) > maximum:
+        raise ValueError("A qualification file exceeds its byte bound.")
+    return data
+
+
+def metrics_json(text):
+    def unique(pairs):
+        value = {}
+        for name, item in pairs:
+            if name in value:
+                raise ValueError("Duplicate metrics evidence field.")
+            value[name] = item
+        return value
+    def reject_constant(_):
+        raise ValueError("Non-finite metrics evidence number.")
+    return json.loads(text, object_pairs_hook=unique, parse_constant=reject_constant)
+
+
+def exact_names(value, required, label):
+    if (type(value) is not list or any(type(name) is not str for name in value)
+            or len(value) != len(required) or len(set(value)) != len(value) or set(value) != set(required)):
+        raise ValueError("The metrics " + label + " identities are incomplete or ambiguous.")
+
+
+def metrics_unit_contract(value):
+    if (type(value) is not dict or set(value) != {"schema", "status", "scope", "checks"}
+            or type(value["schema"]) is not int or value["schema"] != 1
+            or value["status"] != "pass" or value["scope"] != "assembly-metrics-unit"):
+        raise ValueError("The metrics unit report is malformed or did not pass.")
+    exact_names(value["checks"], REQUIRED_METRICS_UNIT_CHECKS, "unit-check")
+
+
+def metrics_evidence_contract(value):
+    keys = {"schema", "timing", "samples", "max_response_bytes", "http_tests", "unit", "test_tools"}
+    if (type(value) is not dict or set(value) != keys
+            or type(value["schema"]) is not int or value["schema"] != 1
+            or value["timing"] != "handler-entry-to-accepted-queue"
+            or type(value["samples"]) is not int or value["samples"] != 79
+            or type(value["max_response_bytes"]) is not int or value["max_response_bytes"] != 16384):
+        raise ValueError("The metrics scope, timing, or fixed bounds differ.")
+    exact_names(value["http_tests"], REQUIRED_METRICS_HTTP_TESTS, "HTTP-test")
+    metrics_unit_contract(value["unit"])
+    metrics_test_tools_contract(value["test_tools"])
+
+
+def metrics_test_tools_contract(tools):
+    if type(tools) is not dict or set(tools) != set(METRICS_TOOLS):
+        raise ValueError("The metrics test-tool inventory is incomplete.")
+    for artifact in tools.values():
+        if (type(artifact) is not dict or set(artifact) != {"sha256", "bytes"}
+                or type(artifact["sha256"]) is not str or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"])
+                or type(artifact["bytes"]) is not int or not 0 < artifact["bytes"] <= METRICS_TOOL_LIMIT):
+            raise ValueError("A metrics test-tool digest or byte count is malformed.")
+
+
+def metrics_descriptor(unit, names, tools):
+    value = {"schema": 1, "timing": "handler-entry-to-accepted-queue", "samples": 79,
+             "max_response_bytes": 16384, "http_tests": sorted(names), "unit": unit, "test_tools": tools}
+    metrics_evidence_contract(value)
+    return value
+
+
+def runtime_case_contract(cases, suite_name):
+    require(isinstance(cases, list) and all(isinstance(name, str) and len(name) <= 512 for name in cases),
+            "The runtime case identities are malformed.")
+    normalized = [".".join(name.split(".")[-2:]) for name in cases]
+    exact_names(normalized, REQUIRED_CASE_IDS[suite_name], suite_name + " case")
+
+
+def runtime_suite_names(suite, suite_name):
+    def leaves(value):
+        for child in value:
+            if isinstance(child, unittest.TestSuite):
+                yield from leaves(child)
+            else:
+                yield ".".join(child.id().split(".")[-2:])
+    names = sorted(leaves(suite))
+    runtime_case_contract(names, suite_name)
+    return names
+
+
+def metrics_suite_names(suite):
+    def leaves(value):
+        for child in value:
+            if isinstance(child, unittest.TestSuite):
+                yield from leaves(child)
+            else:
+                yield ".".join(child.id().split(".")[-2:])
+    found = [name for name in leaves(suite) if name in REQUIRED_METRICS_HTTP_TESTS]
+    exact_names(found, REQUIRED_METRICS_HTTP_TESTS, "loaded HTTP-test")
+    return sorted(found)
+
+
+def runtime_result_contract(result, count):
+    if (not result.wasSuccessful() or result.skipped or result.expectedFailures
+            or result.unexpectedSuccesses or result.testsRun != count):
+        raise ValueError("The architecture's complete runtime suite did not pass without exclusions.")
+
+
+def metrics_tool_inventory(directory, arch, *, root_owned=False):
+    result = {}
+    for name in METRICS_TOOLS:
+        data = bounded_file(directory / name, METRICS_TOOL_LIMIT, mode=0o555,
+                            owner=0 if root_owned else os.geteuid())
+        elf_contract(data, arch)
+        result[name] = {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+    return result
+
+
+def parse_metrics_unit_output(data):
+    if len(data) > METRICS_OUTPUT_LIMIT:
+        raise ValueError("The metrics unit report exceeds its byte bound.")
+    lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise ValueError("Expected one metrics unit success record.")
+    value = metrics_json(lines[0])
+    metrics_unit_contract(value)
+    return value
+
+
+class MetricsUnitFailure(ValueError):
+    def __init__(self, message, stdout, stderr):
+        super().__init__(message)
+        self.stdout, self.stderr = bytes(stdout), bytes(stderr)
+
+
+def _metrics_unit_result(arguments, *, timeout):
+    """Use the reviewed selector pattern; bound each stream before appending."""
+    output, errors = bytearray(), bytearray()
+    selector = selectors.DefaultSelector()
+    process, completed = None, False
+    deadline = time.monotonic() + timeout
+    try:
+        process = subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, start_new_session=True)
+        for stream, buffer in ((process.stdout, output), (process.stderr, errors)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, buffer)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors)
+            events = selector.select(remaining)
+            if not events:
+                raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors)
+            for key, _ in events:
+                buffer = key.data
+                room = METRICS_OUTPUT_LIMIT - len(buffer)
+                chunk = os.read(key.fd, min(65536, room + 1))
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                buffer.extend(chunk[:room])
+                if len(chunk) > room:
+                    raise MetricsUnitFailure("Metrics unit output exceeded its byte limit.", output, errors)
+        try:
+            returncode = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors) from None
+        completed = True
+        return subprocess.CompletedProcess(arguments, returncode, bytes(output), bytes(errors))
+    finally:
+        selector.close()
+        if process is not None:
+            if not completed or process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait(timeout=3)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+
+def run_metrics_unit(path):
+    failure = None
+    try:
+        result = _metrics_unit_result([str(path)], timeout=METRICS_UNIT_TIMEOUT)
+        stdout, stderr = result.stdout, result.stderr
+    except MetricsUnitFailure as error:
+        stdout, stderr, failure = error.stdout, error.stderr, error
+        result = None
+    # Retain bounded failure diagnostics before rejecting a missing/failed record.
+    for stream, data in ((sys.stdout, stdout), (sys.stderr, stderr)):
+        data = data[:METRICS_OUTPUT_LIMIT]
+        if hasattr(stream, "buffer"):
+            stream.buffer.write(data)
+        else:
+            stream.write(data.decode("utf-8", "replace"))
+    if failure is not None:
+        raise failure
+    if result is None or result.returncode or len(stdout) > METRICS_OUTPUT_LIMIT or len(stderr) > METRICS_OUTPUT_LIMIT:
+        raise MetricsUnitFailure("The precompiled metrics unit checks failed or exceeded their output bound.",
+                                 stdout[:METRICS_OUTPUT_LIMIT], stderr[:METRICS_OUTPUT_LIMIT])
+    return parse_metrics_unit_output(stdout)
+
+
+def prepare_metrics(suite, directory, arch, *, root_owned=False):
+    """Run the unit gate for the suite that executes the six HTTP cases."""
+    names = metrics_suite_names(suite)
+    tools = metrics_tool_inventory(directory, arch, root_owned=root_owned)
+    os.environ["ASM_METRICS_TEST_DIRECTORY"] = str(directory)
+    return metrics_descriptor(run_metrics_unit(directory / "test-metrics"), names, tools)
+
+
+def metrics_image_tools(image, arch, *, runner=None):
+    """Bind the two fixed test artifacts through the selected container runner."""
+    if runner is None:
+        base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
+        def runner(selected, *arguments, entrypoint):
+            return command([*base, "--entrypoint", entrypoint, selected, *arguments]).stdout
+    tools = {}
+    for name in METRICS_TOOLS:
+        path = "/qualification/server/" + name
+        mode = runner(image, "-c", "%a:%u:%g", path, entrypoint="/usr/bin/stat").decode()
+        require(mode.strip() == "555:0:0", "A metrics qualification tool changed its ownership or mode.")
+        data = runner(image, path, entrypoint="/bin/cat")
+        require(0 < len(data) <= METRICS_TOOL_LIMIT, "A metrics qualification tool exceeds its byte bound.")
+        elf_contract(data, arch)
+        tools[name] = {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+    metrics_test_tools_contract(tools)
+    return tools
+
+
+def metrics_from_test_log(data, tools):
+    if len(data) > TEST_LOG_LIMIT:
+        raise ValueError("The hosted test log exceeds its byte bound.")
+    text = data.decode("utf-8")
+    units = []
+    for line in text.splitlines():
+        if line.startswith("{"):
+            value = metrics_json(line)
+            if isinstance(value, dict) and value.get("scope") == "assembly-metrics-unit":
+                units.append(value)
+    if len(units) != 1:
+        raise ValueError("Expected one complete metrics unit record in the hosted log.")
+    passed = re.findall(r"^(test_metrics_[a-z_]+) \((?:[A-Za-z_][A-Za-z0-9_]*\.)*(RuntimeTests\.\1)\)(?:\n[^\n]*)? \.\.\. ok$", text, re.M)
+    required = [name for _, name in passed if name in REQUIRED_METRICS_HTTP_TESTS]
+    all_passed = re.findall(r"^test_[a-z_]+ \((?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*\.test_[a-z_]+)\)(?:\n[^\n]*)? \.\.\. ok$", text, re.M)
+    exact_names(all_passed, REQUIRED_CASE_IDS["baseline"] + REQUIRED_CASE_IDS["capacity"], "hosted case")
+    return metrics_descriptor(units[0], required, tools)
 
 
 def binary_permissions(value):
@@ -108,16 +423,23 @@ def common_evidence_contract(report, arch, revision):
             and type(fixture.get("bytes")) is int and 0 < fixture["bytes"] <= 1024 * 1024
             and typed_equal({key: fixture[key] for key in ("mode", "uid", "gid")},
                             {"mode": "0444", "uid": 0, "gid": 0}), "The fixed read-only fixture is unqualified.")
+    metrics_test_tools_contract(report.get("metrics_test_tools"))
     require(typed_equal(report.get("security"), SECURITY) and typed_equal(report.get("container_limits"), CONTAINER_LIMITS),
             "The image part lacks the required isolation and resource bounds.")
 
 
 def part_evidence_contract(report, suite, arch, revision):
-    require(isinstance(report, dict) and set(report) == PART_FIELDS
+    require(isinstance(report, dict) and set(report) == PART_FIELDS | ({"metrics"} if suite == "baseline" else set())
             and type(report.get("schema")) is int and report["schema"] == 1
             and report.get("status") == "pass" and report.get("scope") == PART_SCOPE
             and report.get("suite") == suite, "The runtime part is missing, duplicated, excluded, or malformed.")
     common_evidence_contract(report, arch, revision)
+    runtime_case_contract(report["cases"], suite)
+    require(report["tests_run"] == len(report["cases"]), "The runtime count differs from its case identities.")
+    if suite == "baseline":
+        metrics_evidence_contract(report.get("metrics"))
+        require(typed_equal(report["metrics"]["test_tools"], report["metrics_test_tools"]),
+                "The baseline metrics result identifies different qualification tools.")
     require(type(report.get("tests_run")) is int and report["tests_run"] >= SUITES[suite][1]
             and type(report.get("tests_skipped")) is int and report["tests_skipped"] == 0,
             "The complete image part did not pass without skips.")
@@ -134,15 +456,15 @@ def aggregate_reports(parts, arch, revision):
     require(all(typed_equal(parts["capacity"][key], first[key]) for key in COMMON_FIELDS),
             "The two runtime parts identify different images, source, libraries, fixture, or isolation.")
     count = sum(part["tests_run"] for part in parts.values())
-    require(count >= MIN_RUNTIME_TESTS, "The admission image requires at least twenty-eight executed cases.")
+    require(count >= MIN_RUNTIME_TESTS, "The joined image requires at least thirty-four executed cases.")
     return {"schema": 1, "status": "pass", "scope": QUALIFICATION_SCOPE,
-            **{key: first[key] for key in COMMON_FIELDS}, "parts": parts,
+            **{key: first[key] for key in COMMON_FIELDS}, "parts": parts, "metrics": first["metrics"],
             "tests_run": count, "tests_skipped": 0,
             "seconds": round(sum(part["seconds"] for part in parts.values()), 3), "test_watchdog_seconds": 360}
 
 
 def runtime_evidence_contract(evidence, arch, revision):
-    required = COMMON_FIELDS | {"schema", "status", "scope", "parts", "tests_run", "tests_skipped", "seconds", "test_watchdog_seconds"}
+    required = COMMON_FIELDS | {"schema", "status", "scope", "parts", "tests_run", "tests_skipped", "seconds", "test_watchdog_seconds", "metrics"}
     require(isinstance(evidence, dict) and required <= set(evidence)
             and set(evidence) <= required | {"nonroot_configuration_refusal_exit", "observed_at"}
             and type(evidence.get("schema")) is int and evidence["schema"] == 1
@@ -248,6 +570,14 @@ def elf_contract(data, arch):
             "declared_target": dict(DECLARED_TARGETS[arch]), "declaration_limit": DECLARATION_LIMIT}
 
 
+def runtime_binary_contract(data, arch):
+    artifact = elf_contract(data, arch)
+    for marker in (b"asm_metrics_test_seed", b"asm_metrics_test_snapshot", b"ASM_METRICS_TEST_FAULT"):
+        if marker in data:
+            raise ValueError("The runtime contains metrics test hooks or fault configuration.")
+    return artifact
+
+
 def command(arguments, *, timeout=15):
     return subprocess.run(arguments, check=True, capture_output=True, timeout=timeout)
 
@@ -306,7 +636,7 @@ def inside(args):
     if status.get("NoNewPrivs", "").strip() != "1" or int(status.get("CapEff", "1").strip(), 16) != 0:
         raise ValueError("The qualification process has unexpected Linux capabilities or privilege authority.")
     binary = Path("/usr/local/bin/asm-hub")
-    artifact = elf_contract(binary.read_bytes(), args.arch)
+    artifact = runtime_binary_contract(binary.read_bytes(), args.arch)
     if artifact["sha256"] != args.expected_binary_sha256:
         raise ValueError("The test image changed the runtime executable.")
     info = binary.stat()
@@ -318,31 +648,36 @@ def inside(args):
                                  hashlib.sha256(fixture_path.read_bytes()).hexdigest())
     require(fixture["sha256"] == args.expected_fixture_sha256, "The image part changed the fixed fixture.")
     files = executable_inventory(lambda executable, *values: command([executable, *values]))
+    tool_directory = Path("/qualification/server")
+    metrics_tools = metrics_tool_inventory(tool_directory, args.arch, root_owned=True)
     mhd = ctypes.CDLL("/opt/asm/mhd/lib/libmicrohttpd.so.12")
     mhd.MHD_get_version.restype = ctypes.c_char_p
     if mhd.MHD_get_version() != b"1.0.3":
         raise ValueError("The loaded HTTP library is not libmicrohttpd 1.0.3.")
     os.environ.update(ASM_SERVER_BINARY=str(binary), ASM_SERVER_SOURCE_REVISION=args.revision,
                       ASM_PROTO_PG_BINDIR="/opt/asm/postgres/bin", ASM_PROTO_LIBPQ="/opt/asm/postgres/lib/libpq.so.5",
-                      ASM_SERVER_CONNECT_NULL_FIXTURE=FIXTURE_PATH)
+                      ASM_SERVER_CONNECT_NULL_FIXTURE=FIXTURE_PATH, ASM_METRICS_TEST_DIRECTORY=str(tool_directory))
     sys.path.insert(0, "/qualification/server")
     module = importlib.import_module(SUITES[args.suite][0])
     suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+    case_ids = runtime_suite_names(suite, args.suite)
+    metrics = prepare_metrics(suite, tool_directory, args.arch, root_owned=True) if args.suite == "baseline" else None
     count = suite.countTestCases()
     if count < SUITES[args.suite][1]:
         raise ValueError("The runtime qualification part is incomplete.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
-    if not result.wasSuccessful() or result.skipped or result.testsRun != count:
-        raise ValueError("The architecture's complete runtime part did not pass without skips.")
+    runtime_result_contract(result, count)
     report = {"schema": 1, "status": "pass", "scope": PART_SCOPE, "suite": args.suite,
               "architecture": args.arch, "os": "linux", "execution": args.execution,
               "source_revision": args.revision, "binary": artifact, "binary_permissions": permissions,
               "runtime_image_id": args.runtime_image_id, "qualification_image_id": args.qualification_image_id,
-              "fixture": fixture, "executable_files": files, "container_limits": dict(CONTAINER_LIMITS),
-              "tests_run": result.testsRun, "tests_skipped": 0,
+              "fixture": fixture, "metrics_test_tools": metrics_tools, "executable_files": files, "container_limits": dict(CONTAINER_LIMITS),
+              "tests_run": result.testsRun, "tests_skipped": 0, "cases": case_ids,
               "seconds": round(time.monotonic() - started, 3),
               "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"}, "security": dict(SECURITY)}
+    if metrics is not None:
+        report["metrics"] = metrics
     part_evidence_contract(report, args.suite, args.arch, args.revision)
     print(REPORT_PREFIX + json.dumps(report, sort_keys=True))
 
@@ -415,18 +750,20 @@ def qualify(args):
     executable = command(["docker", "run", "--rm", "--platform", "linux/" + args.arch,
                           *security_arguments(), "--entrypoint", "/bin/cat", image_id,
                           "/usr/local/bin/asm-hub"]).stdout
-    artifact = elf_contract(executable, args.arch)
+    artifact = runtime_binary_contract(executable, args.arch)
     # Read the qualification-only library without placing it in runtime data storage.
-    for forbidden in (FIXTURE_PATH, "/usr/bin/cc", "/usr/bin/gcc", "/usr/bin/clang"):
+    for forbidden in (FIXTURE_PATH, *("/qualification/server/" + name for name in METRICS_TOOLS),
+                      "/usr/bin/cc", "/usr/bin/gcc", "/usr/bin/clang"):
         command([*base, "--entrypoint", "/usr/bin/test", image_id, "!", "-e", forbidden])
     mode = command([*base, "--entrypoint", "/usr/bin/stat", test_id, "-c", "%a:%u:%g:%s", FIXTURE_PATH]).stdout.decode()
     digest = command([*base, "--entrypoint", "/usr/bin/sha256sum", test_id, FIXTURE_PATH]).stdout.decode().split()
     require(len(digest) == 2 and digest[1] == FIXTURE_PATH, "The fixed fixture digest is unavailable.")
     fixture = fixture_descriptor(mode, digest[0])
+    metrics_tools = metrics_image_tools(test_id, args.arch)
     common = {"architecture": args.arch, "os": "linux", "execution": args.execution, "source_revision": args.revision,
               "runtime_image_id": image_id, "qualification_image_id": test_id,
               "binary": artifact, "binary_permissions": permissions, "executable_files": files,
-              "fixture": fixture, "security": dict(SECURITY), "container_limits": dict(CONTAINER_LIMITS),
+              "fixture": fixture, "metrics_test_tools": metrics_tools, "security": dict(SECURITY), "container_limits": dict(CONTAINER_LIMITS),
               "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"}}
     parts = {}
     for suite in SUITES:
@@ -479,6 +816,249 @@ def publish_index(args):
 
 
 class ContractTests(unittest.TestCase):
+    def metrics_real_child(self, script, timeout=35):
+        """Replace only the executable boundary; exercise real pipes and processes."""
+        original = subprocess.Popen
+        processes, groups = [], []
+        def launch(_arguments, **keywords):
+            groups.append(keywords.get("start_new_session", False))
+            # Keep the RED fixture isolated even when the unfixed runner omits it.
+            keywords["start_new_session"] = True
+            process = original([sys.executable, "-c", script], **keywords)
+            processes.append(process)
+            return process
+        stdout, stderr = io.StringIO(), io.StringIO()
+        started = time.monotonic()
+        with patch.object(subprocess, "Popen", side_effect=launch), patch.object(sys, "stdout", stdout), \
+                patch.object(sys, "stderr", stderr), \
+                patch.object(sys.modules[__name__], "METRICS_UNIT_TIMEOUT", timeout, create=True):
+            with self.assertRaises(ValueError) as failure:
+                run_metrics_unit(Path("/qualification/server/test-metrics"))
+        return processes, groups, time.monotonic() - started, stdout.getvalue(), stderr.getvalue(), failure.exception
+
+    def metrics_child_stopped(self, process, descendant):
+        self.assertIsNotNone(process.returncode, "The owned leader was not reaped.")
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(process.pid, os.WNOHANG)
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(descendant)], capture_output=True,
+                               text=True, timeout=2).stdout.strip()
+        self.assertTrue(not state or state.startswith("Z"), "The owned descendant remains alive.")
+
+    def test_metrics_unit_overflow_stops_owned_group_before_completion(self):
+        for stream in (1, 2):
+            with self.subTest(stream=stream), tempfile.TemporaryDirectory(prefix="asm-metrics-bound-") as temporary:
+                directory = Path(temporary)
+                pidfile, marker = directory / "child.pid", directory / "completed"
+                script = ("import os,time,pathlib\n"
+                    "child=os.fork()\n"
+                    "if child == 0:\n"
+                    f" pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid()))\n"
+                    " time.sleep(2)\n"
+                    f" pathlib.Path({str(marker)!r}).write_text('descendant completed')\n"
+                    " os._exit(0)\n"
+                    f"while not pathlib.Path({str(pidfile)!r}).exists(): time.sleep(0.001)\n"
+                    "os.write(1,b'partial stdout\\n');os.write(2,b'partial stderr\\n')\n"
+                    f"for _ in range(256): os.write({stream}, b'x'*4096)\n"
+                    f"pathlib.Path({str(marker)!r}).write_text('producer completed')\n"
+                    "os.waitpid(child,0)\n")
+                processes = []
+                try:
+                    processes, groups, elapsed, stdout, stderr, failure = self.metrics_real_child(script)
+                    self.assertLess(elapsed, 1.5, "Overflow was checked only after the child completed.")
+                    self.assertFalse(marker.exists(), "The producer reached its post-limit completion marker.")
+                    self.assertEqual(groups, [True])
+                    self.assertLessEqual(len(failure.stdout), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(failure.stderr), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(stdout), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(stderr), METRICS_OUTPUT_LIMIT)
+                    self.assertTrue(stdout.startswith("partial stdout\n"))
+                    self.assertTrue(stderr.startswith("partial stderr\n"))
+                    self.metrics_child_stopped(processes[0], int(pidfile.read_text()))
+                finally:
+                    for process in processes:
+                        if process.poll() is None:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=3)
+
+    def test_metrics_unit_deadline_stops_owned_group_and_keeps_partial_output(self):
+        with tempfile.TemporaryDirectory(prefix="asm-metrics-time-") as temporary:
+            directory = Path(temporary)
+            pidfile, marker = directory / "child.pid", directory / "completed"
+            script = ("import os,time,pathlib\nchild=os.fork()\n"
+                "if child == 0:\n"
+                f" pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid()))\n"
+                " time.sleep(2)\n"
+                f" pathlib.Path({str(marker)!r}).write_text('descendant completed')\n"
+                " os._exit(0)\n"
+                f"while not pathlib.Path({str(pidfile)!r}).exists(): time.sleep(0.001)\n"
+                "os.write(1,b'partial stdout\\n');os.write(2,b'partial stderr\\n')\n"
+                "os.waitpid(child,0)\n")
+            processes = []
+            try:
+                processes, groups, elapsed, stdout, stderr, failure = self.metrics_real_child(script, timeout=0.2)
+                self.assertLess(elapsed, 1.5, "The declared child deadline was not enforced.")
+                self.assertFalse(marker.exists())
+                self.assertEqual(groups, [True])
+                self.assertEqual(failure.stdout, b"partial stdout\n")
+                self.assertEqual(failure.stderr, b"partial stderr\n")
+                self.assertEqual(stdout, "partial stdout\n")
+                self.assertEqual(stderr, "partial stderr\n")
+                self.metrics_child_stopped(processes[0], int(pidfile.read_text()))
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=3)
+
+    def metrics(self):
+        return {"schema": 1, "timing": "handler-entry-to-accepted-queue", "samples": 79,
+                "max_response_bytes": 16384, "http_tests": list(REQUIRED_METRICS_HTTP_TESTS),
+                "unit": {"schema": 1, "status": "pass", "scope": "assembly-metrics-unit",
+                         "checks": list(REQUIRED_METRICS_UNIT_CHECKS)},
+                "test_tools": {"test-metrics": {"sha256": "a" * 64, "bytes": 120},
+                               "metrics-faults.so": {"sha256": "b" * 64, "bytes": 120}}}
+
+    def test_runtime_evidence_requires_metrics_evidence_in_addition_to_a_count(self):
+        evidence = {"schema": 1, "status": "pass", "scope": "assembly-canonical-exports",
+                    "architecture": "amd64", "os": "linux", "execution": "native",
+                    "source_revision": "c" * 40, "tests_run": 22, "tests_skipped": 0, "tests_expected_failures": 0}
+        with self.assertRaises(ValueError):
+            runtime_evidence_contract(evidence, "amd64", "c" * 40)
+
+    def test_expected_failure_is_not_a_successful_applicable_runtime_case(self):
+        class ExpectedFailure(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_fixture(self):
+                self.fail("Fixed expected-failure fixture.")
+        result = unittest.TestResult()
+        ExpectedFailure("test_fixture").run(result)
+        self.assertTrue(result.wasSuccessful(), "This fixture must expose unittest's expected-failure success rule.")
+        self.assertEqual(len(result.expectedFailures), 1)
+        with self.assertRaises(ValueError):
+            runtime_result_contract(result, 1)
+
+    def test_unexpected_success_is_not_a_successful_applicable_runtime_case(self):
+        class UnexpectedSuccess(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_fixture(self):
+                pass
+        result = unittest.TestResult()
+        UnexpectedSuccess("test_fixture").run(result)
+        self.assertEqual(len(result.unexpectedSuccesses), 1)
+        with self.assertRaises(ValueError):
+            runtime_result_contract(result, 1)
+
+    def test_single_report_expected_failure_counts_cannot_bypass_split_evidence(self):
+        complete = {"schema": 1, "status": "pass", "scope": "assembly-canonical-exports",
+                    "architecture": "amd64", "os": "linux", "execution": "native",
+                    "source_revision": "c" * 40, "tests_run": 22, "tests_skipped": 0,
+                    "metrics": self.metrics(), "tests_expected_failures": 0}
+        with self.assertRaises(ValueError):
+            runtime_evidence_contract(complete, "amd64", "c" * 40)
+        missing = dict(complete)
+        missing.pop("tests_expected_failures")
+        for evidence in [missing, *(complete | {"tests_expected_failures": value}
+                                    for value in (False, True, 1, -1, "0", None))]:
+            with self.subTest(value=evidence.get("tests_expected_failures", "missing")), self.assertRaises(ValueError):
+                runtime_evidence_contract(evidence, "amd64", "c" * 40)
+
+    def test_metrics_rejects_wrong_scope_bounds_or_incomplete_identities(self):
+        value = self.metrics()
+        metrics_evidence_contract(value)
+        changes = [{"schema": True}, {"schema": 2}, {"samples": True}, {"samples": 80},
+                   {"max_response_bytes": False}, {"max_response_bytes": 65536},
+                   {"timing": "completed-transfer"}, {"http_tests": []},
+                   {"http_tests": list(REQUIRED_METRICS_HTTP_TESTS[:-1])},
+                   {"http_tests": [REQUIRED_METRICS_HTTP_TESTS[0]] * 6}, {"http_tests": "all"},
+                   {"unit": {"schema": 1, "status": "fail", "scope": "assembly-metrics-unit", "checks": []}},
+                   {"test_tools": {}}, {"unexpected": 1}]
+        for change in changes:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                metrics_evidence_contract(value | change)
+        for field, bad in (("schema", True), ("checks", list(REQUIRED_METRICS_UNIT_CHECKS[:-1])),
+                           ("checks", [REQUIRED_METRICS_UNIT_CHECKS[0]] * 19), ("checks", [False] * 19)):
+            changed = self.metrics()
+            changed["unit"][field] = bad
+            with self.subTest(unit_field=field, bad=bad), self.assertRaises(ValueError):
+                metrics_evidence_contract(changed)
+        for field, bad in (("bytes", True), ("bytes", 0), ("bytes", 1048577),
+                           ("sha256", "not-a-digest"), ("sha256", False)):
+            changed = self.metrics()
+            changed["test_tools"]["test-metrics"][field] = bad
+            with self.subTest(tool_field=field, bad=bad), self.assertRaises(ValueError):
+                metrics_evidence_contract(changed)
+
+    def test_loaded_suite_requires_each_metrics_identity_once(self):
+        methods = {name.split(".")[-1]: lambda self: None for name in REQUIRED_METRICS_HTTP_TESTS}
+        case = type("RuntimeTests", (unittest.TestCase,), methods)
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(case)
+        self.assertEqual(metrics_suite_names(suite), list(REQUIRED_METRICS_HTTP_TESTS))
+        children = list(suite)
+        for bad in (children[:-1], children + children[:1]):
+            with self.assertRaises(ValueError):
+                metrics_suite_names(unittest.TestSuite(bad))
+
+    def test_metrics_tools_require_readonly_regular_target_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="asm-metrics-tools-") as temporary:
+            directory = Path(temporary)
+            for name in METRICS_TOOLS:
+                (directory / name).write_bytes(self.elf())
+                (directory / name).chmod(0o555)
+            inventory = metrics_tool_inventory(directory, "amd64")
+            self.assertEqual(inventory["test-metrics"]["bytes"], 120)
+            unit = directory / "test-metrics"
+            unit.chmod(0o755)
+            with self.assertRaises(ValueError):
+                metrics_tool_inventory(directory, "amd64")
+            unit.unlink()
+            unit.symlink_to(directory / "metrics-faults.so")
+            with self.assertRaises((OSError, ValueError)):
+                metrics_tool_inventory(directory, "amd64")
+            unit.unlink()
+            unit.write_bytes(b"x" * (METRICS_TOOL_LIMIT + 1))
+            unit.chmod(0o555)
+            with self.assertRaises(ValueError):
+                metrics_tool_inventory(directory, "amd64")
+
+    def test_runtime_rejects_qualification_hooks_without_rejecting_test_tools(self):
+        runtime_binary_contract(self.elf(), "amd64")
+        for marker in (b"asm_metrics_test_seed", b"asm_metrics_test_snapshot", b"ASM_METRICS_TEST_FAULT"):
+            data = self.elf() + marker
+            elf_contract(data, "amd64")
+            with self.subTest(marker=marker), self.assertRaises(ValueError):
+                runtime_binary_contract(data, "amd64")
+
+    def test_failed_metrics_unit_output_is_retained_and_never_a_pass(self):
+        result = subprocess.CompletedProcess(["test-metrics"], 1, b"fixture output\n", b"fixture failure\n")
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", return_value=result), patch.object(sys, "stdout", stdout), \
+                patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
+            run_metrics_unit(Path("/qualification/server/test-metrics"))
+        self.assertEqual(stdout.getvalue(), "fixture output\n")
+        self.assertEqual(stderr.getvalue(), "fixture failure\n")
+        valid = json.dumps(self.metrics()["unit"]).encode()
+        self.assertEqual(parse_metrics_unit_output(valid)["scope"], "assembly-metrics-unit")
+        for data in (b"[]", valid + b"\n" + valid, valid + b"x", valid[:-1] + b',"schema":1}',
+                     b"x" * (METRICS_OUTPUT_LIMIT + 1)):
+            with self.subTest(data=data[:80]), self.assertRaises(ValueError):
+                parse_metrics_unit_output(data)
+
+    def test_metrics_unit_timeout_and_output_overflow_keep_bounded_diagnostics(self):
+        timeout = MetricsUnitFailure("The metrics unit deadline expired.", b"partial stdout\n", b"partial stderr\n")
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", side_effect=timeout), patch.object(sys, "stdout", stdout), \
+                patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
+            run_metrics_unit(Path("/qualification/server/test-metrics"))
+        self.assertEqual(stdout.getvalue(), "partial stdout\n")
+        self.assertEqual(stderr.getvalue(), "partial stderr\n")
+        result = subprocess.CompletedProcess(["test-metrics"], 0, b"x" * 65537, b"y" * 65537)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", return_value=result), patch.object(sys, "stdout", stdout), \
+                patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
+            run_metrics_unit(Path("/qualification/server/test-metrics"))
+        self.assertEqual(len(stdout.getvalue()), 65536)
+        self.assertEqual(len(stderr.getvalue()), 65536)
+
     def image(self):
         return {"Id": "sha256:" + "a" * 64, "Architecture": "amd64", "Os": "linux",
                 "RootFS": {"Layers": ["sha256:" + "b" * 64]},
@@ -561,13 +1141,16 @@ class ContractTests(unittest.TestCase):
                   "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"},
                   "fixture": {"path": "/qualification/fixtures/connect-null.so", "sha256": "f" * 64,
                               "bytes": 16000, "mode": "0444", "uid": 0, "gid": 0},
+                  "metrics_test_tools": self.metrics()["test_tools"],
                   "security": dict(SECURITY), "container_limits": dict(CONTAINER_LIMITS)}
         common["executable_files"] = {"/usr/local/bin/asm-hub": common["binary"]["sha256"],
                                       "/opt/asm/mhd/lib/libmicrohttpd.so.12": "1" * 64,
                                       "/opt/asm/postgres/lib/libpq.so.5": "2" * 64}
         complete = aggregate_reports({name: {**common, "schema": 1, "status": "pass", "scope": PART_SCOPE,
-                                             "suite": name, "tests_run": count, "tests_skipped": 0, "seconds": 1.0}
-                                      for name, count in (("baseline", 16), ("capacity", 12))}, arch, revision)
+                                             "suite": name, "tests_run": count, "tests_skipped": 0, "seconds": 1.0,
+                                             "cases": list(REQUIRED_CASE_IDS[name]),
+                                             **({"metrics": self.metrics()} if name == "baseline" else {})}
+                                      for name, count in (("baseline", 22), ("capacity", 12))}, arch, revision)
         runtime_evidence_contract(complete, arch, revision)
         with tempfile.TemporaryDirectory(prefix="asm-image-evidence-") as directory:
             child = Path(directory) / f"server-image-digest-{arch}-{revision}"

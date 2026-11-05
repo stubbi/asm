@@ -21,11 +21,14 @@ The ordinary PostgreSQL 18 gate remains at 2 CPU and 512 MiB for applications.
 
 The profile selects three modules in separate application containers with fresh owned PostgreSQL clusters:
 
-1. Run all sixteen canonical HTTP baseline cases.
+1. Run all 22 canonical HTTP baseline cases, including the six metrics cases and 19 named metrics unit checks.
 2. Run all twelve admission cases with the explicitly selected PostgreSQL 18 provider and fixed NULL-connection fixture.
 3. Run three envelope cases for eight maximum-size slow readers, eight incomplete headers, and in-flight SIGTERM.
 
 The ordinary admission module remains twelve cases.
+The three modules total 37 cases; the unit checks remain separate from that count.
+Metrics evidence belongs to the baseline report and cannot come from the other two modules.
+All fixed qualification tools must match the original and derived image inventories.
 Its 180-second image watchdog and other architectures remain separate from this native AMD64 profile.
 The profile preserves the existing request, TLS, role, byte, and recovery assertions.
 It does not extend their deadlines.
@@ -66,12 +69,16 @@ Replace both uppercase placeholders.
 An existing evidence directory is preserved.
 Successful evidence requires all three part reports, exact image bindings, resource closure, and successful owned cleanup.
 Retain the complete evidence directory after failure.
-No native profile result exists yet.
+No native result qualifies this combined source.
+The separate preflight source `7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e` contains the earlier 31-case profile.
+Its [run 42111348191](https://github.com/stubbi/asm/actions/runs/42111348191) has no recorded qualification result here.
+That source excludes metrics; its result cannot qualify the combined 37-case profile.
 
 ## Limits and sources
 
 This profile does not qualify Kubernetes scheduling, ephemeral-storage accounting, multiple replicas, failover, backup, restore, or public traffic.
-Metrics and startup integration retain their separate gates.
+Metrics are included in this candidate's baseline; their combined qualification remains pending.
+Startup integration retains its separate gate.
 Bounded SIGTERM exit does not establish graceful response draining.
 Resource observations apply only to the recorded images, host, and fixed workloads.
 

@@ -15,7 +15,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests")]
+from server_metrics_fixture import CASES, metrics
 import test_postgres18_image as harness
 
 
@@ -147,20 +148,21 @@ class HarnessTests(unittest.TestCase):
 
     def test_report_cannot_claim_pass_with_wrong_version_nonce_counts_or_migration(self):
         report = {"schema": 1, "status": "pass", "scope": "selected-cnpg18-compatibility", "suite": "http",
-                  "source_revision": "a" * 40, "tests_run": 16, "not_applicable": [], "applicable_tests_skipped": 0,
+                  "source_revision": "a" * 40, "tests_run": 22, "not_applicable": [], "applicable_tests_skipped": 0,
                   "client_libpq_version": 160015, "migration_sha384": "c" * 96,
                   "database": {"server_version_num": 180006, "data_directory": "/run/asm-postgres18/data", "nonce": "b" * 64,
-                               "system_identifier": "7452238960987612345", "session_user": "asm_fixture_admin", "tls_protocol": "TLSv1.3"}}
-        harness.report_contract(report, "http", "a" * 40, "b" * 64, "c" * 96)
+                               "system_identifier": "7452238960987612345", "session_user": "asm_fixture_admin", "tls_protocol": "TLSv1.3"},
+                  "metrics": metrics(), "metrics_test_tools": metrics()["test_tools"], "cases": list(CASES["baseline"])}
+        harness.report_contract(report, "http", "a" * 40, "b" * 64, "c" * 96, expected_metrics_tools=metrics()["test_tools"])
         for key, value in (("schema", True), ("tests_run", True), ("tests_run", 11), ("client_libpq_version", 180006),
                            ("migration_sha384", "d" * 96), ("not_applicable", [{"id": "skip"}]), ("applicable_tests_skipped", 1)):
             changed = dict(report, **{key: value})
             with self.subTest(key=key), self.assertRaises(ValueError):
-                harness.report_contract(changed, "http", "a" * 40, "b" * 64, "c" * 96)
+                harness.report_contract(changed, "http", "a" * 40, "b" * 64, "c" * 96, expected_metrics_tools=metrics()["test_tools"])
         changed = copy.deepcopy(report)
         changed["database"]["nonce"] = "d" * 64
         with self.assertRaises(ValueError):
-            harness.report_contract(changed, "http", "a" * 40, "b" * 64, "c" * 96)
+            harness.report_contract(changed, "http", "a" * 40, "b" * 64, "c" * 96, expected_metrics_tools=metrics()["test_tools"])
 
     def test_cli_accepts_no_database_target_or_production_credential_argument(self):
         result = subprocess.run([sys.executable, str(ROOT / "tools/test_postgres18_image.py"), "--revision", "a" * 40,

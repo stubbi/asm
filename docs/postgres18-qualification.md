@@ -80,10 +80,16 @@ These checks bind the tested programs; they do not claim general reproducible bu
 | Suite | Required coverage |
 | --- | --- |
 | Catalog and operator | All 16 catalog cases, six offline operator cases, and the actual image command interface |
-| Canonical assembly HTTP | All 16 canonical runtime cases, including exact export bytes, failures, TLS, deadlines, and shutdown |
+| Canonical assembly HTTP | All 22 runtime cases, including exact export bytes, failures, TLS, deadlines, shutdown, and six metrics cases |
+| Metrics unit checks | All 19 named checks with exact qualification-tool hashes; these are separate from HTTP case counts |
 | Platform exclusion | Only the existing macOS extended ACL case is inapplicable on Linux |
 
 Each suite uses a new owned PostgreSQL cluster.
+The combined candidate requires the metrics descriptor only from the HTTP baseline.
+Capacity and envelope cases cannot substitute for its six HTTP metrics cases or 19 named unit checks.
+Original and derived qualification images must have matching fixed test-tool inventories.
+The measured preflight above remains 38 applicable cases at its recorded earlier source.
+It does not qualify this candidate's expanded coverage.
 The gate requires different database system identifiers.
 The gate retains failed checks and cleanup errors.
 It bounds standard output to 4 MiB and standard error to 1 MiB while reading each child process.
