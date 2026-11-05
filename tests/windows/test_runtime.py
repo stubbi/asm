@@ -746,12 +746,17 @@ class WindowsRuntimeTests(unittest.TestCase):
         reserved = self.home / ".local/bin"
         reserved.mkdir(parents=True)
         own_home_directories(self.home, self.work)
-        for basename in ("asm.exe", "AsM.ExE", "asm.exe.", "asm.exe ", "CON", "NUL.exe", "hello.exe:stream"):
+        devices = tuple(prefix + digit + suffix for prefix in ("COM", "LPT")
+                        for digit in "¹²³" for suffix in ("", ".exe"))
+        inventory_before = self.inventory.read_bytes() if self.inventory.exists() else None
+        for basename in ("asm.exe", "AsM.ExE", "asm.exe.", "asm.exe ", "CON", "NUL.exe", "hello.exe:stream") + devices:
             with self.subTest(basename=basename):
                 self.cli("install", PACKAGE, "--index", self.index, "--artifact", self.artifact,
                          "--output", reserved / basename, code=1)
                 self.assertEqual(list(reserved.iterdir()), [])
                 self.assertEqual(self.installed(), [])
+                inventory_after = self.inventory.read_bytes() if self.inventory.exists() else None
+                self.assertEqual(inventory_after, inventory_before)
 
     def test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records(self):
         self.payload(ASM.read_bytes(), kind="executable")
