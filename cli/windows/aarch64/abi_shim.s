@@ -277,6 +277,52 @@ _main:
     REQUIRE_EQ x19, x10
     ARM_IMM x10, O_DIRECTORY
     REQUIRE_EQ x20, x10
+    /* A deliberately invoked application has caller-owned duration. The
+     * same path selects an explicit bound for each fixed compiler tool. */
+    ARM_ADDR x0, abi_executable
+    ARM_ADDR x1, abi_argv
+    ARM_CALL win_spawn_wait
+    REQUIRE_EQ x9, #42
+    ARM_ADDR x10, abi_expected_wait
+    ARM_IMM x11, 120000
+    str x11, [x10]
+    ARM_ADDR x10, abi_expected_environment
+    mov x11, #-1
+    str x11, [x10]
+    ARM_ADDR x0, native_cc_path
+    ARM_ADDR x1, abi_argv
+    ARM_CALL win_spawn_wait
+    REQUIRE_EQ x9, #42
+    ARM_ADDR x0, as_path
+    ARM_ADDR x1, abi_argv
+    ARM_CALL win_spawn_wait
+    REQUIRE_EQ x9, #42
+    ARM_ADDR x0, ld_path
+    ARM_ADDR x1, abi_argv
+    ARM_CALL win_spawn_wait
+    REQUIRE_EQ x9, #42
+    ARM_ADDR x10, abi_expected_environment
+    str xzr, [x10]
+    /* Explicit finite waits still terminate and reap on expiry. */
+    ARM_ADDR x10, abi_expected_wait
+    mov x11, #37
+    str x11, [x10]
+    ARM_ADDR x10, abi_expect_timeout
+    mov x11, #1
+    str x11, [x10]
+    ARM_ADDR x0, abi_executable
+    ARM_ADDR x1, abi_argv
+    mov x2, #0
+    mov x3, #0
+    mov x4, #0
+    mov x5, #37
+    ARM_CALL win_spawn_core
+    REQUIRE_EQ x9, #127
+    ARM_ADDR x10, abi_terminate_calls
+    ldr x11, [x10]
+    REQUIRE_EQ x11, #1
+    ARM_ADDR x10, abi_expect_timeout
+    str xzr, [x10]
     /* A permanently readable pipe must still reach the elapsed deadline. */
     ARM_ADDR x10, win_capture_read
     mov x11, #0x9000
@@ -528,7 +574,9 @@ win_utf16:
     cbnz w10, 1b
     ret
 win_environment_block:
-    cbnz x0, abi_failed
+    ARM_ADDR x10, abi_expected_environment
+    ldr x10, [x10]
+    REQUIRE_EQ x0, x10
     mov x9, #0
     ret
 DuplicateHandle:
@@ -585,10 +633,31 @@ WaitForSingleObject:
     cbz x1, .Labi_capture_wait
     mov x10, #0x8000
     REQUIRE_EQ x0, x10
-    ARM_IMM x10, 120000
+    ARM_ADDR x10, abi_expect_timeout
+    ldr x11, [x10]
+    cbz x11, .Labi_normal_wait
+    ARM_ADDR x10, abi_terminate_calls
+    ldr x11, [x10]
+    cbnz x11, .Labi_reap_wait
+.Labi_normal_wait:
+    ARM_ADDR x10, abi_expected_wait
+    ldr x10, [x10]
     REQUIRE_EQ x1, x10
+    ARM_ADDR x10, abi_expect_timeout
+    ldr x11, [x10]
+    cbnz x11, .Labi_expired_wait
     API_CLOBBER
     mov x0, #0
+    ret
+.Labi_reap_wait:
+    ARM_IMM x10, 0xffffffff
+    REQUIRE_EQ w1, w10
+    API_CLOBBER
+    mov x0, #0
+    ret
+.Labi_expired_wait:
+    API_CLOBBER
+    mov x0, #258
     ret
 .Labi_capture_wait:
     ARM_ADDR x10, abi_capture_mode
@@ -622,8 +691,22 @@ DeleteProcThreadAttributeList:
     mov x0, #1
     ret
 LockFileEx:
-TerminateProcess:
     b abi_failed
+TerminateProcess:
+    ARM_IMM x10, 0x8000
+    REQUIRE_EQ x0, x10
+    REQUIRE_EQ w1, #127
+    ARM_ADDR x10, abi_expect_timeout
+    ldr x11, [x10]
+    REQUIRE_EQ x11, #1
+    ARM_ADDR x10, abi_terminate_calls
+    ldr x11, [x10]
+    REQUIRE_EQ x11, #0
+    mov x11, #1
+    str x11, [x10]
+    API_CLOBBER
+    mov x0, #1
+    ret
 GetLastError:
     ARM_ADDR x10, abi_probe_getinfo_error
     ldr x11, [x10]
@@ -787,6 +870,16 @@ abi_executable: .asciz "program.exe"
 abi_argument: .asciz "argument with spaces"
 .p2align 3
 abi_argv: .quad abi_executable, abi_argument, 0
+native_cc_path: .asciz "compiler.exe"
+as_path: .asciz "assembler.exe"
+ld_path: .asciz "linker.exe"
+.p2align 3
+envp: .quad 0
+native_tool_env: .quad 0
+abi_expected_wait: .quad 0xffffffff
+abi_expected_environment: .quad 0
+abi_expect_timeout: .quad 0
+abi_terminate_calls: .quad 0
 abi_component: .hword 101,110,116,114,121,0
 win_lock_name: .hword 46,97,115,109,45,108,111,99,107,0
 .p2align 3

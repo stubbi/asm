@@ -32,6 +32,9 @@ def source_text():
     spec.loader.exec_module(module)
     archive = module.prepare(ROOT / 'cli/aarch64/archive.s')
     stage = archive[archive.index('arc_create_stage:'):archive.index('/* Open/create implied parent')]
+    native = module.prepare(ROOT / 'cli/aarch64/native_link.s')
+    environment_start = native.index('native_link_child_environment:')
+    environment = native[environment_start:native.index('\n.section .rdata', environment_start)]
     parts = [module.prepare(ROOT / 'cli/aarch64/platform.inc'),
              region(HERE / 'platform.s', '.equ WIN_OPEN_IDENTITY', '/* x0=Win32 error'),
              region(HERE / 'platform.s', 'win_error_code:', 'win_nt_error:'),
@@ -48,6 +51,8 @@ def source_text():
              region(HERE / 'files.s', 'win_component_name:', '\n/* Extra Windows archive'),
              region(HERE / 'process.s', '.macro WIN_QUOTE', '/* Populate argc'),
              region(HERE / 'process.s', 'win_spawn_core:', '\n/* x0=explicit UTF8'),
+             region(HERE / 'process.s', 'win_spawn_wait:', '\n.section .rdata'),
+             environment,
              region(HERE / 'pipe.s', 'win_pump_capture:', '\n.section .rdata'),
              region(HERE / 'security.s', 'win_set_mode:', '.section .rdata'),
              region(ROOT / 'cli/aarch64/archive.s', '.equ ARC_LIMIT', '/* Native AArch64 port.'),
@@ -93,6 +98,14 @@ def main():
         return source[:begin] + body.replace(old, new) + source[finish:]
 
     cases = {'current': source}
+    cases['regression_application_wait'] = mutate(
+        'win_spawn_core:', 'win_inherit_duplicate:',
+        '    ARM_IMM x1, WIN_WAIT_INFINITE',
+        '    ARM_IMM x1, 120000')
+    cases['regression_tool_wait'] = mutate(
+        'win_spawn_wait:', 'native_link_child_environment:',
+        '    csel x5, x10, x5, eq',
+        '    mov x5, #0')
     cases['regression_archive_stage_access'] = mutate(
         'arc_create_stage:', 'GetStdHandle:',
         '    ARM_IMM w10, ARC_DIRECTORY | WIN_OPEN_SET_DACL',

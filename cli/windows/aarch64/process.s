@@ -7,6 +7,8 @@
     strh w10, [x21], #2
     sub x22, x22, #1
 .endm
+.equ WIN_TOOL_WAIT_MS, 120000
+.equ WIN_WAIT_INFINITE, 0xffffffff
 /* Populate argc/argv/envp from Windows Unicode APIs. Owns buffers with process
  * lifetime: 1024 argv slots, 32768 UTF8 argument bytes, 131072 environment bytes.
  * Invalid encoding or a capacity overflow terminates with status 2.
@@ -156,7 +158,9 @@ win_startup:
  * with strict UTF8 into bounded UTF16, then quoted using the Microsoft CRT
  * backslash/quote rule. Empty arguments and trailing backslashes round-trip.
  * x2=environment array or NULL to inherit. x3/x4=stdin/stdout HANDLE (0 std).
- * x5=deadline ms (0=120000). Output w9=child status, 127 setup/timeout error.
+ * x5=0 for unbounded or 1..0xfffffffe milliseconds. Fixed tools use
+ * WIN_TOOL_WAIT_MS; capture uses its separate bounded pump.
+ * w9=child status or 127 on setup/timeout failure.
  * Parent owns all pointers and streams; child only inherits three duplicates.
  * All created process/thread/stream handles close before return. Stack 224.
  */
@@ -342,7 +346,7 @@ win_spawn_core:
     mov x0, x19
     mov x1, x27
     cbnz x1, 4f
-    ARM_IMM x1, 120000
+    ARM_IMM x1, WIN_WAIT_INFINITE
 4:  bl WaitForSingleObject
     cbz w0, .Lwsp_exit
 .Lwsp_timeout:
@@ -446,6 +450,11 @@ win_environment_block:
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #64
     ret
+/* x0=executable pointer, x1=argv using win_spawn_core's bounds and ownership.
+ * Fixed compiler/assembler/linker pointers receive a private environment and
+ * WIN_TOOL_WAIT_MS. Deliberately run applications retain user environment
+ * and duration. Output w9=status or 127. Scratch x0-x17/NZCV; preserves x19-x29.
+ * Stack 32 plus core/helpers; all argument buffers remain borrowed. */
 win_spawn_wait:
     stp x29, x30, [sp, #-32]!
     mov x29, sp
@@ -457,11 +466,13 @@ win_spawn_wait:
     cmp x9, x16
     mov x10, #-1
     csel x2, x10, x9, eq
+    mov x5, #0
+    ARM_IMM x10, WIN_TOOL_WAIT_MS
+    csel x5, x10, x5, eq
     mov x0, x19
     mov x1, x20
     mov x3, #0
     mov x4, #0
-    mov x5, #0
     ARM_CALL win_spawn_core
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #32
