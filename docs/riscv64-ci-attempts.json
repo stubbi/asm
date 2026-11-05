@@ -372,6 +372,143 @@
       "run_url": "https://github.com/stubbi/asm/actions/runs/41943175391",
       "scope": "runtime not reached",
       "setup_failure": "The loader source resolved and its link was created. /lib/riscv64-linux-gnu already existed as a real directory resolving /usr/lib/riscv64-linux-gnu, so the guard refused to replace it."
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 602992,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "9b726f2b3a5493f5a80b6d561277e8a595c801dd2418d66f165f0120e66f1421"
+      },
+      "checkout_commit": "9d257c310de09f0e62be16445e35e51d26cf6d9f",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "b4ebd20058adcc526ce7ce3ab9a2d133755d46bad36dfda369f652b1e39ee9d4",
+          "outcome": "pass",
+          "seconds": 0.365,
+          "skipped_checks": false,
+          "tests_run": 12,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "eb55fba56a5cc3909bc0c544f0b83868124f4b0f1a6c1b897f6b6030ba9f3ce1",
+          "outcome": "fail",
+          "seconds": 57.295,
+          "skipped_checks": false,
+          "tests_run": 295,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "4bd2ac6414de1dbdea12a2acc3d7c20bf22c7d932b6a654af3782c3d6a847bdc",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-267yv3v9/probe"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "execution_mode": "emulated",
+      "head_commit": "ce6feba0235bb05ef3e23d350ce4bf88ddfaa88e",
+      "linked_toolchain_probe": {
+        "abi": "LP64D",
+        "elf_flags": 5,
+        "execution": {
+          "command": [
+            "/tmp/asm-riscv64-c-probe-k_yf6j6i/probe"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/linked-toolchain.log",
+          "log_sha256": "18a483e0d99f0a376ecfe529a0c6d63877204710bfc4698a0815f631c29aef38",
+          "outcome": "pass",
+          "seconds": 0.016,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "isa": "RV64GC",
+        "os": "Linux",
+        "sha256": "7c68caeaebc00d27e54da3673c09dcfb4a076d0a79f6d4e4eb1972369300977f"
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 6,
+        "tests": 295
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "tests": 12
+      },
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/41943502913/artifacts/riscv64-emulated-9d257c310de09f0e62be16445e35e51d26cf6d9f/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "732c7dc2ab98376693d60e2b4919f83d2c98c26b1b85c36685e5bb29f9bfa660"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/41943502913/full.log",
+        "sha256": "d2b21a6c2a5c79762981996c9e2f326ecf3ef7559e967d41ffdc5fd3d8cfdf5b"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        "The ELF fixture mutates first program header PT_RISCV_ATTRIBUTES instead of actual PT_LOAD; valid acceptance creates an inventory cascade in two later cases.",
+        "Two resource-limit denial subcases filter host97/160 instead of translated hostprlimit64; first updates the binary and contaminates the second no-op.",
+        "Guest signal-mask emulation does not propagate the intended host filter error. The unchanged denial checks require a full-system guest kernel."
+      ],
+      "run_id": 41943502913,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41943502913"
     }
   ],
   "execution_mode": "emulated",

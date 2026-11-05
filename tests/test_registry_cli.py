@@ -173,7 +173,14 @@ class RegistryCliTests(unittest.TestCase):
             mutations = [(0, "I", 0x464c457f), (4, "I", 0x1000007), (12, "I", 1),
                          (16, "I", 129), (20, "I", 0xffffffff), (28, "I", 1), (36, "I", 4)]
         else:
-            program_offset = struct.unpack_from("<Q", original, 32)[0]
+            header_offset = struct.unpack_from("<Q", original, 32)[0]
+            header_size, header_count = struct.unpack_from("<HH", original, 54)
+            # GNU RISC-V can place PT_RISCV_ATTRIBUTES before PT_LOAD.
+            # Mutate the actual load segment when checking W+X and file bounds.
+            program_offset = next(header_offset + number * header_size
+                                  for number in range(header_count)
+                                  if struct.unpack_from("<I", original,
+                                                        header_offset + number * header_size)[0] == 1)
             mutations = [
                 (4, "B", 1), (5, "B", 2), (18, "H", 62 if ELF_MACHINE == 183 else 183), (56, "H", 65535),
                 (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
@@ -185,8 +192,8 @@ class RegistryCliTests(unittest.TestCase):
             struct.pack_into("<" + format_, data, offset, value)
             bad.append(bytes(data))
         bad.append(b"#!/bin/sh\necho must-not-run\n")
-        for data in bad:
-            with self.subTest(prefix=data[:24]):
+        for case, data in enumerate(bad):
+            with self.subTest(case=case, prefix=data[:24]):
                 self.artifact.write_bytes(data)
                 self.digest = hashlib.sha256(data).hexdigest()
                 self.write_index(self.row(kind="executable"))
