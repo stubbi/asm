@@ -55,7 +55,7 @@ Do not run another architecture's suite against that alias concurrently.
 A plain source build uses fixed `/usr/local/bin/gh` for the existing manual-update provenance protocol.
 A release must supply the Intel bootstrap/verifier mapping through the distribution workstream.
 
-Native qualification uses two clean archives of one committed revision:
+Native qualification materializes two clean snapshots from one committed revision:
 
 ```sh
 python3 tools/qualify_macos_x86_64.py --commit HEAD --output native-intel
@@ -66,6 +66,8 @@ This command rejects translated execution by default.
 It retains command output, tests, byte size, digest, source revision, ABI, OS minimum, and tool versions.
 The final tests run against the compared bytes, without resigning afterward.
 A failed or empty suite, skipped case, expected failure, or changed artifact stops qualification.
+The shared Git reader disables replacement objects and reads original blobs and executable modes.
+Local archive attributes cannot substitute or omit qualification inputs.
 
 ## Retained local evidence
 
@@ -156,3 +158,11 @@ Root Makefile selection, admitted registry targets, compatible feeds, installer/
 Published clients' legacy macOS feed must exclude unknown Intel rows.
 After 0.6.0 is published, Intel release activation requires a new version and fresh exact-byte release evidence.
 The coordinator owns merging; distribution owners own activation and signed publication.
+
+The distribution review found the original qualifier used unrestricted `git archive`.
+Git replacement objects or local export attributes could change the input without changing its recorded commit.
+The qualifier now uses the existing guarded Git reader and shared materializer for both snapshots.
+Seven real-repository regressions cover commit, tree, and blob replacements, both export attributes, modes, and missing commits.
+All seven passed; all five substitution cases rejected the earlier archive-based extraction in an isolated mutation check.
+The registry suite then passed 76 cases.
+The earlier 89cdfb1 workflow remains an intermediate result; final qualification must use the corrected source reader.

@@ -11,6 +11,8 @@ import platform
 import subprocess
 import sys
 import tempfile
+import registry
+import release
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -20,6 +22,12 @@ def run(arguments, *, cwd=ROOT, timeout=60):
         raise RuntimeError(json.dumps({'command': arguments, 'cwd': str(cwd), 'exit': process.returncode,
                                       'stdout': process.stdout[-65536:], 'stderr': process.stderr[-65536:]}))
     return process.stdout.strip()
+
+
+def source_files(repository: Path, reference: str):
+    """Read original committed blobs/modes without replacement or archive filters."""
+    commit = release.resolve_commit(repository, reference)
+    return commit, registry.git_files(repository, commit, '.')
 
 
 def main():
@@ -34,8 +42,8 @@ def main():
     native = platform.machine() == 'x86_64' and translated != '1'
     if not native and not args.allow_rosetta:
         parser.error('native Intel hardware is required; Rosetta results need --allow-rosetta and remain translated')
-    commit = run(['git', 'rev-parse', '--verify', args.commit + '^{commit}'])
-    if run(['git', 'status', '--porcelain']):
+    commit, files = source_files(ROOT, args.commit)
+    if run(['git', '--no-replace-objects', 'status', '--porcelain']):
         parser.error('qualification requires a clean source checkout')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -52,14 +60,11 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='intel-source-') as temporary:
             directory = Path(temporary)
-            archive = directory / 'source.tar'
-            run(['git', 'archive', '--format=tar', '-o', str(archive), commit])
             binaries = []
             checkouts = []
             for number in range(2):
                 checkout = directory / str(number)
-                checkout.mkdir()
-                run(['/usr/bin/tar', '-xf', str(archive), '-C', str(checkout)])
+                release.materialize(files, checkout)
                 evidence['stage'] = f'clean-build-{number + 1}'
                 with (output / f'build-{number + 1}.log').open('w') as log:
                     process = subprocess.run(['make', '-f', 'cli/macos/x86_64/Makefile', 'all'], cwd=checkout,
