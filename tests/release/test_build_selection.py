@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -124,6 +125,51 @@ class VerifierBuildSelectionTests(unittest.TestCase):
             result = self.dry_run(target, operating_system="Linux", architecture="x86_64",
                                   directory=directory, force=False)
             self.assert_target_environment(result, target, "linux", "amd64")
+
+    def test_internal_source_change_rebuilds_an_existing_verifier(self):
+        with tempfile.TemporaryDirectory(prefix="asm-verifier-input-") as temporary:
+            directory = Path(temporary)
+            inputs = {
+                "Makefile": (ROOT / "Makefile").read_bytes(),
+                "verifier/main.go": b"package main\n",
+                "verifier/internal/securefs/files_windows.go": b"original adapter bytes\n",
+                "verifier/go.mod": b"module fixture\n",
+                "verifier/go.sum": b"",
+                "verifier/trust/asm-root.json": b"{}\n",
+                # Keep the real make recipes and filesystem effects. This
+                # controlled compiler avoids a Go dependency in this gate.
+                "compiler.py": b"from pathlib import Path\nimport sys\n"
+                    b"assert sys.argv[1] == 'build'\n"
+                    b"Path(sys.argv[sys.argv.index('-o') + 1]).write_bytes(\n"
+                    b"    Path('internal/securefs/files_windows.go').read_bytes())\n",
+                "tools/verifier_notices.py": b"from pathlib import Path\nimport sys\n"
+                    b"Path(sys.argv[-1]).write_text('fixture notices\\n')\n",
+            }
+            for name, data in inputs.items():
+                path = directory / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                os.utime(path, (1_700_000_000, 1_700_000_000))
+            target = "build/asm-verify-x86_64-linux"
+            arguments = ["make", "--no-print-directory", "HOST_OS=Linux", "ARCH=x86_64",
+                         f"GO={sys.executable} {directory / 'compiler.py'}",
+                         f"PYTHON={sys.executable}", "TRUSTED_DISTRIBUTION=0", target]
+            environment = dict(os.environ)
+            for name in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEOVERRIDES"):
+                environment.pop(name, None)
+            def build():
+                result = subprocess.run(arguments, cwd=directory, env=environment,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+            build()
+            artifact = directory / target
+            self.assertEqual(artifact.read_bytes(), b"original adapter bytes\n")
+            os.utime(artifact, (1_700_000_010, 1_700_000_010))
+            source = directory / "verifier/internal/securefs/files_windows.go"
+            source.write_bytes(b"changed adapter bytes\n")
+            os.utime(source, (1_700_000_020, 1_700_000_020))
+            build()
+            self.assertEqual(artifact.read_bytes(), b"changed adapter bytes\n")
 
 
 if __name__ == "__main__":
