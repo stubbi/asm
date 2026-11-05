@@ -22,6 +22,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Assemble each Linux runtime source without execution
+        shell: bash
+        timeout-minutes: 2
+        working-directory: server
+        run: |
+          set -euo pipefail
+          clang --version
+          ASM_OBJECTS="$RUNNER_TEMP/asm-server-source-objects"
+          mkdir -m 700 "$ASM_OBJECTS"
+          for target in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu; do
+            case "$target" in
+              x86_64-linux-gnu) source_dir=.; target_flags=() ;;
+              aarch64-linux-gnu) source_dir=aarch64; target_flags=() ;;
+              riscv64-linux-gnu) source_dir=riscv64; target_flags=(-march=rv64gc -mabi=lp64d) ;;
+            esac
+            for source in runtime config; do
+              clang --target="$target" "${target_flags[@]}" -x assembler-with-cpp \
+                -DASM_SOURCE_REVISION="\"$GITHUB_SHA\"" -c "$source_dir/$source.s" \
+                -o "$ASM_OBJECTS/$target-$source.o"
+            done
+          done
       - name: Fetch and check the pinned source archives
         shell: bash
         timeout-minutes: 5
