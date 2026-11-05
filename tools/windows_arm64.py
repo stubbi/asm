@@ -110,6 +110,54 @@ def prepare(source: Path) -> str:
     if source.name == 'dependencies.s':
         text = replace_once(text, 'dependency_acquire:\n', 'dependency_acquire:\n    ARM_CALL win_managed_check_cwd\n    cbnz x9, dependency_io_error\n')
     if source.name == 'resolver.s':
+        # Both resolve and sync check the argument before dependency state.
+        anchor = '    ARM_CALL registry_arg_value\n    ARM_ADDR x16, res_artifacts\n    str x9, [x16]'
+        if text.count(anchor) != 2:
+            raise ValueError('expected resolve and sync artifact option values')
+        text = text.replace(anchor, '''    ARM_CALL registry_arg_value
+    ARM_SAVE x9
+    mov x0, x9
+    ARM_CALL win_res_artifacts_input
+    mov w10, w9
+    ARM_RESTORE x9
+    cbz w10, registry_bad_args
+    ARM_ADDR x16, res_artifacts
+    str x9, [x16]''')
+        text += '''
+.section .text
+/* x0=borrowed nonempty NUL-terminated argument, <=4095 bytes. w9=1 if its
+ * length and drive prefix are usable, else0. x0 preserved; x9-x11/x16/NZCV
+ * scratch. Stack16 for strlen. No copy, filesystem access, or input mutation.
+ * The component walker still validates the complete artifact path. */
+win_res_artifacts_input:
+    ARM_CALL strlen
+    cmp x9, #4000
+    b.hi .Lwin_res_input_bad
+    ldrb w10, [x0]
+    cmp w10, #47
+    b.eq .Lwin_res_input_bad
+    cmp w10, #92
+    b.eq .Lwin_res_input_bad
+    ldrb w11, [x0, #1]
+    cmp w11, #58
+    b.ne .Lwin_res_input_good
+    orr w10, w10, #32
+    cmp w10, #97
+    b.lo .Lwin_res_input_bad
+    cmp w10, #122
+    b.hi .Lwin_res_input_bad
+    ldrb w11, [x0, #2]
+    cmp w11, #47
+    b.eq .Lwin_res_input_good
+    cmp w11, #92
+    b.ne .Lwin_res_input_bad
+.Lwin_res_input_good:
+    mov w9, #1
+    ret
+.Lwin_res_input_bad:
+    mov w9, #0
+    ret
+'''
         # COFF cannot encode this one-MiB symbol addend in ADRP. Materialize
         # the same end address with ADD's shifted immediate, without changing
         # another register, flags, buffer capacity, or the overflow branch.

@@ -205,6 +205,61 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     if source.name == 'dependencies.s':
         text = text.replace('dependency_acquire:\n', 'dependency_acquire:\n    call win_managed_check_workspace\n', 1)
     if source.name == 'resolver.s':
+        # Both resolve and sync validate before dependency_acquire can create
+        # its coordination file. Keep the borrowed argument across the check.
+        anchor = '    call registry_arg_value\n    mov [rip + res_artifacts], rax\n'
+        assert text.count(anchor) == 2, 'resolve and sync artifact option values'
+        text = text.replace(anchor, '''    call registry_arg_value
+    push rax
+    mov rdi, rax
+    call win_res_artifacts_input
+    mov edx, eax
+    pop rax
+    test edx, edx
+    jz registry_bad_args
+    mov [rip + res_artifacts], rax
+''')
+        text += '''
+.section .text
+/* RDI=borrowed nonempty NUL-terminated argument, <=4095 bytes. EAX=1 if its
+ * length and drive prefix are usable, else0. Scratch RAX/RCX/RDX/flags; stack8
+ * for strlen. No copy, filesystem access, or input mutation. The component
+ * walker still validates the complete path before it opens an artifact. */
+win_res_artifacts_input:
+    call strlen
+    cmp rax, 4000
+    ja .Lwin_res_input_bad
+    mov rdx, rdi
+    cmp byte ptr [rdx], '/'
+    je .Lwin_res_input_root
+    cmp byte ptr [rdx], 92
+    jne .Lwin_res_input_drive
+.Lwin_res_input_root:
+    inc rdx
+    cmp byte ptr [rdx], 0
+    je .Lwin_res_input_bad
+    cmp byte ptr [rdx + 1], ':'
+    jne .Lwin_res_input_bad
+.Lwin_res_input_drive:
+    cmp byte ptr [rdx + 1], ':'
+    jne .Lwin_res_input_good
+    movzx ecx, byte ptr [rdx]
+    or ecx, 32
+    cmp ecx, 'a'
+    jb .Lwin_res_input_bad
+    cmp ecx, 'z'
+    ja .Lwin_res_input_bad
+    cmp byte ptr [rdx + 2], '/'
+    je .Lwin_res_input_good
+    cmp byte ptr [rdx + 2], 92
+    jne .Lwin_res_input_bad
+.Lwin_res_input_good:
+    mov eax, 1
+    ret
+.Lwin_res_input_bad:
+    xor eax, eax
+    ret
+'''
         # Adapt only the resolver's owned <=4000-byte directory copy. Public
         # drive-relative input must not reach win_open's internal C: root form.
         # Keep the mature component walk; skip only a validated drive prefix.

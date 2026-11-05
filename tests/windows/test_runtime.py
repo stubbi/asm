@@ -943,14 +943,24 @@ class WindowsRuntimeTests(unittest.TestCase):
             manifest.write_bytes(manifest.read_bytes() +
                                  b'[resolution]\nschema = "1"\n[dependencies]\n"fixture/hello" = "0.1.0"\n')
             return project
-        for number, directory in enumerate((self.work.drive, self.work.drive + 'relative')):
-            with self.subTest(refused=directory):
+        refusals = ((command, directory) for command in ('resolve', 'sync')
+                    for directory in (self.work.drive, self.work.drive + 'relative'))
+        for number, (command, directory) in enumerate(refusals):
+            with self.subTest(command=command, refused=directory):
                 project = project_for('ambiguous-' + str(number))
+                # The header selects graph sync. Refuse the argument before
+                # parsing this deliberately incomplete lock or creating state.
+                if command == 'sync':
+                    (project / 'asm.lock').write_bytes(b'# asm-lock-v3\n')
                 before = {path.relative_to(project): path.read_bytes()
                           for path in project.rglob('*') if path.is_file()}
-                self.cli('resolve', '--index', self.index, '--artifacts', directory,
+                options = ('--index', self.index) if command == 'resolve' else ()
+                self.cli(command, *options, '--artifacts', directory,
                          cwd=project, code=1 if ARM64 else 2)
-                self.assertFalse((project / 'asm.lock').exists())
+                if command == 'resolve':
+                    self.assertFalse((project / 'asm.lock').exists())
+                else:
+                    self.assertEqual((project / 'asm.lock').read_bytes(), b'# asm-lock-v3\n')
                 after = {path.relative_to(project): path.read_bytes()
                          for path in project.rglob('*') if path.is_file()}
                 self.assertEqual(after, before)
