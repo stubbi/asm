@@ -27,3 +27,55 @@ jobs:
         run: make verifier-test
       - name: Check the native caller and installation failure paths
         run: make test
+
+  windows:
+    name: Verify native Windows ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-windows
+            architecture: x64
+          - runner: windows-11-arm
+            target: aarch64-windows
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: verifier/go.mod
+          architecture: ${{ matrix.architecture }}
+          cache: false
+      - name: Check evidence refusal and bounded process capture
+        run: |
+          python -m unittest discover -s tests/release -p test_windows_verifier_gate.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Run the complete native verifier suite
+        env:
+          ASM_VERIFIER_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_verifier_test.py --target $env:ASM_VERIFIER_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-verifier-evidence
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain native results including failures and skipped paths
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-windows-verifier-${{ matrix.target }}-${{ github.sha }}
+          path: build/windows-verifier-evidence/*
+          if-no-files-found: error
+          retention-days: 14
