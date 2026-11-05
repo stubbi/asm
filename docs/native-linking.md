@@ -84,6 +84,10 @@ The reference package built through the recorded native Asm CLI.
 The record binds the CLI, archive, both executables, test logs, toolchain, and exact checkout commit.
 Downloaded artifact bytes independently matched their recorded digests.
 
+The record also retains the schema-prefix regression: four readiness failures on each target, followed by both corrected suites passing.
+Literal temporary-schema prefixes now prevent wildcard exclusions from hiding reader CREATE privileges.
+The migration bytes and checksum remain unchanged.
+
 The clean Apple Silicon checkout passed 225 CLI tests, 60 registry tests, and both verifier race-test packages.
 Seven evidence-parser regressions passed separately; they do not establish server execution.
 These results apply to their recorded commits and artifacts.
