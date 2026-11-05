@@ -25,6 +25,7 @@
 .equ MAX_REPLY, 16384
 .equ MAX_TSV, 1048576
 .equ MAX_JSON, 4194304
+.equ METRICS_REPLY, 16384
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
@@ -35,11 +36,13 @@ env_database: .asciz "ASM_DATABASE_URL_FILE"
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
 db_error: .asciz "asm-hub: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub: the HTTP listener could not start.\n"
+metrics_error: .asciz "asm-hub: request metrics could not start.\n"
 started: .asciz "asm-hub: listening.\n"
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
 path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
+path_metrics: .asciz "/metrics"
 path_linux: .asciz "/registry/v1/index.tsv"
 path_macos: .asciz "/registry/v1/index-macos.tsv"
 path_all: .asciz "/registry/v1/index-all.tsv"
@@ -54,6 +57,7 @@ header_connection: .asciz "Connection"
 type_json: .asciz "application/json; charset=utf-8"
 type_index: .asciz "application/json"
 type_tsv: .asciz "text/tab-separated-values; charset=utf-8"
+type_metrics: .asciz "text/plain; version=0.0.4; charset=utf-8"
 cache_no_store: .asciz "no-store"
 nosniff: .asciz "nosniff"
 close_value: .asciz "close"
@@ -70,6 +74,7 @@ bad_body: .asciz "{\"error\":{\"code\":\"body_not_supported\",\"message\":\"Read
 bad_method_body: .asciz "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"This endpoint accepts GET requests only.\"}}\n"
 not_found_body: .asciz "{\"error\":{\"code\":\"not_found\",\"message\":\"The route does not exist.\"}}\n"
 unavailable_body: .asciz "{\"error\":{\"code\":\"temporarily_unavailable\",\"message\":\"The database request could not finish. Try again shortly.\"}}\n"
+metrics_unavailable_body: .asciz "{\"error\":{\"code\":\"metrics_unavailable\",\"message\":\"Request metrics are unavailable. Restart the server.\"}}\n"
 uri_body: .asciz "{\"error\":{\"code\":\"uri_too_long\",\"message\":\"The request URL exceeds 2048 bytes.\"}}\n"
 headers_body: .asciz "{\"error\":{\"code\":\"headers_too_large\",\"message\":\"The headers exceed the service limit.\"}}\n"
 db_key_dbname: .asciz "dbname"
@@ -293,6 +298,8 @@ main:
     li t6, 0
     beq t5,t6, .Ldatabase_fail
 
+    call asm_metrics_init
+    beqz a0, .Lmetrics_fail
     li t3, 1036
     mv a0, t3
     slli a0, a0, 32
@@ -459,6 +466,7 @@ main:
     call close
     mv t0, a0
 .Ldaemon_stopped:
+    call asm_metrics_destroy
     mv t3, t0
     slli t3, t3, 32
     srli t3, t3, 32
@@ -505,6 +513,7 @@ main:
     srli t0, t0, 32
     j .Lmain_done
 .Llisten_fail:
+    call asm_metrics_destroy
     la t3, listen_error
     mv a0, t3
     call message
@@ -513,6 +522,11 @@ main:
     mv t0, t3
     slli t0, t0, 32
     srli t0, t0, 32
+    j .Lmain_done
+.Lmetrics_fail:
+    la a0, metrics_error
+    call message
+    li t0, 71
 .Lmain_done:
     mv a0, t0
     ld s1, 72(sp)
@@ -1739,11 +1753,12 @@ query_value:
 
 
 /* MHD callback: a1=connection,a2=path,a3=method,a7=request-state pointer.
- * a0=MHD_Result. Frame 112 saves s1-s6/ra; header/query/parameter workspaces
- * occupy 56..95. Borrows request strings only here. A catalog result is owned
+ * a0=MHD_Result. Frame144 saves s1-s6/ra; existing workspaces occupy56..95.
+ * Metrics context96..111, request-state pointer112, URI marker120, status124.
+ * Borrows request strings only here. A catalog result is owned
  * until MHD copies it, then always cleared. No PGconn is shared or cached. */
 handle_request:
-    addi sp, sp, -112
+    addi sp, sp, -144
     sd s1, 0(sp)
     sd s2, 8(sp)
     sd s3, 16(sp)
@@ -1757,10 +1772,19 @@ handle_request:
     ld t0, 0(a7)
     li t1, 2
     beq t0, t1, .Lhandled
+    sw t0, 120(sp)
+    sd a7, 112(sp)
+    addi a0, sp, 96
+    call asm_metrics_begin
+    lwu t0, 120(sp)
+    ld a7, 112(sp)
     li t1, 1
     beq t0, t1, .Luri_error
     li t0, 2
     sd t0, 0(a7)
+    mv a0, s2
+    call asm_metrics_route
+    sw a0, 104(sp)
     mv a0, s3
     la a1, get_method
     call strcmp
@@ -1812,6 +1836,10 @@ handle_request:
     call strcmp
     beqz a0, .Lstatus
     mv a0, s2
+    la a1, path_metrics
+    call strcmp
+    beqz a0, .Lmetrics
+    mv a0, s2
     la a1, path_linux
     call strcmp
     beqz a0, .Llinux_export
@@ -1846,6 +1874,13 @@ handle_request:
     la a2, status_body
     li a1, 200
     j .Lfixed_response
+.Lmetrics:
+    mv a0, s1
+    call queue_metrics
+    mv a2, a0
+    addi a0, sp, 96
+    call asm_metrics_finish
+    j .Lrequest_return
 .Llinux_export:
     la a0, path_linux
     j .Ltsv_export
@@ -1889,6 +1924,10 @@ handle_request:
     mv a3, s5
     mv a4, s6
     call queue_response
+    mv a2, a0
+    li a1, 200
+    addi a0, sp, 96
+    call asm_metrics_finish
     mv s3, a0
     mv a0, s4
     call PQclear
@@ -1924,8 +1963,13 @@ handle_request:
     la a2, unavailable_body
     li a1, 503
 .Lfixed_response:
+    sw a1, 124(sp)
     mv a0, s1
     call queue_json
+    mv a2, a0
+    lwu a1, 124(sp)
+    addi a0, sp, 96
+    call asm_metrics_finish
     j .Lrequest_return
 .Lhandled:
     li a0, 1
@@ -1937,7 +1981,7 @@ handle_request:
     ld s5, 32(sp)
     ld s6, 40(sp)
     ld ra, 48(sp)
-    addi sp, sp, 112
+    addi sp, sp, 144
     ret
 
 
@@ -2048,6 +2092,43 @@ queue_response:
     ld s6, 40(sp)
     ld ra, 48(sp)
     addi sp, sp, 64
+    ret
+
+/* a0=connection; a0=MHD_Result,a1=requested HTTP status200/503.
+ * Frame16400 saves s1/ra and owns a private16384-byte response buffer.
+ * Existing queue helpers copy response bytes before this frame is released.
+ * Preserves all required LP64D registers; owns no HTTP object after return. */
+queue_metrics:
+    addi sp, sp, -16
+    sd s1, 0(sp)
+    sd ra, 8(sp)
+    li t0, -METRICS_REPLY
+    add sp, sp, t0
+    mv s1, a0
+    mv a0, sp
+    li a1, METRICS_REPLY
+    call asm_metrics_render
+    blez a0, .Lmetrics_unavailable
+    mv a3, a0
+    mv a0, s1
+    li a1, 200
+    mv a2, sp
+    la a4, type_metrics
+    call queue_response
+    li a1, 200
+    j .Lmetrics_queued
+.Lmetrics_unavailable:
+    mv a0, s1
+    li a1, 503
+    la a2, metrics_unavailable_body
+    call queue_json
+    li a1, 503
+.Lmetrics_queued:
+    li t0, METRICS_REPLY
+    add sp, sp, t0
+    ld s1, 0(sp)
+    ld ra, 8(sp)
+    addi sp, sp, 16
     ret
 
 

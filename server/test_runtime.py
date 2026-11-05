@@ -15,6 +15,8 @@ import pty
 import re
 import secrets
 import socket
+import stat
+import struct
 import subprocess
 import sys
 import termios
@@ -304,6 +306,272 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(buckets[-1], count)
             if count == 0:
                 self.assertEqual(samples[(duration + "_sum", (("route", route),))], 0)
+
+    def metrics_request(self, port, path, *, method="GET", body=None, headers=None, maximum=4194304):
+        """Use an owned loopback child; keep every response read bounded."""
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+        try:
+            connection.request(method, path, body=body, headers=headers or {})
+            response = connection.getresponse()
+            content = response.read(maximum + 1)
+            self.assertLessEqual(len(content), maximum)
+            return response.status, dict(response.getheaders()), content
+        finally:
+            connection.close()
+
+    def metrics_value(self, samples, name, *, route=None, status=None, boundary=None):
+        labels = {}
+        if route is not None:
+            labels["route"] = route
+        if status is not None:
+            labels["status_class"] = status
+        if boundary is not None:
+            labels["le"] = boundary
+        key = (name, tuple(sorted(labels.items())))
+        self.assertIn(key, samples)
+        return samples[key]
+
+    def metrics_snapshot(self, port):
+        code, _, body = self.metrics_request(port, "/metrics", maximum=16384)
+        self.assertEqual(code, 200)
+        return self.metrics_samples(body)
+
+    def metrics_samples(self, body):
+        self.assertLessEqual(len(body), 16384)
+        samples = {}
+        for line in body.decode("ascii").splitlines():
+            if line.startswith("#"):
+                continue
+            match = re.fullmatch(r"(asm_[a-z_]+)(?:\{([^}]*)\})? ([0-9]+(?:\.[0-9]{1,9})?)", line)
+            self.assertIsNotNone(match)
+            name, raw_labels, value = match.groups()
+            labels = {}
+            for field in raw_labels.split(",") if raw_labels else ():
+                match = re.fullmatch(r'([a-z_]+)="([^"\\]*)"', field)
+                self.assertIsNotNone(match)
+                label, text = match.groups()
+                self.assertNotIn(label, labels)
+                labels[label] = text
+            key = (name, tuple(sorted(labels.items())))
+            self.assertNotIn(key, samples)
+            samples[key] = Decimal(value)
+        self.assertEqual(len(samples), 79)
+        for route in ("live", "ready", "about", "index", "metrics", "other"):
+            count = self.metrics_value(samples, "asm_http_request_duration_seconds_count", route=route)
+            self.assertEqual(count, sum(self.metrics_value(samples, "asm_http_requests_total", route=route, status=status)
+                                        for status in ("2xx", "4xx", "5xx")))
+            buckets = [self.metrics_value(samples, "asm_http_request_duration_seconds_bucket", route=route, boundary=boundary)
+                       for boundary in ("0.005", "0.01", "0.05", "0.1", "0.5", "1", "2", "+Inf")]
+            self.assertEqual(buckets, sorted(buckets))
+            self.assertEqual(buckets[-1], count)
+        self.metrics_value(samples, "asm_http_connection_failures_total")
+        return samples
+
+    def metrics_fault_library(self):
+        directory = Path(os.environ.get("ASM_METRICS_TEST_DIRECTORY", self.binary.parent))
+        path = directory / "metrics-faults.so"
+        info = path.lstat()
+        self.assertTrue(stat.S_ISREG(info.st_mode))
+        self.assertEqual(stat.S_IMODE(info.st_mode), 0o555)
+        return str(path.resolve(strict=True))
+
+    def metrics_diagnostic(self, path):
+        """Retain bounded fixed child diagnostics without exposing unexpected input."""
+        allowed = {
+            b"asm-hub: listening.",
+            b"asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.",
+            b"asm-hub: the database role, schema, or catalog is not ready.",
+            b"asm-hub: the HTTP listener could not start.",
+            b"asm-hub: request metrics could not start.",
+            b"asm-hub: request metrics synchronization failed.",
+            b"asm-metrics-test: create failure", b"asm-metrics-test: header failure",
+            b"asm-metrics-test: queue failure", b"asm-metrics-test: clock failure",
+            b"asm-metrics-test: destroyed owned response", b"asm-metrics-test: cleared owned result",
+        }
+        try:
+            with path.open("rb") as source:
+                content = source.read(65537)
+            sys.stderr.buffer.write(b"Owned metrics child diagnostics:\n")
+            for line in content[:65536].splitlines():
+                sys.stderr.buffer.write(line + b"\n" if line in allowed else b"Unexpected child log content withheld.\n")
+            if len(content) > 65536:
+                sys.stderr.buffer.write(b"Owned metrics child log exceeded 65536 bytes.\n")
+        except OSError:
+            sys.stderr.buffer.write(b"Owned metrics child log was unavailable.\n")
+
+    @contextmanager
+    def metrics_server(self, *, fault=None, target="about"):
+        port = free_port()
+        log_path = self.base / ("metrics-" + secrets.token_hex(6) + ".log")
+        env = self.environment(ASM_BIND=f"127.0.0.1:{port}", ASM_SERVER_BINARY=str(self.binary))
+        if fault:
+            env.update(LD_PRELOAD=self.metrics_fault_library(), ASM_METRICS_TEST_FAULT=fault,
+                       ASM_METRICS_TEST_TARGET=target)
+        with log_path.open("wb") as log:
+            process = subprocess.Popen([str(self.binary), "serve"], env=env, stdout=log, stderr=log)
+            failed = False
+            stop_error = None
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    self.assertIsNone(process.poll(), "Owned metrics child exited before becoming live.")
+                    try:
+                        if self.metrics_request(port, "/health/live")[0] == 200:
+                            break
+                    except OSError:
+                        pass
+                    self.assertLess(time.monotonic(), deadline, "Owned metrics child did not become live.")
+                    time.sleep(0.01)
+                yield port, log_path
+            except BaseException:
+                failed = True
+                raise
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=2)
+                        stop_error = AssertionError("Owned metrics child did not stop within three seconds.")
+                if failed or stop_error or process.returncode != 0:
+                    self.metrics_diagnostic(log_path)
+                if stop_error:
+                    raise stop_error
+                if not failed:
+                    self.assertEqual(process.returncode, 0)
+
+    def test_metrics_errors_and_exactly_once_queue_accounting(self):
+        with self.metrics_server() as (port, _):
+            before = self.metrics_snapshot(port)
+            cases = [("/api/v2/status", {}, 200)]
+            cases.extend((path, {}, 200) for path in self.exports)
+            cases.extend((
+                ("/untrusted-package/account", {}, 404),
+                ("/api/v2/status", {"method": "POST"}, 405),
+                ("/api/v2/status?account=untrusted", {}, 400),
+                ("/api/v2/status", {"body": b"x"}, 400),
+                ("/api/v2/status", {"method": "HEAD"}, 405),
+                ("/api/v2/status", {"headers": {"X-" + str(index): "x" for index in range(65)}}, 431),
+                ("/api/v2/status", {"headers": {"X-Bound": "x" * 16400}}, 431),
+                ("/health/live?account=untrusted", {}, 400),
+                ("/" + "x" * 2048, {}, 414),
+            ))
+            for path, arguments, expected in cases:
+                with self.subTest(path=path[:80], arguments=tuple(arguments)):
+                    self.assertEqual(self.metrics_request(port, path, **arguments)[0], expected)
+            after = self.metrics_snapshot(port)
+            for route, status, expected in (("index", "2xx", 4), ("about", "2xx", 1),
+                    ("about", "4xx", 6), ("live", "4xx", 1), ("other", "4xx", 2), ("metrics", "2xx", 1)):
+                self.assertEqual(self.metrics_value(after, "asm_http_requests_total", route=route, status=status) -
+                                 self.metrics_value(before, "asm_http_requests_total", route=route, status=status), expected)
+            self.assertEqual(self.metrics_value(after, "asm_http_connection_failures_total"), 0)
+
+    def test_metrics_database_delay_and_failed_request_timing(self):
+        with self.metrics_server() as (port, _):
+            before = self.metrics_snapshot(port)
+            select = ("SELECT route,body,sha256,media_type,revision,acceptance_commit FROM {source} "
+                      "CROSS JOIN (SELECT pg_catalog.pg_sleep(0.06)) AS stalled")
+            with self.export_view(select):
+                self.assertEqual(self.metrics_request(port, "/registry/v1/index.json")[0], 200)
+            delayed = self.metrics_snapshot(port)
+            self.assertEqual(self.metrics_value(delayed, "asm_http_requests_total", route="index", status="2xx"), 1)
+            self.assertEqual(self.metrics_value(delayed, "asm_http_request_duration_seconds_bucket", route="index", boundary="0.05"), 0)
+            self.assertGreaterEqual(self.metrics_value(delayed, "asm_http_request_duration_seconds_sum", route="index") -
+                                    self.metrics_value(before, "asm_http_request_duration_seconds_sum", route="index"), Decimal("0.05"))
+            with self.export_view(select.replace("pg_sleep(0.06)", "pg_sleep(3)")):
+                started = time.monotonic()
+                self.assertEqual(self.metrics_request(port, "/registry/v1/index.json")[0], 503)
+                self.assertLess(time.monotonic() - started, 2.8)
+                failed = self.metrics_snapshot(port)
+                self.assertEqual(self.metrics_value(failed, "asm_http_requests_total", route="index", status="5xx"), 1)
+                self.assertEqual(self.metrics_value(failed, "asm_http_request_duration_seconds_count", route="index"), 2)
+                self.assertGreater(self.metrics_value(failed, "asm_http_request_duration_seconds_sum", route="index") -
+                                   self.metrics_value(delayed, "asm_http_request_duration_seconds_sum", route="index"), Decimal("0.5"))
+                self.assertEqual(self.metrics_request(port, "/health/live")[0], 200)
+
+    def test_metrics_concurrent_scrapes_preserve_snapshots(self):
+        with self.metrics_server() as (port, _):
+            self.metrics_snapshot(port)
+            paths = ["/metrics", "/api/v2/status", "/registry/v1/index.json"] * 12
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as clients:
+                responses = list(clients.map(lambda path: self.metrics_request(port, path), paths))
+            for path, (code, _, body) in zip(paths, responses):
+                self.assertEqual(code, 200)
+                if path == "/registry/v1/index.json":
+                    self.assertEqual(body, self.exports[path])
+                elif path == "/api/v2/status":
+                    self.assertEqual(json.loads(body)["source_revision"], self.revision)
+                else:
+                    self.metrics_samples(body)
+            final = self.metrics_snapshot(port)
+            for route, expected in (("index", 12), ("about", 12), ("metrics", 13)):
+                self.assertEqual(self.metrics_value(final, "asm_http_requests_total", route=route, status="2xx"), expected)
+            self.assertEqual(self.metrics_value(final, "asm_http_connection_failures_total"), 0)
+
+    def test_metrics_queue_failures_preserve_ownership(self):
+        for target in ("about", "index"):
+            for fault in ("create", "header", "queue"):
+                with self.subTest(target=target, fault=fault):
+                    with self.metrics_server(fault=fault, target=target) as (port, log_path):
+                        path = "/api/v2/status" if target == "about" else "/registry/v1/index.json"
+                        with self.assertRaises((OSError, http.client.HTTPException)):
+                            self.metrics_request(port, path)
+                        snapshot = self.metrics_snapshot(port)
+                        self.assertEqual(self.metrics_value(snapshot, "asm_http_connection_failures_total"), 1)
+                        route = "about" if target == "about" else "index"
+                        self.assertEqual(self.metrics_value(snapshot, "asm_http_request_duration_seconds_count", route=route), 0)
+                        code, _, body = self.metrics_request(port, path)
+                        self.assertEqual(code, 200)
+                        if target == "index":
+                            self.assertEqual(body, self.exports[path])
+                        with log_path.open("rb") as source:
+                            log = source.read(65537)
+                        self.assertLessEqual(len(log), 65536)
+                        self.assertEqual(log.count(("asm-metrics-test: " + fault + " failure\n").encode()), 1)
+                        self.assertEqual(log.count(b"asm-metrics-test: destroyed owned response\n"), fault != "create")
+                        self.assertEqual(log.count(b"asm-metrics-test: cleared owned result\n"), target == "index")
+                        self.assertFalse(b"postgresql://" in log, "Owned metrics child exposed protected connection input.")
+        with self.metrics_server(fault="clock") as (port, log_path):
+            self.assertEqual(self.metrics_request(port, "/api/v2/status")[0], 200)
+            code, _, body = self.metrics_request(port, "/metrics", maximum=16384)
+            self.assertEqual(code, 503)
+            self.assertEqual(json.loads(body)["error"]["code"], "metrics_unavailable")
+            self.assertEqual(json.loads(body)["error"]["message"], "Request metrics are unavailable. Restart the server.")
+            self.assertEqual(self.metrics_request(port, "/health/live")[0], 200)
+            self.assertEqual(log_path.read_bytes().count(b"asm-metrics-test: clock failure\n"), 1)
+        rejected = self.reject(expected=71, LD_PRELOAD=self.metrics_fault_library(), ASM_SERVER_BINARY=str(self.binary),
+                               ASM_METRICS_TEST_FAULT="mutex-init", ASM_METRICS_TEST_TARGET="about")
+        self.assertEqual(rejected.stderr, b"asm-hub: request metrics could not start.\n")
+
+    def test_metrics_aborts_preserve_queue_semantics(self):
+        with self.metrics_server() as (port, _):
+            before = self.metrics_snapshot(port)
+            for _ in range(4):
+                with socket.create_connection(("127.0.0.1", port), timeout=3) as connection:
+                    connection.sendall(b"GET /api/v2/status HTTP/1.1\r\nHost: localhost\r\nX-Partial: ")
+            partial = self.metrics_snapshot(port)
+            self.assertEqual(self.metrics_value(partial, "asm_http_request_duration_seconds_count", route="about"),
+                             self.metrics_value(before, "asm_http_request_duration_seconds_count", route="about"))
+            select = ("SELECT route,CASE WHEN route='/registry/v1/index.json' THEN repeat('x',4194304) "
+                      "ELSE body END AS body,sha256,media_type,revision,acceptance_commit FROM {source}")
+            with self.export_view(select):
+                with socket.create_connection(("127.0.0.1", port), timeout=3) as connection:
+                    connection.sendall(b"GET /registry/v1/index.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                    headers = b""
+                    while b"\r\n\r\n" not in headers:
+                        block = connection.recv(4096)
+                        self.assertTrue(block)
+                        headers += block
+                        self.assertLessEqual(len(headers), 16384)
+                    self.assertTrue(headers.startswith(b"HTTP/1.1 200"))
+                    connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            after = self.metrics_snapshot(port)
+            self.assertEqual(self.metrics_value(after, "asm_http_requests_total", route="index", status="2xx"), 1)
+            self.assertEqual(self.metrics_value(after, "asm_http_request_duration_seconds_count", route="index"), 1)
+            self.assertEqual(self.metrics_value(after, "asm_http_connection_failures_total"), 0)
+            self.assertEqual(self.metrics_request(port, "/registry/v1/index.json")[2], self.exports["/registry/v1/index.json"])
 
     def test_canonical_exports_preserve_exact_current_bytes_and_media_types(self):
         self.assertGreater(len(self.exports["/registry/v1/index.json"]), 16384)

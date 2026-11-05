@@ -40,7 +40,7 @@ RUN ./configure --prefix=/opt/asm/postgres --with-openssl \
 
 COPY server /source/server
 WORKDIR /source/server
-RUN make all MHD_PREFIX=/opt/asm/mhd PG_PREFIX=/opt/asm/postgres \
+RUN make all qualification-tools MHD_PREFIX=/opt/asm/mhd PG_PREFIX=/opt/asm/postgres \
       BUILD=/build/server SOURCE_REVISION="$ASM_SOURCE_REVISION"
 
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
@@ -73,6 +73,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/asm/postgres /opt/asm/postgres
 COPY server/test_runtime.py /qualification/server/test_runtime.py
+COPY --from=build --chmod=0555 /build/server/test-metrics /qualification/server/test-metrics
+COPY --from=build --chmod=0555 /build/server/metrics-faults.so /qualification/server/metrics-faults.so
 COPY server/catalog/schema.sql /qualification/server/catalog/schema.sql
 COPY tools/registry.py tools/registry_admin.py /qualification/tools/
 COPY registry/packages /qualification/registry/packages

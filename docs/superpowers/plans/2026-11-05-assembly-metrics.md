@@ -125,7 +125,7 @@ The same snapshot must satisfy cumulative buckets, `+Inf == count`, and `count =
 Validate `CLOCK_MONOTONIC` success, nonnegative seconds, nanoseconds below one billion, conversion arithmetic, and `end >= start`.
 Clock failure or an invalid elapsed interval latches metrics unavailable; do not invent a zero-duration observation.
 Subsequent `/metrics` requests receive the fixed `503` response while ordinary application routes retain their behavior.
-Use code `metrics_unavailable` and message `Request metrics are unavailable. Try again shortly.` for that new route's error.
+Use code `metrics_unavailable` and message `Request metrics are unavailable. Restart the server.` for that new route's error.
 Do not reuse its database-error message or change existing route errors.
 A valid snapshot already queued before a later clock failure can still complete.
 An unqueued response increments only the failure counter; it creates no request or histogram observation.

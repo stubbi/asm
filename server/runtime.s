@@ -10,6 +10,8 @@
 .equ MAX_TSV, 1048576
 .equ MAX_JSON, 4194304
 .equ CONFIG_LIMIT, 4096
+.equ METRICS_CONTEXT, 112
+.equ METRICS_STATUS, 116
 
 .section .rodata
 usage: .asciz "Usage: asm-hub serve\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
@@ -19,11 +21,13 @@ env_database: .asciz "ASM_DATABASE_URL_FILE"
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
 db_error: .asciz "asm-hub: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub: the HTTP listener could not start.\n"
+metrics_error: .asciz "asm-hub: request metrics could not start.\n"
 started: .asciz "asm-hub: listening.\n"
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
 path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
+path_metrics: .asciz "/metrics"
 path_linux: .asciz "/registry/v1/index.tsv"
 path_macos: .asciz "/registry/v1/index-macos.tsv"
 path_all: .asciz "/registry/v1/index-all.tsv"
@@ -38,6 +42,7 @@ header_connection: .asciz "Connection"
 type_json: .asciz "application/json; charset=utf-8"
 type_index: .asciz "application/json"
 type_tsv: .asciz "text/tab-separated-values; charset=utf-8"
+type_metrics: .asciz "text/plain; version=0.0.4; charset=utf-8"
 cache_no_store: .asciz "no-store"
 nosniff: .asciz "nosniff"
 close_value: .asciz "close"
@@ -56,6 +61,7 @@ not_found_body: .asciz "{\"error\":{\"code\":\"not_found\",\"message\":\"The rou
 unavailable_body: .asciz "{\"error\":{\"code\":\"temporarily_unavailable\",\"message\":\"The database request could not finish. Try again shortly.\"}}\n"
 uri_body: .asciz "{\"error\":{\"code\":\"uri_too_long\",\"message\":\"The request URL exceeds 2048 bytes.\"}}\n"
 headers_body: .asciz "{\"error\":{\"code\":\"headers_too_large\",\"message\":\"The headers exceed the service limit.\"}}\n"
+metrics_body: .asciz "{\"error\":{\"code\":\"metrics_unavailable\",\"message\":\"Request metrics are unavailable. Restart the server.\"}}\n"
 db_key_dbname: .asciz "dbname"
 db_key_gss: .asciz "gssencmode"
 db_key_passfile: .asciz "passfile"
@@ -164,6 +170,9 @@ main:
     call database_ready
     test eax, eax
     jz .Ldatabase_fail
+    call asm_metrics_init@PLT
+    test eax, eax
+    jz .Lmetrics_fail
     /* ITC wakes admission cleanup when a full set of connections closes. */
     mov edi, 1036                /* internal polling + thread per connection + ITC */
     xor esi, esi                 /* port comes from sockaddr */
@@ -201,6 +210,7 @@ main:
     je .Ldaemon_stopped
     call close@PLT
 .Ldaemon_stopped:
+    call asm_metrics_destroy@PLT
     xor eax, eax
     jmp .Lmain_done
 .Lusage:
@@ -219,7 +229,13 @@ main:
     mov eax, 78
     jmp .Lmain_done
 .Llisten_fail:
+    call asm_metrics_destroy@PLT
     lea rdi, [rip + listen_error]
+    call message
+    mov eax, 71
+    jmp .Lmain_done
+.Lmetrics_fail:
+    lea rdi, [rip + metrics_error]
     call message
     mov eax, 71
 .Lmain_done:
@@ -755,7 +771,8 @@ query_value:
 
 /* MHD access callback; C signature is checked against the pinned header.
  * Uses 104 local bytes plus six saved registers. Borrows request strings only during this call.
- * Each database operation owns its own connection; global data is immutable.
+ * Each database operation owns its own connection; metrics owns a separate mutex.
+ * Locals -112..-97 own the metrics request; -116 status,-96 marker,-88 req_cls.
  * No request body, file path, database error, or query text enters a log. */
 handle_request:
     push rbp
@@ -772,9 +789,18 @@ handle_request:
     mov rax, [rbp + 24]          /* req_cls */
     cmp qword ptr [rax], 2
     je .Lhandled
-    cmp qword ptr [rax], 1
+    mov [rbp - 88], rax
+    mov rcx, [rax]
+    mov [rbp - 96], rcx
+    lea rdi, [rbp - METRICS_CONTEXT]
+    call asm_metrics_begin@PLT
+    mov rax, [rbp - 88]
+    cmp qword ptr [rbp - 96], 1
     je .Luri_error
     mov qword ptr [rax], 2
+    mov rdi, r12
+    call asm_metrics_route@PLT
+    mov [rbp - METRICS_CONTEXT + 8], eax
     mov rdi, r13
     lea rsi, [rip + get_method]
     call strcmp@PLT
@@ -829,6 +855,11 @@ handle_request:
     test eax, eax
     jz .Lstatus
     mov rdi, r12
+    lea rsi, [rip + path_metrics]
+    call strcmp@PLT
+    test eax, eax
+    jz .Lmetrics
+    mov rdi, r12
     lea rsi, [rip + path_linux]
     call strcmp@PLT
     test eax, eax
@@ -866,6 +897,13 @@ handle_request:
     lea rdx, [rip + status_body]
     mov esi, 200
     jmp .Lfixed_response
+.Lmetrics:
+    mov rdi, rbx
+    call queue_metrics
+    mov edx, eax
+    lea rdi, [rbp - METRICS_CONTEXT]
+    call asm_metrics_finish@PLT
+    jmp .Lrequest_return
 .Llinux_export:
     lea rax, [rip + path_linux]
     jmp .Ltsv_export
@@ -910,6 +948,10 @@ handle_request:
     mov ecx, r14d
     mov r8, r15
     call queue_response
+    mov edx, eax
+    mov esi, 200
+    lea rdi, [rbp - METRICS_CONTEXT]
+    call asm_metrics_finish@PLT
     mov r13d, eax
     mov rdi, r12
     call PQclear@PLT
@@ -944,8 +986,13 @@ handle_request:
     lea rdx, [rip + unavailable_body]
     mov esi, 503
 .Lfixed_response:
+    mov [rbp - METRICS_STATUS], esi
     mov rdi, rbx
     call queue_json
+    mov edx, eax
+    mov esi, [rbp - METRICS_STATUS]
+    lea rdi, [rbp - METRICS_CONTEXT]
+    call asm_metrics_finish@PLT
     jmp .Lrequest_return
 .Lhandled:
     mov eax, 1
@@ -957,6 +1004,40 @@ handle_request:
     pop r12
     pop rbx
     pop rbp
+    ret
+
+/* RDI=connection; EAX=MHD result,ESI=queued HTTP status200/503.
+ * Owns16KiB stack bytes until MHD copies them; stack16392+16 saved bytes.
+ * Rendering uses a private snapshot. No response byte survives as a borrow. */
+queue_metrics:
+    push rbx
+    push r12
+    sub rsp, MAX_REPLY + 8
+    mov rbx, rdi
+    mov rdi, rsp
+    mov esi, MAX_REPLY
+    call asm_metrics_render@PLT
+    test rax, rax
+    jle .Lmetrics_unavailable
+    mov rcx, rax
+    mov rdi, rbx
+    mov esi, 200
+    mov rdx, rsp
+    lea r8, [rip + type_metrics]
+    call queue_response
+    mov r12d, 200
+    jmp .Lmetrics_queued
+.Lmetrics_unavailable:
+    mov rdi, rbx
+    mov esi, 503
+    lea rdx, [rip + metrics_body]
+    call queue_json
+    mov r12d, 503
+.Lmetrics_queued:
+    mov esi, r12d
+    add rsp, MAX_REPLY + 8
+    pop r12
+    pop rbx
     ret
 
 /* Fixed JSON wrapper: RDI=connection, ESI=status, RDX=NUL body <=MAX_REPLY.

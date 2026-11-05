@@ -45,7 +45,7 @@ jobs:
               aarch64-linux-gnu) source_dir=aarch64; target_flags=() ;;
               riscv64-linux-gnu) source_dir=riscv64; target_flags=(-march=rv64gc -mabi=lp64d) ;;
             esac
-            for source in runtime config; do
+            for source in runtime config metrics; do
               clang --target="$target" "${target_flags[@]}" -x assembler-with-cpp \
                 -DASM_SOURCE_REVISION="\"$GITHUB_SHA\"" -c "$source_dir/$source.s" \
                 -o "$ASM_OBJECTS/$target-$source.o"

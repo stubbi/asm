@@ -22,6 +22,7 @@ The process accepts no migration, grant, or import command.
 | `GET /health/live` | Return process liveness without a database connection |
 | `GET /health/ready` | Check the canonical migration, actual catalog reads, and reader privileges |
 | `GET /api/v2/status` | Return the build's exact source revision and source URL |
+| `GET /metrics` | Return bounded internal request metrics; qualification remains pending |
 | `GET /registry/v1/index.tsv` | Return the exact Linux compatibility feed, at most 1048576 bytes |
 | `GET /registry/v1/index-macos.tsv` | Return the exact four-target macOS compatibility feed, at most 1048576 bytes |
 | `GET /registry/v1/index-all.tsv` | Return the exact full six-target feed, at most 1048576 bytes |
@@ -61,7 +62,8 @@ The service receives no migration or operator credential.
 
 The database result remains owned after its connection closes.
 The HTTP library copies its exact byte length before the server releases that result.
-The server uses no large stack response buffer.
+Catalog responses use no large stack response buffer.
+Each active metrics response uses a separate 16 KiB stack buffer.
 JSON body storage can include the 4 MiB database result and its 4 MiB HTTP copy.
 That is up to 8 MiB of body bytes per active JSON response, excluding library overhead and other allocations.
 The limit of sixteen connections does not establish that the private 256 MiB memory proposal is sufficient.
@@ -71,6 +73,69 @@ An HTTP allocation, header, or queue failure closes the connection after releasi
 SIGTERM and SIGINT stop admission and stop the HTTP daemon.
 The integration suite checks a three-second idle shutdown bound.
 Completion of every accepted response during shutdown remains unqualified.
+
+## Candidate internal request metrics
+
+`GET /metrics` uses the existing listener and HTTP request policy.
+Keep this route behind the reviewed internal network and ingress policy.
+The path itself supplies no authentication.
+Application logic remains assembly on all three Linux ports.
+Native qualification of this implementation remains pending.
+
+The response uses Prometheus text format 0.0.4 with a final LF.
+Its content type is `text/plain; version=0.0.4; charset=utf-8`.
+It retains the existing cache and security headers.
+The body has a 16384-byte limit and exactly 79 samples, including zero-valued series.
+This fits the existing 200-sample and 64-KiB monitoring limits.
+
+| Route label | Requests |
+| --- | --- |
+| `live` | `/health/live` |
+| `ready` | `/health/ready` |
+| `about` | `/api/v2/status` |
+| `index` | All four compatibility export routes |
+| `metrics` | `/metrics` |
+| `other` | Other paths and application-handled overlong URIs |
+
+Labels never contain request paths, package names, accounts, or credentials.
+Unimplemented search and package routes receive no invented metric series.
+Counters reset when the process restarts.
+
+`asm_http_requests_total` has fixed `route` and `status_class` labels.
+The status classes are `2xx`, `4xx`, and `5xx`.
+Only responses accepted for queueing enter this counter.
+A service-capacity `503` belongs to `5xx`, with its original route label.
+
+`asm_http_request_duration_seconds` is a cumulative histogram with one fixed `route` label.
+Its buckets are 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, and positive infinity seconds.
+The response includes its bucket, sum, and count series.
+For each route, the infinite bucket and count equal the sum of its request counters.
+
+Timing starts at the first access-handler invocation, after MHD has received the request headers.
+It ends when the response queue helper returns, before database-result release and metrics aggregation.
+This includes application validation, SQL work, response copying, and queue preparation.
+It excludes prior header receipt and subsequent client transfer.
+A queued `2xx` does not establish delivery to the client.
+The current scrape takes its snapshot before counting its own accepted response.
+
+`asm_http_connection_failures_total` counts handled requests whose response could not be queued.
+It has no labels.
+Allocation, header-addition, and queue failures increment this counter without inventing an HTTP status or duration observation.
+It does not count every transport failure or a client abort after queue acceptance.
+MHD refusals and aborted requests before access-handler entry remain outside these application metrics.
+
+One mutex protects the fixed aggregate table and its snapshot copy.
+Rendering, allocation, SQL, network work, and clock calls occur outside that mutex.
+Concurrent responses own separate output buffers.
+These bounds do not establish deployed memory capacity or a hard scheduling deadline.
+
+Clock failure, invalid elapsed time, and counter overflow make metrics unavailable until restart.
+The server retains the last valid table and publishes no fabricated observations.
+`GET /metrics` then returns `503` with code `metrics_unavailable`.
+Its message is `Request metrics are unavailable. Restart the server.`
+Ordinary routes retain their existing behavior.
+An earlier valid snapshot can remain in flight when a later failure occurs.
+Unexpected mutex failure terminates the process with a fixed diagnostic and exit `71`.
 
 ## Private database configuration
 
@@ -127,6 +192,8 @@ Use Python 3.11 or later and an OpenSSL command for the integration fixture.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
 Application routing, configuration policy, connection lifecycle, and deadlines are assembly.
+Metrics aggregation and rendering also remain assembly.
+The native C unit driver and fault interposer are qualification tools only.
 
 The [reference dependency recipe](../experiments/assembly-server/DEPENDENCIES.md) supplies reviewed source pins.
 For this runtime, configure PostgreSQL with `--with-openssl`.
@@ -152,6 +219,9 @@ It seeds all current accepted manifest records through the catalog operator func
 Synthetic six-target source metadata distinguishes the Linux, macOS, and full feed vocabularies in the owned fixture.
 It does not download or execute package artifacts.
 Python supplies test orchestration only.
+The Makefile precompiles the metrics driver and fault interposer before the HTTP tests start.
+Derived image qualifiers contain these read-only test tools; final runtime images exclude them.
+The tests contain no compiler invocation or temporary executable fallback.
 
 Tests cover private-file rejection, malformed configuration, duplicate fields, TLS identity failures, privileged-role rejection, and changed read permissions.
 They also cover certificate replacement, a stalled handshake, encrypted-key prompt refusal, health, source identity, and idle SIGTERM.
@@ -162,6 +232,12 @@ Trusted fixture administration temporarily changes a view for these probes, then
 The maximum-size body probes test transport bounds; their repeated bytes are not canonical package records.
 Rejection tests require the documented status, so a process crash cannot satisfy them.
 Usage failures return 64; configuration and database refusal return 78.
+Metrics initialization or synchronization failure returns 71.
+
+The metrics driver checks fixed series, arithmetic, clock failures, overflow, mutex failures, and simultaneous updates and snapshots.
+Six HTTP methods check exposition, rejected requests, SQL delay, concurrent scrapes, queue-failure ownership, and client abort semantics.
+Queue-failure tests use the actual assembly executable with a derived-test-only library interposer.
+They retain response-reference and database-result cleanup observations.
 
 ## Evidence and remaining work
 
@@ -230,6 +306,14 @@ Instrumentation, a rebuild, and selected method execution make this diagnostic e
 CPU throttling occurred in the successful diagnostic waves and does not establish the cause of the original failures.
 Fresh complete runtime and image checks remain required for the integrated source.
 
+The metrics [test-first run 42079228127](https://github.com/stubbi/asm/actions/runs/42079228127) tested source `51b74f880703dff8bacc9cd9a329974c40ac920a`.
+Native AMD64 and ARM64 each ran 17 HTTP tests.
+All sixteen baseline tests passed; only the new metrics assertion failed with HTTP `404` instead of `200`.
+The complete qualification records remain failed.
+The downstream catalog-publication and build-failure-preservation steps skipped after that intentional failure.
+Those skipped steps are not passes.
+The result establishes the missing route before implementation, not successful metrics behavior in the later candidate.
+
 These requirements remain open:
 
 - Complete RISC-V64 canonical HTTP qualification after the retained concurrent-response failure.
@@ -238,7 +322,7 @@ These requirements remain open:
 - Bounded hostname resolution compatible with private service discovery.
 - Database connection reuse and measured admission behavior under saturation.
 - Absolute HTTP header deadlines and qualified shutdown draining.
-- Required fixed-label metrics and observed alert delivery.
+- Native qualification of fixed-label metrics and observed alert delivery.
 - Public TLS, projected certificate rotation, network-denial tests, capacity, backups, WAL delivery, and isolated restore.
 - Exact immutable images, artifact digests, provenance, and external HTTPS client checks.
 
@@ -249,6 +333,8 @@ No cluster resource, credential, DNS record, public route, or release artifact w
 - PostgreSQL 16 [connection control](https://www.postgresql.org/docs/16/libpq-connect.html): nonblocking restrictions, `PQconninfoParse`, and the encrypted-key callback.
 - PostgreSQL 16 [command execution](https://www.postgresql.org/docs/16/libpq-exec.html) and [asynchronous processing](https://www.postgresql.org/docs/16/libpq-async.html): result ownership, parameters, and command draining.
 - GNU [libmicrohttpd manual](https://www.gnu.org/software/libmicrohttpd/manual/libmicrohttpd.html): daemon lifecycle and response ownership.
+- Pinned [libmicrohttpd 1.0.3 source](https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz): queue and completion boundaries.
+- Prometheus [text exposition](https://prometheus.io/docs/instrumenting/exposition_formats/): metric families and cumulative histogram representation.
 - [Hosted registry acceptance](../docs/hosted-registry.md).
 
 The external API documentation was checked on 5 November 2026.

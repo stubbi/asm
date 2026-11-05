@@ -12,9 +12,14 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+METRICS_SPEC = importlib.util.spec_from_file_location("server_metrics_evidence_policy", ROOT / "tools/test_server_image.py")
+metrics_policy = importlib.util.module_from_spec(METRICS_SPEC)
+sys.modules[METRICS_SPEC.name] = metrics_policy
+METRICS_SPEC.loader.exec_module(metrics_policy)
 TARGETS = {
     "x86_64-linux": {"isa": "x86-64", "os": "Linux", "server_abi": "System V AMD64 LP64", "cpu_baseline": "x86-64", "cpu_features": []},
     "aarch64-linux": {"isa": "AArch64", "os": "Linux", "server_abi": "AAPCS64 LP64", "cpu_baseline": "ARMv8-A", "cpu_features": []},
@@ -44,6 +49,8 @@ def artifact(path, target, *, server=False):
     flags = struct.unpack_from("<I", data, 48)[0]
     result["elf_flags"] = flags
     if server:
+        arch = {"x86_64-linux": "amd64", "aarch64-linux": "arm64", "riscv64-linux": "riscv64"}[target]
+        metrics_policy.runtime_binary_contract(data, arch)
         if struct.unpack_from("<H", data, 16)[0] != 3:
             raise ValueError("server must be PIE (ELF ET_DYN)")
         if target == "riscv64-linux":
@@ -82,8 +89,8 @@ def tests(path, minimum):
     if not path.is_file():
         return {"status": "unrun", "reason": "test log absent"}
     try:
-        data = path.read_bytes()
-    except OSError as error:
+        data = metrics_policy.bounded_file(path, metrics_policy.TEST_LOG_LIMIT)
+    except (OSError, ValueError) as error:
         return {"status": "fail", "reason": str(error)}
     text = data.decode("utf-8", errors="replace")
     matches = list(re.finditer(r"^Ran (\d+) tests? in ([0-9]+(?:\.[0-9]+)?)s$", text, re.M))
@@ -135,11 +142,20 @@ def main():
     except (ValueError, OSError) as error:
         report["artifacts"]["source_archive"] = {"status": "fail", "reason": str(error)}
     directory = args.output.parent
-    for name, minimum in (("native-link", 10), ("reference", 19), ("hosted", 16)):
+    for name, minimum in (("native-link", 10), ("reference", 19), ("hosted", metrics_policy.MIN_RUNTIME_TESTS)):
         try:
             report["tests"][name] = tests(directory / (name + "-tests.log"), minimum)
         except (OSError, ValueError) as error:
             report["tests"][name] = {"status": "fail", "reason": str(error)}
+    metrics_ok = False
+    try:
+        arch = {"x86_64-linux": "amd64", "aarch64-linux": "arm64", "riscv64-linux": "riscv64"}[args.target]
+        inventory = metrics_policy.metrics_tool_inventory(args.hosted.parent, arch)
+        log = metrics_policy.bounded_file(directory / "hosted-tests.log", metrics_policy.TEST_LOG_LIMIT)
+        report["metrics"] = metrics_policy.metrics_from_test_log(log, inventory)
+        metrics_ok = True
+    except (OSError, ValueError, UnicodeError, struct.error) as error:
+        report["metrics"] = {"status": "fail", "reason": str(error)}
     failure_log = directory / "build-failure-tests.log"
     try:
         failure_report = json.loads(failure_log.read_text().splitlines()[-1])
@@ -151,9 +167,10 @@ def main():
     for command in (("/usr/bin/cc", "--version"), ("/usr/bin/as", "--version"), ("/usr/bin/ld", "--version")):
         report.setdefault("tools", []).append(tool(command))
     all_checks = list(report["artifacts"].values()) + list(report["tests"].values()) + [report["host_match"], report["source_match"]]
-    if args.job_status == "success" and not errors and all(value["status"] == "pass" for value in all_checks) and all(value["exit_code"] == 0 for value in report["tools"]):
+    if args.job_status == "success" and metrics_ok and not errors and all(value["status"] == "pass" for value in all_checks) and all(value["exit_code"] == 0 for value in report["tools"]):
         report["status"] = "pass"
     report["limits"] = ["No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+                        "The source archive contains the reference experiment; source_revision identifies the hosted runtime source.",
                         "The execution mode is supplied by the CI job; it is not a hardware attestation."]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
