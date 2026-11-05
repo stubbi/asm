@@ -1171,11 +1171,117 @@ test_argv: .quad as_path,0
 win_handles: .quad 10,11,12
 """
         cls.build('process',assembly,'#include <stdio.h>\nextern long process_case(void);\nint main(){printf("%ld\\n",process_case());}\n',['process_case'])
+        # Exercise the production ownership transfers, not a cleanup model.
+        # Modes fail SetHandleInformation, stdin open, or CreateProcessW;
+        # the final mode completes capture and revisits stream cleanup.
+        capture = assembly.replace('process_case:\n    WFRAME\n',
+                                   'process_case:\n    WFRAME\n    mov [rip + test_mode], edi\n',1)
+        capture = capture.replace('    xor r10d, r10d\n',
+                                  '    lea r10, [rip + test_capture]\n',1)
+        capture = capture.replace('    xor r8d, r8d\n    mov r9, -1\n',
+                                  '    mov r8d, 64\n    mov r9, -1\n',1)
+        capture = capture.replace('    call win_process\n    WLEAVE\n',
+                                  '    call win_process\n    mov r12, rax\n    call win_close_child_streams\n    mov rax, r12\n    WLEAVE\n',1)
+        capture = capture.replace('CreateFileW:\n    mov eax, 17\n    ret\n',r"""CreateFileW:
+    cmp dword ptr [rip + test_mode], 2
+    je 1f
+    mov eax, 17
+    ret
+1:  mov rax, -1
+    ret
+""",1)
+        capture = capture.replace('CreateProcessW:\n    mov rax, [rsp + 80]\n',r"""CreateProcessW:
+    cmp dword ptr [rip + test_mode], 3
+    jne 1f
+    xor eax, eax
+    ret
+1:  mov rax, [rsp + 80]
+""",1)
+        capture = capture.replace('DeleteProcThreadAttributeList:\nCloseHandle:\nTerminateProcess:\nCreatePipe:\nSetHandleInformation:\nPeekNamedPipe:\nReadFile:\n',r"""CloseHandle:
+    mov eax, [rip + test_close_count]
+    cmp eax, 16
+    jae 1f
+    lea rdx, [rip + test_closed]
+    mov [rdx + rax*8], rcx
+1:  inc dword ptr [rip + test_close_count]
+    mov eax, 1
+    ret
+CreatePipe:
+    mov qword ptr [rcx], 41
+    mov qword ptr [rdx], 42
+    mov eax, 1
+    ret
+SetHandleInformation:
+    cmp rcx, 41
+    jne 1f
+    cmp edx, 1
+    jne 1f
+    test r8d, r8d
+    jnz 1f
+    cmp dword ptr [rip + test_mode], 1
+    setne al
+    movzx eax, al
+    ret
+1:  mov dword ptr [rip + test_api_error], 1
+    xor eax, eax
+    ret
+PeekNamedPipe:
+    xor eax, eax
+    ret
+DeleteProcThreadAttributeList:
+TerminateProcess:
+ReadFile:
+""",1)
+        capture += r"""
+.text
+.global capture_close_count
+capture_close_count:
+    mov eax, [rip + test_close_count]
+    ret
+.global capture_close_at
+capture_close_at:
+    lea rax, [rip + test_closed]
+    mov rax, [rax + rdi*8]
+    ret
+.global capture_cleanup_error
+capture_cleanup_error:
+    mov rax, [rip + win_child_stdin]
+    or rax, [rip + win_child_stdout]
+    or rax, [rip + win_child_stderr]
+    or rax, [rip + win_pipe_write]
+    or eax, [rip + test_api_error]
+    ret
+.data
+.p2align 3
+test_mode: .quad 0
+test_close_count: .quad 0
+test_api_error: .quad 0
+test_closed: .space 128
+test_capture: .space 64
+"""
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long process_case(int),capture_close_count(void),capture_close_at(long),capture_cleanup_error(void);\nint main(int argc,char**argv){if(argc!=2)return 2;long status=process_case(atoi(argv[1]));long count=capture_close_count();printf("%ld %ld %ld",status,count,capture_cleanup_error());for(long i=0;i<count&&i<16;i++)printf(" %ld",capture_close_at(i));puts("");}\n'
+        cls.build('process-capture-cleanup',capture,driver,
+                  ['process_case','capture_close_count','capture_close_at','capture_cleanup_error'])
 
     def test_process_api_storage_has_required_alignment(self):
         r = self.run_fixture('process')
         self.assertEqual(r.returncode,0,r.stderr)
         self.assertEqual(r.stdout.strip(),'0')
+
+    def test_capture_setup_failure_closes_both_pipe_handles_once(self):
+        for mode in ('1','2'):
+            with self.subTest(failing_api='SetHandleInformation' if mode=='1' else 'CreateFileW'):
+                result = self.run_fixture('process-capture-cleanup',mode)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.strip(),'127 2 0 42 41')
+
+    def test_capture_process_failure_and_success_close_each_owned_handle_once(self):
+        for mode,expected in (('3','127 4 0 17 42 112 41'),
+                              ('4','0 6 0 17 42 112 41 70 71')):
+            with self.subTest(mode=mode):
+                result = self.run_fixture('process-capture-cleanup',mode)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.strip(),expected)
 
     @classmethod
     def build_security(cls):

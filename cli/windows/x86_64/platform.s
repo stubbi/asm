@@ -2088,14 +2088,15 @@ win_process:
     call CreatePipe
     test eax, eax
     jz .Lwp_failed
+    /* Own both successful outputs before the next fallible API call. */
+    mov rax, [rip + win_pipe_write]
+    mov [rip + win_child_stdout], rax
     mov rcx, [rip + win_pipe_read]
     mov edx, 1
     xor r8d, r8d
     call SetHandleInformation
     test eax, eax
     jz .Lwp_failed
-    mov rax, [rip + win_pipe_write]
-    mov [rip + win_child_stdout], rax
     jmp .Lwp_stdin
 .Lwp_uncaptured:
     mov rdi, [rip + win_handles + 8]

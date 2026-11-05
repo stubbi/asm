@@ -2,8 +2,8 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Six native Windows runs executed the CLI and retained failed runtime results.
-The sixth run passed 44 of 45 runtime methods.
+Seven native Windows runs executed the CLI and retained failed runtime results.
+The sixth and seventh runs each passed 44 of 45 runtime methods.
 Archive lifecycle, inventory, device aliases, and image displacement now pass their native cases.
 Successful updater replacement remains the one failing method.
 Keep the failed and missing results in the qualification record.
@@ -99,7 +99,7 @@ These results require native qualification before they become supported instruct
 
 ## Evidence for this snapshot
 
-On 2026-11-05, Apple clang 17.0.0 cross-assembled the flattened source with exit status zero:
+On 2026-11-05, Apple clang 17.0.0 cross-assembled the sixth candidate with exit status zero:
 
 ```text
 python3 tools/windows_x64.py --output build/windows/x86_64/asm.s
@@ -138,7 +138,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, thirty-two focused checks passed on macOS.
+On 2026-11-05, thirty-four focused checks passed on macOS.
 The assembly fixtures execute through Rosetta with deterministic API shims.
 Other checks inspect produced COFF layouts, Clang behavior, and diagnostic failures.
 They do not establish Windows API behavior or native filesystem effects.
@@ -193,6 +193,17 @@ Image checks cover exact API input, missing APIs, warning statuses, and mismatch
 The actual open routine checks the final held file before descriptor allocation and closes it after mismatch.
 Only image opens request additional execute access.
 
+A capture setup failure leaked its pipe write handle before stream ownership transferred.
+An exact process API shim reproduced that leak when `SetHandleInformation` failed.
+The adapter now owns the successful pipe outputs before that call.
+The regression checks exact handle closures after setup failure, process creation failure, and successful capture.
+Repeated stream cleanup does not close those handles again.
+`build/x64-eighth-before-pipe-ownership-fix.log` retains the failing check.
+`build/x64-eighth-host-shims.log` retains all thirty-four passing checks.
+The required `make test` passed 270 tests; `build/x64-eighth-required-make-test.log` retains that result.
+The changed source and diagnostic cross-builds are recorded in `build/windows/x86_64/eighth/cross-build.json`.
+These checks do not establish native Windows failure behavior.
+
 The first PE test harness placed its wrapper in a data section and failed with SIGBUS.
 That harness defect was corrected before the PE rejection checks were evaluated.
 The original malformed PE fixtures then reproduced acceptance before the parser fix.
@@ -235,7 +246,7 @@ The fourth native fixture observed original-file status zero before and after di
 A byte-identical replacement with a different file identity returned `C0000001`.
 That fixture later failed during its preservation check; the full scenario was not qualified.
 The earlier CLI returned success after displacement, and that negative result remains retained.
-The new production check needs the corrected native scenario before qualification.
+The corrected native scenario passed in the sixth and seventh runs.
 
 The [fifth native run](https://github.com/stubbi/asm/actions/runs/42019241381) still rejected the positive source archive.
 Direct gzip probes passed with both empty and minimal Windows environments.
@@ -251,7 +262,7 @@ That operation requires `WRITE_DAC` on the retained handle.
 The prepared private stage reopen now requests only that additional right.
 Ordinary ancestors and read-only directory opens retain their previous access masks.
 The exact stage, native-open, and protection routines reproduce access denied before correction and success afterward.
-This establishes the access contract under deterministic shims; native archive success remains unproven.
+The sixth and seventh native runs subsequently passed the source archive lifecycle cases.
 
 The first combined stage fixture crashed because its constant followed the extracted Intel-syntax instruction.
 Clang interpreted that forward symbol as a memory operand.
@@ -278,7 +289,6 @@ A source-derived constructor check records source delete access, the held destin
 It also records the exact `asm.exe` name, fourteen-byte name length, thirty-four-byte request, and descriptor cleanup.
 These host observations establish the constructed request, not Windows rename compatibility.
 Microsoft documents an executing-file restriction alongside the POSIX open-handle flags.
-That restriction is a hypothesis for the remaining failure, not a measured kernel diagnosis.
 No backup swap, unmap finalizer, or replacement fallback has been added to production.
 
 `rename_probe.py` compares identical owned ordinary and suspended-image targets.
@@ -296,11 +306,18 @@ python cli/windows/x86_64/rename_probe.py --binary build/asm-x86_64-windows.exe 
 
 The evidence destination must not exist.
 The existing native diagnostic driver also collects this comparison before its updater case.
-Native comparison and isolated unmap experiments remain pending.
+The [seventh native run](https://github.com/stubbi/asm/actions/runs/42038909292) completed both comparison cases.
+The ordinary target replacement returned zero for both native status and completion status.
+The identical request against the suspended image returned `C0000022` for both statuses.
+Both cases reported source access `0x130081`, parent access `0x120081`, and held-target access `0x1200a1`.
+The denied case preserved source and target file identities and digests, then terminated and reaped the owned child.
+This establishes a mapped-target distinction on that Windows x64 runner.
+It does not establish every internal kernel condition behind that denial.
+The retained comparison is under `build/windows-seventh-native`.
 
 
-NTFS POSIX rename replacement of the running CLI still needs a native test.
-If Windows refuses that operation, a separately reviewed completion helper is required.
+Atomic replacement of the running CLI remains blocked by the observed native denial.
+A different completion mechanism requires separate review and native evidence.
 Do not report a completed update until the replacement and its recovery behavior are observed.
 
 ## Native adapter diagnostics
