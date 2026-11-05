@@ -931,6 +931,45 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.assertTrue((project / 'asm.lock').read_bytes().startswith(b'# asm-lock-v3\n'))
         self.assertEqual(self.cli('run', '--locked', cwd=project).stdout, 'native linked\n')
 
+    def test_resolver_artifact_paths_are_absolute_or_relative_without_drive_ambiguity(self):
+        data = self.source_fixture()
+        artifacts = self.work / 'offline artifacts'
+        artifacts.mkdir()
+        (artifacts / (sha256(data) + '.tar.gz')).write_bytes(data)
+        self.index.write_bytes((HEADER + self.metadata(data)).encode())
+        def project_for(name):
+            project = self.project(name)
+            manifest = project / 'asm.toml'
+            manifest.write_bytes(manifest.read_bytes() +
+                                 b'[resolution]\nschema = "1"\n[dependencies]\n"fixture/hello" = "0.1.0"\n')
+            return project
+        for number, directory in enumerate((self.work.drive, self.work.drive + 'relative')):
+            with self.subTest(refused=directory):
+                project = project_for('ambiguous-' + str(number))
+                before = {path.relative_to(project): path.read_bytes()
+                          for path in project.rglob('*') if path.is_file()}
+                self.cli('resolve', '--index', self.index, '--artifacts', directory,
+                         cwd=project, code=1 if ARM64 else 2)
+                self.assertFalse((project / 'asm.lock').exists())
+                after = {path.relative_to(project): path.read_bytes()
+                         for path in project.rglob('*') if path.is_file()}
+                self.assertEqual(after, before)
+        spellings = (artifacts.as_posix(), str(artifacts), artifacts.as_posix() + '/', str(artifacts) + '\\')
+        for number, directory in enumerate(spellings):
+            with self.subTest(accepted=directory):
+                project = project_for('absolute-' + str(number))
+                self.cli('resolve', '--index', self.index, '--artifacts', directory, cwd=project)
+                self.assertIn(b'fixture/hello\t0.1.0\t', (project / 'asm.lock').read_bytes())
+                self.assertEqual((artifacts / (sha256(data) + '.tar.gz')).read_bytes(), data)
+        for number, directory in enumerate(('local artifacts', 'local artifacts/')):
+            with self.subTest(accepted_relative=directory):
+                project = project_for('relative-' + str(number))
+                local = project / 'local artifacts'
+                local.mkdir()
+                (local / (sha256(data) + '.tar.gz')).write_bytes(data)
+                self.cli('resolve', '--index', self.index, '--artifacts', directory, cwd=project)
+                self.assertIn(b'fixture/hello\t0.1.0\t', (project / 'asm.lock').read_bytes())
+
     def test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output(self):
         project, base = self.native_project()
         self.assertEqual(self.cli("run", cwd=project).stdout, "native linked\n")

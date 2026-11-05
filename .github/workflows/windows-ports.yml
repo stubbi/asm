@@ -95,6 +95,8 @@ jobs:
           if (git status --porcelain --untracked-files=normal) { throw 'The source checkout is not clean.' }
       - name: Check the evidence refusal gates
         if: matrix.scope == 'cli'
+        env:
+          ASM_WINDOWS_TARGET: ${{ matrix.target }}
         run: |
           python -m unittest discover -s tests/windows -p test_evidence_driver.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
