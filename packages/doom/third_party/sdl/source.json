@@ -1,0 +1,16 @@
+{
+  "name": "Simple DirectMedia Layer",
+  "version": "3.4.18",
+  "license": "Zlib",
+  "upstream": "https://github.com/libsdl-org/SDL",
+  "release": "https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18",
+  "commit": "829a65d769d935c4852f8159e964312c0957260a",
+  "source_url": "https://www.libsdl.org/release/SDL3-3.4.18.tar.gz",
+  "source_file": "SDL3-3.4.18.tar.gz",
+  "source_bytes": 15651004,
+  "source_sha256": "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3",
+  "observed": "2026-11-05",
+  "changes": "None. Unmodified upstream source archive.",
+  "build_recipe": "../../tools/build_sdl.py",
+  "boundary": "SDL owns native windows, device events, texture presentation, timing, PCM queue conversion, and device output. Handwritten assembly owns input mapping, game logic, rendering, sound mixing, MUS decoding, MIDI scheduling, and synthesis."
+}

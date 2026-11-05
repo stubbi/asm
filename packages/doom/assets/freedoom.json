@@ -1,0 +1,13 @@
+{
+  "version": "0.13.0",
+  "source": "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip",
+  "observed_on": "2026-11-05",
+  "archive_sha256": "3f9b264f3e3ce503b4fb7f6bdcb1f419d93c7b546f4df3e874dd878db9688f59",
+  "archive_bytes": 24143781,
+  "iwad_sha256": "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d",
+  "iwad_bytes": 28795076,
+  "embedded_sha256": "cba58ef4ce377700b48b6703547640220d8f061cbd332689659140c1ac66ed44",
+  "embedded_bytes": 10225680,
+  "encoding": "zlib DEFLATE, level 9",
+  "note": "Digest records identify fetched bytes; no upstream signature was checked."
+}

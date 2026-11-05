@@ -33,8 +33,12 @@ REPLACE ?= 0
 GO ?= go
 TRUSTED_DISTRIBUTION ?= 0
 
-.PHONY: all test package-test clean install uninstall check build/asm
+.PHONY: all test package-test clean install uninstall check build/asm doom-test
 all: build/asm
+
+# Independent native game package; installation checks use this CLI's exact bytes.
+doom-test: build/asm
+	ASM_BIN="$(CURDIR)/build/asm" $(MAKE) -C packages/doom test
 
 ifeq ($(ARCH),aarch64)
 CLI_SOURCE := cli/aarch64/asm.s

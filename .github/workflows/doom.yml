@@ -1,0 +1,38 @@
+name: Native Doom
+
+on:
+  pull_request:
+    paths:
+      - 'packages/doom/**'
+      - '.github/workflows/doom.yml'
+      - 'Makefile'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/doom/**'
+      - '.github/workflows/doom.yml'
+      - 'Makefile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-game:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the native host
+        run: |
+          test "$(uname -m)" = arm64
+          python3 --version
+          cmake --version
+      - name: Build and test the game and real Asm installation
+        env:
+          SDL_VIDEO_DRIVER: dummy
+          SDL_AUDIO_DRIVER: dummy
+          SDL_RENDER_DRIVER: software
+        run: make doom-test
