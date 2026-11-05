@@ -43,6 +43,12 @@ dependency_prepare_selection:
     RV_SAVE s0
     RV_SAVE s2
     RV_SAVE s3
+    RV_ADDR s6, registry_target
+    mv s8, s6
+    RV_LOAD t0, 8
+    RV_ADDR s6, project_requested_target
+    mv s8, s6
+    RV_STORE t0, 8
     RV_CALL read_manifest
     RV_CALL res_legacy_guard
     RV_ADDR s6, dependency_new_record
@@ -55,9 +61,9 @@ dependency_prepare_selection:
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_dependencies50
+    bnez s8, .Lrv_cb_skip_dependencies54
     RV_JUMP .Lport_dependencies_1_end
-.Lrv_cb_skip_dependencies50:
+.Lrv_cb_skip_dependencies54:
 .Lport_dependencies_1:
     mv s8, a1
     RV_LOAD t1, 8
@@ -70,9 +76,9 @@ dependency_prepare_selection:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_dependencies55
+    beqz s8, .Lrv_cb_skip_dependencies59
     RV_JUMP .Lport_dependencies_1
-.Lrv_cb_skip_dependencies55:
+.Lrv_cb_skip_dependencies59:
 .Lport_dependencies_1_end:
     RV_ADDR s6, dependency_new_record
     mv t0, s6
@@ -167,6 +173,18 @@ dependency_prepare_selection:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Ldep_previous_next
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    li s10, 16
+    add s8, s0, s10
+    RV_LOAD a1, 8
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies128
+    RV_JUMP .Ldep_previous_next
+.Lrv_cb_skip_dependencies128:
     RV_ADDR s6, dependency_replace_row
     mv s8, s6
     RV_STORE s2, 8
@@ -387,9 +405,9 @@ dependency_finish_add:
     mv s8, s6
     RV_LOAD t1, 8
     mv s8, t1
-    beqz s8, .Lrv_cb_skip_dependencies268
+    beqz s8, .Lrv_cb_skip_dependencies276
     RV_JUMP res_use_resolve_error
-.Lrv_cb_skip_dependencies268:
+.Lrv_cb_skip_dependencies276:
     RV_ADDR s6, dependency_replace_row
     mv s8, s6
     RV_LOAD t1, 8
@@ -435,9 +453,9 @@ dependency_finish_add:
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_dependencies296
+    bnez s8, .Lrv_cb_skip_dependencies304
     RV_JUMP .Lport_dependencies_2_end
-.Lrv_cb_skip_dependencies296:
+.Lrv_cb_skip_dependencies304:
 .Lport_dependencies_2:
     mv s8, a1
     RV_LOAD t1, 8
@@ -450,9 +468,9 @@ dependency_finish_add:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_dependencies301
+    beqz s8, .Lrv_cb_skip_dependencies309
     RV_JUMP .Lport_dependencies_2
-.Lrv_cb_skip_dependencies301:
+.Lrv_cb_skip_dependencies309:
 .Lport_dependencies_2_end:
     RV_CALL dependency_write_lock
     RV_CALL registry_cleanup
@@ -648,8 +666,8 @@ release_dependency_lock:
 /* Input: cwd. Reads a regular asm.lock into its own <=1MiB buffer. Output:
  * t0=0 loaded, t0=1 absent; registry_rows/count and dependency_origin updated.
  * The selected remote record must be saved before this routine is called.
- * Rejects duplicate package identities, non-source kinds, non-host targets and
- * malformed data before use. Stack: 64 saved bytes. Missing does not create a file. */
+ * v1 retains host-only rows. v2 keys each row by package and declared target.
+ * All metadata, kinds, targets and duplicate identities are checked before use. Stack: 64 saved bytes. Missing does not create a file. */
 dependency_load_lock:
     RV_SAVE s0
     RV_SAVE s2
@@ -659,6 +677,14 @@ dependency_load_lock:
     RV_ADDR s6, registry_row_count
     mv s8, s6
     RV_STORE t1, 8
+    RV_ADDR s6, dependency_selected_count
+    mv s8, s6
+    RV_STORE t1, 8
+    li t1, 1
+    RV_ZEXT t1
+    RV_ADDR s6, dependency_lock_version
+    mv s8, s6
+    RV_STORE t1, 1
     RV_ADDR s6, dependency_lock_path
     mv a0, s6
     RV_IMM t1, O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 32
@@ -773,9 +799,22 @@ dependency_load_lock:
     mv a1, s6
     RV_CALL dependency_prefix
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 64
-    RV_BCOND eq, dependency_lock_error
+    beqz s8, .Lrv_cb_skip_dependencies539
+    RV_JUMP .Ldep_header_found
+.Lrv_cb_skip_dependencies539:
+    RV_ADDR a0, dependency_lock_buffer
+    RV_ADDR a1, dependency_header_v2
+    RV_CALL dependency_prefix
+    mv s8, t0
+    bnez s8, .Lrv_cb_skip_dependencies543
+    RV_JUMP dependency_lock_error
+.Lrv_cb_skip_dependencies543:
+    li t1, 2
+    RV_ZEXT t1
+    RV_ADDR s6, dependency_lock_version
+    mv s8, s6
+    RV_STORE t1, 1
+.Ldep_header_found:
     mv a0, t0
     RV_ADDR s6, dependency_origin_prefix
     mv a1, s6
@@ -910,19 +949,33 @@ dependency_load_lock:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hs, .Ldep_loaded
-    mv s6, s2
-    li s10, 16
-    add s6, s6, s10
+    RV_ADDR s6, dependency_lock_version
     mv s8, s6
-    RV_LOAD t1, 8
-    mv a0, t1
-    RV_ADDR s6, registry_host
-    mv a1, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 1
+    RV_FLAGS sub, 32
+    RV_BCOND ne, .Ldep_declared_target
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_ADDR a1, registry_host
     RV_CALL streq
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, dependency_lock_error
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies631
+    RV_JUMP dependency_lock_error
+.Lrv_cb_skip_dependencies631:
+.Ldep_declared_target:
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_CALL project_declares_target
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies635
+    RV_JUMP dependency_lock_error
+.Lrv_cb_skip_dependencies635:
     mv s6, s2
     li s10, 24
     add s6, s6, s10
@@ -955,7 +1008,20 @@ dependency_load_lock:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    RV_BCOND ne, dependency_lock_error
+    RV_BCOND eq, .Ldep_duplicate_next
+    li s10, 16
+    add s8, s0, s10
+    RV_LOAD a0, 8
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a1, 8
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_dependencies662
+    RV_JUMP dependency_lock_error
+.Lrv_cb_skip_dependencies662:
+.Ldep_duplicate_next:
     RV_IMM t2, 64, 64
     mv s8, s0
     mv s10, t2
@@ -963,6 +1029,24 @@ dependency_load_lock:
     mv s0, s11
     RV_JUMP .Ldep_duplicate_package
 .Ldep_record_next:
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_ADDR a1, package_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies671
+    RV_JUMP .Ldep_record_unselected
+.Lrv_cb_skip_dependencies671:
+    RV_ADDR s6, dependency_selected_count
+    mv s8, s6
+    RV_LOAD t1, 8
+    li s10, 1
+    add t1, t1, s10
+    mv s8, s6
+    RV_STORE t1, 8
+.Ldep_record_unselected:
     RV_IMM t2, 64, 64
     mv s8, s2
     mv s10, t2
@@ -1403,8 +1487,39 @@ dependency_write_lock:
     RV_SAVE s5
     /* Bound the serialized file, not just its record count. Otherwise an
      * append could write a lock that the bounded reader cannot reopen. */
-    RV_ADDR s6, dependency_header
-    mv a0, s6
+    RV_ADDR a0, dependency_header
+    RV_ADDR s6, dependency_lock_version
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Ldep_write_v2
+    RV_ADDR s6, project_target_mask
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, t1
+    beqz s8, .Lrv_cb_skip_dependencies988
+    RV_JUMP .Ldep_write_v2
+.Lrv_cb_skip_dependencies988:
+    /* The legacy v1 reader accepts native rows only. Foreign selections
+     * require v2 even when the manifest uses one legacy build table. */
+    RV_ADDR a0, package_target
+    RV_ADDR a1, registry_host
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies994
+    RV_JUMP .Ldep_write_v2
+.Lrv_cb_skip_dependencies994:
+    RV_ADDR a0, dependency_header
+    RV_JUMP .Ldep_write_header_ready
+.Ldep_write_v2:
+    RV_ADDR a0, dependency_header_v2
+.Ldep_write_header_ready:
+    RV_ADDR s6, dependency_write_header
+    mv s8, s6
+    RV_STORE a0, 8
     RV_CALL strlen
     mv s5, t0
     RV_ADDR s6, dependency_origin_prefix
@@ -1525,8 +1640,9 @@ dependency_write_lock:
     RV_FLAGS and, 64
     RV_BCOND mi, dependency_io_error
     mv s0, t0
-    RV_ADDR s6, dependency_header
-    mv a1, s6
+    RV_ADDR s6, dependency_write_header
+    mv s8, s6
+    RV_LOAD a1, 8
     RV_CALL dependency_write_string
     RV_ADDR s6, dependency_origin_prefix
     mv a1, s6
@@ -1645,7 +1761,7 @@ dependency_write_string:
     RV_BCOND mi, dependency_io_error
     ret
 /* Core build entry. Input: require_lock selects strict missing-lock behavior.
- * Default builds verify every dependency when asm.lock exists. Every archive
+ * Builds verify selected-target dependencies when asm.lock exists. Each archive
  * is copied into a private stage, checked against its locked size/digest, and
  * compared byte-for-byte to its extracted cache, including unexpected members.
  * Output: returns with a shared project lock held until build completion.
@@ -1710,6 +1826,16 @@ verify_legacy_project_dependencies:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hs, .Ldep_verify_done
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_ADDR a1, package_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies1212
+    RV_JUMP .Ldep_verify_next
+.Lrv_cb_skip_dependencies1212:
     RV_ADDR s6, registry_selected
     mv s8, s6
     RV_STORE s2, 8
@@ -1780,6 +1906,7 @@ verify_legacy_project_dependencies:
     RV_FLAGS and, 32
     RV_BCOND ne, dependency_cache_changed
     RV_CALL registry_cleanup
+.Ldep_verify_next:
     RV_IMM t2, 64, 64
     mv s8, s2
     mv s10, t2
@@ -1862,16 +1989,27 @@ cmd_remove:
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
-    RV_BCOND ne, .Ldep_remove_match
+    RV_BCOND eq, .Ldep_remove_keep
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_ADDR a1, package_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_dependencies1323
+    RV_JUMP .Ldep_remove_match
+.Lrv_cb_skip_dependencies1323:
+.Ldep_remove_keep:
     mv a0, s3
     mv a1, s2
     RV_IMM t1, 8, 32
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_dependencies1263
+    bnez s8, .Lrv_cb_skip_dependencies1329
     RV_JUMP .Lport_dependencies_3_end
-.Lrv_cb_skip_dependencies1263:
+.Lrv_cb_skip_dependencies1329:
 .Lport_dependencies_3:
     mv s8, a1
     RV_LOAD t1, 8
@@ -1884,9 +2022,9 @@ cmd_remove:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_dependencies1268
+    beqz s8, .Lrv_cb_skip_dependencies1334
     RV_JUMP .Lport_dependencies_3
-.Lrv_cb_skip_dependencies1268:
+.Lrv_cb_skip_dependencies1334:
 .Lport_dependencies_3_end:
     RV_IMM t2, 64, 64
     mv s8, s3
@@ -1927,6 +2065,13 @@ cmd_remove:
     RV_ADDR s6, registry_row_count
     mv s8, s6
     RV_STORE t3, 8
+    RV_ADDR s6, dependency_selected_count
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s10, s5
+    sub t1, t1, s10
+    mv s8, s6
+    RV_STORE t1, 8
     RV_CALL dependency_write_lock
     RV_CALL registry_cleanup
     RV_CALL release_dependency_lock
@@ -1977,7 +2122,7 @@ dependency_parse_name:
     RV_BCOND eq, registry_bad_args
     ret
 /* Sync downloads locked exact URLs. It never reads a newer registry index.
- * --artifact FILE is an offline input only when the lock has one dependency.
+ * --artifact FILE requires exactly one selected-target dependency.
  * Existing extracted source must match; sync does not discard local edits. */
 cmd_sync_legacy:
 .Ldep_sync_args:
@@ -2018,6 +2163,13 @@ cmd_sync_legacy:
     RV_JUMP .Ldep_sync_args
 .Ldep_sync_start:
     RV_CALL read_manifest
+    RV_ADDR s6, rm_root_metadata
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, t1
+    beqz s8, .Lrv_cb_skip_dependencies1432
+    RV_JUMP res_lock_error
+.Lrv_cb_skip_dependencies1432:
     RV_IMM t1, 6, 32
     mv a0, t1
     RV_ZEXT a0
@@ -2038,7 +2190,7 @@ cmd_sync_legacy:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND eq, .Ldep_sync_begin
-    RV_ADDR s6, registry_row_count
+    RV_ADDR s6, dependency_selected_count
     mv s8, s6
     RV_LOAD t1, 8
     RV_IMM t2, 1, 64
@@ -2063,6 +2215,16 @@ cmd_sync_legacy:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hs, .Ldep_sync_done
+    li s10, 16
+    add s8, s2, s10
+    RV_LOAD a0, 8
+    RV_ADDR a1, package_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_dependencies1464
+    RV_JUMP .Ldep_sync_next
+.Lrv_cb_skip_dependencies1464:
     RV_ADDR s6, registry_selected
     mv s8, s6
     RV_STORE s2, 8
@@ -2118,6 +2280,7 @@ cmd_sync_legacy:
     RV_CALL registry_verify_payload
     RV_CALL dependency_accept_payload
     RV_CALL registry_cleanup
+.Ldep_sync_next:
     RV_IMM t2, 64, 64
     mv s8, s2
     mv s10, t2
@@ -2134,7 +2297,7 @@ cmd_sync_legacy:
     RV_ADDR s6, dependency_synced_text
     mv a0, s6
     RV_JUMP dependency_count_report
-/* Terminal report. Input: a0=plain success text; row_count is the exact locked
+/* Terminal report. Input: a0=plain success text; selected_count is the locked
  * count. JSON writes a numeric count, not a package-safety claim. */
 dependency_count_report:
     RV_ADDR s6, json_mode
@@ -2152,7 +2315,7 @@ dependency_count_report:
     RV_ADDR s6, dependency_count_prefix
     mv a0, s6
     RV_CALL out
-    RV_ADDR s6, registry_row_count
+    RV_ADDR s6, dependency_selected_count
     mv s8, s6
     RV_LOAD t1, 8
     mv a0, t1
@@ -2252,6 +2415,7 @@ dependency_lock_too_large:
     RV_JUMP registry_fail
 .section .rodata
 dependency_header: .asciz "# asm-lock-v1\n"
+dependency_header_v2: .asciz "# asm-lock-v2\n"
 dependency_origin_prefix: .asciz "# registry "
 dependency_local_origin: .asciz "local"
 dependency_root: .asciz ".asm"
@@ -2265,7 +2429,7 @@ dependency_lock_suffix: .asciz "/asm.lock"
 dependency_added_text: .asciz "Added the exact source dependency. Run asm lock to check the cache.\n"
 dependency_updated_text: .asciz "Updated the exact source dependency. The previous lock was retained until verification succeeded.\n"
 dependency_removed_text: .asciz "Removed the dependency from asm.lock. Cache files were retained.\n"
-dependency_locked_text: .asciz "Verified every locked archive and source file.\n"
+dependency_locked_text: .asciz "Verified the selected target's locked archives and source files.\n"
 dependency_synced_text: .asciz "Synchronized the exact locked source dependencies.\n"
 dependency_result_prefix: .asciz "{\"ok\":true,\"package\":"
 dependency_result_cache: .asciz ",\"cache\":"
@@ -2288,6 +2452,9 @@ dependency_err_large: .asciz "the dependency lock would exceed 1 MiB. Remove an 
 dependency_lock_fd: .quad -1
 .section .bss
 .balign 8
+dependency_lock_version: .skip 8
+dependency_write_header: .skip 8
+dependency_selected_count: .skip 8
 dependency_new_record: .skip 64
 dependency_replace_row: .skip 8
 dependency_origin: .skip 8

@@ -29,6 +29,8 @@ dependency_prepare_selection:
     push rbx
     push r12
     push r13
+    mov rax, [rip + registry_target]
+    mov [rip + project_requested_target], rax
     call read_manifest
     call res_legacy_guard
     lea rdi, [rip + dependency_new_record]
@@ -67,6 +69,11 @@ dependency_prepare_selection:
     jae .Ldep_previous_done
     mov rdi, [r12]
     mov rsi, [rbx]
+    call streq
+    test eax, eax
+    jz .Ldep_previous_next
+    mov rdi, [r12 + 16]
+    mov rsi, [rbx + 16]
     call streq
     test eax, eax
     jz .Ldep_previous_next
@@ -260,14 +267,16 @@ release_dependency_lock:
 /* Input: cwd. Reads a regular asm.lock into its own <=1MiB buffer. Output:
  * EAX=0 loaded, EAX=1 absent; registry_rows/count and dependency_origin updated.
  * The selected remote record must be saved before this routine is called.
- * Rejects duplicate package identities, non-source kinds, non-host targets and
- * malformed data before use. Stack: 32 bytes. Missing does not create a file. */
+ * v1 retains host-only rows. v2 keys each row by package and declared target.
+ * All metadata, kinds, targets and duplicate identities are checked before use. Stack: 32 bytes. Missing does not create a file. */
 dependency_load_lock:
     push rbx
     push r12
     push r13
     push r14
     mov qword ptr [rip + registry_row_count], 0
+    mov qword ptr [rip + dependency_selected_count], 0
+    mov byte ptr [rip + dependency_lock_version], 1
     mov eax, 2
     lea rdi, [rip + dependency_lock_path]
     mov esi, 131072 + 524288 + 2048
@@ -318,7 +327,14 @@ dependency_load_lock:
     lea rsi, [rip + dependency_header]
     call dependency_prefix
     test rax, rax
+    jnz .Ldep_header_found
+    lea rdi, [rip + dependency_lock_buffer]
+    lea rsi, [rip + dependency_header_v2]
+    call dependency_prefix
+    test rax, rax
     jz dependency_lock_error
+    mov byte ptr [rip + dependency_lock_version], 2
+.Ldep_header_found:
     mov rdi, rax
     lea rsi, [rip + dependency_origin_prefix]
     call dependency_prefix
@@ -363,9 +379,16 @@ dependency_load_lock:
 .Ldep_validate_record:
     cmp r13, [rip + registry_row_count]
     jae .Ldep_loaded
+    cmp byte ptr [rip + dependency_lock_version], 1
+    jne .Ldep_declared_target
     mov rdi, [r12 + 16]
     lea rsi, [rip + registry_host]
     call streq
+    test eax, eax
+    jz dependency_lock_error
+.Ldep_declared_target:
+    mov rdi, [r12 + 16]
+    call project_declares_target
     test eax, eax
     jz dependency_lock_error
     mov rdi, [r12 + 24]
@@ -381,10 +404,23 @@ dependency_load_lock:
     mov rsi, [r12]
     call streq
     test eax, eax
+    jz .Ldep_duplicate_next
+    mov rdi, [rbx + 16]
+    mov rsi, [r12 + 16]
+    call streq
+    test eax, eax
     jnz dependency_lock_error
+.Ldep_duplicate_next:
     add rbx, 64
     jmp .Ldep_duplicate_package
 .Ldep_record_next:
+    mov rdi, [r12 + 16]
+    lea rsi, [rip + package_target]
+    call streq
+    test eax, eax
+    jz .Ldep_record_unselected
+    inc qword ptr [rip + dependency_selected_count]
+.Ldep_record_unselected:
     add r12, 64
     inc r13
     jmp .Ldep_validate_record
@@ -595,6 +631,23 @@ dependency_write_lock:
     /* Bound the serialized file, not just its record count. Otherwise an
      * append could write a lock that the bounded reader cannot reopen. */
     lea rdi, [rip + dependency_header]
+    cmp byte ptr [rip + dependency_lock_version], 2
+    je .Ldep_write_v2
+    cmp qword ptr [rip + project_target_mask], 0
+    jne .Ldep_write_v2
+    /* A legacy manifest can select a foreign target. The v1 reader accepts
+     * only native rows, so its first foreign selection also requires v2. */
+    lea rdi, [rip + package_target]
+    lea rsi, [rip + registry_host]
+    call streq
+    test eax, eax
+    jz .Ldep_write_v2
+    lea rdi, [rip + dependency_header]
+    jmp .Ldep_write_header_ready
+.Ldep_write_v2:
+    lea rdi, [rip + dependency_header_v2]
+.Ldep_write_header_ready:
+    mov [rip + dependency_write_header], rdi
     call strlen
     mov r15, rax
     lea rdi, [rip + dependency_origin_prefix]
@@ -641,7 +694,7 @@ dependency_write_lock:
     test rax, rax
     js dependency_io_error
     mov rbx, rax
-    lea rsi, [rip + dependency_header]
+    mov rsi, [rip + dependency_write_header]
     call dependency_write_string
     lea rsi, [rip + dependency_origin_prefix]
     call dependency_write_string
@@ -705,7 +758,7 @@ dependency_write_string:
     ret
 
 /* Core build entry. Input: require_lock selects strict missing-lock behavior.
- * Default builds verify every dependency when asm.lock exists. Every archive
+ * Builds verify selected-target dependencies when asm.lock exists. Each archive
  * is copied into a private stage, checked against its locked size/digest, and
  * compared byte-for-byte to its extracted cache, including unexpected members.
  * Output: returns with a shared project lock held until build completion.
@@ -737,6 +790,11 @@ verify_legacy_project_dependencies:
 .Ldep_verify_row:
     cmp r13, [rip + registry_row_count]
     jae .Ldep_verify_done
+    mov rdi, [r12 + 16]
+    lea rsi, [rip + package_target]
+    call streq
+    test eax, eax
+    jz .Ldep_verify_next
     mov [rip + registry_selected], r12
     mov rdi, [r12 + 48]
     call registry_size_value
@@ -767,6 +825,7 @@ verify_legacy_project_dependencies:
     test eax, eax
     jnz dependency_cache_changed
     call registry_cleanup
+.Ldep_verify_next:
     add r12, 64
     inc r13
     jmp .Ldep_verify_row
@@ -806,7 +865,13 @@ cmd_remove:
     mov rsi, [rip + dependency_remove_name]
     call streq
     test eax, eax
+    jz .Ldep_remove_keep
+    mov rdi, [r12 + 16]
+    lea rsi, [rip + package_target]
+    call streq
+    test eax, eax
     jnz .Ldep_remove_match
+.Ldep_remove_keep:
     mov rdi, r13
     mov rsi, r12
     mov ecx, 8
@@ -823,6 +888,7 @@ cmd_remove:
     test r15d, r15d
     jz dependency_missing_selection
     sub [rip + registry_row_count], r15
+    sub [rip + dependency_selected_count], r15
     call dependency_write_lock
     call registry_cleanup
     call release_dependency_lock
@@ -854,7 +920,7 @@ dependency_parse_name:
     ret
 
 /* Sync downloads locked exact URLs. It never reads a newer registry index.
- * --artifact FILE is an offline input only when the lock has one dependency.
+ * --artifact FILE requires exactly one selected-target dependency.
  * Existing extracted source must match; sync does not discard local edits. */
 cmd_sync_legacy:
 .Ldep_sync_args:
@@ -880,6 +946,8 @@ cmd_sync_legacy:
     jmp .Ldep_sync_args
 .Ldep_sync_start:
     call read_manifest
+    cmp qword ptr [rip + rm_root_metadata], 0
+    jne res_lock_error
     mov edi, 6
     mov esi, 1
     call dependency_acquire
@@ -888,7 +956,7 @@ cmd_sync_legacy:
     jnz dependency_lock_missing
     cmp qword ptr [rip + dependency_sync_artifact], 0
     je .Ldep_sync_begin
-    cmp qword ptr [rip + registry_row_count], 1
+    cmp qword ptr [rip + dependency_selected_count], 1
     jne registry_bad_args
 .Ldep_sync_begin:
     lea r12, [rip + registry_rows]
@@ -896,6 +964,11 @@ cmd_sync_legacy:
 .Ldep_sync_row:
     cmp r13, [rip + registry_row_count]
     jae .Ldep_sync_done
+    mov rdi, [r12 + 16]
+    lea rsi, [rip + package_target]
+    call streq
+    test eax, eax
+    jz .Ldep_sync_next
     mov [rip + registry_selected], r12
     mov rdi, [r12 + 48]
     call registry_size_value
@@ -920,6 +993,7 @@ cmd_sync_legacy:
     call registry_verify_payload
     call dependency_accept_payload
     call registry_cleanup
+.Ldep_sync_next:
     add r12, 64
     inc r13
     jmp .Ldep_sync_row
@@ -928,14 +1002,14 @@ cmd_sync_legacy:
     lea rdi, [rip + dependency_synced_text]
     jmp dependency_count_report
 
-/* Terminal report. Input: RDI=plain success text; row_count is the exact locked
+/* Terminal report. Input: RDI=plain success text; selected_count is the locked
  * count. JSON writes a numeric count, not a package-safety claim. */
 dependency_count_report:
     cmp byte ptr [rip + json_mode], 0
     je .Ldep_report_text
     lea rdi, [rip + dependency_count_prefix]
     call out
-    mov rdi, [rip + registry_row_count]
+    mov rdi, [rip + dependency_selected_count]
     lea rsi, [rip + dependency_number + 31]
     call unsigned_decimal
     mov rdi, rax
@@ -996,6 +1070,7 @@ dependency_lock_too_large:
 
 .section .rodata
 dependency_header: .asciz "# asm-lock-v1\n"
+dependency_header_v2: .asciz "# asm-lock-v2\n"
 dependency_origin_prefix: .asciz "# registry "
 dependency_local_origin: .asciz "local"
 dependency_root: .asciz ".asm"
@@ -1009,7 +1084,7 @@ dependency_lock_suffix: .asciz "/asm.lock"
 dependency_added_text: .asciz "Added the exact source dependency. Run asm lock to check the cache.\n"
 dependency_updated_text: .asciz "Updated the exact source dependency. The previous lock was retained until verification succeeded.\n"
 dependency_removed_text: .asciz "Removed the dependency from asm.lock. Cache files were retained.\n"
-dependency_locked_text: .asciz "Verified every locked archive and source file.\n"
+dependency_locked_text: .asciz "Verified the selected target's locked archives and source files.\n"
 dependency_synced_text: .asciz "Synchronized the exact locked source dependencies.\n"
 dependency_result_prefix: .asciz "{\"ok\":true,\"package\":"
 dependency_result_cache: .asciz ",\"cache\":"
@@ -1033,6 +1108,9 @@ dependency_err_large: .asciz "the dependency lock would exceed 1 MiB. Remove an 
 dependency_lock_fd: .quad -1
 .section .bss
 .balign 8
+dependency_lock_version: .skip 8
+dependency_write_header: .skip 8
+dependency_selected_count: .skip 8
 dependency_new_record: .skip 64
 dependency_replace_row: .skip 8
 dependency_origin: .skip 8

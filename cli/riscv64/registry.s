@@ -12,6 +12,7 @@
 .extern next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .extern die, exit_ok, exit_code, spawn_wait, unsigned_decimal
 .extern create_exclusive_file, json_mode
+
 /* Registry v1 is a bounded TSV protocol. All parsing and decisions are native
  * assembly. curl supplies HTTPS; sha256sum supplies the digest implementation.
  * Package contents are never extracted or executed by fetch.
@@ -557,17 +558,6 @@ registry_command:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND ne, registry_bad_args
-    RV_ADDR s6, registry_target
-    mv s8, s6
-    RV_LOAD t1, 8
-    mv a0, t1
-    RV_ADDR s6, registry_host
-    mv a1, s6
-    RV_CALL streq
-    mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, registry_install_target_error
     RV_ADDR s6, registry_kind
     mv s8, s6
     RV_LOAD t1, 8
@@ -579,6 +569,12 @@ registry_command:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, registry_bad_args
+    RV_ADDR s6, registry_target
+    mv s8, s6
+    RV_LOAD t0, 8
+    RV_ADDR s6, project_requested_target
+    mv s8, s6
+    RV_STORE t0, 8
     RV_CALL read_manifest
 .Lregistry_load:
     P_BYTE t1, registry_mode
@@ -973,12 +969,12 @@ registry_download:
     mv s6, sp
     mv s8, s6
     RV_LOAD t2, 8
-    RV_BCOND hi, .Lrv_csel_true_registry711
+    RV_BCOND hi, .Lrv_csel_true_registry707
     mv t0, t0
-    j .Lrv_csel_done_registry711
-.Lrv_csel_true_registry711:
+    j .Lrv_csel_done_registry707
+.Lrv_csel_true_registry707:
     mv t0, t2
-.Lrv_csel_done_registry711:
+.Lrv_csel_done_registry707:
     mv s6, sp
     mv s8, s6
     RV_STORE t0, 8
@@ -996,12 +992,12 @@ registry_download:
     add s6, s6, s10
     mv s8, s6
     RV_LOAD t2, 8
-    RV_BCOND hi, .Lrv_csel_true_registry722
+    RV_BCOND hi, .Lrv_csel_true_registry718
     mv t0, t0
-    j .Lrv_csel_done_registry722
-.Lrv_csel_true_registry722:
+    j .Lrv_csel_done_registry718
+.Lrv_csel_true_registry718:
     mv t0, t2
-.Lrv_csel_done_registry722:
+.Lrv_csel_done_registry718:
     mv s6, sp
     li s10, 8
     add s6, s6, s10
@@ -2479,9 +2475,9 @@ registry_valid_target:
     RV_RESTORE a0
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_registry1602
+    beqz s8, .Lrv_cb_skip_registry1598
     RV_JUMP registry_valid
-.Lrv_cb_skip_registry1602:
+.Lrv_cb_skip_registry1598:
     RV_SAVE a0
     RV_ADDR s6, registry_x86_64
     mv a1, s6
@@ -3599,9 +3595,9 @@ registry_emit:
     mv a1, s0
     mv a3, s3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_registry2257
+    bnez s8, .Lrv_cb_skip_registry2253
     RV_JUMP .Lport_registry_1_end
-.Lrv_cb_skip_registry2257:
+.Lrv_cb_skip_registry2253:
 .Lport_registry_1:
     mv s8, a1
     RV_LOAD t1, 1
@@ -3614,9 +3610,9 @@ registry_emit:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_registry2262
+    beqz s8, .Lrv_cb_skip_registry2258
     RV_JUMP .Lport_registry_1
-.Lrv_cb_skip_registry2262:
+.Lrv_cb_skip_registry2258:
 .Lport_registry_1_end:
     RV_ADDR s6, registry_output_size
     mv s8, s6
@@ -4641,9 +4637,9 @@ registry_fetch:
     P_BYTE t1, json_mode
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_registry2920
+    bnez s8, .Lrv_cb_skip_registry2916
     RV_JUMP exit_ok
-.Lrv_cb_skip_registry2920:
+.Lrv_cb_skip_registry2916:
 .Lp_registry_report:
     RV_ADDR s6, json_mode
     mv s8, s6

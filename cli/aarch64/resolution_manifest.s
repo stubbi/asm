@@ -6,23 +6,35 @@
 .equ RM_LINK, 73792
 .equ RM_LIBRARIES, 73800
 .equ RM_CHECK, 73808
-.equ RM_SIZE, 73816
+.equ RM_TEST, 73816
+.equ RM_TARGET_MASK, 73824
+.equ RM_RECIPE_COUNT, 73832
+.equ RM_RECIPES, 73840
+.equ RM_RECIPE_STRIDE, 64
+.equ RM_SIZE, 74288
 .equ RM_DEPS, 64
 .equ RM_FEATURES, 36928
 .equ RM_STRIDE, 576
 .equ RM_VERSION_LIMIT, 63
 .global rm_parse_manifest, rm_range_matches, rm_valid_range
 .section .text
-/* x0=mutable NUL manifest <=16384 bytes; x1=owned RM_SIZE-byte result.
- * x9=0 success,1 invalid. Strings borrow the input; caller retains its bytes.
- * Extension manifests are <=8190 bytes. Header: extension,deps,features at
- * 0,8,16; name/version/source/target pointers at24,32,40,48. Dependency records
- * at64: name,range,optional,defaults,count,pointers[64]. Feature records at36928:
- * name,count,pointers[64]; +528/+536 are private traversal state. Stride576.
- * Optional native-link pointers follow at RM_LINK/RM_LIBRARIES/RM_CHECK.
- * Absent optional values borrow rm_empty. Field capacities include NUL:256.
- * Preserves x19-x24. Uses 96 local stack bytes, plus ARM_CALL frames.
- * Feature traversal adds at most 64 frames of 48 bytes. No file or process effects.
+/* x0=mutable NUL manifest <=16384 bytes; x1=owned RM_SIZE-byte result;
+ * x2=desired canonical target, or0 for registry_host. x9=0 valid selected,
+ * 1 malformed,2 valid but target absent. Validate all recipes before returning2.
+ * Strings borrow input/static bytes; caller retains input. Extension manifests
+ * are ASCII <=8190 bytes; named non-extension manifests are <=8190 bytes.
+ * Header: extension/deps/features at0/8/16; name/version/source/target at24/32/40/48.
+ * Dependency records at64: name,range,optional,defaults,count,pointers[64].
+ * Feature records at36928: name,count,pointers[64]; +528/+536 private DFS state.
+ * Both use stride576. RM_LINK/RM_LIBRARIES/RM_CHECK/RM_TEST select one recipe.
+ * RM_TARGET_MASK is0 for legacy or bits4..256 for seven named targets.
+ * RM_RECIPES contains RM_RECIPE_COUNT declaration-order records, stride64:
+ * target/source/test/link/libraries/check/mask/reserved at0/8/16/24/32/40/48/56.
+ * Mask bits: source1,test2,link4,libraries8,check16,legacy-target32.
+ * Absent optionals borrow rm_empty; absent test borrows rm_default_test.
+ * Fields contain at most255 bytes plus NUL. Preserves x19-x24; stack96 saved
+ * bytes plus ARM_CALL frames. Feature DFS adds <=64 frames of48 saved bytes.
+ * Uses private parser globals. No file/process effects; invalid results unusable.
  */
 rm_parse_manifest:
     ARM_SAVE x19
@@ -33,6 +45,15 @@ rm_parse_manifest:
     ARM_SAVE x24
     mov x21, x0
     mov x22, x1
+    cbnz x2, .Lrm_desired_ready
+    ARM_ADDR x2, registry_host
+.Lrm_desired_ready:
+    ARM_ADDR x16, rm_desired_target
+    str x2, [x16]
+    ARM_ADDR x16, rm_current_recipe
+    str xzr, [x16]
+    ARM_ADDR x16, rm_selected_recipe
+    str xzr, [x16]
     ARM_ADDR x16, rm_input
     str x0, [x16]
     ARM_ADDR x16, rm_output
@@ -114,6 +135,10 @@ rm_parse_manifest:
     str x10, [x16]
     str x10, [x16, #8]
     str x10, [x16, #16]
+    ARM_ADDR x10, rm_default_test
+    ARM_IMM x17, RM_TEST
+    add x16, x22, x17
+    str x10, [x16]
     eor w12, w23, w23
     tst w12, w12
     mov w23, w12 /* section */
@@ -168,20 +193,21 @@ rm_parse_manifest:
     ARM_IMM w11, 1
     cmp w23, w11
     b.eq .Lrm_package
-    ARM_IMM w11, 2
-    cmp w23, w11
+    cmp w23, #2
+    b.eq .Lrm_recipe_field
+    cmp w23, #6
     b.ne .Lrm_bad
-    ARM_ADDR x16, rm_key
-    mov x0, x16
-    ARM_ADDR x16, rm_source
-    mov x1, x16
+.Lrm_recipe_field:
+    ARM_ADDR x0, rm_key
+    ARM_ADDR x1, rm_source
     ARM_CALL streq
-    tst w9, w9
-    b.ne .Lrm_source
-    ARM_ADDR x16, rm_key
-    mov x0, x16
-    ARM_ADDR x16, rm_target
-    mov x1, x16
+    cbnz w9, .Lrm_source
+    ARM_ADDR x0, rm_key
+    ARM_ADDR x1, rm_test
+    ARM_CALL streq
+    cbnz w9, .Lrm_test
+    ARM_ADDR x0, rm_key
+    ARM_ADDR x1, rm_target
     ARM_CALL streq
     cbnz w9, .Lrm_target
     ARM_ADDR x0, rm_key
@@ -200,33 +226,50 @@ rm_parse_manifest:
 .Lrm_link:
     ldrb w10, [x20]
     cbz w10, .Lrm_bad
-    mov w2, #32
-    ARM_IMM x3, RM_LINK
-    b .Lrm_scalar
+    mov w2, #4
+    mov x3, #24
+    b .Lrm_recipe_scalar
 .Lrm_libraries:
     ldrb w10, [x20]
     cbz w10, .Lrm_bad
-    mov w2, #64
-    ARM_IMM x3, RM_LIBRARIES
-    b .Lrm_scalar
+    mov w2, #8
+    mov x3, #32
+    b .Lrm_recipe_scalar
 .Lrm_check:
     ldrb w10, [x20]
     cbz w10, .Lrm_bad
-    mov w2, #128
-    ARM_IMM x3, RM_CHECK
-    b .Lrm_scalar
+    mov w2, #16
+    mov x3, #40
+    b .Lrm_recipe_scalar
 .Lrm_target:
-    ARM_IMM w10, 8
-    mov w2, w10
-    ARM_IMM w10, 48
-    mov w3, w10
-    b .Lrm_scalar
+    cmp w23, #2
+    b.ne .Lrm_bad
+    mov x0, x20
+    ARM_CALL project_canonical_target
+    cbz x9, .Lrm_bad
+    mov x20, x9
+    mov w2, #32
+    mov x3, #0
+    b .Lrm_recipe_scalar
 .Lrm_source:
-    ARM_IMM w10, 4
-    mov w2, w10
-    ARM_IMM w10, 40
-    mov w3, w10
-    b .Lrm_scalar
+    mov w2, #1
+    mov x3, #8
+    b .Lrm_recipe_scalar
+.Lrm_test:
+    mov w2, #2
+    mov x3, #16
+.Lrm_recipe_scalar:
+    ARM_ADDR x16, rm_current_recipe
+    ldr x0, [x16]
+    cbz x0, .Lrm_bad
+    ldr x9, [x0, #48]
+    tst x9, x2
+    b.ne .Lrm_bad
+    orr x9, x9, x2
+    str x9, [x0, #48]
+    add x16, x0, x3
+    str x20, [x16]
+    b .Lrm_line_end
 .Lrm_package:
     ARM_ADDR x16, rm_key
     mov x0, x16
@@ -303,6 +346,9 @@ rm_parse_manifest:
     ARM_CALL rm_key_identifier
     tst w9, w9
     b.eq .Lrm_bad
+    ldrb w10, [x21]
+    cmp w10, #46
+    b.eq .Lrm_named_section
     mov x16, x21
     ldrb w10, [x16]
     ARM_IMM w11, 93
@@ -349,6 +395,58 @@ rm_parse_manifest:
     orr w12, w24, w9
     tst w12, w12
     mov w24, w12
+    cmp w23, #2
+    b.ne .Lrm_line_end
+    tst w24, #32
+    b.ne .Lrm_bad
+    mov x0, #0
+    ARM_CALL rm_new_recipe
+    cbz x9, .Lrm_bad
+    b .Lrm_line_end
+.Lrm_named_section:
+    ARM_ADDR x0, rm_key
+    ARM_ADDR x1, rm_target
+    ARM_CALL streq
+    cbz w9, .Lrm_bad
+    tst w24, #2
+    b.ne .Lrm_bad
+    add x21, x21, #1
+    /* No horizontal whitespace is permitted after the table dot. */
+    ldrb w10, [x21]
+    cmp w10, #'a'
+    b.lo .Lrm_bad
+    cmp w10, #'z'
+    b.hi .Lrm_bad
+    ARM_CALL rm_key_identifier
+    cbz w9, .Lrm_bad
+    ldrb w10, [x21]
+    cmp w10, #93
+    b.ne .Lrm_bad
+    add x21, x21, #1
+    ARM_ADDR x20, rm_recipe_targets
+    mov w2, #4
+.Lrm_named_find:
+    ldr x1, [x20]
+    cbz x1, .Lrm_bad
+    ARM_ADDR x0, rm_key
+    ARM_CALL streq
+    cbnz w9, .Lrm_named_found
+    add x20, x20, #8
+    lsl w2, w2, #1
+    b .Lrm_named_find
+.Lrm_named_found:
+    ARM_IMM x17, RM_TARGET_MASK
+    add x16, x22, x17
+    ldr x9, [x16]
+    tst x9, x2
+    b.ne .Lrm_bad
+    orr x9, x9, x2
+    str x9, [x16]
+    ldr x0, [x20]
+    ARM_CALL rm_new_recipe
+    cbz x9, .Lrm_bad
+    mov w23, #6
+    orr w24, w24, #32
     b .Lrm_line_end
 .Lrm_dependency:
     ARM_CALL rm_string
@@ -748,34 +846,31 @@ rm_parse_manifest:
     mov x21, x12
     b .Lrm_comment
 .Lrm_finish:
-    mov w9, w19
-    ARM_IMM w11, 15
-    ands w12, w9, w11
-    mov w9, w12
-    ARM_IMM w11, 15
-    cmp w9, w11
+    and w9, w19, #3
+    cmp w9, #3
     b.ne .Lrm_bad
-    mov x9, x21
-    ARM_ADDR x16, rm_input
-    ldr x11, [x16]
-    subs x12, x9, x11
-    mov x9, x12
-    ARM_IMM x11, 16384
+    ARM_IMM x17, RM_RECIPE_COUNT
+    add x16, x22, x17
+    ldr x9, [x16]
+    cbz x9, .Lrm_bad
+    ARM_ADDR x16, rm_input_length
+    ldr x9, [x16]
+    tst w24, #32
+    b.eq .Lrm_extension_limit
+    ARM_IMM x11, 8190
     cmp x9, x11
     b.hi .Lrm_bad
-    ARM_IMM w11, 28
-    tst w24, w11
+.Lrm_extension_limit:
+    tst w24, #28
     b.eq .Lrm_scalars_valid
-    ARM_IMM w11, 16
-    tst w19, w11
+    tst w19, #16
     b.eq .Lrm_bad
     ARM_IMM x11, 8190
     cmp x9, x11
     b.hi .Lrm_bad
     ARM_ADDR x16, rm_ascii
     ldr x10, [x16]
-    ARM_IMM x11, 1
-    cmp x10, x11
+    cmp x10, #1
     b.ne .Lrm_bad
 .Lrm_scalars_valid:
     mov x16, x22
@@ -807,32 +902,47 @@ rm_parse_manifest:
 .Lrm_version_checked:
     tst w9, w9
     b.eq .Lrm_bad
-    mov x16, x22
-    ARM_IMM x17, 40
-    add x16, x16, x17
-    ldr x10, [x16]
-    mov x0, x10
-    ARM_CALL valid_source
-    tst w9, w9
-    b.eq .Lrm_bad
-    mov x16, x22
-    ARM_IMM x17, 48
-    add x16, x16, x17
-    ldr x10, [x16]
-    mov x0, x10
-    ARM_CALL registry_valid_target
-    tst w9, w9
-    b.eq .Lrm_bad
-    ARM_IMM x17, RM_LINK
+    mov x20, #0
+.Lrm_recipe_check:
+    ARM_IMM x17, RM_RECIPE_COUNT
     add x16, x22, x17
-    ldr x0, [x16]
-    ldr x1, [x16, #8]
-    ldr x2, [x16, #16]
+    ldr x10, [x16]
+    cmp x20, x10
+    b.hs .Lrm_recipes_valid
+    ARM_IMM x17, RM_RECIPES
+    add x23, x22, x17
+    add x23, x23, x20, lsl #6
+    ldr x9, [x23, #48]
+    tst x9, #1
+    b.eq .Lrm_bad
+    tst w24, #2
+    b.eq .Lrm_recipe_paths
+    tst x9, #32
+    b.eq .Lrm_bad
+.Lrm_recipe_paths:
+    ldr x0, [x23, #8]
+    ARM_CALL valid_source
+    cbz w9, .Lrm_bad
+    ldr x0, [x23, #16]
+    ARM_CALL valid_source
+    cbz w9, .Lrm_bad
+    ldr x0, [x23, #24]
+    ldr x1, [x23, #32]
+    ldr x2, [x23, #40]
     ARM_CALL native_link_validate
     cbz w9, .Lrm_bad
-    eor w12, w20, w20
-    tst w12, w12
-    mov w20, w12
+    ldr x0, [x23]
+    ARM_ADDR x16, rm_desired_target
+    ldr x1, [x16]
+    ARM_CALL streq
+    cbz w9, .Lrm_recipe_next
+    ARM_ADDR x16, rm_selected_recipe
+    str x23, [x16]
+.Lrm_recipe_next:
+    add x20, x20, #1
+    b .Lrm_recipe_check
+.Lrm_recipes_valid:
+    mov x20, #0
 .Lrm_feature_check:
     mov x16, x22
     ARM_IMM x17, 16
@@ -856,9 +966,29 @@ rm_parse_manifest:
     mov w20, w12
     b .Lrm_feature_check
 .Lrm_good:
-    eor w12, w9, w9
-    tst w12, w12
-    mov w9, w12
+    ARM_ADDR x16, rm_selected_recipe
+    ldr x20, [x16]
+    cbz x20, .Lrm_missing_target
+    ldr x9, [x20]
+    str x9, [x22, #48]
+    ldr x9, [x20, #8]
+    str x9, [x22, #40]
+    ldr x9, [x20, #16]
+    ARM_IMM x17, RM_TEST
+    add x16, x22, x17
+    str x9, [x16]
+    ARM_IMM x17, RM_LINK
+    add x16, x22, x17
+    ldr x9, [x20, #24]
+    str x9, [x16]
+    ldr x9, [x20, #32]
+    str x9, [x16, #8]
+    ldr x9, [x20, #40]
+    str x9, [x16, #16]
+    mov w9, #0
+    b .Lrm_return
+.Lrm_missing_target:
+    mov w9, #2
     b .Lrm_return
 .Lrm_bad:
     ARM_IMM w10, 1
@@ -874,6 +1004,34 @@ rm_parse_manifest:
 
 /* Parser helpers deliberately advance x21. Other callee registers preserved.
  * Input is a bounded copied NUL buffer. No helper crosses a string terminator. */
+/* x0=canonical target or0 for legacy until target field. x22=owned result.
+ * x9=new record or0 when full. Scratch:x0-x4,x9-x17. No stack/input writes.
+ * Initializes defaults and appends one of at most seven64-byte records. */
+rm_new_recipe:
+    ARM_IMM x17, RM_RECIPE_COUNT
+    add x4, x22, x17
+    ldr x2, [x4]
+    cmp x2, #7
+    b.hs .Lrm_new_recipe_bad
+    ARM_IMM x17, RM_RECIPES
+    add x9, x22, x17
+    add x9, x9, x2, lsl #6
+    add x2, x2, #1
+    str x2, [x4]
+    str x0, [x9]
+    ARM_ADDR x1, rm_default_test
+    str x1, [x9, #16]
+    ARM_ADDR x1, rm_empty
+    str x1, [x9, #24]
+    str x1, [x9, #32]
+    str x1, [x9, #40]
+    ARM_ADDR x16, rm_current_recipe
+    str x9, [x16]
+    ret
+.Lrm_new_recipe_bad:
+    mov x9, #0
+    ret
+
 rm_horizontal:
     mov x16, x21
     ldrb w10, [x16]
@@ -1012,10 +1170,6 @@ rm_string:
     ARM_IMM w11, 32
     cmp w10, w11
     b.lo .Lrm_string_bad
-    uxtb w10, w9
-    ARM_IMM w11, 126
-    cmp w10, w11
-    b.hi .Lrm_string_bad
     uxtb w10, w9
     ARM_IMM w11, 92
     cmp w10, w11
@@ -1473,6 +1627,7 @@ rm_feature_visit:
     ret
 
 .section .rodata
+rm_recipe_targets: .quad target_x86,target_arm,target_riscv,target_macos,target_macos_x86,target_windows_x86,target_windows_arm,0
 rm_sections: .quad rm_package,rm_build,rm_resolution,rm_dependencies,rm_features,0
 rm_package: .asciz "package"
 rm_build: .asciz "build"
@@ -1486,6 +1641,8 @@ rm_empty: .asciz ""
 rm_name: .asciz "name"
 rm_version: .asciz "version"
 rm_source: .asciz "source"
+rm_test: .asciz "test"
+rm_default_test: .asciz "tests/main.s"
 rm_target: .asciz "target"
 rm_schema: .asciz "schema"
 rm_optional: .asciz "optional"
@@ -1494,6 +1651,9 @@ rm_true: .asciz "true"
 rm_false: .asciz "false"
 .section .bss
 .balign 8
+rm_desired_target: .skip 8
+rm_current_recipe: .skip 8
+rm_selected_recipe: .skip 8
 rm_input: .skip 8
 rm_input_length: .skip 8
 rm_ascii: .skip 8

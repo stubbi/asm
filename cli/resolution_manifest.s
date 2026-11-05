@@ -7,7 +7,12 @@
 .equ RM_LINK, 73792
 .equ RM_LIBRARIES, 73800
 .equ RM_CHECK, 73808
-.equ RM_SIZE, 73816
+.equ RM_TEST, 73816
+.equ RM_TARGET_MASK, 73824
+.equ RM_RECIPE_COUNT, 73832
+.equ RM_RECIPES, 73840
+.equ RM_RECIPE_STRIDE, 64
+.equ RM_SIZE, 74288
 .equ RM_DEPS, 64
 .equ RM_FEATURES, 36928
 .equ RM_STRIDE, 576
@@ -15,12 +20,19 @@
 .global rm_parse_manifest, rm_range_matches, rm_valid_range
 .section .text
 /* RDI=mutable NUL manifest <=16384 bytes; RSI=owned RM_SIZE-byte result.
- * RAX=0 success,1 invalid. Strings borrow the input; caller retains its bytes.
+ * RDX=desired canonical target, or zero for registry_host. RAX=0 selected,
+ * 1 invalid,2 valid but missing target. Strings borrow input or fixed defaults.
  * Extension manifests are <=8190 bytes. Header: extension,deps,features at
  * 0,8,16; name/version/source/target pointers at24,32,40,48. Dependency records
  * at64: name,range,optional,defaults,count,pointers[64]. Feature records at36928:
  * name,count,pointers[64]; +528/+536 are private traversal state. Stride576.
  * Optional native-link pointers follow at RM_LINK/RM_LIBRARIES/RM_CHECK.
+ * RM_TEST defaults to tests/main.s. RM_TARGET_MASK is zero for legacy builds,
+ * or canonical declaration bits 4..256. RM_RECIPE_COUNT <=7 compact records
+ * at RM_RECIPES, stride64: target,source,test,link,libraries,check,field mask,0.
+ * Mask bits: source1,test2,link4,libraries8,check16,legacy target32.
+ * Every declared recipe is validated, including inactive recipes. Named-target
+ * manifests are <=8190 bytes. A legacy archive can retain its 16384-byte limit.
  * Absent optional values borrow rm_empty. Field capacities include NUL:256.
  * Preserves RBX/RBP/R12-R15. Main frame saves56 bytes; array helpers save40.
  * Feature DFS saves24 bytes per level, at most64 levels. Calls add return
@@ -38,6 +50,11 @@ rm_parse_manifest:
     mov r13, rsi
     mov [rip + rm_input], rdi
     mov [rip + rm_output], rsi
+    test rdx, rdx
+    jnz .Lrm_desired_ready
+    lea rdx, [rip + registry_host]
+.Lrm_desired_ready:
+    mov [rip + rm_desired_target], rdx
     xor ecx, ecx
     mov edx, 1
 .Lrm_preflight:
@@ -74,6 +91,8 @@ rm_parse_manifest:
     mov [r13 + RM_LINK], rax
     mov [r13 + RM_LIBRARIES], rax
     mov [r13 + RM_CHECK], rax
+    lea rax, [rip + rm_default_test]
+    mov [r13 + RM_TEST], rax
     xor r14d, r14d /* section */
     xor r15d, r15d /* section mask */
     xor ebx, ebx /* scalar mask */
@@ -108,12 +127,20 @@ rm_parse_manifest:
     cmp r14d, 1
     je .Lrm_package
     cmp r14d, 2
+    je .Lrm_recipe_field
+    cmp r14d, 6
     jne .Lrm_bad
+.Lrm_recipe_field:
     lea rdi, [rip + rm_key]
     lea rsi, [rip + rm_source]
     call streq
     test eax, eax
     jnz .Lrm_source
+    lea rdi, [rip + rm_key]
+    lea rsi, [rip + rm_test]
+    call streq
+    test eax, eax
+    jnz .Lrm_test
     lea rdi, [rip + rm_key]
     lea rsi, [rip + rm_target]
     call streq
@@ -138,29 +165,41 @@ rm_parse_manifest:
 .Lrm_link:
     cmp byte ptr [rbp], 0
     je .Lrm_bad
-    mov edx, 32
-    mov ecx, RM_LINK
-    jmp .Lrm_scalar
+    mov edx, 4
+    mov ecx, 24
+    jmp .Lrm_recipe_scalar
 .Lrm_libraries:
     cmp byte ptr [rbp], 0
     je .Lrm_bad
-    mov edx, 64
-    mov ecx, RM_LIBRARIES
-    jmp .Lrm_scalar
+    mov edx, 8
+    mov ecx, 32
+    jmp .Lrm_recipe_scalar
 .Lrm_check:
     cmp byte ptr [rbp], 0
     je .Lrm_bad
-    mov edx, 128
-    mov ecx, RM_CHECK
-    jmp .Lrm_scalar
-.Lrm_target:
-    mov edx, 8
-    mov ecx, 48
-    jmp .Lrm_scalar
-.Lrm_source:
-    mov edx, 4
+    mov edx, 16
     mov ecx, 40
-    jmp .Lrm_scalar
+    jmp .Lrm_recipe_scalar
+.Lrm_target:
+    cmp r14d, 2
+    jne .Lrm_bad
+    mov edx, 32
+    xor ecx, ecx
+    jmp .Lrm_recipe_scalar
+.Lrm_source:
+    mov edx, 1
+    mov ecx, 8
+    jmp .Lrm_recipe_scalar
+.Lrm_test:
+    mov edx, 2
+    mov ecx, 16
+.Lrm_recipe_scalar:
+    mov rax, [rip + rm_current_recipe]
+    test [rax + 48], rdx
+    jnz .Lrm_bad
+    or [rax + 48], rdx
+    mov [rax + rcx], rbp
+    jmp .Lrm_line_end
 .Lrm_package:
     lea rdi, [rip + rm_key]
     lea rsi, [rip + rm_name]
@@ -206,6 +245,8 @@ rm_parse_manifest:
     call rm_key_identifier
     test eax, eax
     jz .Lrm_bad
+    cmp byte ptr [r12], '.'
+    je .Lrm_named_section
     cmp byte ptr [r12], ']'
     jne .Lrm_bad
     inc r12
@@ -230,6 +271,45 @@ rm_parse_manifest:
     test r15d, eax
     jnz .Lrm_bad
     or r15d, eax
+    cmp r14d, 2
+    jne .Lrm_line_end
+    cmp qword ptr [r13 + RM_TARGET_MASK], 0
+    jne .Lrm_bad
+    xor eax, eax
+    call rm_recipe_begin
+    test eax, eax
+    jz .Lrm_bad
+    jmp .Lrm_line_end
+.Lrm_named_section:
+    lea rdi, [rip + rm_key]
+    lea rsi, [rip + rm_target]
+    call streq
+    test eax, eax
+    jz .Lrm_bad
+    inc r12
+    cmp byte ptr [r12], 'a'
+    jb .Lrm_bad
+    cmp byte ptr [r12], 'z'
+    ja .Lrm_bad
+    call rm_key_identifier
+    test eax, eax
+    jz .Lrm_bad
+    cmp byte ptr [r12], ']'
+    jne .Lrm_bad
+    inc r12
+    lea rdi, [rip + rm_key]
+    call rm_named_target
+    test rax, rax
+    jz .Lrm_bad
+    test r15d, 2
+    jnz .Lrm_bad
+    test [r13 + RM_TARGET_MASK], rdx
+    jnz .Lrm_bad
+    or [r13 + RM_TARGET_MASK], rdx
+    mov r14d, 6
+    call rm_recipe_begin
+    test eax, eax
+    jz .Lrm_bad
     jmp .Lrm_line_end
 .Lrm_dependency:
     call rm_string
@@ -443,21 +523,82 @@ rm_parse_manifest:
     jmp .Lrm_comment
 .Lrm_finish:
     mov eax, ebx
-    and eax, 15
-    cmp eax, 15
+    and eax, 3
+    cmp eax, 3
     jne .Lrm_bad
     mov rax, [rip + rm_input_length]
     cmp rax, 16384
     ja .Lrm_bad
     test r15d, 28
-    jz .Lrm_scalars_valid
+    jz .Lrm_named_bound
     test ebx, 16
     jz .Lrm_bad
-    cmp rax, 8190
-    ja .Lrm_bad
     cmp qword ptr [rip + rm_ascii], 1
     jne .Lrm_bad
+    jmp .Lrm_small_bound
+.Lrm_named_bound:
+    cmp qword ptr [r13 + RM_TARGET_MASK], 0
+    je .Lrm_scalars_valid
+.Lrm_small_bound:
+    cmp rax, 8190
+    ja .Lrm_bad
 .Lrm_scalars_valid:
+    cmp qword ptr [r13 + RM_RECIPE_COUNT], 0
+    je .Lrm_bad
+    xor ebp, ebp
+.Lrm_validate_recipe:
+    cmp rbp, [r13 + RM_RECIPE_COUNT]
+    jae .Lrm_recipes_valid
+    mov r12, rbp
+    shl r12, 6
+    lea r12, [r13 + r12 + RM_RECIPES]
+    test qword ptr [r12 + 48], 1
+    jz .Lrm_bad
+    test r15d, 2
+    jz .Lrm_recipe_has_target
+    test qword ptr [r12 + 48], 32
+    jz .Lrm_bad
+.Lrm_recipe_has_target:
+    mov rdi, [r12]
+    call project_canonical_target
+    test rax, rax
+    jz .Lrm_bad
+    mov [r12], rax
+    mov rdi, [r12 + 8]
+    call valid_source
+    test eax, eax
+    jz .Lrm_bad
+    mov rdi, [r12 + 16]
+    call valid_source
+    test eax, eax
+    jz .Lrm_bad
+    mov rdi, [r12 + 24]
+    mov rsi, [r12 + 32]
+    mov rdx, [r12 + 40]
+    call native_link_validate
+    test eax, eax
+    jz .Lrm_bad
+    mov rdi, [r12]
+    mov rsi, [rip + rm_desired_target]
+    call streq
+    test eax, eax
+    jz .Lrm_next_recipe
+    mov rax, [r12]
+    mov [r13 + 48], rax
+    mov rax, [r12 + 8]
+    mov [r13 + 40], rax
+    mov rax, [r12 + 16]
+    mov [r13 + RM_TEST], rax
+    mov rax, [r12 + 24]
+    mov [r13 + RM_LINK], rax
+    mov rax, [r12 + 32]
+    mov [r13 + RM_LIBRARIES], rax
+    mov rax, [r12 + 40]
+    mov [r13 + RM_CHECK], rax
+.Lrm_next_recipe:
+    inc ebp
+    jmp .Lrm_validate_recipe
+.Lrm_recipes_valid:
     mov rdi, [r13 + 24]
     call valid_name
     test eax, eax
@@ -476,20 +617,6 @@ rm_parse_manifest:
 .Lrm_version_checked:
     test eax, eax
     jz .Lrm_bad
-    mov rdi, [r13 + 40]
-    call valid_source
-    test eax, eax
-    jz .Lrm_bad
-    mov rdi, [r13 + 48]
-    call registry_valid_target
-    test eax, eax
-    jz .Lrm_bad
-    mov rdi, [r13 + RM_LINK]
-    mov rsi, [r13 + RM_LIBRARIES]
-    mov rdx, [r13 + RM_CHECK]
-    call native_link_validate
-    test eax, eax
-    jz .Lrm_bad
     xor ebp, ebp
 .Lrm_feature_check:
     cmp rbp, [r13 + 16]
@@ -503,6 +630,9 @@ rm_parse_manifest:
     jmp .Lrm_feature_check
 .Lrm_good:
     xor eax, eax
+    cmp qword ptr [r13 + 40], 0
+    jne .Lrm_return
+    mov eax, 2
     jmp .Lrm_return
 .Lrm_bad:
     mov eax, 1
@@ -512,6 +642,62 @@ rm_parse_manifest:
     pop r14
     pop r13
     pop r12
+    pop rbp
+    pop rbx
+    ret
+
+/* RAX=canonical target or zero for legacy. Append at most seven owned records.
+ * R13=output. RAX=1 success/0 capacity failure. Changes caller-saved registers.
+ * No calls or stack use. All optional pointers use immutable defaults. */
+rm_recipe_begin:
+    mov rcx, [r13 + RM_RECIPE_COUNT]
+    cmp rcx, 7
+    jae .Lrm_recipe_capacity
+    mov rdx, rax
+    shl rcx, 6
+    lea r8, [r13 + rcx + RM_RECIPES]
+    mov [rip + rm_current_recipe], r8
+    mov [r8], rdx
+    lea rax, [rip + rm_default_test]
+    mov [r8 + 16], rax
+    lea rax, [rip + rm_empty]
+    mov [r8 + 24], rax
+    mov [r8 + 32], rax
+    mov [r8 + 40], rax
+    inc qword ptr [r13 + RM_RECIPE_COUNT]
+    mov eax, 1
+    ret
+.Lrm_recipe_capacity:
+    xor eax, eax
+    ret
+
+/* RDI=bounded table identifier. RAX=canonical target or zero; EDX=target bit.
+ * Preserves callee registers, saves24 bytes including alignment. Seven strings.
+ * No input writes, file operations, or target-state changes. */
+rm_named_target:
+    push rbx
+    push rbp
+    sub rsp, 8
+    lea rbx, [rip + rm_target_names]
+    mov ebp, 4
+.Lrm_named_find:
+    mov rsi, [rbx]
+    test rsi, rsi
+    jz .Lrm_named_absent
+    call streq
+    test eax, eax
+    jnz .Lrm_named_found
+    add rbx, 8
+    shl ebp, 1
+    jmp .Lrm_named_find
+.Lrm_named_found:
+    mov rax, [rbx]
+    mov edx, ebp
+    jmp .Lrm_named_return
+.Lrm_named_absent:
+    xor eax, eax
+.Lrm_named_return:
+    add rsp, 8
     pop rbp
     pop rbx
     ret
@@ -592,8 +778,6 @@ rm_string:
     je .Lrm_string_end
     cmp al, 32
     jb .Lrm_string_bad
-    cmp al, 126
-    ja .Lrm_string_bad
     cmp al, '\\'
     je .Lrm_string_bad
     cmp ecx, 255
@@ -873,6 +1057,11 @@ rm_features: .asciz "features"
 rm_link: .asciz "link"
 rm_libraries: .asciz "libraries"
 rm_check: .asciz "check"
+rm_test: .asciz "test"
+rm_default_test: .asciz "tests/main.s"
+rm_target_names:
+    .quad target_x86,target_arm,target_riscv,target_macos
+    .quad target_macos_x86,target_windows_x86,target_windows_arm,0
 rm_empty: .asciz ""
 rm_name: .asciz "name"
 rm_version: .asciz "version"
@@ -889,6 +1078,8 @@ rm_input: .skip 8
 rm_input_length: .skip 8
 rm_ascii: .skip 8
 rm_output: .skip 8
+rm_desired_target: .skip 8
+rm_current_recipe: .skip 8
 rm_table_fields: .skip 8
 rm_feature_equal: .skip 8
 rm_key: .skip 40

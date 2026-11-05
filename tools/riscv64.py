@@ -186,6 +186,17 @@ def prepare(source):
         end=text.index('    ARM_ADDR x16, as_path\n    mov x0, x16',start)
         text=text[:start]+'    ARM_CALL rv_prepare_assembly\n'+text[end:]
         text=text.replace('as_arch: .asciz "-march=armv8-a"','as_arch: .asciz "-march=rv64i"')
+        # Preserve every foreign target declaration and cross-tool choice.
+        # Only native identity fields and human host annotations change.
+        text=text.replace('host_target: .asciz "aarch64-linux"', 'host_target: .asciz "riscv64-linux"')
+        text=text.replace('host_target_alias: .asciz "aarch64-unknown-linux-gnu"',
+                          'host_target_alias: .asciz "riscv64-unknown-linux-gnu"')
+        text=text.replace(r'\"host\":\"aarch64-linux\"', r'\"host\":\"riscv64-linux\"')
+        text=text.replace('(aarch64-linux)', '(riscv64-linux)')
+        text=text.replace('Host: aarch64-linux', 'Host: riscv64-linux')
+        text=text.replace('aarch64 assembly', 'riscv64 assembly')
+        text=text.replace('aarch64-linux (host; GNU as + ld)', 'aarch64-linux (cross; GNU target binutils)')
+        text=text.replace('riscv64-linux (cross; GNU target binutils)', 'riscv64-linux (host; GNU as + ld)')
     if source.name=='native_link.s':
         text=text.replace('    NATIVE_ARG native_cc_path','    NATIVE_ARG native_cc_path\n    NATIVE_ARG rv_cc_arch\n    NATIVE_ARG rv_cc_abi')
     if source.name=='elf.s':
@@ -209,6 +220,10 @@ def prepare(source):
             if stripped.startswith('//'):comment='/* '+stripped[2:].strip()+' */'
             comment=re.sub(r'\b(?:x|w)[0-9]+\b',lambda m:REGISTERS.get(m[0],m[0]),comment)
             comment=comment.replace('AArch64','RISC-V64').replace('ARM_CALL','RV_CALL').replace('ARMv8-A','RV64IM').replace('SVC','ECALL').replace('NZCV','s9 conditions')
+            # LLVM's RISC-V assembler needs an empty line between .extern
+            # and a following block comment; GNU accepts both representations.
+            if stripped.startswith('/*') and output and output[-1].startswith('.extern '):
+                output.append('')
             output.append(comment)
         code=code.replace('ARM_STAT_', 'RV_STAT_')
         if code.startswith('.section .note.GNU-stack'):
@@ -223,7 +238,7 @@ def prepare(source):
             code=code.replace('%progbits','@progbits').replace('ARM_STAT_','RV_STAT_')
             if code.startswith('.incbin '):code=code.replace('aarch64-linux','riscv64-linux')
             if '.asciz' in code or '.ascii' in code:
-                if source.name in ('asm.s','self_update.s','self_update_metadata.s'):
+                if source.name in ('self_update.s','self_update_metadata.s'):
                     code=code.replace('aarch64-unknown-linux-gnu','riscv64-unknown-linux-gnu').replace('aarch64-linux','riscv64-linux').replace('aarch64 assembly','riscv64 assembly')
                 elif source.name=='registry.s' and not code.startswith('registry_aarch64:'):
                     if code.startswith('registry_host:') or 'requires aarch64-linux' in code or 'defaults to source and aarch64-linux' in code:
@@ -233,7 +248,7 @@ def prepare(source):
             label,rest=code.split(':',1)
             if rest.strip().startswith('.'):
                 data=label+':'+rest
-                if source.name in ('asm.s','self_update.s','self_update_metadata.s'):
+                if source.name in ('self_update.s','self_update_metadata.s'):
                     data=data.replace('aarch64-unknown-linux-gnu','riscv64-unknown-linux-gnu').replace('aarch64-linux','riscv64-linux').replace('aarch64 assembly','riscv64 assembly')
                 elif source.name=='registry.s':
                     if label in ('registry_host', 'registry_err_install_target'):

@@ -30,9 +30,10 @@ SOURCE_INCLUDES = [
 ]
 HELLO_TARGETS = {
     "x86_64-linux": ("examples/hello", "as", "ld", ["--64"], None),
-    "aarch64-linux": ("examples/hello-aarch64", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", [], "qemu-aarch64"),
-    "riscv64-linux": ("examples/hello-riscv64", "riscv64-linux-gnu-as", "riscv64-linux-gnu-ld", ["-march=rv64i", "-mabi=lp64"], "qemu-riscv64"),
+    "aarch64-linux": ("examples/hello", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", [], "qemu-aarch64"),
+    "riscv64-linux": ("examples/hello", "riscv64-linux-gnu-as", "riscv64-linux-gnu-ld", ["-march=rv64i", "-mabi=lp64"], "qemu-riscv64"),
 }
+HELLO_LEGACY_PATHS = {"aarch64-linux": "examples/hello-aarch64", "riscv64-linux": "examples/hello-riscv64"}
 CLI_TARGETS = {
     "x86_64-linux": ("x86_64", "as", "ld", None),
     "aarch64-linux": ("aarch64", "aarch64-linux-gnu-as", "aarch64-linux-gnu-ld", "qemu-aarch64"),
@@ -137,6 +138,19 @@ def native_test_result(output: bytes) -> dict:
             "output_sha256": hashlib.sha256(output).hexdigest()}
 
 
+def cli_build_targets(commands: dict, host: str) -> list[str]:
+    """Check a snapshot against its recorded build contract without weakening either form."""
+    mode = commands.get("build_mode")
+    if mode == "native host":
+        return [host]
+    registry.require(mode == "selected target; native libraries require the native host",
+                     "unsupported CLI build contract")
+    targets = ["x86_64-linux", "aarch64-linux", "riscv64-linux"]
+    if host == "aarch64-macos":
+        targets.append(host)
+    return targets
+
+
 def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
                          target: str = "aarch64-macos", trusted: bool = False) -> dict:
     """Qualify native bytes; declaring a released host remains a separate gate."""
@@ -172,11 +186,13 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
         registry.require(actual == f"asm {version} ({target})\n".encode("ascii"),
                          "the native CLI reports an unexpected version or host")
         targets = registry.strict_json(command([str(first / "build/asm"), "targets", "--json"], first, env, 15))
-        registry.require(targets == {"host": target, "targets": [target]},
-                         "the native CLI reports unexpected native build targets")
+        build_targets = cli_build_targets(commands, target)
+        registry.require(targets == {"host": target, "targets": build_targets},
+                         "the native CLI reports unexpected build targets")
         command(["/usr/bin/codesign", "--verify", "--strict", str(first / "build/asm")], first, env, 15)
         filename = f"asm-{version}-{target}"
-        evidence = {"schema": 1, "source_commit": commit, "version": version, "target": target,
+        evidence_schema = 1 if build_targets == [target] else 2
+        evidence = {"schema": evidence_schema, "source_commit": commit, "version": version, "target": target,
                     "asset": {"file": filename, "bytes": len(binary), "sha256": hashlib.sha256(binary).hexdigest()},
                     "platform": {"system": "Darwin", "machine": "arm64", "version": platform.mac_ver()[0], "minimum": "15.0"},
                     "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
@@ -204,7 +220,8 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
     return evidence
 
 
-def read_native_release(directory: Path, commit: str, version: str, target: str = "aarch64-macos") -> tuple[bytes, dict]:
+def read_native_release(directory: Path, commit: str, version: str, target: str = "aarch64-macos", *,
+                        expected_build_targets: list[str] | None = None) -> tuple[bytes, dict]:
     """Validate a same-workflow native job's bytes and recorded runtime evidence."""
     registry.require(target in NATIVE_CLI_TARGETS, "unsupported native release target")
     registry.require(directory.is_dir() and not directory.is_symlink(), "native input must be a regular directory")
@@ -212,7 +229,7 @@ def read_native_release(directory: Path, commit: str, version: str, target: str 
     registry.require(evidence_path.is_file() and not evidence_path.is_symlink() and
                      0 < evidence_path.stat().st_size <= MAX_NATIVE_EVIDENCE, "native evidence is missing or too large")
     evidence = registry.strict_json(evidence_path.read_bytes())
-    registry.require(isinstance(evidence, dict) and type(evidence.get("schema")) is int and evidence["schema"] == 1 and
+    registry.require(isinstance(evidence, dict) and type(evidence.get("schema")) is int and evidence["schema"] in (1, 2) and
                      evidence.get("source_commit") == commit and evidence.get("version") == version and
                      evidence.get("target") == target, "native evidence has a different source, version, or target")
     filename = f"asm-{version}-{target}"
@@ -224,8 +241,12 @@ def read_native_release(directory: Path, commit: str, version: str, target: str 
     registry.require(evidence.get("version_check") == {"status": "pass", "runner": "native",
                      "stdout": f"asm {version} ({target})\n", "exit_code": 0} and
                      type(evidence["version_check"]["exit_code"]) is int, "native version evidence did not pass")
+    build_targets = ([target] if evidence["schema"] == 1 else
+                     ["x86_64-linux", "aarch64-linux", "riscv64-linux", target])
+    registry.require(expected_build_targets is None or build_targets == expected_build_targets,
+                     "native evidence has a different source build contract")
     registry.require(evidence.get("targets_check") == {"status": "pass", "runner": "native",
-                     "result": {"host": target, "targets": [target]}, "exit_code": 0} and
+                     "result": {"host": target, "targets": build_targets}, "exit_code": 0} and
                      type(evidence["targets_check"]["exit_code"]) is int, "native target evidence did not pass")
     tests = evidence.get("tests")
     registry.require(isinstance(tests, dict) and tests.get("status") == "pass" and
@@ -277,8 +298,10 @@ def check_cli(snapshot: Path, env: dict[str, str], target: str, version: str) ->
     registry.require(actual == f"asm {version} ({target})\n".encode("ascii"),
                      "the built CLI reports an unexpected version or host")
     targets = registry.strict_json(command([*runner, "targets", "--json"], snapshot, env, 15))
-    registry.require(targets == {"host": target, "targets": [target]},
-                     "the built CLI reports unexpected native build targets")
+    commands = registry.strict_json((snapshot / "cli/commands.json").read_bytes())
+    build_targets = cli_build_targets(commands, target)
+    registry.require(targets == {"host": target, "targets": build_targets},
+                     "the built CLI reports unexpected build targets")
     return {"status": "pass", "runner": emulator or "native", "stdout": actual.decode("ascii"), "exit_code": 0}
 
 
@@ -287,12 +310,17 @@ def compile_hello(snapshot: Path, target: str, env: dict[str, str]) -> tuple[byt
     emulator = target_runner(emulator_name, env)
     project = snapshot / source_path
     manifest = tomllib.loads((project / "asm.toml").read_text())
-    source = registry.portable_path(manifest["build"]["source"])
-    registry.require(manifest["build"]["target"] == target, "example target does not match its build target")
-    build = project / "build"
-    build.mkdir()
-    recipe = [assembler, *flags, "--fatal-warnings", "-o", "build/main.o", source]
-    link_recipe = [linker, "-z", "noexecstack", "--build-id=none", "-o", "build/hello", "build/main.o"]
+    # Recorded releases used separate projects before named target tables.
+    if "build" in manifest and target not in registry.project_builds(manifest) and target in HELLO_LEGACY_PATHS:
+        source_path = HELLO_LEGACY_PATHS[target]
+        project = snapshot / source_path
+        manifest = tomllib.loads((project / "asm.toml").read_text())
+    source = registry.project_build(manifest, target)["source"]
+    relative_build = f"build/{target}"
+    build = project / relative_build
+    build.mkdir(parents=True, exist_ok=True)
+    recipe = [assembler, *flags, "--fatal-warnings", "-o", f"{relative_build}/main.o", source]
+    link_recipe = [linker, "-z", "noexecstack", "--build-id=none", "-o", f"{relative_build}/hello", f"{relative_build}/main.o"]
     command(recipe, project, env)
     command(link_recipe, project, env)
     binary = read_binary(build / "hello", target)
@@ -307,7 +335,7 @@ def compile_hello(snapshot: Path, target: str, env: dict[str, str]) -> tuple[byt
         actual = command(runner, project, env, 15)
         registry.require(actual == b"Hello from asm!\n", f"hello output is incorrect for {target}")
         runtime = {"status": "pass", "runner": emulator or "native", "stdout": "Hello from asm!\n", "exit_code": 0}
-    return binary, {"assemble": recipe, "link": link_recipe, "runtime": runtime}
+    return binary, {"assemble": recipe, "link": link_recipe, "runtime": runtime, "source_path": source_path}
 
 
 def artifact(data: bytes, filename: str, target: str, kind: str, base: str) -> dict:
@@ -371,7 +399,9 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                      len(cli_hosts) == len(set(cli_hosts)) and
                      "x86_64-linux" in cli_hosts and all(target in CLI_TARGETS.keys() | NATIVE_CLI_TARGETS for target in cli_hosts),
                      "source command metadata declares unsupported or duplicate CLI hosts")
-    native = read_native_release(native_input, commit, version) if native_input is not None else None
+    native = (read_native_release(native_input, commit, version,
+                                 expected_build_targets=cli_build_targets(commands, "aarch64-macos"))
+              if native_input is not None else None)
     registry.require("aarch64-macos" not in cli_hosts or native is not None,
                      "a declared macOS CLI requires exact-commit native qualification input")
     owner = repository.split("/")[-2].lower()
@@ -430,6 +460,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
             binary, build_record = compile_hello(first, target, env)
             repeated_binary, _ = compile_hello(second, target, env)
             registry.require(binary == repeated_binary, f"the two hello builds do not match for {target}")
+            source_path = build_record["source_path"]
             sources = registry.git_files(repo, commit, source_path)
             require_mit_example(sources, "hello")
             archive = registry.make_archive(sources)

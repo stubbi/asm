@@ -72,11 +72,15 @@ Local assembly builds can read included files; they are not isolated security bo
 8. Preserve calling conventions and a non-executable stack.
 9. Test acceptance cases and relevant failure paths through the actual interface.
 
-Native Asm builds for its own host target.
+Published Asm 0.5.0 builds for its own host target.
 Use `asm build`, `asm test`, and `asm run` for reviewed native project code.
 For locked dependencies, use their `--locked` forms.
 `asm run` builds and executes; `asm test` executes the project's test program.
-RISC-V needs documented external cross tools or a native toolchain.
+Source-checkout builds also support named target recipes and standalone Linux cross builds.
+Read [the project contract](../../docs/multi-target-projects.md) before using this unreleased extension.
+Use `asm test --target TARGET --no-run` to build a foreign test without executing it.
+Select the target explicitly for v2 dependency-lock commands.
+Cross builds require the fixed GNU or LLVM tools described in that contract.
 Keep cross-assembly, emulation, native execution, and untested targets distinct.
 
 ## Improve within a budget

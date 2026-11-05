@@ -37,9 +37,9 @@ class Riscv64CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, code, (result.args, result.stdout, result.stderr))
         return result
 
-    def test_host_is_riscv64_without_claiming_other_hosts(self):
+    def test_host_is_riscv64_with_the_declared_linux_build_targets(self):
         self.assertEqual(json.loads(self.cli("targets", "--json").stdout),
-                         {"host": "riscv64-linux", "targets": ["riscv64-linux"]})
+                         {"host": "riscv64-linux", "targets": ["x86_64-linux", "aarch64-linux", "riscv64-linux"]})
 
     def test_first_project_runs_and_tests(self):
         project = self.work / "first project 世界"

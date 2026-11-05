@@ -71,8 +71,13 @@ Transitive resolution, version ranges, feature selection, and solver diagnostics
 
 ## More hosts and package interfaces
 
+Unreleased source builds support named target implementations, standalone Linux cross builds, and target-specific direct dependency locks.
+The [project contract](multi-target-projects.md) separates declarations, supported builds, native execution, and registry artifacts.
+The reference projects keep implementations in target subdirectories.
+
+
 - Add native CLI ports beyond the current Linux and Apple Silicon macOS hosts.
-- Add general cross-build support.
+- Qualify cross-target native-library sysroots and additional destination platforms.
 - Describe ABI, object format, assembler dialect, and required ISA extensions in metadata.
 - Separate host tools from target libraries.
 - Record exported symbols and register clobbers.

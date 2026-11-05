@@ -47,7 +47,7 @@ rv_prepare_assembly:
     RV_ADDR t2, test_mode
     lbu t2, 0(t2)
     beqz t2, .Lrv_as_project_source
-    RV_ADDR t2, test_source
+    RV_ADDR t2, package_test
     j .Lrv_as_source_ready
 .Lrv_as_project_source:
     RV_ADDR t2, package_source

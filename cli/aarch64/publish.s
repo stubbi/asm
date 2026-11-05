@@ -4,6 +4,12 @@
  */
 .global cmd_publish, validate_source_package
 
+/* Preserve the legacy source-archive limit. Named target manifests use the
+ * native build limit. One extra byte holds the copied manifest's NUL. */
+.equ PUB_LEGACY_MANIFEST_MAX, 16384
+.equ PUB_TARGET_MANIFEST_MAX, 8190
+.equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
+
 /* Prepare a local registry submission. No upload, login, network or shell.
  * Snapshot each artifact before hashing/validation. Required arguments are
  * explicit; the JSON record never asserts a remote commit or owner was verified.
@@ -11,7 +17,8 @@
  * registers. Terminal error labels clean the owned registry workspace.
  * Caller-saved integer registers and flags are scratch. Parser helpers that
  * intentionally advance x21 document that exception. Buffers use fixed limits:
- * six 128-byte artifact records, 16 KiB manifest/JSON, 256-byte path components.
+ * six 128-byte artifact records, 16385-byte manifest buffer, 16 KiB JSON,
+ * 256-byte paths. Legacy manifests accept 16384 bytes; named targets accept 8190.
  */
 /* Native AArch64 port. See platform.inc for the internal register contract.
  * Each saved register occupies 16 bytes. Each ARM_CALL adds a 16-byte link
@@ -925,61 +932,40 @@ pub_check_project:
     sub sp, sp, #16
     ARM_ADDR x16, pub_project_target
     str x0, [x16]
+    mov w23, #0
     ARM_CALL pub_source_paths
-    tst w9, w9
-    b.ne .Lpub_project_bad
-    ARM_ADDR x16, pub_readme_names
-    mov x19, x16
+    cbnz w9, .Lpub_project_bad
+    ARM_ADDR x19, pub_readme_names
     ARM_CALL pub_any_member
-    tst w9, w9
-    b.eq .Lpub_project_bad
-    ARM_ADDR x16, pub_license_names
-    mov x19, x16
+    cbz w9, .Lpub_project_bad
+    ARM_ADDR x19, pub_license_names
     ARM_CALL pub_any_member
-    tst w9, w9
-    b.eq .Lpub_project_bad
-    ARM_ADDR x16, pub_manifest_name
-    mov x0, x16
+    cbz w9, .Lpub_project_bad
+    ARM_ADDR x0, pub_manifest_name
     ARM_CALL source_archive_member
-    tst x9, x9
-    b.eq .Lpub_project_bad
-    tst w3, w3
-    b.ne .Lpub_project_bad
-    tst x2, x2
-    b.eq .Lpub_project_bad
-    ARM_IMM x11, 16384
+    cbz x9, .Lpub_project_bad
+    cbnz w3, .Lpub_project_bad
+    cbz x2, .Lpub_project_bad
+    ARM_IMM x11, PUB_LEGACY_MANIFEST_MAX
     cmp x2, x11
     b.hi .Lpub_project_bad
     mov x1, x9
-    ARM_ADDR x16, pub_manifest
-    mov x0, x16
-    mov x3, x2
-    eor w4, w4, w4
-    tst w4, w4
+    ARM_ADDR x0, pub_manifest
+    mov x3, #0
 .Lpub_manifest_copy:
-    mov x16, x1
-    add x16, x16, x4
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lpub_project_bad
-    and w10, w9, #255
-    mov x16, x0
-    add x16, x16, x4
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x4, x4, x11
-    cmp x4, x3
+    ldrb w10, [x1, x3]
+    cbz w10, .Lpub_project_bad
+    strb w10, [x0, x3]
+    add x3, x3, #1
+    cmp x3, x2
     b.lo .Lpub_manifest_copy
     ARM_IMM w10, 0
     mov x16, x0
     add x16, x16, x3
     strb w10, [x16]
     ARM_ADDR x1, rm_archive_metadata
+    ARM_ADDR x16, pub_project_target
+    ldr x2, [x16]
     ARM_CALL rm_parse_manifest
     cbnz w9, .Lpub_project_bad
     ARM_ADDR x0, pub_project_name
@@ -999,32 +985,17 @@ pub_check_project:
     ldr x1, [x16]
     ARM_CALL copy_string
     ARM_ADDR x16, pub_name
-    ldr x10, [x16]
-    mov x1, x10
+    ldr x1, [x16]
 .Lpub_unscoped_name:
-    mov x16, x1
-    ldrb w10, [x16]
-    ARM_IMM w11, 47
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lpub_unscoped_found
-    ARM_IMM x11, 1
-    adds x1, x1, x11
-    b .Lpub_unscoped_name
-.Lpub_unscoped_found:
-    ARM_IMM x11, 1
-    adds x1, x1, x11
-    ARM_ADDR x16, pub_project_name
-    mov x0, x16
+    ldrb w10, [x1], #1
+    cmp w10, #'/'
+    b.ne .Lpub_unscoped_name
+    ARM_ADDR x0, pub_project_name
     ARM_CALL streq
-    tst w9, w9
-    b.eq .Lpub_project_bad
-    ARM_ADDR x16, pub_project_version
-    mov x0, x16
+    cbz w9, .Lpub_project_bad
+    ARM_ADDR x0, pub_project_version
     ARM_ADDR x16, pub_version
-    ldr x10, [x16]
-    mov x1, x10
+    ldr x1, [x16]
     ARM_CALL streq
     tst w9, w9
     b.eq .Lpub_project_bad
@@ -1036,69 +1007,41 @@ pub_check_project:
     ARM_CALL streq
     tst w9, w9
     b.eq .Lpub_project_bad
-    ARM_ADDR x16, pub_project_source
-    mov x0, x16
-    ARM_CALL pub_portable_path
-    tst w9, w9
-    b.ne .Lpub_project_bad
-    ARM_ADDR x16, pub_project_source
-    mov x0, x16
-    ARM_CALL strlen
-    ARM_IMM x11, 2
-    cmp x9, x11
-    b.lo .Lpub_project_bad
-    mov x16, x0
-    add x16, x16, x9
-    sub x16, x16, #2
-    ldrh w10, [x16]
-    ARM_IMM w11, 29486
-    lsl w10, w10, #16
-    lsl w11, w11, #16
-    cmp w10, w11
-    b.eq .Lpub_project_source_lookup
-    mov x16, x0
-    add x16, x16, x9
-    sub x16, x16, #2
-    ldrh w10, [x16]
-    ARM_IMM w11, 21294
-    lsl w10, w10, #16
-    lsl w11, w11, #16
-    cmp w10, w11
-    b.eq .Lpub_project_source_lookup
-    ARM_IMM x11, 4
-    cmp x9, x11
-    b.lo .Lpub_project_bad
-    mov x16, x0
-    add x16, x16, x9
-    sub x16, x16, #4
-    ldr w10, [x16]
-    ARM_IMM w11, 1836278062
-    cmp w10, w11
-    b.ne .Lpub_project_bad
-.Lpub_project_source_lookup:
-    ARM_CALL source_archive_member
-    tst x9, x9
-    b.eq .Lpub_project_bad
-    tst w3, w3
-    b.ne .Lpub_project_bad
-    ARM_ADDR x16, rm_archive_metadata + RM_CHECK
-    ldr x0, [x16]
+    mov x19, #0
+    ARM_ADDR x20, rm_archive_metadata + RM_RECIPES
+.Lpub_recipe_loop:
+    ARM_ADDR x16, rm_archive_metadata + RM_RECIPE_COUNT
+    ldr x10, [x16]
+    cmp x19, x10
+    b.hs .Lpub_project_valid
+    ldr x0, [x20, #8]
+    ARM_CALL pub_recipe_assembly_member
+    cbnz w9, .Lpub_project_bad
+    ldr x10, [x20, #48]
+    tbz x10, #1, .Lpub_recipe_checker
+    ldr x0, [x20, #16]
+    ARM_CALL pub_recipe_assembly_member
+    cbnz w9, .Lpub_project_bad
+.Lpub_recipe_checker:
+    ldr x0, [x20, #40]
     ldrb w10, [x0]
-    cbz w10, .Lpub_project_valid
+    cbz w10, .Lpub_recipe_next
     ARM_CALL pub_portable_path
     cbnz w9, .Lpub_project_bad
-    ARM_ADDR x16, rm_archive_metadata + RM_CHECK
-    ldr x0, [x16]
+    ldr x0, [x20, #40]
     ARM_CALL source_archive_member
     cbz x9, .Lpub_project_bad
     cbnz w3, .Lpub_project_bad
+.Lpub_recipe_next:
+    add x20, x20, #64
+    add x19, x19, #1
+    b .Lpub_recipe_loop
 .Lpub_project_valid:
     eor w9, w9, w9
     tst w9, w9
     b .Lpub_project_return
 .Lpub_project_bad:
-    ARM_IMM w10, 1
-    mov w9, w10
+    mov w9, #1
 .Lpub_project_return:
     add sp, sp, #16
     ARM_RESTORE x24
@@ -1108,6 +1051,47 @@ pub_check_project:
     ARM_RESTORE x20
     ARM_RESTORE x19
     ret
+/* x0=borrowed recipe source/test. w9=0 for a portable regular assembly
+ * member,1 otherwise. Preserves x19-x24; stack16 plus nested call frames. */
+pub_recipe_assembly_member:
+    ARM_SAVE x19
+    mov x19, x0
+    ARM_CALL pub_portable_path
+    cbnz w9, .Lpub_recipe_member_bad
+    mov x0, x19
+    ARM_CALL strlen
+    cmp x9, #2
+    b.lo .Lpub_recipe_member_bad
+    add x16, x19, x9
+    sub x16, x16, #2
+    ldrh w10, [x16]
+    ARM_IMM w11, 0x732e
+    cmp w10, w11
+    b.eq .Lpub_recipe_member_find
+    ARM_IMM w11, 0x532e
+    cmp w10, w11
+    b.eq .Lpub_recipe_member_find
+    cmp x9, #4
+    b.lo .Lpub_recipe_member_bad
+    add x16, x19, x9
+    sub x16, x16, #4
+    ldr w10, [x16]
+    ARM_IMM w11, 0x6d73612e
+    cmp w10, w11
+    b.ne .Lpub_recipe_member_bad
+.Lpub_recipe_member_find:
+    mov x0, x19
+    ARM_CALL source_archive_member
+    cbz x9, .Lpub_recipe_member_bad
+    cbnz w3, .Lpub_recipe_member_bad
+    mov w9, #0
+    ARM_RESTORE x19
+    ret
+.Lpub_recipe_member_bad:
+    mov w9, #1
+    ARM_RESTORE x19
+    ret
+
 /* x19 points to a pointer list. Return 1 if any listed regular member exists. */
 pub_any_member:
     ARM_SAVE x19

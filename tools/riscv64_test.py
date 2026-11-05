@@ -206,7 +206,7 @@ def main(arguments=None):
         if report["checks"][current]["outcome"] != "pass":
             raise ValueError("Direct RISC-V execution failed; install the native runtime or explicit binfmt handler")
         targets = json.loads((logs / "runtime.log").read_text())
-        if targets != {"host": "riscv64-linux", "targets": ["riscv64-linux"]}:
+        if targets != {"host": "riscv64-linux", "targets": ["x86_64-linux", "aarch64-linux", "riscv64-linux"]}:
             raise ValueError("The CLI reported the wrong host contract")
         current = "toolchain"
         report["tools"] = {name: tool_identity(Path("/usr/bin") / name) for name in ("as", "ld", "cc", "readelf")}

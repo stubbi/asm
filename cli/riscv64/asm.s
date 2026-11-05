@@ -15,6 +15,7 @@
 .global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
 .global create_exclusive_file, json_mode
 .extern cmd_search, cmd_info, cmd_versions, cmd_fetch, cmd_install
+
 /* Native RISC-V64 implementation. No C runtime or shell backend is used.
  * The internal ABI is defined in platform.inc. Arguments use a0-a7; t0 is
  * the result. Returning routines preserve s0-s5. Calls use BL/RET and
@@ -547,7 +548,7 @@ unsupported_target:
     RV_ZEXT a1
     RV_JUMP die
 /* Input: t0=current argv string. Output: t0=1 if consumed, otherwise zero.
- * --target consumes one more argument and accepts the host or its alias.
+ * --target consumes one more argument and accepts known canonical targets.
  * Malformed options exit. Stack: 16 saved bytes plus nested calls. */
 common_option:
     RV_SAVE s0
@@ -592,6 +593,21 @@ common_option:
     RV_JUMP .Lopt_yes
 .Lrv_cb_skip_asm403:
     mv a0, s0
+    RV_ADDR a1, opt_no_run
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_asm407
+    RV_JUMP .Lopt_no_run
+.Lrv_cb_skip_asm407:
+    mv t0, s0
+    RV_CALL native_link_option
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_asm410
+    RV_JUMP .Lopt_yes
+.Lrv_cb_skip_asm410:
+    mv a0, s0
     RV_ADDR s6, opt_help
     mv a1, s6
     RV_CALL streq
@@ -633,11 +649,26 @@ common_option:
     RV_FLAGS and, 64
     RV_BCOND eq, bad_args
     mv a0, t0
-    RV_CALL validate_target
+    RV_CALL project_set_target
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, unsupported_target
+    RV_JUMP .Lopt_yes
+.Lopt_no_run:
+    RV_ADDR s6, allow_no_run
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_asm448
+    RV_JUMP bad_args
+.Lrv_cb_skip_asm448:
+    RV_ADDR s6, no_run
+    li t1, 1
+    RV_ZEXT t1
+    mv s8, s6
+    RV_STORE t1, 1
     RV_JUMP .Lopt_yes
 .Lopt_locked:
     RV_ADDR s6, allow_locked
@@ -956,6 +987,7 @@ cmd_init:
     RV_FLAGS sub, 32
     RV_BCOND eq, bad_args
 .Linit_save_cwd:
+    RV_CALL project_template_check
     RV_ADDR s6, dot
     mv a0, s6
     RV_IMM t1, O_DIRECTORY + O_CLOEXEC, 32
@@ -1416,11 +1448,14 @@ init_rollback:
     RV_JUMP die
 /* Strict, documented TOML subset. Sections and string fields are parsed, not
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
-/* Input: cwd is the project. Output: package_* buffers contain validated fields.
- * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source/native fields=256.
- * Failure exits without build
- * changes. Stack: 64 saved bytes plus nested calls; all callee-saved restored. */
+/* Input: cwd is the project. Output: package_* contain the selected target's fields.
+ * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Every declared
+ * table is validated before returning. s2 is the parser cursor; s3 tracks
+ * sections (package=1, build=2, target=3), s4 fields, and s5 unique sections.
+ * Owned capacities include NUL: name=65, version/target=64, source/test/native
+ * fields=256. Failure exits without build changes; a missing selected target exits 2.
+ * Scratch: a0-a7/t0 and platform scratch. Preserves s0-s5. Stack:64 saved
+ * bytes plus RV_CALL frames and bounded callees; SP remains 16-byte aligned. */
 read_manifest:
     RV_SAVE s2
     RV_SAVE s3
@@ -1571,12 +1606,19 @@ read_manifest:
     RV_CALL copy_string
     RV_ADDR a0, manifest_buffer
     RV_ADDR a1, rm_root_metadata
+    RV_ADDR s6, project_requested_target
+    mv s8, s6
+    RV_LOAD a2, 8
     RV_CALL rm_parse_manifest
     mv s8, t0
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, manifest_no_host
+    mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_asm1119
+    beqz s8, .Lrv_cb_skip_asm1142
     RV_JUMP manifest_error
-.Lrv_cb_skip_asm1119:
+.Lrv_cb_skip_asm1142:
     RV_ADDR a0, package_name
     RV_ADDR s6, rm_root_metadata + 24
     mv s8, s6
@@ -1612,14 +1654,18 @@ read_manifest:
     mv s8, s6
     RV_LOAD a1, 8
     RV_CALL copy_string
+    RV_ADDR a0, package_test
+    RV_ADDR s6, rm_root_metadata + RM_TEST
+    mv s8, s6
+    RV_LOAD a1, 8
+    RV_CALL copy_string
+    RV_ADDR s6, rm_root_metadata + RM_TARGET_MASK
+    mv s8, s6
+    RV_LOAD t0, 8
+    RV_ADDR s6, project_target_mask
+    mv s8, s6
+    RV_STORE t0, 8
     RV_CALL native_link_check_options
-    RV_ADDR a0, package_target
-    RV_CALL validate_target
-    mv s8, t0
-    RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_asm1151
-    RV_JUMP unsupported_target
-.Lrv_cb_skip_asm1151:
     RV_RESTORE s5
     RV_RESTORE s4
     RV_RESTORE s3
@@ -1633,6 +1679,11 @@ manifest_error:
     mv a0, s6
     RV_IMM t1, 1, 32
     mv a1, t1
+    RV_ZEXT a1
+    RV_JUMP die
+manifest_no_host:
+    RV_ADDR a0, err_manifest_host
+    li a1, 2
     RV_ZEXT a1
     RV_JUMP die
 /* Input: a0=project name. Output: t0=1 for [a-z][a-z0-9-]{0,63}, else zero.
@@ -2172,11 +2223,7 @@ cmd_build:
     RV_CALL parse_options_only
     RV_CALL read_manifest
     RV_CALL build_project
-    RV_ADDR s6, build_text
-    mv a0, s6
-    RV_ADDR s6, build_json
-    mv a1, s6
-    RV_CALL report
+    RV_CALL project_build_report
     RV_JUMP exit_ok
 cmd_run:
     RV_ADDR s6, native_allow
@@ -2253,6 +2300,11 @@ cmd_run:
     RV_ZEXT a0
     RV_JUMP exit_code
 cmd_test:
+    RV_ADDR s6, allow_no_run
+    li t1, 1
+    RV_ZEXT t1
+    mv s8, s6
+    RV_STORE t1, 1
     RV_ADDR s6, native_allow
     li t1, 1
     RV_ZEXT t1
@@ -2269,6 +2321,14 @@ cmd_test:
     mv s8, s6
     RV_STORE t1, 1
     RV_CALL build_project
+    RV_ADDR s6, no_run
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_asm1544
+    RV_JUMP project_test_build_report
+.Lrv_cb_skip_asm1544:
     RV_ADDR s6, test_output
     mv a0, s6
     RV_ADDR s6, child_argv
@@ -2285,11 +2345,28 @@ cmd_test:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, .Ltest_failed
-    RV_ADDR s6, test_text
-    mv a0, s6
-    RV_ADDR s6, test_json
-    mv a1, s6
-    RV_CALL report
+    RV_ADDR s6, json_mode
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_asm1559
+    RV_JUMP .Ltest_report_json
+.Lrv_cb_skip_asm1559:
+    RV_ADDR a0, test_text
+    RV_CALL out
+    RV_ADDR a0, package_test
+    RV_CALL out
+    RV_ADDR a0, newline
+    RV_CALL out
+    RV_JUMP exit_ok
+.Ltest_report_json:
+    RV_ADDR a0, test_json
+    RV_CALL out
+    RV_ADDR a0, package_test
+    RV_CALL registry_json_string
+    RV_ADDR a0, test_json_end
+    RV_CALL out
     RV_JUMP exit_ok
 .Ltest_failed:
     mv a1, t0
@@ -2297,12 +2374,20 @@ cmd_test:
     RV_ADDR s6, err_test
     mv a0, s6
     RV_JUMP die
-/* Input: cwd is a trusted local project; package_source was parsed and bounded.
- * test_mode selects tests/main.s. Output: build/app or build/test, plus object.
+/* Input: cwd is a trusted local project; source/test paths were bounded.
+ * test_mode selects package_test. Output: build/app or build/test, plus object.
  * Object rename occurs first; binary rename is the final publication step.
  * Returns on success. On failure, removes this process's stage and exits with
  * the child status or 1. Stage paths have capacities 64/96/96. Stack: 16 bytes. */
 build_project:
+    RV_CALL project_execution_check
+    RV_ADDR a0, package_target
+    RV_CALL validate_target
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_asm1590
+    RV_JUMP cross_build_project
+.Lrv_cb_skip_asm1590:
     RV_SAVE s2
     RV_CALL check_tools
     RV_CALL verify_project_dependencies
@@ -2358,9 +2443,9 @@ build_project:
     RV_CALL native_link_compile_check
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_asm1589
+    beqz s8, .Lrv_cb_skip_asm1639
     RV_JUMP build_child_error
-.Lrv_cb_skip_asm1589:
+.Lrv_cb_skip_asm1639:
     RV_CALL rv_prepare_assembly
     RV_ADDR s6, as_path
     mv a0, s6
@@ -2376,15 +2461,15 @@ build_project:
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_asm1600
+    bnez s8, .Lrv_cb_skip_asm1650
     RV_JUMP .Lbuild_standalone_link
-.Lrv_cb_skip_asm1600:
+.Lrv_cb_skip_asm1650:
     RV_CALL native_link_build
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_asm1602
+    beqz s8, .Lrv_cb_skip_asm1652
     RV_JUMP build_child_error
-.Lrv_cb_skip_asm1602:
+.Lrv_cb_skip_asm1652:
     RV_JUMP .Lbuild_linked
 .Lbuild_standalone_link:
     RV_ADDR s6, ld_path
@@ -2536,12 +2621,12 @@ unsigned_decimal:
     RV_FLAGS and, 32
 /* Caller establishes a2 = 0 and a nonzero divisor. */
     mv t1, t0
-    beqz a4, .Lrv_div_zero_asm1723
+    beqz a4, .Lrv_div_zero_asm1773
     divu t0, t1, a4
-    j .Lrv_div_done_asm1723
-.Lrv_div_zero_asm1723:
+    j .Lrv_div_done_asm1773
+.Lrv_div_zero_asm1773:
     li t0, 0
-.Lrv_div_done_asm1723:
+.Lrv_div_done_asm1773:
     mul s8, t0, a4
     sub a2, t1, s8
     li s10, 255
@@ -2662,6 +2747,27 @@ spawn_wait:
     RV_ZEXT t0
     RV_JUMP .Lspawn_return
 .Lspawn_child:
+    RV_ADDR s6, cross_as
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, s2
+    mv s10, t1
+    RV_FLAGS sub, 64
+    RV_BCOND eq, .Lspawn_cross_environment
+    RV_ADDR s6, cross_ld
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, s2
+    mv s10, t1
+    RV_FLAGS sub, 64
+    RV_BCOND eq, .Lspawn_cross_environment
+    mv a0, s2
+    RV_CALL native_link_child_environment
+    RV_JUMP .Lspawn_selected_environment
+.Lspawn_cross_environment:
+    RV_ADDR t0, native_tool_env
+.Lspawn_selected_environment:
+    mv a2, t0
     mv a0, s2
     RV_CALL native_link_child_environment
     mv a2, t0
@@ -2684,6 +2790,13 @@ spawn_wait:
 cmd_clean:
     RV_CALL parse_options_only
     RV_CALL read_manifest
+    RV_ADDR a0, package_target
+    RV_CALL validate_target
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_asm1881
+    RV_JUMP cross_clean
+.Lrv_cb_skip_asm1881:
     RV_ADDR s6, build_dir
     mv a0, s6
     RV_ADDR s6, stat_buffer
@@ -2859,6 +2972,33 @@ stage_prefix: .asciz "build/.asm-"
 object_suffix: .asciz "/main.o"
 binary_suffix: .asciz "/app"
 default_name: .asciz "app"
+key_name: .asciz "name"
+key_version: .asciz "version"
+key_source: .asciz "source"
+key_test: .asciz "test"
+key_target: .asciz "target"
+key_link: .asciz "link"
+key_libraries: .asciz "libraries"
+key_check: .asciz "check"
+section_package: .asciz "package"
+section_build: .asciz "build"
+section_target_x86: .asciz "target.x86_64-linux"
+/* Split the Linux identifiers so macOS preparation only changes the host. */
+section_target_arm: .ascii "target.aarch64-"
+.asciz "linux"
+section_target_riscv: .asciz "target.riscv64-linux"
+section_target_macos: .asciz "target.aarch64-macos"
+target_x86: .asciz "x86_64-linux"
+target_arm: .ascii "aarch64-"
+.asciz "linux"
+target_riscv: .asciz "riscv64-linux"
+target_macos: .asciz "aarch64-macos"
+section_target_macos_x86: .asciz "target.x86_64-macos"
+target_macos_x86: .asciz "x86_64-macos"
+section_target_windows_x86: .asciz "target.x86_64-windows"
+target_windows_x86: .asciz "x86_64-windows"
+section_target_windows_arm: .asciz "target.aarch64-windows"
+target_windows_arm: .asciz "aarch64-windows"
 newline: .asciz "\n"
 error_prefix: .asciz "asm: "
 error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
@@ -2866,13 +3006,14 @@ error_json_suffix: .asciz "\"}\n"
 err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
 err_output: .asciz "cannot write command output; check the output destination and try again"
-err_target: .asciz "unsupported target; this release supports riscv64-linux only"
+err_target: .asciz "unsupported target; use asm targets for supported build targets"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
 err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"
 err_unimplemented: .asciz "this command is not implemented; run asm status to see command support"
 err_init_path: .asciz "cannot create project directory; new requires a path that does not exist"
 err_init_conflict: .asciz "cannot initialize project; existing files and symlink directories are never overwritten"
-err_manifest: .asciz "invalid or missing asm.toml; expected package name/version and build source/target"
+err_manifest: .asciz "invalid or missing asm.toml; use package name/version and build source/target or canonical target tables"
+err_manifest_host: .asciz "asm.toml has no selected target; add its canonical target table or select a declared target"
 err_build: .asciz "build failed; see tool diagnostics above"
 err_build_io: .asciz "cannot write build artifacts; build must be a real directory"
 err_test: .asciz "test program failed"
@@ -2881,8 +3022,8 @@ version_text: .asciz "asm 0.5.0 (riscv64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"host\":\"riscv64-linux\"}\n"
 license_text: .asciz "asm 0.5.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.5.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
 license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.5.0\"}\n"
-targets_text: .asciz "riscv64-linux (host; GNU as + ld)\n"
-targets_json: .asciz "{\"host\":\"riscv64-linux\",\"targets\":[\"riscv64-linux\"]}\n"
+targets_text: .asciz "x86_64-linux (cross; GNU target binutils)\naarch64-linux (cross; GNU target binutils)\nriscv64-linux (host; GNU as + ld)\n"
+targets_json: .asciz "{\"host\":\"riscv64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
 doctor_text: .asciz "Host: riscv64-linux\nBuild: /usr/bin/as and /usr/bin/ld\nRegistry: /usr/bin/curl and /usr/bin/sha256sum\nSource archives: /usr/bin/gzip\nRequired tools are available.\n"
 doctor_json: .asciz "{\"ok\":true,\"host\":\"riscv64-linux\",\"assembler\":\"/usr/bin/as\",\"linker\":\"/usr/bin/ld\",\"curl\":\"/usr/bin/curl\",\"sha256sum\":\"/usr/bin/sha256sum\",\"gzip\":\"/usr/bin/gzip\"}\n"
@@ -2890,8 +3031,9 @@ init_text: .asciz "Created asm.toml, src/main.s and tests/main.s.\nNext: asm run
 init_json: .asciz "{\"ok\":true,\"created\":[\"asm.toml\",\"src/main.s\",\"tests/main.s\"]}\n"
 build_text: .asciz "Built build/app\n"
 build_json: .asciz "{\"ok\":true,\"artifact\":\"build/app\"}\n"
-test_text: .asciz "Passed tests/main.s\n"
-test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
+test_text: .asciz "Passed "
+test_json: .asciz "{\"ok\":true,\"test\":"
+test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
@@ -2899,9 +3041,9 @@ help_text:
 .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
 .ascii "  new <path>       Create a project in a new directory\n"
 .ascii "  init [path]      Initialize an existing directory (default: .)\n"
-.ascii "  build            Assemble and link to build/app\n"
+.ascii "  build            Assemble and link the selected target\n"
 .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
-.ascii "  test             Assemble and execute tests/main.s\n"
+.ascii "  test             Assemble and execute the selected test source\n"
 .ascii "  clean            Remove only Asm's named build artifacts\n"
 .ascii "  search [query]   Search the package registry\n"
 .ascii "  info <package>   Show registry package metadata\n"
@@ -2925,7 +3067,9 @@ help_text:
 .ascii "  license          Show the license, warranty, and source\n"
 .ascii "  self update      Update this user installation from the hub\n"
 .ascii "  help             Show this help\n\n"
-.ascii "Options: --target riscv64-linux, --json, --no-color, --help\n"
+.ascii "Options: --target <target>, --json, --no-color, --help\n"
+.ascii "Use targets to list build targets. test --no-run builds without execution.\n"
+.ascii "Cross-target link=c requires a target sysroot; use the native host.\n"
 .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
 .ascii "Native builds: --include-dir PATH and --library-dir PATH (repeat up to eight).\n"
 .ascii "For a path starting with -, use: asm new -- <path>\n"
@@ -2937,7 +3081,7 @@ help_text:
 help_json:
 .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-.asciz "{\"version\":\"0.5.0\",\"implementation\":\"riscv64 assembly\",\"targets\":[\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+.asciz "{\"version\":\"0.5.0\",\"implementation\":\"riscv64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/riscv64/templates.s"
 .section .bss
 .balign 8
@@ -2958,11 +3102,19 @@ stage_binary: .skip 96
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
+package_test: .skip 256
 package_target: .skip 64
+selected_source: .skip 256
+selected_test: .skip 256
+selected_target: .skip 64
+selected_link: .skip 256
+selected_libraries: .skip 256
+selected_check: .skip 256
 manifest_buffer: .skip 8192
 rm_root_original: .skip 8192
 .balign 8
 rm_root_metadata: .skip RM_SIZE
+manifest_host_found: .skip 1
 json_mode: .skip 1
 allow_locked: .skip 1
 require_lock: .skip 1
@@ -2980,6 +3132,7 @@ made_test: .skip 1
 .section .note.GNU-stack,""
 /* Keep one assembler translation unit so the CLI can build itself with the
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
+.include "cli/riscv64/cross_build.s"
 .include "cli/riscv64/native_link.s"
 .include "cli/riscv64/programs.s"
 .include "cli/riscv64/registry.s"

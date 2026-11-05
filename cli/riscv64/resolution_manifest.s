@@ -12,23 +12,35 @@
 .equ RM_LINK, 73792
 .equ RM_LIBRARIES, 73800
 .equ RM_CHECK, 73808
-.equ RM_SIZE, 73816
+.equ RM_TEST, 73816
+.equ RM_TARGET_MASK, 73824
+.equ RM_RECIPE_COUNT, 73832
+.equ RM_RECIPES, 73840
+.equ RM_RECIPE_STRIDE, 64
+.equ RM_SIZE, 74288
 .equ RM_DEPS, 64
 .equ RM_FEATURES, 36928
 .equ RM_STRIDE, 576
 .equ RM_VERSION_LIMIT, 63
 .global rm_parse_manifest, rm_range_matches, rm_valid_range
 .section .text
-/* a0=mutable NUL manifest <=16384 bytes; a1=owned RM_SIZE-byte result.
- * t0=0 success,1 invalid. Strings borrow the input; caller retains its bytes.
- * Extension manifests are <=8190 bytes. Header: extension,deps,features at
- * 0,8,16; name/version/source/target pointers at24,32,40,48. Dependency records
- * at64: name,range,optional,defaults,count,pointers[64]. Feature records at36928:
- * name,count,pointers[64]; +528/+536 are private traversal state. Stride576.
- * Optional native-link pointers follow at RM_LINK/RM_LIBRARIES/RM_CHECK.
- * Absent optional values borrow rm_empty. Field capacities include NUL:256.
- * Preserves s0-s5. Uses 96 local stack bytes, plus RV_CALL frames.
- * Feature traversal adds at most 64 frames of 48 bytes. No file or process effects.
+/* a0=mutable NUL manifest <=16384 bytes; a1=owned RM_SIZE-byte result;
+ * a2=desired canonical target, or0 for registry_host. t0=0 valid selected,
+ * 1 malformed,2 valid but target absent. Validate all recipes before returning2.
+ * Strings borrow input/static bytes; caller retains input. Extension manifests
+ * are ASCII <=8190 bytes; named non-extension manifests are <=8190 bytes.
+ * Header: extension/deps/features at0/8/16; name/version/source/target at24/32/40/48.
+ * Dependency records at64: name,range,optional,defaults,count,pointers[64].
+ * Feature records at36928: name,count,pointers[64]; +528/+536 private DFS state.
+ * Both use stride576. RM_LINK/RM_LIBRARIES/RM_CHECK/RM_TEST select one recipe.
+ * RM_TARGET_MASK is0 for legacy or bits4..256 for seven named targets.
+ * RM_RECIPES contains RM_RECIPE_COUNT declaration-order records, stride64:
+ * target/source/test/link/libraries/check/mask/reserved at0/8/16/24/32/40/48/56.
+ * Mask bits: source1,test2,link4,libraries8,check16,legacy-target32.
+ * Absent optionals borrow rm_empty; absent test borrows rm_default_test.
+ * Fields contain at most255 bytes plus NUL. Preserves s0-s5; stack96 saved
+ * bytes plus RV_CALL frames. Feature DFS adds <=64 frames of48 saved bytes.
+ * Uses private parser globals. No file/process effects; invalid results unusable.
  */
 rm_parse_manifest:
     RV_SAVE s0
@@ -39,6 +51,21 @@ rm_parse_manifest:
     RV_SAVE s5
     mv s2, a0
     mv s3, a1
+    mv s8, a2
+    beqz s8, .Lrv_cb_skip_resolution_manifest48
+    RV_JUMP .Lrm_desired_ready
+.Lrv_cb_skip_resolution_manifest48:
+    RV_ADDR a2, registry_host
+.Lrm_desired_ready:
+    RV_ADDR s6, rm_desired_target
+    mv s8, s6
+    RV_STORE a2, 8
+    RV_ADDR s6, rm_current_recipe
+    mv s8, s6
+    RV_STORE zero, 8
+    RV_ADDR s6, rm_selected_recipe
+    mv s8, s6
+    RV_STORE zero, 8
     RV_ADDR s6, rm_input
     mv s8, s6
     RV_STORE a0, 8
@@ -156,9 +183,9 @@ rm_parse_manifest:
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolution_manifest105
+    bnez s8, .Lrv_cb_skip_resolution_manifest126
     RV_JUMP .Lrm_arm_zero_done1
-.Lrv_cb_skip_resolution_manifest105:
+.Lrv_cb_skip_resolution_manifest126:
 .Lrm_arm_zero1:
     mv s8, a0
     RV_STORE t0, 8
@@ -167,9 +194,9 @@ rm_parse_manifest:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolution_manifest109
+    beqz s8, .Lrv_cb_skip_resolution_manifest130
     RV_JUMP .Lrm_arm_zero1
-.Lrv_cb_skip_resolution_manifest109:
+.Lrv_cb_skip_resolution_manifest130:
 .Lrm_arm_zero_done1:
     RV_ADDR t1, rm_empty
     RV_IMM s7, RM_LINK, 64
@@ -182,6 +209,12 @@ rm_parse_manifest:
     RV_STORE t1, 8
     li s10, 16
     add s8, s6, s10
+    RV_STORE t1, 8
+    RV_ADDR t1, rm_default_test
+    RV_IMM s7, RM_TEST, 64
+    mv s10, s7
+    add s6, s3, s10
+    mv s8, s6
     RV_STORE t1, 8
     mv s10, s4
     xor t3, s4, s10
@@ -281,107 +314,150 @@ rm_parse_manifest:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND eq, .Lrm_package
-    RV_IMM t2, 2, 32
     mv s8, s4
-    mv s10, t2
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Lrm_recipe_field
+    mv s8, s4
+    li s10, 6
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lrm_bad
-    RV_ADDR s6, rm_key
-    mv a0, s6
-    RV_ADDR s6, rm_source
-    mv a1, s6
-    RV_CALL streq
-    mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND ne, .Lrm_source
-    RV_ADDR s6, rm_key
-    mv a0, s6
-    RV_ADDR s6, rm_target
-    mv a1, s6
+.Lrm_recipe_field:
+    RV_ADDR a0, rm_key
+    RV_ADDR a1, rm_source
     RV_CALL streq
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_resolution_manifest186
+    beqz s8, .Lrv_cb_skip_resolution_manifest204
+    RV_JUMP .Lrm_source
+.Lrv_cb_skip_resolution_manifest204:
+    RV_ADDR a0, rm_key
+    RV_ADDR a1, rm_test
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_resolution_manifest208
+    RV_JUMP .Lrm_test
+.Lrv_cb_skip_resolution_manifest208:
+    RV_ADDR a0, rm_key
+    RV_ADDR a1, rm_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_resolution_manifest212
     RV_JUMP .Lrm_target
-.Lrv_cb_skip_resolution_manifest186:
+.Lrv_cb_skip_resolution_manifest212:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_link
     RV_CALL streq
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_resolution_manifest190
+    beqz s8, .Lrv_cb_skip_resolution_manifest216
     RV_JUMP .Lrm_link
-.Lrv_cb_skip_resolution_manifest190:
+.Lrv_cb_skip_resolution_manifest216:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_libraries
     RV_CALL streq
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_resolution_manifest194
+    beqz s8, .Lrv_cb_skip_resolution_manifest220
     RV_JUMP .Lrm_libraries
-.Lrv_cb_skip_resolution_manifest194:
+.Lrv_cb_skip_resolution_manifest220:
     RV_ADDR a0, rm_key
     RV_ADDR a1, rm_check
     RV_CALL streq
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_resolution_manifest198
+    beqz s8, .Lrv_cb_skip_resolution_manifest224
     RV_JUMP .Lrm_check
-.Lrv_cb_skip_resolution_manifest198:
+.Lrv_cb_skip_resolution_manifest224:
     RV_JUMP .Lrm_bad
 .Lrm_link:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_resolution_manifest202
+    bnez s8, .Lrv_cb_skip_resolution_manifest228
     RV_JUMP .Lrm_bad
-.Lrv_cb_skip_resolution_manifest202:
-    li a2, 32
+.Lrv_cb_skip_resolution_manifest228:
+    li a2, 4
     RV_ZEXT a2
-    RV_IMM a3, RM_LINK, 64
-    RV_JUMP .Lrm_scalar
+    li a3, 24
+    RV_JUMP .Lrm_recipe_scalar
 .Lrm_libraries:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_resolution_manifest208
+    bnez s8, .Lrv_cb_skip_resolution_manifest234
     RV_JUMP .Lrm_bad
-.Lrv_cb_skip_resolution_manifest208:
-    li a2, 64
+.Lrv_cb_skip_resolution_manifest234:
+    li a2, 8
     RV_ZEXT a2
-    RV_IMM a3, RM_LIBRARIES, 64
-    RV_JUMP .Lrm_scalar
+    li a3, 32
+    RV_JUMP .Lrm_recipe_scalar
 .Lrm_check:
     mv s8, s1
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_resolution_manifest214
+    bnez s8, .Lrv_cb_skip_resolution_manifest240
     RV_JUMP .Lrm_bad
-.Lrv_cb_skip_resolution_manifest214:
-    li a2, 128
+.Lrv_cb_skip_resolution_manifest240:
+    li a2, 16
     RV_ZEXT a2
-    RV_IMM a3, RM_CHECK, 64
-    RV_JUMP .Lrm_scalar
+    li a3, 40
+    RV_JUMP .Lrm_recipe_scalar
 .Lrm_target:
-    RV_IMM t1, 8, 32
-    mv a2, t1
+    mv s8, s4
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND ne, .Lrm_bad
+    mv a0, s1
+    RV_CALL project_canonical_target
+    mv s8, t0
+    bnez s8, .Lrv_cb_skip_resolution_manifest249
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest249:
+    mv s1, t0
+    li a2, 32
     RV_ZEXT a2
-    RV_IMM t1, 48, 32
-    mv a3, t1
-    RV_ZEXT a3
-    RV_JUMP .Lrm_scalar
+    li a3, 0
+    RV_JUMP .Lrm_recipe_scalar
 .Lrm_source:
-    RV_IMM t1, 4, 32
-    mv a2, t1
+    li a2, 1
     RV_ZEXT a2
-    RV_IMM t1, 40, 32
-    mv a3, t1
-    RV_ZEXT a3
-    RV_JUMP .Lrm_scalar
+    li a3, 8
+    RV_JUMP .Lrm_recipe_scalar
+.Lrm_test:
+    li a2, 2
+    RV_ZEXT a2
+    li a3, 16
+.Lrm_recipe_scalar:
+    RV_ADDR s6, rm_current_recipe
+    mv s8, s6
+    RV_LOAD a0, 8
+    mv s8, a0
+    bnez s8, .Lrv_cb_skip_resolution_manifest264
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest264:
+    li s10, 48
+    add s8, a0, s10
+    RV_LOAD t0, 8
+    mv s8, t0
+    mv s10, a2
+    RV_FLAGS and, 64
+    RV_BCOND ne, .Lrm_bad
+    mv s10, a2
+    or t0, t0, s10
+    li s10, 48
+    add s8, a0, s10
+    RV_STORE t0, 8
+    mv s10, a3
+    add s6, a0, s10
+    mv s8, s6
+    RV_STORE s1, 8
+    RV_JUMP .Lrm_line_end
 .Lrm_package:
     RV_ADDR s6, rm_key
     mv a0, s6
@@ -499,6 +575,12 @@ rm_parse_manifest:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_bad
+    mv s8, s2
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 46
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Lrm_named_section
     mv s6, s2
     mv s8, s6
     RV_LOAD t1, 1
@@ -580,6 +662,109 @@ rm_parse_manifest:
     mv s10, t3
     RV_FLAGS and, 32
     mv s5, t3
+    RV_ZEXT s5
+    mv s8, s4
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND ne, .Lrm_line_end
+    mv s8, s5
+    li s10, 32
+    RV_FLAGS and, 32
+    RV_BCOND ne, .Lrm_bad
+    li a0, 0
+    RV_CALL rm_new_recipe
+    mv s8, t0
+    bnez s8, .Lrv_cb_skip_resolution_manifest404
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest404:
+    RV_JUMP .Lrm_line_end
+.Lrm_named_section:
+    RV_ADDR a0, rm_key
+    RV_ADDR a1, rm_target
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolution_manifest410
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest410:
+    mv s8, s5
+    li s10, 2
+    RV_FLAGS and, 32
+    RV_BCOND ne, .Lrm_bad
+    li s10, 1
+    add s2, s2, s10
+    /* No horizontal whitespace is permitted after the table dot. */
+    mv s8, s2
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 'a'
+    RV_FLAGS sub, 32
+    RV_BCOND lo, .Lrm_bad
+    mv s8, t1
+    li s10, 'z'
+    RV_FLAGS sub, 32
+    RV_BCOND hi, .Lrm_bad
+    RV_CALL rm_key_identifier
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolution_manifest421
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest421:
+    mv s8, s2
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 93
+    RV_FLAGS sub, 32
+    RV_BCOND ne, .Lrm_bad
+    li s10, 1
+    add s2, s2, s10
+    RV_ADDR s1, rm_recipe_targets
+    li a2, 4
+    RV_ZEXT a2
+.Lrm_named_find:
+    mv s8, s1
+    RV_LOAD a1, 8
+    mv s8, a1
+    bnez s8, .Lrv_cb_skip_resolution_manifest430
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest430:
+    RV_ADDR a0, rm_key
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_resolution_manifest433
+    RV_JUMP .Lrm_named_found
+.Lrv_cb_skip_resolution_manifest433:
+    li s10, 8
+    add s1, s1, s10
+    slliw a2, a2, 1
+    RV_ZEXT a2
+    RV_JUMP .Lrm_named_find
+.Lrm_named_found:
+    RV_IMM s7, RM_TARGET_MASK, 64
+    mv s10, s7
+    add s6, s3, s10
+    mv s8, s6
+    RV_LOAD t0, 8
+    mv s8, t0
+    mv s10, a2
+    RV_FLAGS and, 64
+    RV_BCOND ne, .Lrm_bad
+    mv s10, a2
+    or t0, t0, s10
+    mv s8, s6
+    RV_STORE t0, 8
+    mv s8, s1
+    RV_LOAD a0, 8
+    RV_CALL rm_new_recipe
+    mv s8, t0
+    bnez s8, .Lrv_cb_skip_resolution_manifest447
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest447:
+    li s4, 6
+    RV_ZEXT s4
+    li s10, 32
+    or s5, s5, s10
     RV_ZEXT s5
     RV_JUMP .Lrm_line_end
 .Lrm_dependency:
@@ -1198,42 +1383,41 @@ rm_parse_manifest:
     mv s2, t3
     RV_JUMP .Lrm_comment
 .Lrm_finish:
-    mv t0, s0
+    li s10, 3
+    and t0, s0, s10
     RV_ZEXT t0
-    RV_IMM t2, 15, 32
     mv s8, t0
-    mv s10, t2
-    RV_FLAGS and, 32
-    mv t3, s11
-    mv t0, t3
-    RV_ZEXT t0
-    RV_IMM t2, 15, 32
-    mv s8, t0
-    mv s10, t2
+    li s10, 3
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lrm_bad
-    mv t0, s2
-    RV_ADDR s6, rm_input
+    RV_IMM s7, RM_RECIPE_COUNT, 64
+    mv s10, s7
+    add s6, s3, s10
     mv s8, s6
-    RV_LOAD t2, 8
+    RV_LOAD t0, 8
     mv s8, t0
-    mv s10, t2
-    RV_FLAGS sub, 64
-    mv t3, s11
-    mv t0, t3
-    RV_IMM t2, 16384, 64
+    bnez s8, .Lrv_cb_skip_resolution_manifest855
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest855:
+    RV_ADDR s6, rm_input_length
+    mv s8, s6
+    RV_LOAD t0, 8
+    mv s8, s5
+    li s10, 32
+    RV_FLAGS and, 32
+    RV_BCOND eq, .Lrm_extension_limit
+    RV_IMM t2, 8190, 64
     mv s8, t0
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lrm_bad
-    RV_IMM t2, 28, 32
+.Lrm_extension_limit:
     mv s8, s5
-    mv s10, t2
+    li s10, 28
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_scalars_valid
-    RV_IMM t2, 16, 32
     mv s8, s0
-    mv s10, t2
+    li s10, 16
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_bad
     RV_IMM t2, 8190, 64
@@ -1244,9 +1428,8 @@ rm_parse_manifest:
     RV_ADDR s6, rm_ascii
     mv s8, s6
     RV_LOAD t1, 8
-    RV_IMM t2, 1, 64
     mv s8, t1
-    mv s10, t2
+    li s10, 1
     RV_FLAGS sub, 64
     RV_BCOND ne, .Lrm_bad
 .Lrm_scalars_valid:
@@ -1294,55 +1477,92 @@ rm_parse_manifest:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lrm_bad
-    mv s6, s3
-    RV_IMM s7, 40, 64
-    mv s10, s7
-    add s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 8
-    mv a0, t1
-    RV_CALL valid_source
-    mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lrm_bad
-    mv s6, s3
-    RV_IMM s7, 48, 64
-    mv s10, s7
-    add s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 8
-    mv a0, t1
-    RV_CALL registry_valid_target
-    mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lrm_bad
-    RV_IMM s7, RM_LINK, 64
+    li s1, 0
+.Lrm_recipe_check:
+    RV_IMM s7, RM_RECIPE_COUNT, 64
     mv s10, s7
     add s6, s3, s10
     mv s8, s6
-    RV_LOAD a0, 8
+    RV_LOAD t1, 8
+    mv s8, s1
+    mv s10, t1
+    RV_FLAGS sub, 64
+    RV_BCOND hs, .Lrm_recipes_valid
+    RV_IMM s7, RM_RECIPES, 64
+    mv s10, s7
+    add s4, s3, s10
+    mv s10, s1
+    slli s10, s10, 6
+    add s4, s4, s10
+    li s10, 48
+    add s8, s4, s10
+    RV_LOAD t0, 8
+    mv s8, t0
+    li s10, 1
+    RV_FLAGS and, 64
+    RV_BCOND eq, .Lrm_bad
+    mv s8, s5
+    li s10, 2
+    RV_FLAGS and, 32
+    RV_BCOND eq, .Lrm_recipe_paths
+    mv s8, t0
+    li s10, 32
+    RV_FLAGS and, 64
+    RV_BCOND eq, .Lrm_bad
+.Lrm_recipe_paths:
     li s10, 8
-    add s8, s6, s10
-    RV_LOAD a1, 8
+    add s8, s4, s10
+    RV_LOAD a0, 8
+    RV_CALL valid_source
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolution_manifest925
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest925:
     li s10, 16
-    add s8, s6, s10
+    add s8, s4, s10
+    RV_LOAD a0, 8
+    RV_CALL valid_source
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolution_manifest928
+    RV_JUMP .Lrm_bad
+.Lrv_cb_skip_resolution_manifest928:
+    li s10, 24
+    add s8, s4, s10
+    RV_LOAD a0, 8
+    li s10, 32
+    add s8, s4, s10
+    RV_LOAD a1, 8
+    li s10, 40
+    add s8, s4, s10
     RV_LOAD a2, 8
     RV_CALL native_link_validate
     mv s8, t0
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_resolution_manifest832
+    bnez s8, .Lrv_cb_skip_resolution_manifest933
     RV_JUMP .Lrm_bad
-.Lrv_cb_skip_resolution_manifest832:
-    mv s10, s1
-    xor t3, s1, s10
-    RV_ZEXT t3
-    mv s8, t3
-    mv s10, t3
-    RV_FLAGS and, 32
-    mv s1, t3
-    RV_ZEXT s1
+.Lrv_cb_skip_resolution_manifest933:
+    mv s8, s4
+    RV_LOAD a0, 8
+    RV_ADDR s6, rm_desired_target
+    mv s8, s6
+    RV_LOAD a1, 8
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolution_manifest938
+    RV_JUMP .Lrm_recipe_next
+.Lrv_cb_skip_resolution_manifest938:
+    RV_ADDR s6, rm_selected_recipe
+    mv s8, s6
+    RV_STORE s4, 8
+.Lrm_recipe_next:
+    li s10, 1
+    add s1, s1, s10
+    RV_JUMP .Lrm_recipe_check
+.Lrm_recipes_valid:
+    li s1, 0
 .Lrm_feature_check:
     mv s6, s3
     RV_IMM s7, 16, 64
@@ -1379,13 +1599,57 @@ rm_parse_manifest:
     RV_ZEXT s1
     RV_JUMP .Lrm_feature_check
 .Lrm_good:
-    mv s10, t0
-    xor t3, t0, s10
-    RV_ZEXT t3
-    mv s8, t3
-    mv s10, t3
-    RV_FLAGS and, 32
-    mv t0, t3
+    RV_ADDR s6, rm_selected_recipe
+    mv s8, s6
+    RV_LOAD s1, 8
+    mv s8, s1
+    bnez s8, .Lrv_cb_skip_resolution_manifest971
+    RV_JUMP .Lrm_missing_target
+.Lrv_cb_skip_resolution_manifest971:
+    mv s8, s1
+    RV_LOAD t0, 8
+    li s10, 48
+    add s8, s3, s10
+    RV_STORE t0, 8
+    li s10, 8
+    add s8, s1, s10
+    RV_LOAD t0, 8
+    li s10, 40
+    add s8, s3, s10
+    RV_STORE t0, 8
+    li s10, 16
+    add s8, s1, s10
+    RV_LOAD t0, 8
+    RV_IMM s7, RM_TEST, 64
+    mv s10, s7
+    add s6, s3, s10
+    mv s8, s6
+    RV_STORE t0, 8
+    RV_IMM s7, RM_LINK, 64
+    mv s10, s7
+    add s6, s3, s10
+    li s10, 24
+    add s8, s1, s10
+    RV_LOAD t0, 8
+    mv s8, s6
+    RV_STORE t0, 8
+    li s10, 32
+    add s8, s1, s10
+    RV_LOAD t0, 8
+    li s10, 8
+    add s8, s6, s10
+    RV_STORE t0, 8
+    li s10, 40
+    add s8, s1, s10
+    RV_LOAD t0, 8
+    li s10, 16
+    add s8, s6, s10
+    RV_STORE t0, 8
+    li t0, 0
+    RV_ZEXT t0
+    RV_JUMP .Lrm_return
+.Lrm_missing_target:
+    li t0, 2
     RV_ZEXT t0
     RV_JUMP .Lrm_return
 .Lrm_bad:
@@ -1402,6 +1666,52 @@ rm_parse_manifest:
     ret
 /* Parser helpers deliberately advance s2. Other callee registers preserved.
  * Input is a bounded copied NUL buffer. No helper crosses a string terminator. */
+/* a0=canonical target or0 for legacy until target field. s3=owned result.
+ * t0=new record or0 when full. Scratch:a0-a4,t0-s7. No stack/input writes.
+ * Initializes defaults and appends one of at most seven64-byte records. */
+rm_new_recipe:
+    RV_IMM s7, RM_RECIPE_COUNT, 64
+    mv s10, s7
+    add a4, s3, s10
+    mv s8, a4
+    RV_LOAD a2, 8
+    mv s8, a2
+    li s10, 7
+    RV_FLAGS sub, 64
+    RV_BCOND hs, .Lrm_new_recipe_bad
+    RV_IMM s7, RM_RECIPES, 64
+    mv s10, s7
+    add t0, s3, s10
+    mv s10, a2
+    slli s10, s10, 6
+    add t0, t0, s10
+    li s10, 1
+    add a2, a2, s10
+    mv s8, a4
+    RV_STORE a2, 8
+    mv s8, t0
+    RV_STORE a0, 8
+    RV_ADDR a1, rm_default_test
+    li s10, 16
+    add s8, t0, s10
+    RV_STORE a1, 8
+    RV_ADDR a1, rm_empty
+    li s10, 24
+    add s8, t0, s10
+    RV_STORE a1, 8
+    li s10, 32
+    add s8, t0, s10
+    RV_STORE a1, 8
+    li s10, 40
+    add s8, t0, s10
+    RV_STORE a1, 8
+    RV_ADDR s6, rm_current_recipe
+    mv s8, s6
+    RV_STORE t0, 8
+    ret
+.Lrm_new_recipe_bad:
+    li t0, 0
+    ret
 rm_horizontal:
     mv s6, s2
     mv s8, s6
@@ -1579,12 +1889,12 @@ rm_key_identifier:
     mv s8, a3
     mv s10, a3
     RV_FLAGS and, 32
-    RV_BCOND ne, .Lrv_cset_true_resolution_manifest981
+    RV_BCOND ne, .Lrv_cset_true_resolution_manifest1139
     li t1, 0
-    j .Lrv_cset_done_resolution_manifest981
-.Lrv_cset_true_resolution_manifest981:
+    j .Lrv_cset_done_resolution_manifest1139
+.Lrv_cset_true_resolution_manifest1139:
     li t1, 1
-.Lrv_cset_done_resolution_manifest981:
+.Lrv_cset_done_resolution_manifest1139:
     li s10, 255
     slli s11, t1, 0
     and s11, s11, s10
@@ -1649,12 +1959,6 @@ rm_string:
     mv s10, t2
     RV_FLAGS sub, 32
     RV_BCOND lo, .Lrm_string_bad
-    andi t1, t0, 255
-    RV_IMM t2, 126, 32
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS sub, 32
-    RV_BCOND hi, .Lrm_string_bad
     andi t1, t0, 255
     RV_IMM t2, 92, 32
     mv s8, t1
@@ -2040,12 +2344,12 @@ rm_valid_feature:
     mv s8, a3
     mv s10, a3
     RV_FLAGS and, 32
-    RV_BCOND ne, .Lrv_cset_true_resolution_manifest1247
+    RV_BCOND ne, .Lrv_cset_true_resolution_manifest1401
     li t1, 0
-    j .Lrv_cset_done_resolution_manifest1247
-.Lrv_cset_true_resolution_manifest1247:
+    j .Lrv_cset_done_resolution_manifest1401
+.Lrv_cset_true_resolution_manifest1401:
     li t1, 1
-.Lrv_cset_done_resolution_manifest1247:
+.Lrv_cset_done_resolution_manifest1401:
     li s10, 255
     slli s11, t1, 0
     and s11, s11, s10
@@ -2399,6 +2703,7 @@ rm_feature_visit:
     RV_RESTORE s0
     ret
 .section .rodata
+rm_recipe_targets: .quad target_x86,target_arm,target_riscv,target_macos,target_macos_x86,target_windows_x86,target_windows_arm,0
 rm_sections: .quad rm_package,rm_build,rm_resolution,rm_dependencies,rm_features,0
 rm_package: .asciz "package"
 rm_build: .asciz "build"
@@ -2412,6 +2717,8 @@ rm_empty: .asciz ""
 rm_name: .asciz "name"
 rm_version: .asciz "version"
 rm_source: .asciz "source"
+rm_test: .asciz "test"
+rm_default_test: .asciz "tests/main.s"
 rm_target: .asciz "target"
 rm_schema: .asciz "schema"
 rm_optional: .asciz "optional"
@@ -2420,6 +2727,9 @@ rm_true: .asciz "true"
 rm_false: .asciz "false"
 .section .bss
 .balign 8
+rm_desired_target: .skip 8
+rm_current_recipe: .skip 8
+rm_selected_recipe: .skip 8
 rm_input: .skip 8
 rm_input_length: .skip 8
 rm_ascii: .skip 8
@@ -2446,12 +2756,12 @@ rm_valid_range:
     mv s8, t0
     mv s10, t2
     RV_FLAGS sub, 64
-    RV_BCOND ne, .Lrv_cset_true_resolution_manifest1517
+    RV_BCOND ne, .Lrv_cset_true_resolution_manifest1677
     li t1, 0
-    j .Lrv_cset_done_resolution_manifest1517
-.Lrv_cset_true_resolution_manifest1517:
+    j .Lrv_cset_done_resolution_manifest1677
+.Lrv_cset_true_resolution_manifest1677:
     li t1, 1
-.Lrv_cset_done_resolution_manifest1517:
+.Lrv_cset_done_resolution_manifest1677:
     li s10, 255
     slli s11, t1, 0
     and s11, s11, s10

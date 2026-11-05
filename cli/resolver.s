@@ -97,6 +97,7 @@ cmd_resolve:
     jmp .Lres_args
 .Lres_start:
     call read_manifest
+    call res_require_native_target
     cmp qword ptr [rip + rm_root_metadata], 1
     jne res_manifest_error
     mov rdi, [rip + res_cli_features]
@@ -148,6 +149,20 @@ cmd_resolve:
     call release_dependency_lock
     lea rdi, [rip + res_done]
     jmp res_report
+
+/* Graph resolution retains its native-host scope. Exact v2 locks support
+ * foreign targets independently. No file effects; caller-saved scratch. */
+res_require_native_target:
+    lea rdi, [rip + package_target]
+    lea rsi, [rip + registry_host]
+    call streq
+    test eax, eax
+    jz res_native_target_error
+    ret
+res_native_target_error:
+    lea rdi, [rip + res_native_target_message]
+    mov esi, 2
+    jmp die
 
 res_help:
     lea rdi, [rip + res_help_text]
@@ -306,8 +321,8 @@ res_hash_root:
     ret
 
 /* A non-following bounded probe only selects the parser. Invalid locks still
- * fail in their full readers. RAX=1 v2 prefix,0 otherwise. Stack:8 bytes. */
-res_is_v2:
+ * fail in their full readers. RAX=1 graph-v3 prefix,0 otherwise. Stack:8 bytes. */
+res_is_graph_lock:
     push r12
     mov eax, SYS_open
     lea rdi, [rip + dependency_lock_path]
@@ -357,7 +372,7 @@ res_is_v2:
 res_legacy_guard:
     cmp qword ptr [rip + rm_root_metadata], 0
     jne res_use_resolve_error
-    call res_is_v2
+    call res_is_graph_lock
     test eax, eax
     jnz res_use_resolve_error
     ret
@@ -365,15 +380,17 @@ res_legacy_guard:
 /* Preserve previous exact rows for immutable-version comparisons. Owned row
  * pointers borrow either v1 dependency_lock_buffer or res_lock_buffer. */
 res_read_previous:
-    call res_is_v2
+    call res_is_graph_lock
     test eax, eax
     jz .Lres_previous_v1
-    call res_read_v2
+    call res_read_graph_lock
     jmp .Lres_previous_copy
 .Lres_previous_v1:
     call dependency_load_lock
     test eax, eax
     jnz .Lres_previous_none
+    cmp byte ptr [rip + dependency_lock_version], 2
+    je res_lock_error
 .Lres_previous_copy:
     mov rax, [rip + dependency_origin]
     mov [rip + res_previous_origin], rax
@@ -386,11 +403,11 @@ res_read_previous:
 .Lres_previous_none:
     ret
 
-/* Load v2 as a bounded regular non-symlink file. Keep an unmodified copy for
+/* Load graph v3 as a bounded regular non-symlink file. Keep an unmodified copy for
  * canonical verification. Only flags/origin are trusted as resolution inputs;
  * enabled-feature comments and selected rows are recomputed from archives.
  * Output registry_rows/count, dependency_origin, res_lock_*; stack:32 bytes. */
-res_read_v2:
+res_read_graph_lock:
     push rbx
     push r12
     push r13
@@ -707,6 +724,7 @@ res_load_candidate:
     imul rax, rax, RES_RM_SIZE
     lea rsi, [rip + res_metadata]
     add rsi, rax
+    mov rdx, [rbx + 16]
     call rm_parse_manifest
     test eax, eax
     jnz res_manifest_error
@@ -1075,16 +1093,17 @@ res_commit_lock:
     ret
 
 /* Called after read_manifest by the normal build path. A resolution manifest
- * always requires a v2 lock, even without --locked. Legacy behavior unchanged. */
+ * always requires a graph v3 lock, even without --locked. Legacy behavior unchanged. */
 verify_project_dependencies:
     cmp qword ptr [rip + rm_root_metadata], 0
     jne res_verify_project
-    call res_is_v2
+    call res_is_graph_lock
     test eax, eax
     jnz res_lock_error
     jmp verify_legacy_project_dependencies
 
 res_verify_project:
+    call res_require_native_target
     mov byte ptr [rip + res_check_mode], 1
     mov edi, 5
     xor esi, esi
@@ -1094,9 +1113,9 @@ res_verify_project:
 
 /* Sync selects its legacy/graph implementation without consuming argv. */
 cmd_sync:
-    call read_manifest
-    cmp qword ptr [rip + rm_root_metadata], 0
-    je cmd_sync_legacy
+    call res_is_graph_lock
+    test eax, eax
+    jz cmd_sync_legacy
 .Lres_sync_args:
     call next_arg
     test rax, rax
@@ -1119,6 +1138,10 @@ cmd_sync:
     mov [rip + res_artifacts], rax
     jmp .Lres_sync_args
 .Lres_sync_start:
+    call read_manifest
+    call res_require_native_target
+    cmp qword ptr [rip + rm_root_metadata], 1
+    jne res_lock_error
     mov edi, 6
     mov esi, 1
     call dependency_acquire
@@ -1132,7 +1155,7 @@ cmd_sync:
  * exact locked URLs. Re-rendering detects omitted, extra or edited metadata.
  * Root SHA-256 makes any manifest change require deliberate resolution. */
 res_check_locked_graph:
-    call res_read_v2
+    call res_read_graph_lock
     call res_copy_rows
     mov rax, [rip + res_row_count]
     mov [rip + res_locked_count], rax
@@ -1245,7 +1268,8 @@ res_use_resolve_error:
     jmp registry_fail
 
 .section .rodata
-res_header: .asciz "# asm-lock-v2\n"
+res_native_target_message: .asciz "dependency resolution requires the native host target; use exact dependency commands for another target"
+res_header: .asciz "# asm-lock-v3\n"
 res_default_prefix: .asciz "# default "
 res_features_prefix: .asciz "# features "
 res_manifest_prefix: .asciz "# manifest "

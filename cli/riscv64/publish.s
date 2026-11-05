@@ -9,6 +9,11 @@
  * See LICENSE and LICENSING.md for the terms and scope.
  */
 .global cmd_publish, validate_source_package
+/* Preserve the legacy source-archive limit. Named target manifests use the
+ * native build limit. One extra byte holds the copied manifest's NUL. */
+.equ PUB_LEGACY_MANIFEST_MAX, 16384
+.equ PUB_TARGET_MANIFEST_MAX, 8190
+.equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
 /* Prepare a local registry submission. No upload, login, network or shell.
  * Snapshot each artifact before hashing/validation. Required arguments are
  * explicit; the JSON record never asserts a remote commit or owner was verified.
@@ -16,7 +21,8 @@
  * registers. Terminal error labels clean the owned registry workspace.
  * Caller-saved integer registers and flags are scratch. Parser helpers that
  * intentionally advance s2 document that exception. Buffers use fixed limits:
- * six 128-byte artifact records, 16 KiB manifest/JSON, 256-byte path components.
+ * six 128-byte artifact records, 16385-byte manifest buffer, 16 KiB JSON,
+ * 256-byte paths. Legacy manifests accept 16384 bytes; named targets accept 8190.
  */
 /* Native RISC-V64 port. See platform.inc for the internal register contract.
  * Each saved register occupies 16 bytes. Each RV_CALL adds a 16-byte link
@@ -832,9 +838,9 @@ cmd_publish:
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_publish537
+    bnez s8, .Lrv_cb_skip_publish544
     RV_JUMP .Lport_publish_1_end
-.Lrv_cb_skip_publish537:
+.Lrv_cb_skip_publish544:
 .Lport_publish_1:
     mv s8, a1
     RV_LOAD t1, 1
@@ -847,9 +853,9 @@ cmd_publish:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_publish542
+    beqz s8, .Lrv_cb_skip_publish549
     RV_JUMP .Lport_publish_1
-.Lrv_cb_skip_publish542:
+.Lrv_cb_skip_publish549:
 .Lport_publish_1_end:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1420,96 +1426,67 @@ pub_check_project:
     RV_ADDR s6, pub_project_target
     mv s8, s6
     RV_STORE a0, 8
+    li s4, 0
+    RV_ZEXT s4
     RV_CALL pub_source_paths
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND ne, .Lpub_project_bad
-    RV_ADDR s6, pub_readme_names
-    mv s0, s6
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish937
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish937:
+    RV_ADDR s0, pub_readme_names
     RV_CALL pub_any_member
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lpub_project_bad
-    RV_ADDR s6, pub_license_names
-    mv s0, s6
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_publish940
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish940:
+    RV_ADDR s0, pub_license_names
     RV_CALL pub_any_member
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lpub_project_bad
-    RV_ADDR s6, pub_manifest_name
-    mv a0, s6
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_publish943
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish943:
+    RV_ADDR a0, pub_manifest_name
     RV_CALL source_archive_member
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 64
-    RV_BCOND eq, .Lpub_project_bad
+    bnez s8, .Lrv_cb_skip_publish946
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish946:
     mv s8, a3
-    mv s10, a3
-    RV_FLAGS and, 32
-    RV_BCOND ne, .Lpub_project_bad
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish947
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish947:
     mv s8, a2
-    mv s10, a2
-    RV_FLAGS and, 64
-    RV_BCOND eq, .Lpub_project_bad
-    RV_IMM t2, 16384, 64
+    bnez s8, .Lrv_cb_skip_publish948
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish948:
+    RV_IMM t2, PUB_LEGACY_MANIFEST_MAX, 64
     mv s8, a2
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND hi, .Lpub_project_bad
     mv a1, t0
-    RV_ADDR s6, pub_manifest
-    mv a0, s6
-    mv a3, a2
-    mv s10, a4
-    xor a4, a4, s10
-    RV_ZEXT a4
-    mv s8, a4
-    mv s10, a4
-    RV_FLAGS and, 32
+    RV_ADDR a0, pub_manifest
+    li a3, 0
 .Lpub_manifest_copy:
-    mv s6, a1
-    mv s10, a4
-    add s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 1
-    li s10, 255
-    slli s11, t1, 0
-    and s11, s11, s10
-    not s10, s10
-    and t0, t0, s10
-    or t0, t0, s11
-    li s10, 255
-    and t1, t0, s10
-    RV_ZEXT t1
-    li s10, 255
-    and t2, t0, s10
-    RV_ZEXT t2
-    slliw t1, t1, 24
-    RV_ZEXT t1
-    slliw t2, t2, 24
-    RV_ZEXT t2
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lpub_project_bad
-    li s10, 255
-    and t1, t0, s10
-    RV_ZEXT t1
-    mv s6, a0
-    mv s10, a4
-    add s6, s6, s10
-    mv s8, s6
-    RV_STORE t1, 1
-    RV_IMM t2, 1, 64
-    mv s8, a4
-    mv s10, t2
-    RV_FLAGS add, 64
-    mv a4, s11
-    mv s8, a4
     mv s10, a3
+    add s8, a1, s10
+    RV_LOAD t1, 1
+    mv s8, t1
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_publish957
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish957:
+    mv s10, a3
+    add s8, a0, s10
+    RV_STORE t1, 1
+    li s10, 1
+    add a3, a3, s10
+    mv s8, a3
+    mv s10, a2
     RV_FLAGS sub, 64
     RV_BCOND lo, .Lpub_manifest_copy
     RV_IMM t1, 0, 32
@@ -1519,12 +1496,15 @@ pub_check_project:
     mv s8, s6
     RV_STORE t1, 1
     RV_ADDR a1, rm_archive_metadata
+    RV_ADDR s6, pub_project_target
+    mv s8, s6
+    RV_LOAD a2, 8
     RV_CALL rm_parse_manifest
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_publish984
+    beqz s8, .Lrv_cb_skip_publish970
     RV_JUMP .Lpub_project_bad
-.Lrv_cb_skip_publish984:
+.Lrv_cb_skip_publish970:
     RV_ADDR a0, pub_project_name
     RV_ADDR s6, rm_archive_metadata + 24
     mv s8, s6
@@ -1547,46 +1527,27 @@ pub_check_project:
     RV_CALL copy_string
     RV_ADDR s6, pub_name
     mv s8, s6
-    RV_LOAD t1, 8
-    mv a1, t1
+    RV_LOAD a1, 8
 .Lpub_unscoped_name:
-    mv s6, a1
-    mv s8, s6
+    mv s8, a1
     RV_LOAD t1, 1
-    RV_IMM t2, 47, 32
-    slliw t1, t1, 24
-    RV_ZEXT t1
-    slliw t2, t2, 24
-    RV_ZEXT t2
+    li s10, 1
+    add a1, a1, s10
     mv s8, t1
-    mv s10, t2
+    li s10, '/'
     RV_FLAGS sub, 32
-    RV_BCOND eq, .Lpub_unscoped_found
-    RV_IMM t2, 1, 64
-    mv s8, a1
-    mv s10, t2
-    RV_FLAGS add, 64
-    mv a1, s11
-    RV_JUMP .Lpub_unscoped_name
-.Lpub_unscoped_found:
-    RV_IMM t2, 1, 64
-    mv s8, a1
-    mv s10, t2
-    RV_FLAGS add, 64
-    mv a1, s11
-    RV_ADDR s6, pub_project_name
-    mv a0, s6
+    RV_BCOND ne, .Lpub_unscoped_name
+    RV_ADDR a0, pub_project_name
     RV_CALL streq
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND eq, .Lpub_project_bad
-    RV_ADDR s6, pub_project_version
-    mv a0, s6
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_publish995
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish995:
+    RV_ADDR a0, pub_project_version
     RV_ADDR s6, pub_version
     mv s8, s6
-    RV_LOAD t1, 8
-    mv a1, t1
+    RV_LOAD a1, 8
     RV_CALL streq
     mv s8, t0
     mv s10, t0
@@ -1603,109 +1564,78 @@ pub_check_project:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lpub_project_bad
-    RV_ADDR s6, pub_project_source
-    mv a0, s6
-    RV_CALL pub_portable_path
-    mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 32
-    RV_BCOND ne, .Lpub_project_bad
-    RV_ADDR s6, pub_project_source
-    mv a0, s6
-    RV_CALL strlen
-    RV_IMM t2, 2, 64
-    mv s8, t0
-    mv s10, t2
+    li s0, 0
+    RV_ADDR s1, rm_archive_metadata + RM_RECIPES
+.Lpub_recipe_loop:
+    RV_ADDR s6, rm_archive_metadata + RM_RECIPE_COUNT
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, s0
+    mv s10, t1
     RV_FLAGS sub, 64
-    RV_BCOND lo, .Lpub_project_bad
-    mv s6, a0
-    mv s10, t0
-    add s6, s6, s10
-    li s10, 2
-    sub s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 2
-    RV_IMM t2, 29486, 32
-    slliw t1, t1, 16
-    RV_ZEXT t1
-    slliw t2, t2, 16
-    RV_ZEXT t2
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS sub, 32
-    RV_BCOND eq, .Lpub_project_source_lookup
-    mv s6, a0
-    mv s10, t0
-    add s6, s6, s10
-    li s10, 2
-    sub s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 2
-    RV_IMM t2, 21294, 32
-    slliw t1, t1, 16
-    RV_ZEXT t1
-    slliw t2, t2, 16
-    RV_ZEXT t2
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS sub, 32
-    RV_BCOND eq, .Lpub_project_source_lookup
-    RV_IMM t2, 4, 64
+    RV_BCOND hs, .Lpub_project_valid
+    li s10, 8
+    add s8, s1, s10
+    RV_LOAD a0, 8
+    RV_CALL pub_recipe_assembly_member
     mv s8, t0
-    mv s10, t2
-    RV_FLAGS sub, 64
-    RV_BCOND lo, .Lpub_project_bad
-    mv s6, a0
-    mv s10, t0
-    add s6, s6, s10
-    li s10, 4
-    sub s6, s6, s10
-    mv s8, s6
-    RV_LOAD t1, 4
-    RV_IMM t2, 1836278062, 32
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS sub, 32
-    RV_BCOND ne, .Lpub_project_bad
-.Lpub_project_source_lookup:
-    RV_CALL source_archive_member
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish1019
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish1019:
+    li s10, 48
+    add s8, s1, s10
+    RV_LOAD t1, 8
+    srli s8, t1, 1
+    andi s8, s8, 1
+    bnez s8, .Lrv_tb_skip_publish1021
+    RV_JUMP .Lpub_recipe_checker
+.Lrv_tb_skip_publish1021:
+    li s10, 16
+    add s8, s1, s10
+    RV_LOAD a0, 8
+    RV_CALL pub_recipe_assembly_member
     mv s8, t0
-    mv s10, t0
-    RV_FLAGS and, 64
-    RV_BCOND eq, .Lpub_project_bad
-    mv s8, a3
-    mv s10, a3
-    RV_FLAGS and, 32
-    RV_BCOND ne, .Lpub_project_bad
-    RV_ADDR s6, rm_archive_metadata + RM_CHECK
-    mv s8, s6
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish1024
+    RV_JUMP .Lpub_project_bad
+.Lrv_cb_skip_publish1024:
+.Lpub_recipe_checker:
+    li s10, 40
+    add s8, s1, s10
     RV_LOAD a0, 8
     mv s8, a0
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_publish1087
-    RV_JUMP .Lpub_project_valid
-.Lrv_cb_skip_publish1087:
+    bnez s8, .Lrv_cb_skip_publish1028
+    RV_JUMP .Lpub_recipe_next
+.Lrv_cb_skip_publish1028:
     RV_CALL pub_portable_path
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_publish1089
+    beqz s8, .Lrv_cb_skip_publish1030
     RV_JUMP .Lpub_project_bad
-.Lrv_cb_skip_publish1089:
-    RV_ADDR s6, rm_archive_metadata + RM_CHECK
-    mv s8, s6
+.Lrv_cb_skip_publish1030:
+    li s10, 40
+    add s8, s1, s10
     RV_LOAD a0, 8
     RV_CALL source_archive_member
     mv s8, t0
-    bnez s8, .Lrv_cb_skip_publish1093
+    bnez s8, .Lrv_cb_skip_publish1033
     RV_JUMP .Lpub_project_bad
-.Lrv_cb_skip_publish1093:
+.Lrv_cb_skip_publish1033:
     mv s8, a3
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_publish1094
+    beqz s8, .Lrv_cb_skip_publish1034
     RV_JUMP .Lpub_project_bad
-.Lrv_cb_skip_publish1094:
+.Lrv_cb_skip_publish1034:
+.Lpub_recipe_next:
+    li s10, 64
+    add s1, s1, s10
+    li s10, 1
+    add s0, s0, s10
+    RV_JUMP .Lpub_recipe_loop
 .Lpub_project_valid:
     mv s10, t0
     xor t0, t0, s10
@@ -1715,8 +1645,7 @@ pub_check_project:
     RV_FLAGS and, 32
     RV_JUMP .Lpub_project_return
 .Lpub_project_bad:
-    RV_IMM t1, 1, 32
-    mv t0, t1
+    li t0, 1
     RV_ZEXT t0
 .Lpub_project_return:
     li s10, 16
@@ -1726,6 +1655,75 @@ pub_check_project:
     RV_RESTORE s3
     RV_RESTORE s2
     RV_RESTORE s1
+    RV_RESTORE s0
+    ret
+/* a0=borrowed recipe source/test. t0=0 for a portable regular assembly
+ * member,1 otherwise. Preserves s0-s5; stack16 plus nested call frames. */
+pub_recipe_assembly_member:
+    RV_SAVE s0
+    mv s0, a0
+    RV_CALL pub_portable_path
+    mv s8, t0
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish1060
+    RV_JUMP .Lpub_recipe_member_bad
+.Lrv_cb_skip_publish1060:
+    mv a0, s0
+    RV_CALL strlen
+    mv s8, t0
+    li s10, 2
+    RV_FLAGS sub, 64
+    RV_BCOND lo, .Lpub_recipe_member_bad
+    mv s10, t0
+    add s6, s0, s10
+    li s10, 2
+    sub s6, s6, s10
+    mv s8, s6
+    RV_LOAD t1, 2
+    RV_IMM t2, 0x732e, 32
+    mv s8, t1
+    mv s10, t2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Lpub_recipe_member_find
+    RV_IMM t2, 0x532e, 32
+    mv s8, t1
+    mv s10, t2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Lpub_recipe_member_find
+    mv s8, t0
+    li s10, 4
+    RV_FLAGS sub, 64
+    RV_BCOND lo, .Lpub_recipe_member_bad
+    mv s10, t0
+    add s6, s0, s10
+    li s10, 4
+    sub s6, s6, s10
+    mv s8, s6
+    RV_LOAD t1, 4
+    RV_IMM t2, 0x6d73612e, 32
+    mv s8, t1
+    mv s10, t2
+    RV_FLAGS sub, 32
+    RV_BCOND ne, .Lpub_recipe_member_bad
+.Lpub_recipe_member_find:
+    mv a0, s0
+    RV_CALL source_archive_member
+    mv s8, t0
+    bnez s8, .Lrv_cb_skip_publish1085
+    RV_JUMP .Lpub_recipe_member_bad
+.Lrv_cb_skip_publish1085:
+    mv s8, a3
+    RV_ZEXT s8
+    beqz s8, .Lrv_cb_skip_publish1086
+    RV_JUMP .Lpub_recipe_member_bad
+.Lrv_cb_skip_publish1086:
+    li t0, 0
+    RV_ZEXT t0
+    RV_RESTORE s0
+    ret
+.Lpub_recipe_member_bad:
+    li t0, 1
+    RV_ZEXT t0
     RV_RESTORE s0
     ret
 /* s0 points to a pointer list. Return 1 if any listed regular member exists. */
@@ -1786,9 +1784,9 @@ pub_validate_elf:
     RV_RESTORE a0
     mv s8, t0
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_publish1153
+    bnez s8, .Lrv_cb_skip_publish1137
     RV_JUMP .Lpub_linux_executable
-.Lrv_cb_skip_publish1153:
+.Lrv_cb_skip_publish1137:
     li t0, 1
     RV_ZEXT t0
     ret

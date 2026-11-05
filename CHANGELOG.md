@@ -1,5 +1,12 @@
 # Change log
 
+## Unreleased
+
+- Consolidate hello and math into one project each, with seven target subdirectories and one manifest.
+- Add selected-target standalone Linux builds, isolated outputs, and test builds without execution.
+- Add target-specific exact dependencies in v2 locks while retaining v1 compatibility.
+- Validate every project recipe and lock row before changing artifacts or dependency state.
+
 ## Website dependency display
 
 - Show direct dependency declarations, requirements, and feature options for each checked source target and version.

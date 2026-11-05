@@ -102,6 +102,7 @@ _asm_test_range:
 _asm_test_manifest:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
+    mov x2, #0
     bl rm_parse_manifest
     mov x0, x9
     ldp x29, x30, [sp], #16
@@ -163,7 +164,7 @@ print(library.asm_test_root_snapshot(callback).decode())
         manifest = ('[package]\nname = "hello"\nversion = "0.1.0"\n'
                     '[build]\nsource = "src/main.s"\ntarget = "aarch64-macos"\n' + metadata).encode()
         source = ctypes.create_string_buffer(manifest)
-        result = ctypes.create_string_buffer(73816)
+        result = ctypes.create_string_buffer(74288)
         return self.parse_manifest(source, result)
 
     def test_native_parser_accepts_inline_dependencies_and_valid_feature_edges(self):

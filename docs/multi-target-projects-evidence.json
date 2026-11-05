@@ -1,0 +1,284 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "status": "unreleased source-checkout validation; no release or publication",
+  "source": {
+    "base_commit": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+    "state": "Working tree with existing unrelated changes. No commit was created.",
+    "inputs_sha256": {
+      "cli/asm.s": "975e3ab305766b69bcc4cfeff31c88cc72ee406395ace2acbc8a8c20f0e24bd0",
+      "cli/aarch64/asm.s": "d5e877a2ae054754ab783240e55be72e7a98c0edccfe85eaca4a507796078ed5",
+      "cli/publish.s": "a5b495f7f47352e2d60560541a2ff33b987946d8a96c7000a76369afe096dcb6",
+      "cli/aarch64/publish.s": "3c4dacc6d8826a8c2c25245f3debd2d1389ba0fb403a65bfeac22bb16f48fdf6",
+      "tools/macos.py": "538b0ab9e3245955139cf0ab1ea22c3020c06bad3f9bdeedab116faa86bebc80",
+      "tools/registry.py": "933eae7e3bf12fe92fdd369f219d74b4aedbd6559701b5d326e5799261a2fe31",
+      "tools/release.py": "bb17486dd7b1d32a4bfea9bb9c7d48c7a84feee7c6823accc606dd42bc4030e9",
+      "examples/hello/asm.toml": "9cebb3b5d26e032f0d36e76dc0e90246e400a6726d2e8453b0820bc2bc5da5b4",
+      "tests/test_cli.py": "c7ed26ec23c3162165f806da678491f2c54854a2449826818692931dada697ed",
+      "tests/test_dependencies_cli.py": "cffb32bf602e288757b20cdde1890b0712b1be22e8d444e810cd4c3b5e5971f8",
+      "tests/test_publish_cli.py": "3d1900d605a8d5d35534a69c18ffdfcde5c1584ba2749304bbc5c467845e2f90",
+      "tests/registry/test_project_targets.py": "c84a53296d7cb76ae441a614e386c509bb70fa4f5aeb6a1718082599155c2406",
+      "examples/hello/src/main-aarch64.s": "4866d1ba1e08c0e043c314164ea4b22c8634bd179c4b55c14d8a49e2223cfc34",
+      "examples/hello/src/main-macos.s": "cd96e93f7691a3ce6c2771b4181c2f32e4113a06448c3f4446076e5255f134b6",
+      "examples/hello/src/main-riscv64.s": "960f7bff33c9651a10ba5cad1ec75ceb3a2d793277da5d0f78b2de616ed4b366",
+      "examples/hello/src/main.s": "588e49c374bbee9cb7d37c189f289e0ba6cb95b96826f772d349b34463d43280",
+      "examples/hello/tests/main-aarch64.s": "2605171cde9ccd370ba4223079178823c4c1c921d3d7d3bb577547e95b231ce9",
+      "examples/hello/tests/main-macos.s": "74bbbdbb07858f36488962d822fd4451e99121038f0156929711aac1f60935bc",
+      "examples/hello/tests/main-riscv64.s": "3876e8216a671c6a948d47c4198a9f2d3959d0da26b77dc9935e85a7009b57cc",
+      "examples/hello/tests/main.s": "62092a14f8cf6fc61cffe92ddb93848e631a895533201b683e3b472777ee4fe3"
+    }
+  },
+  "host": {
+    "os": "macOS",
+    "version": "15.6.1",
+    "architecture": "arm64",
+    "python": "3.14.6",
+    "assembler": "Apple clang version 17.0.0 (clang-1700.0.13.5)"
+  },
+  "artifact": {
+    "path": "build/asm",
+    "target": "aarch64-macos",
+    "sha256": "8f165d2e8a20baedfc24f7a6431d0fe25fbb312d714ff8843446f6f87c8aabb9",
+    "bytes": 275072,
+    "generated_assembly_sha256": "e7580a9a9bacb7a2bafa88e5bfb5897ec47c64eecf17d8c75dfd83b65f4b5ed5",
+    "binding": "The generated assembly equals tools.macos.prepare(cli/aarch64/asm.s). The checked CLI equals build/asm-aarch64-macos."
+  },
+  "checks": [
+    {
+      "command": "make test",
+      "exit_code": 0,
+      "tests": 228,
+      "passed": 228,
+      "skipped": 0,
+      "seconds": 133.619,
+      "log_sha256": "3089717c503b0a1933daccac52f6ce8583d2d393709eebd52ebcf354db7b18ab"
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/registry -p 'test_*.py' -v",
+      "exit_code": 0,
+      "tests": 53,
+      "passed": 53,
+      "skipped": 0,
+      "seconds": 11.077,
+      "log_sha256": "6ac7bbfb66c48c68820ae5c7dcbced2f0a2268259b170a158ea96ca2e6f50e1b"
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/release -p 'test_*.py' -v",
+      "exit_code": 0,
+      "tests": 28,
+      "passed": 16,
+      "skipped": 12,
+      "seconds": 147.622,
+      "log_sha256": "db30f79b1abbbec0322c91363906df75433f2f8a6974ddd11dfe0b033d977009"
+    }
+  ],
+  "example_flow": [
+    {
+      "command": [
+        "build/asm",
+        "build"
+      ],
+      "cwd": "examples/hello",
+      "exit_code": 0,
+      "stdout": "Built build/app\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "build/asm",
+        "run"
+      ],
+      "cwd": "examples/hello",
+      "exit_code": 0,
+      "stdout": "Hello from asm!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "build/asm",
+        "test"
+      ],
+      "cwd": "examples/hello",
+      "exit_code": 0,
+      "stdout": "Passed tests/main-macos.s\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "build/asm",
+        "build",
+        "--target",
+        "x86_64-linux"
+      ],
+      "cwd": "examples/hello",
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "asm: unsupported target; this release supports aarch64-macos only\n"
+    }
+  ],
+  "cross_assembly": [
+    {
+      "source": "cli/asm.s",
+      "target": "x86_64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "x86_64-linux-gnu",
+        "-c",
+        "cli/asm.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "status": "pass",
+      "check": "ELF64 little-endian relocatable object and declared machine ID; no execution.",
+      "sha256": "289826d38a408951014883bab2b4c44f8dc6fd9d9582aec7edf5a0f36f2233c6"
+    },
+    {
+      "source": "cli/aarch64/asm.s",
+      "target": "aarch64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "aarch64-linux-gnu",
+        "-c",
+        "cli/aarch64/asm.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "status": "pass",
+      "check": "ELF64 little-endian relocatable object and declared machine ID; no execution.",
+      "sha256": "2ffe8948510f88773d6f8177645ed05afb951f2ea9920d2471c3194ab6aba8f3"
+    },
+    {
+      "source": "examples/hello/src/main.s",
+      "target": "x86_64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "x86_64-linux-gnu",
+        "-c",
+        "examples/hello/src/main.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "status": "pass",
+      "check": "ELF64 little-endian relocatable object and declared machine ID; no execution.",
+      "sha256": "2ec10869c23789951c1bfb6f213571a2fffaa0be6bf7f2a130bca6836e42c269"
+    },
+    {
+      "source": "examples/hello/src/main-aarch64.s",
+      "target": "aarch64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "aarch64-linux-gnu",
+        "-c",
+        "examples/hello/src/main-aarch64.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "status": "pass",
+      "check": "ELF64 little-endian relocatable object and declared machine ID; no execution.",
+      "sha256": "e514322146b795b30c60b433633a6184bbef52303c8a2715a81ab68e260f65b7"
+    },
+    {
+      "source": "examples/hello/src/main-riscv64.s",
+      "target": "riscv64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "riscv64-linux-gnu",
+        "-march=rv64i",
+        "-mabi=lp64",
+        "-c",
+        "examples/hello/src/main-riscv64.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 1,
+      "stderr": "clang (LLVM option parsing): Unknown command line argument '-riscv-add-build-attributes'.  Try: 'clang (LLVM option parsing) --help'\nclang (LLVM option parsing): Did you mean '--arm-add-build-attributes'?\n",
+      "status": "unsupported",
+      "check": "Apple clang lacks the requested RISC-V backend."
+    },
+    {
+      "source": "examples/hello/tests/main-aarch64.s",
+      "target": "aarch64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "aarch64-linux-gnu",
+        "-c",
+        "examples/hello/tests/main-aarch64.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "status": "pass",
+      "check": "ELF64 little-endian relocatable object and declared machine ID; no execution.",
+      "sha256": "2667f159a9faaafd4a184e327286bfbd68083d797c12de9c5a2b5aa3cd0343c3"
+    },
+    {
+      "source": "examples/hello/tests/main-riscv64.s",
+      "target": "riscv64-linux-gnu",
+      "command": [
+        "/usr/bin/clang",
+        "-target",
+        "riscv64-linux-gnu",
+        "-march=rv64i",
+        "-mabi=lp64",
+        "-c",
+        "examples/hello/tests/main-riscv64.s",
+        "-o",
+        "<temporary-object>"
+      ],
+      "exit_code": 1,
+      "stderr": "clang (LLVM option parsing): Unknown command line argument '-riscv-add-build-attributes'.  Try: 'clang (LLVM option parsing) --help'\nclang (LLVM option parsing): Did you mean '--arm-add-build-attributes'?\n",
+      "status": "unsupported",
+      "check": "Apple clang lacks the requested RISC-V backend."
+    }
+  ],
+  "negative_results": [
+    {
+      "check": "Pre-implementation CLI regression tests",
+      "result": "Three tests produced four expected failures: target tables and an explicit legacy test field were rejected as invalid manifests. The failing selected test returned 1 instead of 23."
+    },
+    {
+      "check": "Initial cross-assembly batch",
+      "result": "Apple clang aborted at the RISC-V source with: Unknown command line argument '-riscv-add-build-attributes'. Independent per-source checks retain both unsupported RISC-V results above."
+    },
+    {
+      "check": "Linux container runner setup",
+      "exit_code": 125,
+      "result": "Docker could not pull debian:bookworm-slim: error creating temporary lease: write /var/lib/containerd/io.containerd.metadata.v1.bolt/meta.db: input/output error. No Linux runtime test started."
+    }
+  ],
+  "review": {
+    "kind": "advisory independent agent review",
+    "blocking_findings": 0,
+    "checked": "Native and publication validation, optional-field isolation, Apple target identities, archive inputs, and release source binding.",
+    "additional_native_cases": 120,
+    "result": "Target order and package-table placement permutations passed. The outdated test help line was corrected."
+  },
+  "limits": [
+    "The CLI still builds and runs only its native host target. Cross-assembly checks do not establish Linux execution.",
+    "Twelve Linux-only release tests were skipped on macOS. Full Linux release qualification remains unrun.",
+    "RISC-V objects were not assembled with this Apple toolchain; the native RISC-V CLI remains unavailable.",
+    "asm.lock still covers one native target; multi-target dependency locks are not implemented.",
+    "The greeting tests establish startup, exit, and expected output. New macOS short-write and EINTR branches were not fault-injected.",
+    "No published version, registry record, or release artifact was changed."
+  ],
+  "format_reference": {
+    "version": "TOML v1.0.0",
+    "source": "https://toml.io/en/v1.0.0#table",
+    "checked": "2026-11-05"
+  }
+}

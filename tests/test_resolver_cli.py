@@ -100,7 +100,7 @@ class ResolverCliTests(unittest.TestCase):
 
     def selections(self, project=None):
         lock = ((project or self.project) / "asm.lock").read_text()
-        self.assertTrue(lock.startswith("# asm-lock-v2\n"), lock)
+        self.assertTrue(lock.startswith("# asm-lock-v3\n"), lock)
         entries = [line.split("\t") for line in lock.splitlines() if line.startswith("stubbi/")]
         self.assertEqual(len(entries), len({fields[0] for fields in entries}), lock)
         return {fields[0]: fields[1] for fields in entries}
@@ -494,6 +494,48 @@ class ResolverCliTests(unittest.TestCase):
         self.cli("sync", "--artifacts", self.artifacts, cwd=clone)
         self.cli("run", "--locked", cwd=clone)
         self.assertEqual((clone / "asm.lock").read_bytes(), (self.project / "asm.lock").read_bytes())
+
+    def test_graph_resolution_refuses_a_foreign_recipe_before_file_changes(self):
+        self.root_manifest({})
+        path = self.project / "asm.toml"
+        text = path.read_text().replace('[build]\n', f'[target.{TARGET}]\n')
+        text = text.replace(f'target = "{TARGET}"\n', '')
+        text += f'\n[target.{OTHER_TARGET}]\nsource = "src/main.s"\n'
+        path.write_text(text)
+        before = self.snapshot()
+        result = self.resolve("--target", OTHER_TARGET, code=2)
+        self.assertIn("native host target", result.stderr)
+        self.assert_preserved(before)
+        self.assertFalse((self.project / "asm.lock").exists())
+
+    def test_graph_commands_reject_exact_v2_locks_without_changing_files(self):
+        self.package("alpha")
+        self.root_manifest({"stubbi/alpha": "1.0.0"})
+        lock = self.project / "asm.lock"
+        lock.write_text("# asm-lock-v2\n# registry local\n" + "".join(self.rows))
+        before = self.snapshot()
+        for command in ("resolve", "lock", "sync"):
+            with self.subTest(command=command):
+                if command == "resolve":
+                    self.resolve(code=1)
+                else:
+                    self.cli(command, code=1)
+                self.assert_preserved(before)
+        self.assertFalse((self.project / ".asm/packages").exists())
+
+    def test_legacy_commands_reject_graph_v3_locks_without_flattening_them(self):
+        self.package("alpha")
+        self.root_manifest({"stubbi/alpha": "1.0.0"})
+        self.resolve()
+        self.assertTrue((self.project / "asm.lock").read_text().startswith("# asm-lock-v3\n"))
+        path = self.project / "asm.toml"
+        path.write_text(path.read_text().split("[resolution]", 1)[0])
+        before = self.snapshot()
+        for arguments in (("build", "--locked"), ("lock",), ("sync",), ("remove", "stubbi/alpha")):
+            with self.subTest(arguments=arguments):
+                self.cli(*arguments, code=1)
+                self.assert_preserved(before)
+        self.assertFalse((self.project / "build/app").exists())
 
     def test_legacy_mutators_refuse_a_resolution_manifest_and_preserve_its_lock(self):
         artifact = self.package("alpha")

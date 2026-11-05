@@ -28,15 +28,17 @@ def minimal_macho():
     return bytes(data)
 
 
-def native_evidence(commit, version, binary):
+def native_evidence(commit, version, binary, *, selected_target=False):
     """Synthetic evidence for consumer validation tests, never publication."""
+    targets = (["x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"]
+               if selected_target else ["aarch64-macos"])
     return {
-        "schema": 1, "source_commit": commit, "version": version, "target": "aarch64-macos",
+        "schema": 2 if selected_target else 1, "source_commit": commit, "version": version, "target": "aarch64-macos",
         "asset": {"file": f"asm-{version}-aarch64-macos", "bytes": len(binary), "sha256": hashlib.sha256(binary).hexdigest()},
         "platform": {"system": "Darwin", "machine": "arm64", "version": "15.7.1", "minimum": "15.0"},
         "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
         "version_check": {"status": "pass", "runner": "native", "stdout": f"asm {version} (aarch64-macos)\n", "exit_code": 0},
-        "targets_check": {"status": "pass", "runner": "native", "result": {"host": "aarch64-macos", "targets": ["aarch64-macos"]}, "exit_code": 0},
+        "targets_check": {"status": "pass", "runner": "native", "result": {"host": "aarch64-macos", "targets": targets}, "exit_code": 0},
         "tests": release.native_test_result(b"test_fixture ... ok\n\nRan 4 tests in 0.123s\n\nOK\n"),
         "code_signature": "ad-hoc; verified with codesign --verify --strict",
         "developer_id": "not-run", "notarization": "not-run",
@@ -66,6 +68,29 @@ class NativeFanInTests(unittest.TestCase):
         binary, evidence = self.read()
         self.assertEqual(binary, self.binary)
         self.assertEqual(evidence, self.evidence)
+
+    def test_selected_target_evidence_has_a_distinct_exact_schema(self):
+        selected = copy.deepcopy(self.evidence)
+        selected["schema"] = 2
+        selected["targets_check"]["result"]["targets"] = [
+            "x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"]
+        self.write_evidence(selected)
+        self.assertEqual(self.read()[1], selected)
+        self.assertEqual(release.read_native_release(
+            self.directory, self.commit, self.version,
+            expected_build_targets=selected["targets_check"]["result"]["targets"])[1], selected)
+        with self.assertRaises(registry.RegistryError):
+            release.read_native_release(self.directory, self.commit, self.version,
+                                        expected_build_targets=["aarch64-macos"])
+        for schema, targets in ((1, selected["targets_check"]["result"]["targets"]),
+                                (2, ["aarch64-macos"]), (3, ["aarch64-macos"])):
+            with self.subTest(schema=schema, targets=targets):
+                invalid = copy.deepcopy(selected)
+                invalid["schema"] = schema
+                invalid["targets_check"]["result"]["targets"] = targets
+                self.write_evidence(invalid)
+                with self.assertRaises(registry.RegistryError):
+                    self.read()
 
     def test_other_commit_version_target_and_asset_are_rejected(self):
         changes = [("source_commit", "b" * 40), ("version", "0.4.1"), ("target", "x86_64-macos"), ("schema", True),

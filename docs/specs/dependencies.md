@@ -16,12 +16,13 @@ Registry acceptance of a package target does not establish CLI host support.
 
 The existing exact dependency commands and v1 locks remain supported.
 `asm resolve` supplies the new manifest-driven workflow.
-Legacy mutation commands reject resolution manifests and v2 locks with a useful next step.
+Legacy mutation commands reject resolution manifests and graph v3 locks with a useful next step.
 They must not flatten a dependency graph into unrelated roots.
 
 ## Manifest
 
-The existing package and build fields remain required.
+The package identity and one legacy build or named target recipe remain required.
+All seven named recipes follow the [multi-target project contract](../multi-target-projects.md).
 Dependency declarations require this explicit extension:
 
 ```toml
@@ -88,7 +89,11 @@ Old manifests without the extension are leaf packages.
 No new mutable metadata source or changed published release record is necessary.
 This preserves the existing HTTPS-origin trust limit; a checksum does not authenticate a publisher.
 
-V2 locks retain the registry origin, root feature choices, dependency declarations, selected features, and exact artifact records.
+Exact package-target selections retain main's `# asm-lock-v2` format.
+The unpublished graph format uses `# asm-lock-v3` to avoid ambiguity.
+The readers reject crossed formats before changing dependency state.
+
+Graph v3 locks retain the registry origin, root feature choices, dependency declarations, selected features, and exact artifact records.
 `asm lock` and builds check the complete locked graph against the root and verified archive metadata without selecting newer versions.
 `asm sync` restores exact locked artifacts without consulting a newer index.
 An incompatible changed root declaration requires resolution again.

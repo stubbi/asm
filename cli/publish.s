@@ -5,6 +5,12 @@
 .intel_syntax noprefix
 .global cmd_publish, validate_source_package
 
+/* Preserve the legacy source-archive limit. Named target manifests use the
+ * native build limit. One extra byte holds the copied manifest's NUL. */
+.equ PUB_LEGACY_MANIFEST_MAX, 16384
+.equ PUB_TARGET_MANIFEST_MAX, 8190
+.equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
+
 /* Prepare a local registry submission. No upload, login, network or shell.
  * Snapshot each artifact before hashing/validation. Required arguments are
  * explicit; the JSON record never asserts a remote commit or owner was verified.
@@ -12,7 +18,8 @@
  * registers. Terminal error labels clean the owned registry workspace.
  * Caller-saved integer registers and flags are scratch. Parser helpers that
  * intentionally advance R12 document that exception. Buffers use fixed limits:
- * six 128-byte artifact records, 16 KiB manifest/JSON, 256-byte path components.
+ * six 128-byte artifact records, 16385-byte manifest buffer, 16 KiB JSON,
+ * 256-byte paths. Legacy manifests accept 16384 bytes; named targets accept 8190.
  */
 .section .text
 /* Shared source-package boundary for add/sync and publication. RDI=archive
@@ -565,7 +572,9 @@ pub_source_paths:
  * subset uses the shared bounded build/dependency/native-link parser.
  * No escapes or duplicate fields are accepted. Reads use a copied NUL.
  * Input: RDI=validated target, pub_name/version and successful archive table.
- * Output: EAX=0/1. Owns a 16385-byte manifest and four 256-byte values. Frame:56. */
+ * Output: EAX=0/1. Owns a 16385-byte manifest buffer and eight 256-byte values. Frame:56.
+ * Optional values and the field mask reset before each artifact. The stateless
+ * native-link validator never changes build-command package globals. */
 pub_check_project:
     push rbx
     push rbp
@@ -575,6 +584,7 @@ pub_check_project:
     push r15
     sub rsp, 8
     mov [rip + pub_project_target], rdi
+    xor r14d, r14d
     call pub_source_paths
     test eax, eax
     jnz .Lpub_project_bad
@@ -594,7 +604,7 @@ pub_check_project:
     jnz .Lpub_project_bad
     test rdx, rdx
     jz .Lpub_project_bad
-    cmp rdx, 16384
+    cmp rdx, PUB_LEGACY_MANIFEST_MAX
     ja .Lpub_project_bad
     mov rsi, rax
     lea rdi, [rip + pub_manifest]
@@ -610,6 +620,7 @@ pub_check_project:
     jb .Lpub_manifest_copy
     mov byte ptr [rdi + rcx], 0
     lea rsi, [rip + rm_archive_metadata]
+    mov rdx, [rip + pub_project_target]
     call rm_parse_manifest
     test eax, eax
     jnz .Lpub_project_bad
@@ -647,40 +658,38 @@ pub_check_project:
     call streq
     test eax, eax
     jz .Lpub_project_bad
-    lea rdi, [rip + pub_project_source]
-    call pub_portable_path
+    xor r12d, r12d
+    lea r13, [rip + rm_archive_metadata + RM_RECIPES]
+.Lpub_recipe_loop:
+    cmp r12, [rip + rm_archive_metadata + RM_RECIPE_COUNT]
+    jae .Lpub_project_valid
+    mov rdi, [r13 + 8]
+    call pub_recipe_assembly_member
     test eax, eax
     jnz .Lpub_project_bad
-    lea rdi, [rip + pub_project_source]
-    call strlen
-    cmp rax, 2
-    jb .Lpub_project_bad
-    cmp word ptr [rdi + rax - 2], 0x732e
-    je .Lpub_project_source_lookup
-    cmp word ptr [rdi + rax - 2], 0x532e
-    je .Lpub_project_source_lookup
-    cmp rax, 4
-    jb .Lpub_project_bad
-    cmp dword ptr [rdi + rax - 4], 0x6d73612e
-    jne .Lpub_project_bad
-.Lpub_project_source_lookup:
-    call source_archive_member
-    test rax, rax
-    jz .Lpub_project_bad
-    test ecx, ecx
+    test qword ptr [r13 + 48], 2
+    jz .Lpub_recipe_checker
+    mov rdi, [r13 + 16]
+    call pub_recipe_assembly_member
+    test eax, eax
     jnz .Lpub_project_bad
-    mov rdi, [rip + rm_archive_metadata + RM_CHECK]
+.Lpub_recipe_checker:
+    mov rdi, [r13 + 40]
     cmp byte ptr [rdi], 0
-    je .Lpub_project_valid
+    je .Lpub_recipe_next
     call pub_portable_path
     test eax, eax
     jnz .Lpub_project_bad
-    mov rdi, [rip + rm_archive_metadata + RM_CHECK]
+    mov rdi, [r13 + 40]
     call source_archive_member
     test rax, rax
     jz .Lpub_project_bad
     test ecx, ecx
     jnz .Lpub_project_bad
+.Lpub_recipe_next:
+    add r13, 64
+    inc r12
+    jmp .Lpub_recipe_loop
 .Lpub_project_valid:
     xor eax, eax
     jmp .Lpub_project_return
@@ -695,6 +704,41 @@ pub_check_project:
     pop rbp
     pop rbx
     ret
+/* RDI=borrowed recipe source/test. EAX=0 for a portable regular assembly
+ * member,1 otherwise. Preserves callee-saved; stack8 plus nested calls. */
+pub_recipe_assembly_member:
+    push r12
+    mov r12, rdi
+    call pub_portable_path
+    test eax, eax
+    jnz .Lpub_recipe_member_bad
+    mov rdi, r12
+    call strlen
+    cmp rax, 2
+    jb .Lpub_recipe_member_bad
+    cmp word ptr [r12 + rax - 2], 0x732e
+    je .Lpub_recipe_member_find
+    cmp word ptr [r12 + rax - 2], 0x532e
+    je .Lpub_recipe_member_find
+    cmp rax, 4
+    jb .Lpub_recipe_member_bad
+    cmp dword ptr [r12 + rax - 4], 0x6d73612e
+    jne .Lpub_recipe_member_bad
+.Lpub_recipe_member_find:
+    mov rdi, r12
+    call source_archive_member
+    test rax, rax
+    jz .Lpub_recipe_member_bad
+    test ecx, ecx
+    jnz .Lpub_recipe_member_bad
+    xor eax, eax
+    pop r12
+    ret
+.Lpub_recipe_member_bad:
+    mov eax, 1
+    pop r12
+    ret
+
 /* RBX points to a pointer list. Return 1 if any listed regular member exists. */
 pub_any_member:
     push rbx

@@ -77,7 +77,8 @@ An emulation difference that prevents a required assertion remains a failed chec
 QEMU can combine distinct guest resource-limit operations into the host `prlimit64` call.
 Complete syscall-failure qualification can therefore require a full-system guest or a native host.
 
-The separate full-system workflow boots a hash-pinned Ubuntu RISC-V guest.
+A separate full-system workflow is being implemented for a hash-pinned Ubuntu RISC-V guest.
+Its workflow and actual guest-kernel results remain pending.
 Its guest uses native Python and tools against the emulated Linux kernel.
 This preserves the original syscall-denial assertions without host syscall translation.
 The guest qualifier uses the following interface:

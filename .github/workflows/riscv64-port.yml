@@ -61,8 +61,8 @@ jobs:
       - name: Install the cross-toolchain and explicit RISC-V execution handler
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y binutils-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support
-          dpkg-query -W binutils-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support > /tmp/asm-riscv64-packages.txt
+          sudo apt-get install --no-install-recommends -y binutils-riscv64-linux-gnu binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support
+          dpkg-query -W binutils-riscv64-linux-gnu binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support > /tmp/asm-riscv64-packages.txt
           sudo update-binfmts --enable qemu-riscv64
           test -f /proc/sys/fs/binfmt_misc/qemu-riscv64
           grep -qx enabled /proc/sys/fs/binfmt_misc/qemu-riscv64

@@ -185,6 +185,7 @@ cmd_resolve:
     RV_JUMP .Lres_args
 .Lres_start:
     RV_CALL read_manifest
+    RV_CALL res_require_native_target
     RV_ADDR s6, rm_root_metadata
     mv s8, s6
     RV_LOAD t1, 8
@@ -291,6 +292,23 @@ cmd_resolve:
     RV_ADDR s6, res_done
     mv a0, s6
     RV_JUMP res_report
+/* Graph resolution is native-only; exact v2 locks retain foreign targets.
+ * No file effects. Caller scratch only; RV_CALL supplies an aligned frame. */
+res_require_native_target:
+    RV_ADDR a0, package_target
+    RV_ADDR a1, registry_host
+    RV_CALL streq
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolver227
+    RV_JUMP res_native_target_error
+.Lrv_cb_skip_resolver227:
+    ret
+res_native_target_error:
+    RV_ADDR a0, res_native_target_message
+    li a1, 2
+    RV_ZEXT a1
+    RV_JUMP die
 res_help:
     RV_ADDR s6, res_help_text
     mv a0, s6
@@ -682,9 +700,9 @@ res_hash_root:
     mv a3, t1
     RV_ZEXT a3
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver473
+    bnez s8, .Lrv_cb_skip_resolver487
     RV_JUMP .Lres_arm_repeat_done1
-.Lrv_cb_skip_resolver473:
+.Lrv_cb_skip_resolver487:
 .Lres_arm_repeat1:
     mv s8, a1
     RV_LOAD t1, 1
@@ -697,9 +715,9 @@ res_hash_root:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver478
+    beqz s8, .Lrv_cb_skip_resolver492
     RV_JUMP .Lres_arm_repeat1
-.Lrv_cb_skip_resolver478:
+.Lrv_cb_skip_resolver492:
 .Lres_arm_repeat_done1:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -708,8 +726,8 @@ res_hash_root:
     RV_CALL registry_cleanup
     ret
 /* A non-following bounded probe only selects the parser. Invalid locks still
- * fail in their full readers. t0=1 v2 prefix,0 otherwise. Stack:16 bytes. */
-res_is_v2:
+ * fail in their full readers. t0=1 graph-v3 prefix,0 otherwise. Stack:16 bytes. */
+res_is_graph_lock:
     RV_SAVE s2
     RV_ADDR s6, dependency_lock_path
     mv a0, s6
@@ -805,7 +823,7 @@ res_legacy_guard:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND ne, res_use_resolve_error
-    RV_CALL res_is_v2
+    RV_CALL res_is_graph_lock
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
@@ -814,12 +832,12 @@ res_legacy_guard:
 /* Preserve previous exact rows for immutable-version comparisons. Owned row
  * pointers borrow either v1 dependency_lock_buffer or res_lock_buffer. */
 res_read_previous:
-    RV_CALL res_is_v2
+    RV_CALL res_is_graph_lock
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND eq, .Lres_previous_v1
-    RV_CALL res_read_v2
+    RV_CALL res_read_graph_lock
     RV_JUMP .Lres_previous_copy
 .Lres_previous_v1:
     RV_CALL dependency_load_lock
@@ -827,6 +845,13 @@ res_read_previous:
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, .Lres_previous_none
+    RV_ADDR s6, dependency_lock_version
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, 2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, res_lock_error
 .Lres_previous_copy:
     RV_ADDR s6, dependency_origin
     mv s8, s6
@@ -853,9 +878,9 @@ res_read_previous:
     RV_ADDR s6, registry_rows
     mv a1, s6
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver591
+    bnez s8, .Lrv_cb_skip_resolver609
     RV_JUMP .Lres_arm_repeat_done2
-.Lrv_cb_skip_resolver591:
+.Lrv_cb_skip_resolver609:
 .Lres_arm_repeat2:
     mv s8, a1
     RV_LOAD t1, 8
@@ -868,17 +893,17 @@ res_read_previous:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver596
+    beqz s8, .Lrv_cb_skip_resolver614
     RV_JUMP .Lres_arm_repeat2
-.Lrv_cb_skip_resolver596:
+.Lrv_cb_skip_resolver614:
 .Lres_arm_repeat_done2:
 .Lres_previous_none:
     ret
-/* Load v2 as a bounded regular non-symlink file. Keep an unmodified copy for
+/* Load graph v3 as a bounded regular non-symlink file. Keep an unmodified copy for
  * canonical verification. Only flags/origin are trusted as resolution inputs;
  * enabled-feature comments and selected rows are recomputed from archives.
  * Output registry_rows/count, dependency_origin, res_lock_*; stack:64 bytes. */
-res_read_v2:
+res_read_graph_lock:
     RV_SAVE s0
     RV_SAVE s2
     RV_SAVE s3
@@ -996,9 +1021,9 @@ res_read_v2:
     RV_ADDR s6, res_lock_original
     mv a0, s6
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver679
+    bnez s8, .Lrv_cb_skip_resolver697
     RV_JUMP .Lres_arm_repeat_done3
-.Lrv_cb_skip_resolver679:
+.Lrv_cb_skip_resolver697:
 .Lres_arm_repeat3:
     mv s8, a1
     RV_LOAD t1, 1
@@ -1011,9 +1036,9 @@ res_read_v2:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver684
+    beqz s8, .Lrv_cb_skip_resolver702
     RV_JUMP .Lres_arm_repeat3
-.Lrv_cb_skip_resolver684:
+.Lrv_cb_skip_resolver702:
 .Lres_arm_repeat_done3:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1384,9 +1409,9 @@ res_copy_rows:
     RV_ADDR s6, registry_rows
     mv a1, s6
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver940
+    bnez s8, .Lrv_cb_skip_resolver958
     RV_JUMP .Lres_arm_repeat_done4
-.Lrv_cb_skip_resolver940:
+.Lrv_cb_skip_resolver958:
 .Lres_arm_repeat4:
     mv s8, a1
     RV_LOAD t1, 8
@@ -1399,9 +1424,9 @@ res_copy_rows:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver945
+    beqz s8, .Lrv_cb_skip_resolver963
     RV_JUMP .Lres_arm_repeat4
-.Lrv_cb_skip_resolver945:
+.Lrv_cb_skip_resolver963:
 .Lres_arm_repeat_done4:
     ret
 /* Callback a0=validated row, return t0=persistent metadata. Inspect at most
@@ -1662,9 +1687,9 @@ res_load_candidate:
     mv s4, t3
     mv a0, s4
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver1125
+    bnez s8, .Lrv_cb_skip_resolver1143
     RV_JUMP .Lres_arm_repeat_done5
-.Lrv_cb_skip_resolver1125:
+.Lrv_cb_skip_resolver1143:
 .Lres_arm_repeat5:
     mv s8, a1
     RV_LOAD t1, 1
@@ -1677,9 +1702,9 @@ res_load_candidate:
     li s10, 1
     sub a3, a3, s10
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver1130
+    beqz s8, .Lrv_cb_skip_resolver1148
     RV_JUMP .Lres_arm_repeat5
-.Lrv_cb_skip_resolver1130:
+.Lrv_cb_skip_resolver1148:
 .Lres_arm_repeat_done5:
     RV_IMM t1, 0, 32
     mv s6, a0
@@ -1698,6 +1723,9 @@ res_load_candidate:
     RV_FLAGS add, 64
     mv t3, s11
     mv a1, t3
+    li s10, 16
+    add s8, s0, s10
+    RV_LOAD a2, 8
     RV_CALL rm_parse_manifest
     mv s8, t0
     mv s10, t0
@@ -2610,7 +2638,7 @@ res_commit_lock:
     RV_RESTORE s2
     ret
 /* Called after read_manifest by the normal build path. A resolution manifest
- * always requires a v2 lock, even without --locked. Legacy behavior unchanged. */
+ * always requires a graph v3 lock, even without --locked. Legacy behavior unchanged. */
 verify_project_dependencies:
     RV_ADDR s6, rm_root_metadata
     mv s8, s6
@@ -2620,13 +2648,14 @@ verify_project_dependencies:
     mv s10, t2
     RV_FLAGS sub, 64
     RV_BCOND ne, res_verify_project
-    RV_CALL res_is_v2
+    RV_CALL res_is_graph_lock
     mv s8, t0
     mv s10, t0
     RV_FLAGS and, 32
     RV_BCOND ne, res_lock_error
     RV_JUMP verify_legacy_project_dependencies
 res_verify_project:
+    RV_CALL res_require_native_target
     RV_IMM t1, 1, 32
     RV_ADDR s6, res_check_mode
     mv s8, s6
@@ -2647,15 +2676,12 @@ res_verify_project:
     ret
 /* Sync selects its legacy/graph implementation without consuming argv. */
 cmd_sync:
-    RV_CALL read_manifest
-    RV_ADDR s6, rm_root_metadata
-    mv s8, s6
-    RV_LOAD t1, 8
-    RV_IMM t2, 0, 64
-    mv s8, t1
-    mv s10, t2
-    RV_FLAGS sub, 64
-    RV_BCOND eq, cmd_sync_legacy
+    RV_CALL res_is_graph_lock
+    mv s8, t0
+    RV_ZEXT s8
+    bnez s8, .Lrv_cb_skip_resolver1824
+    RV_JUMP cmd_sync_legacy
+.Lrv_cb_skip_resolver1824:
 .Lres_sync_args:
     RV_CALL next_arg
     mv s8, t0
@@ -2693,6 +2719,15 @@ cmd_sync:
     RV_STORE t0, 8
     RV_JUMP .Lres_sync_args
 .Lres_sync_start:
+    RV_CALL read_manifest
+    RV_CALL res_require_native_target
+    RV_ADDR s6, rm_root_metadata
+    mv s8, s6
+    RV_LOAD t1, 8
+    mv s8, t1
+    li s10, 1
+    RV_FLAGS sub, 64
+    RV_BCOND ne, res_lock_error
     RV_IMM t1, 6, 32
     mv a0, t1
     RV_ZEXT a0
@@ -2710,7 +2745,7 @@ cmd_sync:
  * exact locked URLs. Re-rendering detects omitted, extra or edited metadata.
  * Root SHA-256 makes any manifest change require deliberate resolution. */
 res_check_locked_graph:
-    RV_CALL res_read_v2
+    RV_CALL res_read_graph_lock
     RV_CALL res_copy_rows
     RV_ADDR s6, res_row_count
     mv s8, s6
@@ -2810,9 +2845,9 @@ res_check_locked_graph:
     RV_ADDR s6, res_lock_original
     mv a1, s6
     mv s8, a3
-    bnez s8, .Lrv_cb_skip_resolver1918
+    bnez s8, .Lrv_cb_skip_resolver1940
     RV_JUMP .Lres_arm_repeat_done6
-.Lrv_cb_skip_resolver1918:
+.Lrv_cb_skip_resolver1940:
 .Lres_arm_repeat6:
     mv s8, a0
     RV_LOAD t1, 1
@@ -2829,9 +2864,9 @@ res_check_locked_graph:
     RV_FLAGS sub, 32
     RV_BCOND ne, .Lres_arm_repeat_done6
     mv s8, a3
-    beqz s8, .Lrv_cb_skip_resolver1925
+    beqz s8, .Lrv_cb_skip_resolver1947
     RV_JUMP .Lres_arm_repeat6
-.Lrv_cb_skip_resolver1925:
+.Lrv_cb_skip_resolver1947:
 .Lres_arm_repeat_done6:
     RV_BCOND ne, res_lock_error
     RV_CALL registry_cleanup
@@ -2897,9 +2932,9 @@ res_conflict_error:
     mv s8, s6
     RV_LOAD a1, 8
     mv s8, a1
-    beqz s8, .Lrv_cb_skip_resolver1981
+    beqz s8, .Lrv_cb_skip_resolver2003
     RV_JUMP .Lres_conflict_reason_ready
-.Lrv_cb_skip_resolver1981:
+.Lrv_cb_skip_resolver2003:
     RV_ADDR a1, res_reason_version
 .Lres_conflict_reason_ready:
     RV_CALL copy_string
@@ -2908,9 +2943,9 @@ res_conflict_error:
     mv s8, s6
     RV_LOAD t1, 8
     mv s8, t1
-    bnez s8, .Lrv_cb_skip_resolver1988
+    bnez s8, .Lrv_cb_skip_resolver2010
     RV_JUMP .Lres_conflict_advice
-.Lrv_cb_skip_resolver1988:
+.Lrv_cb_skip_resolver2010:
     RV_ADDR a1, res_requirement_prefix
     RV_CALL copy_string
     mv a0, t0
@@ -2960,7 +2995,8 @@ res_use_resolve_error:
     RV_ZEXT a1
     RV_JUMP registry_fail
 .section .rodata
-res_header: .asciz "# asm-lock-v2\n"
+res_native_target_message: .asciz "dependency resolution requires the native host target; use exact dependency commands for another target"
+res_header: .asciz "# asm-lock-v3\n"
 res_default_prefix: .asciz "# default "
 res_features_prefix: .asciz "# features "
 res_manifest_prefix: .asciz "# manifest "

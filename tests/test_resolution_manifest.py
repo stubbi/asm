@@ -43,7 +43,7 @@ class ResolutionManifestTests(unittest.TestCase):
             result = subprocess.run([str(ASM), "build"], cwd=project, capture_output=True, text=True, timeout=15)
             # A valid manifest reaches the existing explicit host-target check.
             self.assertEqual(result.returncode, 2 if valid else 1, (extension, result.stdout, result.stderr))
-            self.assertIn("unsupported" if valid else "asm.toml", result.stderr)
+            self.assertIn("target" if valid else "asm.toml", result.stderr)
             self.assertFalse((project / "build").exists())
             self.assertFalse((project / "asm.lock").exists())
 

@@ -136,6 +136,7 @@ cmd_resolve:
     b .Lres_args
 .Lres_start:
     ARM_CALL read_manifest
+    ARM_CALL res_require_native_target
     ARM_ADDR x16, rm_root_metadata
     ldr x10, [x16]
     ARM_IMM x11, 1
@@ -216,6 +217,19 @@ cmd_resolve:
     ARM_ADDR x16, res_done
     mov x0, x16
     b res_report
+
+/* Graph resolution is native-only; exact v2 locks retain foreign targets.
+ * No file effects. Caller scratch only; ARM_CALL supplies an aligned frame. */
+res_require_native_target:
+    ARM_ADDR x0, package_target
+    ARM_ADDR x1, registry_host
+    ARM_CALL streq
+    cbz w9, res_native_target_error
+    ret
+res_native_target_error:
+    ARM_ADDR x0, res_native_target_message
+    mov w1, #2
+    b die
 
 res_help:
     ARM_ADDR x16, res_help_text
@@ -484,8 +498,8 @@ res_hash_root:
     ret
 
 /* A non-following bounded probe only selects the parser. Invalid locks still
- * fail in their full readers. x9=1 v2 prefix,0 otherwise. Stack:16 bytes. */
-res_is_v2:
+ * fail in their full readers. x9=1 graph-v3 prefix,0 otherwise. Stack:16 bytes. */
+res_is_graph_lock:
     ARM_SAVE x21
     ARM_ADDR x16, dependency_lock_path
     mov x0, x16
@@ -552,7 +566,7 @@ res_legacy_guard:
     ARM_IMM x11, 0
     cmp x10, x11
     b.ne res_use_resolve_error
-    ARM_CALL res_is_v2
+    ARM_CALL res_is_graph_lock
     tst w9, w9
     b.ne res_use_resolve_error
     ret
@@ -560,15 +574,19 @@ res_legacy_guard:
 /* Preserve previous exact rows for immutable-version comparisons. Owned row
  * pointers borrow either v1 dependency_lock_buffer or res_lock_buffer. */
 res_read_previous:
-    ARM_CALL res_is_v2
+    ARM_CALL res_is_graph_lock
     tst w9, w9
     b.eq .Lres_previous_v1
-    ARM_CALL res_read_v2
+    ARM_CALL res_read_graph_lock
     b .Lres_previous_copy
 .Lres_previous_v1:
     ARM_CALL dependency_load_lock
     tst w9, w9
     b.ne .Lres_previous_none
+    ARM_ADDR x16, dependency_lock_version
+    ldrb w10, [x16]
+    cmp w10, #2
+    b.eq res_lock_error
 .Lres_previous_copy:
     ARM_ADDR x16, dependency_origin
     ldr x10, [x16]
@@ -598,11 +616,11 @@ res_read_previous:
 .Lres_previous_none:
     ret
 
-/* Load v2 as a bounded regular non-symlink file. Keep an unmodified copy for
+/* Load graph v3 as a bounded regular non-symlink file. Keep an unmodified copy for
  * canonical verification. Only flags/origin are trusted as resolution inputs;
  * enabled-feature comments and selected rows are recomputed from archives.
  * Output registry_rows/count, dependency_origin, res_lock_*; stack:64 bytes. */
-res_read_v2:
+res_read_graph_lock:
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
@@ -1141,6 +1159,7 @@ res_load_candidate:
     mov x1, x16
     adds x12, x1, x9
     mov x1, x12
+    ldr x2, [x19, #16]
     ARM_CALL rm_parse_manifest
     tst w9, w9
     b.ne res_manifest_error
@@ -1773,19 +1792,20 @@ res_commit_lock:
     ret
 
 /* Called after read_manifest by the normal build path. A resolution manifest
- * always requires a v2 lock, even without --locked. Legacy behavior unchanged. */
+ * always requires a graph v3 lock, even without --locked. Legacy behavior unchanged. */
 verify_project_dependencies:
     ARM_ADDR x16, rm_root_metadata
     ldr x10, [x16]
     ARM_IMM x11, 0
     cmp x10, x11
     b.ne res_verify_project
-    ARM_CALL res_is_v2
+    ARM_CALL res_is_graph_lock
     tst w9, w9
     b.ne res_lock_error
     b verify_legacy_project_dependencies
 
 res_verify_project:
+    ARM_CALL res_require_native_target
     ARM_IMM w10, 1
     ARM_ADDR x16, res_check_mode
     strb w10, [x16]
@@ -1800,12 +1820,8 @@ res_verify_project:
 
 /* Sync selects its legacy/graph implementation without consuming argv. */
 cmd_sync:
-    ARM_CALL read_manifest
-    ARM_ADDR x16, rm_root_metadata
-    ldr x10, [x16]
-    ARM_IMM x11, 0
-    cmp x10, x11
-    b.eq cmd_sync_legacy
+    ARM_CALL res_is_graph_lock
+    cbz w9, cmd_sync_legacy
 .Lres_sync_args:
     ARM_CALL next_arg
     tst x9, x9
@@ -1833,6 +1849,12 @@ cmd_sync:
     str x9, [x16]
     b .Lres_sync_args
 .Lres_sync_start:
+    ARM_CALL read_manifest
+    ARM_CALL res_require_native_target
+    ARM_ADDR x16, rm_root_metadata
+    ldr x10, [x16]
+    cmp x10, #1
+    b.ne res_lock_error
     ARM_IMM w10, 6
     mov w0, w10
     ARM_IMM w10, 1
@@ -1849,7 +1871,7 @@ cmd_sync:
  * exact locked URLs. Re-rendering detects omitted, extra or edited metadata.
  * Root SHA-256 makes any manifest change require deliberate resolution. */
 res_check_locked_graph:
-    ARM_CALL res_read_v2
+    ARM_CALL res_read_graph_lock
     ARM_CALL res_copy_rows
     ARM_ADDR x16, res_row_count
     ldr x10, [x16]
@@ -2030,7 +2052,8 @@ res_use_resolve_error:
     b registry_fail
 
 .section .rodata
-res_header: .asciz "# asm-lock-v2\n"
+res_native_target_message: .asciz "dependency resolution requires the native host target; use exact dependency commands for another target"
+res_header: .asciz "# asm-lock-v3\n"
 res_default_prefix: .asciz "# default "
 res_features_prefix: .asciz "# features "
 res_manifest_prefix: .asciz "# manifest "

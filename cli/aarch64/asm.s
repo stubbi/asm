@@ -369,7 +369,7 @@ unsupported_target:
     b die
 
 /* Input: x9=current argv string. Output: w9=1 if consumed, otherwise zero.
- * --target consumes one more argument and accepts the host or its alias.
+ * --target consumes one more argument and accepts known canonical targets.
  * Malformed options exit. Stack: 16 saved bytes plus nested calls. */
 common_option:
     ARM_SAVE x19
@@ -398,6 +398,13 @@ common_option:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lopt_locked
+    mov x9, x19
+    ARM_CALL native_link_option
+    cbnz w9, .Lopt_yes
+    mov x0, x19
+    ARM_ADDR x1, opt_no_run
+    ARM_CALL streq
+    cbnz w9, .Lopt_no_run
     mov x9, x19
     ARM_CALL native_link_option
     cbnz w9, .Lopt_yes
@@ -431,9 +438,17 @@ common_option:
     tst x9, x9
     b.eq bad_args
     mov x0, x9
-    ARM_CALL validate_target
+    ARM_CALL project_set_target
     tst w9, w9
     b.eq unsupported_target
+    b .Lopt_yes
+.Lopt_no_run:
+    ARM_ADDR x16, allow_no_run
+    ldrb w10, [x16]
+    cbz w10, bad_args
+    ARM_ADDR x16, no_run
+    mov w10, #1
+    strb w10, [x16]
     b .Lopt_yes
 .Lopt_locked:
     ARM_ADDR x16, allow_locked
@@ -683,6 +698,7 @@ cmd_init:
     cmp w10, w11
     b.eq bad_args
 .Linit_save_cwd:
+    ARM_CALL project_template_check
     ARM_ADDR x16, dot
     mov x0, x16
     ARM_IMM w10, O_DIRECTORY + O_CLOEXEC
@@ -1019,11 +1035,14 @@ init_rollback:
 
 /* Strict, documented TOML subset. Sections and string fields are parsed, not
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
-/* Input: cwd is the project. Output: package_* buffers contain validated fields.
- * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source/native fields=256.
- * Failure exits without build
- * changes. Stack: 64 saved bytes plus nested calls; all callee-saved restored. */
+/* Input: cwd is the project. Output: package_* contain the selected target's fields.
+ * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Every declared
+ * table is validated before returning. x21 is the parser cursor; w22 tracks
+ * sections (package=1, build=2, target=3), w23 fields, and w24 unique sections.
+ * Owned capacities include NUL: name=65, version/target=64, source/test/native
+ * fields=256. Failure exits without build changes; a missing selected target exits 2.
+ * Scratch: x0-x7/x9 and platform scratch. Preserves x19-x24. Stack:64 saved
+ * bytes plus ARM_CALL frames and bounded callees; SP remains 16-byte aligned. */
 read_manifest:
     ARM_SAVE x21
     ARM_SAVE x22
@@ -1115,7 +1134,11 @@ read_manifest:
     ARM_CALL copy_string
     ARM_ADDR x0, manifest_buffer
     ARM_ADDR x1, rm_root_metadata
+    ARM_ADDR x16, project_requested_target
+    ldr x2, [x16]
     ARM_CALL rm_parse_manifest
+    cmp w9, #2
+    b.eq manifest_no_host
     cbnz w9, manifest_error
     ARM_ADDR x0, package_name
     ARM_ADDR x16, rm_root_metadata + 24
@@ -1145,10 +1168,15 @@ read_manifest:
     ARM_ADDR x16, rm_root_metadata + RM_CHECK
     ldr x1, [x16]
     ARM_CALL copy_string
+    ARM_ADDR x0, package_test
+    ARM_ADDR x16, rm_root_metadata + RM_TEST
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x16, rm_root_metadata + RM_TARGET_MASK
+    ldr x9, [x16]
+    ARM_ADDR x16, project_target_mask
+    str x9, [x16]
     ARM_CALL native_link_check_options
-    ARM_ADDR x0, package_target
-    ARM_CALL validate_target
-    cbz w9, unsupported_target
     ARM_RESTORE x24
     ARM_RESTORE x23
     ARM_RESTORE x22
@@ -1162,6 +1190,10 @@ manifest_error:
     mov x0, x16
     ARM_IMM w10, 1
     mov w1, w10
+    b die
+manifest_no_host:
+    ARM_ADDR x0, err_manifest_host
+    mov w1, #2
     b die
 
 /* Input: x0=project name. Output: w9=1 for [a-z][a-z0-9-]{0,63}, else zero.
@@ -1436,11 +1468,7 @@ cmd_build:
     ARM_CALL parse_options_only
     ARM_CALL read_manifest
     ARM_CALL build_project
-    ARM_ADDR x16, build_text
-    mov x0, x16
-    ARM_ADDR x16, build_json
-    mov x1, x16
-    ARM_CALL report
+    ARM_CALL project_build_report
     b exit_ok
 cmd_run:
     ARM_ADDR x16, native_allow
@@ -1496,6 +1524,9 @@ cmd_run:
     mov w0, w9
     b exit_code
 cmd_test:
+    ARM_ADDR x16, allow_no_run
+    mov w10, #1
+    strb w10, [x16]
     ARM_ADDR x16, native_allow
     mov w10, #1
     strb w10, [x16]
@@ -1508,6 +1539,9 @@ cmd_test:
     ARM_ADDR x16, test_mode
     strb w10, [x16]
     ARM_CALL build_project
+    ARM_ADDR x16, no_run
+    ldrb w10, [x16]
+    cbnz w10, project_test_build_report
     ARM_ADDR x16, test_output
     mov x0, x16
     ARM_ADDR x16, child_argv
@@ -1520,11 +1554,23 @@ cmd_test:
     ARM_CALL spawn_wait
     tst w9, w9
     b.ne .Ltest_failed
-    ARM_ADDR x16, test_text
-    mov x0, x16
-    ARM_ADDR x16, test_json
-    mov x1, x16
-    ARM_CALL report
+    ARM_ADDR x16, json_mode
+    ldrb w10, [x16]
+    cbnz w10, .Ltest_report_json
+    ARM_ADDR x0, test_text
+    ARM_CALL out
+    ARM_ADDR x0, package_test
+    ARM_CALL out
+    ARM_ADDR x0, newline
+    ARM_CALL out
+    b exit_ok
+.Ltest_report_json:
+    ARM_ADDR x0, test_json
+    ARM_CALL out
+    ARM_ADDR x0, package_test
+    ARM_CALL registry_json_string
+    ARM_ADDR x0, test_json_end
+    ARM_CALL out
     b exit_ok
 .Ltest_failed:
     mov w1, w9
@@ -1532,12 +1578,16 @@ cmd_test:
     mov x0, x16
     b die
 
-/* Input: cwd is a trusted local project; package_source was parsed and bounded.
- * test_mode selects tests/main.s. Output: build/app or build/test, plus object.
+/* Input: cwd is a trusted local project; source/test paths were bounded.
+ * test_mode selects package_test. Output: build/app or build/test, plus object.
  * Object rename occurs first; binary rename is the final publication step.
  * Returns on success. On failure, removes this process's stage and exits with
  * the child status or 1. Stage paths have capacities 64/96/96. Stack: 16 bytes. */
 build_project:
+    ARM_CALL project_execution_check
+    ARM_ADDR x0, package_target
+    ARM_CALL validate_target
+    cbz w9, cross_build_project
     ARM_SAVE x21
     ARM_CALL check_tools
     ARM_CALL verify_project_dependencies
@@ -1620,7 +1670,7 @@ build_project:
     lsl w11, w11, #24
     cmp w10, w11
     b.eq .Lbuild_source_set
-    ARM_ADDR x16, test_source
+    ARM_ADDR x16, package_test
     mov x9, x16
 .Lbuild_source_set:
     ARM_ADDR x16, child_argv + 48
@@ -1830,6 +1880,21 @@ spawn_wait:
     mov w9, w16
     b .Lspawn_return
 .Lspawn_child:
+    ARM_ADDR x16, cross_as
+    ldr x10, [x16]
+    cmp x21, x10
+    b.eq .Lspawn_cross_environment
+    ARM_ADDR x16, cross_ld
+    ldr x10, [x16]
+    cmp x21, x10
+    b.eq .Lspawn_cross_environment
+    mov x0, x21
+    ARM_CALL native_link_child_environment
+    b .Lspawn_selected_environment
+.Lspawn_cross_environment:
+    ARM_ADDR x9, native_tool_env
+.Lspawn_selected_environment:
+    mov x2, x9
     mov x0, x21
     ARM_CALL native_link_child_environment
     mov x2, x9
@@ -1851,6 +1916,9 @@ spawn_wait:
 cmd_clean:
     ARM_CALL parse_options_only
     ARM_CALL read_manifest
+    ARM_ADDR x0, package_target
+    ARM_CALL validate_target
+    cbz w9, cross_clean
     ARM_ADDR x16, build_dir
     mov x0, x16
     ARM_ADDR x16, stat_buffer
@@ -2004,6 +2072,34 @@ stage_prefix: .asciz "build/.asm-"
 object_suffix: .asciz "/main.o"
 binary_suffix: .asciz "/app"
 default_name: .asciz "app"
+key_name: .asciz "name"
+key_version: .asciz "version"
+key_source: .asciz "source"
+key_test: .asciz "test"
+key_target: .asciz "target"
+key_link: .asciz "link"
+key_libraries: .asciz "libraries"
+key_check: .asciz "check"
+section_package: .asciz "package"
+section_build: .asciz "build"
+section_target_x86: .asciz "target.x86_64-linux"
+/* Split the Linux identifiers so macOS preparation only changes the host. */
+section_target_arm: .ascii "target.aarch64-"
+    .asciz "linux"
+section_target_riscv: .asciz "target.riscv64-linux"
+section_target_macos: .asciz "target.aarch64-macos"
+target_x86: .asciz "x86_64-linux"
+target_arm: .ascii "aarch64-"
+    .asciz "linux"
+target_riscv: .asciz "riscv64-linux"
+target_macos: .asciz "aarch64-macos"
+section_target_macos_x86: .asciz "target.x86_64-macos"
+target_macos_x86: .asciz "x86_64-macos"
+section_target_windows_x86: .asciz "target.x86_64-windows"
+target_windows_x86: .asciz "x86_64-windows"
+section_target_windows_arm: .asciz "target.aarch64-windows"
+target_windows_arm: .asciz "aarch64-windows"
+
 newline: .asciz "\n"
 error_prefix: .asciz "asm: "
 error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
@@ -2011,13 +2107,14 @@ error_json_suffix: .asciz "\"}\n"
 err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
 err_output: .asciz "cannot write command output; check the output destination and try again"
-err_target: .asciz "unsupported target; this release supports aarch64-linux only"
+err_target: .asciz "unsupported target; use asm targets for supported build targets"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
 err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"
 err_unimplemented: .asciz "this command is not implemented; run asm status to see command support"
 err_init_path: .asciz "cannot create project directory; new requires a path that does not exist"
 err_init_conflict: .asciz "cannot initialize project; existing files and symlink directories are never overwritten"
-err_manifest: .asciz "invalid or missing asm.toml; expected package name/version and build source/target"
+err_manifest: .asciz "invalid or missing asm.toml; use package name/version and build source/target or canonical target tables"
+err_manifest_host: .asciz "asm.toml has no selected target; add its canonical target table or select a declared target"
 err_build: .asciz "build failed; see tool diagnostics above"
 err_build_io: .asciz "cannot write build artifacts; build must be a real directory"
 err_test: .asciz "test program failed"
@@ -2027,8 +2124,8 @@ version_text: .asciz "asm 0.5.0 (aarch64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"host\":\"aarch64-linux\"}\n"
 license_text: .asciz "asm 0.5.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.5.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
 license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.5.0\"}\n"
-targets_text: .asciz "aarch64-linux (host; GNU as + ld)\n"
-targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"aarch64-linux\"]}\n"
+targets_text: .asciz "x86_64-linux (cross; GNU target binutils)\naarch64-linux (host; GNU as + ld)\nriscv64-linux (cross; GNU target binutils)\n"
+targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
 doctor_text: .asciz "Host: aarch64-linux\nBuild: /usr/bin/as and /usr/bin/ld\nRegistry: /usr/bin/curl and /usr/bin/sha256sum\nSource archives: /usr/bin/gzip\nRequired tools are available.\n"
 doctor_json: .asciz "{\"ok\":true,\"host\":\"aarch64-linux\",\"assembler\":\"/usr/bin/as\",\"linker\":\"/usr/bin/ld\",\"curl\":\"/usr/bin/curl\",\"sha256sum\":\"/usr/bin/sha256sum\",\"gzip\":\"/usr/bin/gzip\"}\n"
@@ -2036,8 +2133,9 @@ init_text: .asciz "Created asm.toml, src/main.s and tests/main.s.\nNext: asm run
 init_json: .asciz "{\"ok\":true,\"created\":[\"asm.toml\",\"src/main.s\",\"tests/main.s\"]}\n"
 build_text: .asciz "Built build/app\n"
 build_json: .asciz "{\"ok\":true,\"artifact\":\"build/app\"}\n"
-test_text: .asciz "Passed tests/main.s\n"
-test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
+test_text: .asciz "Passed "
+test_json: .asciz "{\"ok\":true,\"test\":"
+test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
@@ -2045,9 +2143,9 @@ help_text:
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
-    .ascii "  build            Assemble and link to build/app\n"
+    .ascii "  build            Assemble and link the selected target\n"
     .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
-    .ascii "  test             Assemble and execute tests/main.s\n"
+    .ascii "  test             Assemble and execute the selected test source\n"
     .ascii "  clean            Remove only Asm's named build artifacts\n"
     .ascii "  search [query]   Search the package registry\n"
     .ascii "  info <package>   Show registry package metadata\n"
@@ -2071,7 +2169,9 @@ help_text:
     .ascii "  license          Show the license, warranty, and source\n"
     .ascii "  self update      Update this user installation from the hub\n"
     .ascii "  help             Show this help\n\n"
-    .ascii "Options: --target aarch64-linux, --json, --no-color, --help\n"
+    .ascii "Options: --target <target>, --json, --no-color, --help\n"
+    .ascii "Use targets to list build targets. test --no-run builds without execution.\n"
+    .ascii "Cross-target link=c requires a target sysroot; use the native host.\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
     .ascii "Native builds: --include-dir PATH and --library-dir PATH (repeat up to eight).\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
@@ -2083,7 +2183,7 @@ help_text:
 help_json:
     .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"aarch64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss
@@ -2105,11 +2205,19 @@ stage_binary: .skip 96
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
+package_test: .skip 256
 package_target: .skip 64
+selected_source: .skip 256
+selected_test: .skip 256
+selected_target: .skip 64
+selected_link: .skip 256
+selected_libraries: .skip 256
+selected_check: .skip 256
 manifest_buffer: .skip 8192
 rm_root_original: .skip 8192
 .balign 8
 rm_root_metadata: .skip RM_SIZE
+manifest_host_found: .skip 1
 json_mode: .skip 1
 allow_locked: .skip 1
 require_lock: .skip 1
@@ -2128,6 +2236,7 @@ made_test: .skip 1
 
 /* Keep one assembler translation unit so the CLI can build itself with the
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
+.include "cli/aarch64/cross_build.s"
 .include "cli/aarch64/native_link.s"
 .include "cli/aarch64/programs.s"
 .include "cli/aarch64/registry.s"
