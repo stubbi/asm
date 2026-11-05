@@ -119,6 +119,15 @@ target = "x86_64-linux"
 `asm new` sets the target for your machine.
 Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 
+Source builds also accept one project with several `[target.<id>]` implementations.
+Each target has its own source, test, and optional native-library fields.
+The [hello](examples/hello/README.md) and [math](examples/math/README.md) projects keep these inputs under `targets/<id>/`.
+`asm build --target riscv64-linux` builds a separate Linux artifact.
+`asm test --target riscv64-linux --no-run` builds its test without executing it.
+Target-specific dependency selections share one v2 lock.
+This extension is unreleased.
+See the [multi-target project contract](docs/multi-target-projects.md) for tools, commands, and platform limits.
+
 ### Find a package
 
 ```sh
