@@ -1,28 +1,60 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
- * BCrypt SHA-256 over an opened no-reparse regular file. No external process,
- * ambient digest configuration, filename parser, or package code is involved.
- * x0=UTF8 path, x1=owned65-byte lowercase hex output. x9=0 success/1 failure.
- * Input is at most64MiB; verifies exact stream length against opened identity.
- * Stack=128 plus adapters; hash provider/object/handle always close.
+ * Held SHA-256: x0=borrowed fd, x1=exact size1..64MiB, x2=owned hex65.
+ * x9=0/1. Seeks from zero; checks metadata and complete stream length.
+ * Never closes the borrowed fd. Owns/closes BCrypt handles on every exit.
+ * Preserves x19-x24; stack128. win_hash_file remains the path convenience
+ * adapter for package workflows and owns its independently opened fd.
  */
 .text
 win_hash_file:
+    stp x29,x30,[sp,#-48]!
+    mov x29,sp
+    stp x19,x20,[sp,#16]
+    mov x19,x1
+    ARM_IMM x1,O_CLOEXEC + O_NOFOLLOW + O_NONBLOCK
+    mov x2,#0
+    ARM_CALL arm_open
+    tbnz x9,#63,.Lwhf_fail
+    mov x20,x9
+    mov x0,x20
+    ARM_ADDR x1,win_hash_stat
+    ARM_CALL arm_fstat
+    cbnz x9,.Lwhf_close_fail
+    ARM_ADDR x16,win_hash_stat
+    ldr x1,[x16,#ARM_STAT_SIZE]
+    mov x0,x20
+    mov x2,x19
+    ARM_CALL win_hash_fd
+    str x9,[sp,#32]
+    mov x0,x20
+    ARM_CALL arm_close
+    ldr x9,[sp,#32]
+    b .Lwhf_done
+.Lwhf_close_fail:
+    mov x0,x20
+    ARM_CALL arm_close
+.Lwhf_fail:
+    mov x9,#1
+.Lwhf_done:
+    ldp x19,x20,[sp,#16]
+    ldp x29,x30,[sp],#48
+    ret
+win_hash_fd:
     stp x29, x30, [sp, #-128]!
     mov x29, sp
     stp x19, x20, [sp, #16]
     stp x21, x22, [sp, #32]
     stp x23, x24, [sp, #48]
-    mov x19, x1
-    mov x20, #-1
+    mov x19, x2
+    mov x20, x0
+    mov x24, x1
     mov x21, #0
     mov x22, #0
     mov x23, #1
-    ARM_IMM x1, O_CLOEXEC + O_NOFOLLOW + O_NONBLOCK
-    mov x2, #0
-    ARM_CALL arm_open
-    tbnz x9, #63, .Lwh_close
-    mov x20, x9
-    mov x0, x20
+    cbz x24, .Lwh_close
+    ARM_IMM x10, 67108864
+    cmp x24, x10
+    b.hi .Lwh_close
     ARM_ADDR x1, win_hash_stat
     ARM_CALL arm_fstat
     cbnz x9, .Lwh_close
@@ -31,10 +63,14 @@ win_hash_file:
     and w10, w10, #61440
     cmp w10, #32768
     b.ne .Lwh_close
-    ldr x24, [x16, #ARM_STAT_SIZE]
-    ARM_IMM x10, 67108864
-    cmp x24, x10
-    b.hi .Lwh_close
+    ldr x10, [x16, #ARM_STAT_SIZE]
+    cmp x10, x24
+    b.ne .Lwh_close
+    mov x0, x20
+    mov x1, #0
+    mov x2, #0
+    ARM_CALL arm_lseek
+    cbnz x9, .Lwh_close
     add x0, sp, #64
     ARM_ADDR x1, win_sha256_w
     mov x2, #0
@@ -105,10 +141,7 @@ win_hash_file:
     mov x0, x21
     mov x1, #0
     bl BCryptCloseAlgorithmProvider
-3:  tbnz x20, #63, 4f
-    mov x0, x20
-    ARM_CALL arm_close
-4:  mov x9, x23
+3:  mov x9, x23
     ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]

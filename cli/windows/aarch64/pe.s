@@ -9,6 +9,31 @@
  */
 .text
 validate_host_elf:
+    stp x29,x30,[sp,#-48]!
+    mov x29,sp
+    stp x19,x20,[sp,#16]
+    mov x19,x1
+    ARM_IMM x1,O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
+    mov x2,#0
+    ARM_CALL arm_open
+    tbnz x9,#63,.Lpe_path_fail
+    mov x20,x9
+    mov x0,x20
+    mov x1,x19
+    ARM_CALL win_validate_pe_fd
+    str x9,[sp,#32]
+    mov x0,x20
+    ARM_CALL arm_close
+    ldr x9,[sp,#32]
+    b .Lpe_path_done
+.Lpe_path_fail:
+    mov x9,#0
+.Lpe_path_done:
+    ldp x19,x20,[sp,#16]
+    ldp x29,x30,[sp],#48
+    ret
+/* x0=borrowed fd, x1=exact size. x9=1/0. Never closes input. */
+win_validate_pe_fd:
     stp x29, x30, [sp, #-112]!
     mov x29, sp
     stp x19, x20, [sp, #16]
@@ -20,11 +45,7 @@ validate_host_elf:
     ARM_IMM x10, 67108864
     cmp x19, x10
     b.hi .Lpe_unopened
-    ARM_IMM x1, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
-    mov x2, #0
-    ARM_CALL arm_open
-    tbnz x9, #63, .Lpe_unopened
-    mov x20, x9
+    mov x20, x0
     mov x0, x20
     ARM_ADDR x1, elf_stat
     ARM_CALL arm_fstat
@@ -37,6 +58,11 @@ validate_host_elf:
     and w10, w10, #61440
     cmp w10, #32768
     b.ne .Lpe_bad
+    mov x0, x20
+    mov x1, #0
+    mov x2, #0
+    ARM_CALL arm_lseek
+    cbnz x9, .Lpe_bad
     mov x0, x20
     ARM_ADDR x1, win_pe_header
     mov x2, #64
@@ -245,8 +271,6 @@ validate_host_elf:
 .Lpe_bad:
     mov x21, #0
 .Lpe_close:
-    mov x0, x20
-    ARM_CALL arm_close
     mov x9, x21
     b .Lpe_return
 .Lpe_unopened:

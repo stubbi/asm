@@ -99,9 +99,31 @@ PE validation checks the exact size, machine, headers, alignments, directory bou
 It rejects writable executable sections.
 This check does not authenticate a publisher or establish general code safety.
 The shared updater retains its exact signed manifest, artifact, source commit, signer, repository, and workflow bindings.
-Windows finalization uses retained source and parent handles with native `FileRenameInformationEx` and POSIX replacement semantics.
-The rename leaf rejects device names, stream names, separators, and trailing aliases.
-A native test must establish actual replacement of an executing image and preservation after failure.
+Managed Windows installation uses a stable launcher and versioned payloads.
+The launcher path is `HOME/.local/bin/asm.exe`.
+The selection record is `.asm-cli/current.tsv` beside the launcher.
+Payloads use `.asm-cli/versions/<sha256>/asm.exe`.
+The exact contract is in [the layout specification](../../../docs/superpowers/specs/2026-11-05-windows-versioned-updates-design.md).
+
+The launcher checks one held record snapshot and the selected payload's exact bytes.
+It checks the actual launcher metadata and binds each suspended child to the held payload file.
+The launcher waits without a tool deadline and retains the child's complete Windows exit status.
+Its own console handler accepts Ctrl+C and Ctrl+Break notifications.
+Native console tests must establish the resulting cancellation behavior.
+
+An update validates the executing payload against the active selection.
+It reads compatibility requirements from the held current launcher and candidate metadata.
+The updater preserves all shared release and provenance bindings.
+It never executes the candidate.
+A held-file rename activates the flushed replacement selection record.
+The launcher and existing payloads remain unchanged.
+The `.asm.lock` file uses an exclusive, nonblocking lock on byte zero.
+This lock coordinates the bootstrap installer and updater.
+
+Old payloads remain for running commands and recovery.
+Launcher repair uses the bootstrap installer after existing Asm processes exit.
+This design adds a launcher process and retains old payload disk use.
+It does not promise transactional directory durability or protection against every same-user filesystem race.
 
 ## Evidence and remaining qualification
 
@@ -216,3 +238,30 @@ A source-derived host check executes stage creation, native component open, and 
 Its API shim rejects finalization when the observed handle lacks `WRITE_DAC`.
 The current preparation passes; removing either narrow flag or access mapping fails.
 This is a separate later archive defect; native capture evidence still determines the original failure boundary.
+
+## Versioned lifecycle checks
+
+The managed ARM64 source cross-assembles and links with temporary import declarations.
+These declarations are a local build aid, not Windows SDK qualification.
+Host shims execute the actual record parser, held PE parser, held hash routine, launcher, and cleanup routines.
+They check strict framing, bounds, metadata flags, exact class 44 status, handle ownership, and launch ordering.
+They also check an infinite wait and a complete `0xC000013A` child status.
+The reserved-store check examines every checked directory in package and inventory walks.
+Native mutation opens and rename destinations also check their held parent directories.
+Registry and dependency workspaces check their current directory before creating files or locks.
+These checks cover `fetch --output` and standalone commands as well as installed-program operations.
+It compares the remembered store identity and the native canonical long path.
+These checks also protect inventory directory creation when HOME points inside an existing store.
+Native tests must qualify NTFS aliases, access rules, selection ordering, and console events.
+
+Run the local routine checks on Apple Silicon:
+
+```sh
+make -C cli/windows/aarch64 managed-test PYTHON=python3
+python3 cli/windows/aarch64/managed_pe_test.py --artifact build/asm-aarch64-windows.exe --output build/windows/aarch64/managed-pe-held-evidence.json
+```
+
+Use an actual cross-built PE artifact for the second command.
+A passing shim does not establish native Windows support.
+The earlier 45-of-46 direct-update results remain negative evidence.
+The direct executing-file replacement protocol is superseded only for this unpublished Windows candidate.

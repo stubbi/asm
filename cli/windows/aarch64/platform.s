@@ -433,7 +433,19 @@ win_nt_component:
     ARM_CALL win_error
     b .Lwn_return
 .Lwn_setup:
-    cbz x19, 9f
+    /* All terminal mutations check the actual held parent. This includes
+     * fetch, dependency and inventory writes through short-name aliases. */
+    cbz x19, 90f
+    ldr x10, [sp, #56]
+    cbz x10, 90f
+    ARM_IMM x10, 64 + 512 + 3 + WIN_OPEN_DELETE + WIN_OPEN_SET_DACL
+    tst x20, x10
+    b.eq 90f
+    mov x0, x19
+    ARM_CALL win_managed_write_allowed
+    cbnz x9, .Lwn_denied
+    ldp x0, x1, [sp, #40]
+90: cbz x19, 9f
     ARM_CALL win_component_name
     cbz w9, .Lwn_bad
 9:  strh w1, [sp, #64]
@@ -458,6 +470,10 @@ win_nt_component:
     add x0, sp, #128
     ARM_IMM x1, 0x120089          /* read data/attributes/control/synchronize */
     mov x5, #7                   /* share read/write/delete; identity held */
+    tst x20, #WIN_OPEN_HELD
+    b.eq 91f
+    mov x5, #5                   /* held record/image: read + delete, never write */
+91:
     mov x6, #1                   /* FILE_OPEN */
     ARM_IMM x7, 0x200021         /* reparse open + sync + directory */
     ldr x10, [sp, #56]
@@ -529,6 +545,9 @@ win_nt_component:
     b .Lwn_return
 .Lwn_nt_error:
     ARM_CALL win_nt_error
+    b .Lwn_return
+.Lwn_denied:
+    mov x9, #-13
     b .Lwn_return
 .Lwn_bad:
     mov x9, #-22

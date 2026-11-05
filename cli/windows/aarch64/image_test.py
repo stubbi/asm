@@ -29,11 +29,13 @@ def main():
     source = source.replace('.section .rdata,"dr"', '.data')
     source = source.replace('adrp \\reg, \\symbol', 'adrp \\reg, (\\symbol)@PAGE')
     source = source.replace('add \\reg, \\reg, :lo12:\\symbol', 'add \\reg, \\reg, (\\symbol)@PAGEOFF')
+    remote = source.replace('    mov x0,#0x4404\n    ARM_CALL win_image_matches', '    mov x0,#0x7707\n    mov x1,#0x4404\n    ARM_CALL win_child_image_matches').replace('ARM_IMM x11,0x4404\n    cmp x0,x11', 'ARM_IMM x11,0x7707\n    cmp x0,x11').replace('    cmn x0,#1\n    b.ne image_failed', '    ARM_IMM x10,0x7707\n    cmp x0,x10\n    b.ne image_failed')
     with tempfile.TemporaryDirectory(prefix='asm-arm64-image-') as temporary:
         result = abi_test.run_case(Path(temporary), 'image', source)
+        remote_result = abi_test.run_case(Path(temporary), 'remote_image', remote)
     evidence = {'scope': 'host execution of actual class44 call boundary, not Windows image qualification',
                 'cases': ['exact status0','mismatch C0000001','unsupported class','positive pending status','missing module','missing API'],
-                'result': 'pass' if result.get('exit_code') == 0 else 'fail', 'execution': result}
+                'result': 'pass' if result.get('exit_code') == 0 and remote_result.get('exit_code') == 0 else 'fail', 'execution': result, 'remote_execution': remote_result}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, indent=2) + '\n')
     print(json.dumps(evidence, indent=2))

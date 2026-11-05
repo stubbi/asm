@@ -202,6 +202,41 @@ win_image_matches:
 .Lwim_done:
     add sp, sp, #32
     WIN_RETURN
+/* x0=borrowed process HANDLE, x1=borrowed FILE_EXECUTE file HANDLE.
+ * Exact class44 status handling; never resumes or closes either handle.
+ * x9=0/-116/-95; preserves x0-x7/x19-x29; stack128. */
+win_child_image_matches:
+    WIN_SAVE
+    sub sp, sp, #32
+    str x1, [sp]
+    str x0, [sp, #8]
+    ARM_ADDR x0, win_ntdll_name
+    bl GetModuleHandleW
+    cbz x0, .Lwcim_unsupported
+    ARM_ADDR x1, win_image_query_name
+    bl GetProcAddress
+    cbz x0, .Lwcim_unsupported
+    mov x16, x0
+    ldr x0, [sp, #8]
+    mov w1, #44
+    mov x2, sp
+    mov w3, #8
+    mov x4, #0
+    blr x16
+    cbz w0, .Lwcim_match
+    ARM_IMM w10, 0xc0000001
+    cmp w0, w10
+    b.ne .Lwcim_unsupported
+    mov x9, #-116
+    b .Lwcim_done
+.Lwcim_match:
+    mov x9, #0
+    b .Lwcim_done
+.Lwcim_unsupported:
+    mov x9, #-95
+.Lwcim_done:
+    add sp, sp, #32
+    WIN_RETURN
 .section .rdata,"dr"
 .p2align 1
 win_ntdll_name: .hword 110,116,100,108,108,46,100,108,108,0

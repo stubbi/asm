@@ -69,6 +69,9 @@ win_rename:
     add x0, x0, #1
     b 1b
 .Lwr_build:
+    mov x0, x19
+    ARM_CALL win_managed_write_allowed
+    cbnz x9, .Lwr_finish
     mov x0, x24
     lsl x1, x23, #1
     ARM_CALL win_leaf_name

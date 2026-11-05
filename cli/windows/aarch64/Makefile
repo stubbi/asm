@@ -6,9 +6,9 @@ LLD_LINK ?= C:/Program Files/LLVM/bin/lld-link.exe
 SOURCE := $(ROOT)/build/windows/aarch64/asm.s
 OBJECT := $(ROOT)/build/windows/aarch64/asm.obj
 BINARY := $(ROOT)/build/asm-aarch64-windows.exe
-INPUTS := $(wildcard $(ROOT)/cli/aarch64/*.s $(ROOT)/cli/aarch64/*.inc *.s) $(ROOT)/tools/windows_arm64.py
+INPUTS := $(wildcard $(ROOT)/cli/aarch64/*.s $(ROOT)/cli/aarch64/*.inc *.s) $(ROOT)/tools/windows_arm64.py $(ROOT)/tools/windows_layout.py
 
-.PHONY: all test abi-test security-test contracts-test image-test inventory-test clean
+.PHONY: all test abi-test security-test contracts-test image-test inventory-test managed-test clean
 all: $(BINARY)
 
 $(SOURCE): $(INPUTS)
@@ -40,6 +40,16 @@ image-test:
 
 inventory-test:
 	$(PYTHON) inventory_test.py --output $(ROOT)/build/windows/aarch64/inventory-evidence.json
+
+# Apple Silicon execution of actual managed routines with controlled APIs.
+# These checks do not qualify the Windows filesystem, loader, or console.
+managed-test:
+	$(PYTHON) managed_test.py --output $(ROOT)/build/windows/aarch64/managed-parser-evidence.json
+	$(PYTHON) managed_roles_test.py --output $(ROOT)/build/windows/aarch64/managed-roles-evidence.json
+	$(PYTHON) managed_hash_test.py --output $(ROOT)/build/windows/aarch64/managed-hash-evidence.json
+	$(PYTHON) managed_launcher_test.py --output $(ROOT)/build/windows/aarch64/managed-launcher-evidence.json
+	$(PYTHON) managed_mutation_test.py --output $(ROOT)/build/windows/aarch64/managed-mutation-evidence.json
+	$(PYTHON) image_test.py --output $(ROOT)/build/windows/aarch64/managed-image-evidence.json
 
 clean:
 	$(PYTHON) -c "from pathlib import Path; [Path(p).unlink(missing_ok=True) for p in ['$(SOURCE)', '$(OBJECT)', '$(BINARY)']]"

@@ -999,3 +999,10 @@ win_private_acl: .space 2048
 win_path_w: .space 8192
 win_path_full: .space 8192
 win_nt_root: .hword 92,63,63,92,67,58,92,0
+
+/* Controlled ABI fixtures use ordinary nonreserved parent directories.
+ * Managed-store refusal is exercised by its separate routine/native tests. */
+.text
+win_managed_write_allowed:
+    mov x9,#0
+    ret

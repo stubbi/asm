@@ -42,7 +42,7 @@ def prepare(source: Path) -> str:
     # COFF does not support ELF .type/.size, and .arch is redundant with target.
     text = re.sub(r'^\.(?:arch|type|size)\b.*$', '', text, flags=re.M)
     if source.name == 'asm.s':
-        start = '_start:\n    ARM_CALL win_startup\n    mov x10, #1\n    ARM_ADDR x16, argi\n    str x10, [x16]\n'
+        start = '_start:\n    ARM_CALL win_startup\n    ARM_CALL win_managed_startup\n    mov x10, #1\n    ARM_ADDR x16, argi\n    str x10, [x16]\n'
         text = re.sub(r'_start:\n.*?(?=\.Lglobals:)', lambda _: start, text, count=1, flags=re.S)
         text = routine(text, 'spawn_wait', 'cmd_clean', 'spawn_wait:\n    b win_spawn_wait\n')
         text = text.replace('/usr/bin/as', 'C:/Program Files/LLVM/bin/clang.exe')
@@ -91,6 +91,7 @@ def prepare(source: Path) -> str:
         text = replace_once(text, 'program_cli_name: .asciz "asm"', 'program_cli_name: .asciz "asm.exe"')
         text = replace_once(text, '    ldrb w10, [x0, #3]\n    cbnz w10, .Lp_cli_destination_safe',
             '    ldrb w10, [x0, #3]\n    cmp w10, #46\n    b.ne .Lp_cli_destination_safe\n    ldr w10, [x0, #4]\n    ARM_IMM w11, 0x00657865\n    ARM_IMM w12, 0x202020\n    orr w10, w10, w12\n    cmp w10, w11\n    b.ne .Lp_cli_destination_safe')
+        text = replace_once(text, '.Lp_walk_component:\n', '.Lp_walk_component:\n    mov x0, x21\n    ARM_CALL win_managed_guard_fd\n    cbnz x9, .Lp_walk_bad\n')
     if source.name == 'templates.s':
         text = text.replace('.arch armv8-a\\n', '')
         text = text.replace('    mov x8, 64\\n    mov x0, 1\\n    adrp x1, message\\n    add x1, x1, :lo12:message\\n',
@@ -106,7 +107,10 @@ def prepare(source: Path) -> str:
         text = replace_once(text,
             '    mov x2, message_len\\n    adrp x3, written\\n    add x3, x3, :lo12:written\\n    mov x4, 0\\n    bl WriteFile\\n    cbz w0, failed\\n    mov w0, 0\\n',
             '    mov x2, x21\\n    adrp x3, written\\n    add x3, x3, :lo12:written\\n    mov x4, 0\\n    bl WriteFile\\n    cbz w0, failed\\n    adrp x3, written\\n    add x3, x3, :lo12:written\\n    ldr w10, [x3]\\n    cbz w10, failed\\n    cmp x10, x21\\n    b.hi failed\\n    add x20, x20, x10\\n    subs x21, x21, x10\\n    b.ne write_loop\\n    mov w0, 0\\n')
+    if source.name == 'dependencies.s':
+        text = replace_once(text, 'dependency_acquire:\n', 'dependency_acquire:\n    ARM_CALL win_managed_check_cwd\n    cbnz x9, dependency_io_error\n')
     if source.name == 'registry.s':
+        text = replace_once(text, 'registry_workspace:\n', 'registry_workspace:\n    ARM_CALL win_managed_check_cwd\n    cbnz x9, registry_io_error\n')
         text = routine(text, 'registry_download', 'registry_read_index', (LOCAL / 'download.s').read_text())
         text = routine(text, 'registry_verify_payload', 'registry_copy_local', (LOCAL / 'verify.s').read_text())
         text = text.replace('/usr/bin/curl', 'C:/Windows/System32/curl.exe')
@@ -153,33 +157,17 @@ def prepare(source: Path) -> str:
         text = replace_once(text, 'smp_host_suffix: .asciz "-aarch64-windows"',
                             'smp_host_suffix: .asciz "-aarch64-windows.exe"')
     if source.name == 'self_update.s':
-        text = text.replace('/.local/bin/asm"', '/.local/bin/asm.exe"')
-        begin = text.index('\nself_commit_update:')
-        end = text.index('\nself_update_cleanup:', begin)
-        part = text[begin:end].replace('O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK', 'O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK + 2')
-        text = text[:begin] + part + text[end:]
         text = text.replace('self_binary_name: .asciz "asm"', 'self_binary_name: .asciz "asm.exe"')
         text = text.replace('self_asset_suffix: .asciz "-aarch64-windows"', 'self_asset_suffix: .asciz "-aarch64-windows.exe"')
-        text = replace_once(text, '    ARM_IMM x11, 4\n    subs x3, x3, x11', '    ARM_IMM x11, 8\n    subs x3, x3, x11')
-        begin = text.index('    mov x16, x1\n    ldrb w10, [x16]', text.index('.Lself_home_found:'))
-        end = text.index('    mov x0, x1\n    mov x21, x1', begin)
-        text = text[:begin] + '    mov x0, x1\n    ARM_CALL win_is_absolute\n    cbz w9, self_installation_error\n' + text[end:]
-        text = text.replace('ARM_CALL arm_readlink', 'ARM_CALL win_read_running_image')
-        text = text.replace('ARM_ADDR x16, self_proc_exe\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC',
-            'ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC')
-        text = replace_once(text,
-            '    ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC + O_NONBLOCK',
-            '    ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC + O_NONBLOCK + WIN_OPEN_IMAGE')
-        text = replace_once(text,
-            '    ARM_ADDR x16, self_current_fd\n    str x9, [x16]\n    mov x0, x9',
-            '    ARM_ADDR x16, self_current_fd\n    str x9, [x16]\n    mov x0, x9\n    ARM_CALL win_image_matches\n    cmn x9, #116\n    b.eq self_changed\n    cbnz x9, win_image_binding_error\n    ARM_ADDR x16, self_current_fd\n    ldr x0, [x16]')
-        text += '\n.text\nwin_image_binding_error:\n    ARM_ADDR x0, win_image_binding_message\n    mov w1, #1\n    b self_fail\n.section .rdata,"dr"\nwin_image_binding_message: .asciz "cannot bind the running image on this Windows version; install the verified release manually"\n'
-        begin = text.index('    ARM_ADDR x16, self_parent_fd\n    ldr x10, [x16]\n    mov x0, x10\n    ARM_ADDR x16, self_filesystem_stat')
-        end = text.index('.Lself_local_filesystem:', begin)
-        text = text[:begin] + '    ARM_ADDR x16, self_parent_fd\n    ldr x0, [x16]\n    ARM_CALL win_require_ntfs\n    cbnz x9, self_filesystem_error\n' + text[end:]
+        text = routine(text, 'self_open_installation', 'self_open_parent', 'self_open_installation:\n    b win_managed_open_installation\n')
+        text = routine(text, 'self_check_absolute_installation', 'self_check_file_stat', 'self_check_absolute_installation:\n    b win_managed_check_absolute_installation\n')
+        text = routine(text, 'self_check_destination', 'self_release_paths', 'self_check_destination:\n    b win_managed_check_destination\n')
+        text = routine(text, 'self_commit_update', 'self_update_cleanup', 'self_commit_update:\n    b win_managed_commit_update\n')
         text = replace_once(text, '    ARM_ADDR x16, self_root\n    mov x0, x16',
             '    ARM_ADDR x0, self_install_path\n    ARM_CALL win_drive_root\n    mov x0, x9')
         text = replace_once(text, '    add x16, x16, #1\n    mov x22, x16\n    eor w19', '    add x16, x16, #3\n    mov x22, x16\n    eor w19')
+        text = replace_once(text, '.Lself_cleanup_done:\n', '.Lself_cleanup_done:\n    ARM_CALL win_managed_cleanup\n')
+        text = text.replace('self update requires the direct HOME/.local/bin/asm installation', 'self update requires the active Windows versioned installation')
     if source.name == 'native_link.s':
         text = replace_once(text, "    ldrb w10, [x19]\n    cmp w10, #'/'\n    b.ne bad_args",
             '    mov x0, x19\n    ARM_CALL win_is_absolute\n    cbz w9, bad_args')
@@ -198,12 +186,23 @@ def prepare(source: Path) -> str:
         text = text.replace('native_runtime_prefix: .asciz "-Wl,-rpath,"', 'native_runtime_prefix: .asciz "-L"')
         text += '\n.section .rdata,"dr"\nwin_native_hardening: .asciz "-Wl,/dynamicbase,/nxcompat,/Brepro"\n'
     if source.name == 'platform.inc':
-        text += '\n.equ WIN_OPEN_IMAGE, 0x20000000\n.equ WIN_OPEN_SET_DACL, 0x04000000\n'
+        text += '\n.equ WIN_OPEN_IMAGE, 0x20000000\n.equ WIN_OPEN_HELD, 0x40000000\n.equ WIN_OPEN_SET_DACL, 0x04000000\n'
         text = text.replace('    str x30, [sp, #-16]!\n    bl', '    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n    bl')
         text = text.replace('    ldr x30, [sp], #16', '    ldp x29, x30, [sp], #16')
     text = re.sub(r'^\.include "([^"]+)"', lambda m: prepare(ROOT / m[1]), text, flags=re.M)
     if source.name == 'asm.s':
-        text += '\n' + '\n'.join((LOCAL / name).read_text() for name in ['files.s', 'security.s', 'process.s', 'pipe.s', 'hash.s', 'update.s'])
+        text += '\n' + '\n'.join((LOCAL / name).read_text() for name in ['files.s', 'security.s', 'process.s', 'pipe.s', 'hash.s', 'update.s', 'managed.s', 'launcher.s', 'versioned_update.s'])
+        import importlib.util
+        import sys
+        if str(ROOT / 'tools') not in sys.path:
+            sys.path.insert(0, str(ROOT / 'tools'))
+        metadata_spec = importlib.util.spec_from_file_location('asm_windows_layout', ROOT / 'tools/windows_layout.py')
+        metadata_module = importlib.util.module_from_spec(metadata_spec)
+        metadata_spec.loader.exec_module(metadata_module)
+        version = re.search(r'version_text: \.asciz "asm ([0-9]+\.[0-9]+\.[0-9]+) ', source.read_text())
+        if not version:
+            raise ValueError('built CLI version is missing')
+        text += '\n' + metadata_module.metadata_assembly(version.group(1), 'aarch64')
         unsupported = r'ARM_CALL (arm_(?:fork|execve|wait4|readlink|readlinkat|fstatfs|rt_sigaction|rt_sigprocmask|getrlimit|setrlimit|prlimit64|alarm|kill|pipe2|dup2|uname|mmap|mprotect|munmap|umask))\b'
         match = re.search(unsupported, text)
         if match:

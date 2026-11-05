@@ -72,9 +72,13 @@ fixture_receipt: .byte {','.join(map(str,data))}
             called = set(re.findall(r'^\s*(?:ARM_CALL|bl|b)\s+([A-Za-z_]\w*)\s*$', source, flags=re.M))
             defined = set(re.findall(r'^([A-Za-z_]\w*):', source, flags=re.M))
             source += '\n.text\n' + ''.join(label+':\n' for label in sorted(called-defined-{'_exit'})) + '    mov x0,#-1\n    mov x9,#-1\n    ret\n'
-            source = source.replace('.section .rdata,"dr"','.data').replace('.section .bss','.data').replace('.section .text','.text').replace('.section .data','.data')
+            source = source.replace('.section .asmmeta,"dr"','.data').replace('.section .rdata,"dr"','.data').replace('.section .bss','.data').replace('.section .text','.text').replace('.section .data','.data')
             source = source.replace('adrp \\reg, \\symbol','adrp \\reg, (\\symbol)@PAGE').replace('add \\reg, \\reg, :lo12:\\symbol','add \\reg, \\reg, (\\symbol)@PAGEOFF')
             results[name] = abi_test.run_case(Path(temporary), name, source, linker_flags=('-Wl,-no_fixup_chains',))
+            # Keep recorded hashes/results instead of large completed Mach-O
+            # files. The full prepared-source shim materializes zero regions.
+            (Path(temporary) / name).unlink(missing_ok=True)
+            (Path(temporary) / (name + '.s')).unlink(missing_ok=True)
     evidence = {'scope':'actual inventory parser with serialized drive paths and real metadata validators; no Windows filesystem qualification',
                 'result':'pass' if all(r.get('exit_code') == (1 if name == 'regression_unix_root' else 0) for name,r in results.items()) else 'fail','cases':results}
     args.output.parent.mkdir(parents=True,exist_ok=True)
