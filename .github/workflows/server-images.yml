@@ -30,7 +30,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the qualification harness
-        run: python3 tools/test_server_image.py --self-test
+        run: |
+          python3 tools/test_server_image.py --self-test
+          python3 -m unittest discover -s tests -p test_server_image_admission.py -v
       - name: Install the pinned Ubuntu RISC-V user emulator
         if: matrix.arch == 'riscv64'
         shell: bash
@@ -85,8 +87,9 @@ jobs:
           docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
             --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
-      - name: Run the actual HTTP, PostgreSQL, TLS, and security suite
-        timeout-minutes: 5
+      - name: Run both actual-image runtime and admission parts
+        # Each part keeps its 180-second watchdog and original container bounds.
+        timeout-minutes: 10
         shell: bash
         env:
           ASM_ARCH: ${{ matrix.arch }}
@@ -118,8 +121,8 @@ jobs:
 
   publish:
     needs: qualify
-    # Temporary hold: admission-bearing images need the actual-image capacity
-    # suite and prebuilt read-only fixture. Legacy sixteen-case evidence is insufficient.
+    # Temporary hold: the integrated actual-image 28-case gate must pass on all
+    # targets at reviewed source. Local contracts and native source tests are insufficient.
     if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
@@ -133,6 +136,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: server-image-${{ matrix.arch }}-${{ github.sha }}
@@ -143,8 +150,8 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum --check runtime.sha256
-          jq --exit-status --arg revision "$GITHUB_SHA" --arg arch "$ASM_ARCH" \
-            '.schema == 1 and .status == "pass" and .scope == "assembly-canonical-exports" and .source_revision == $revision and .architecture == $arch and .tests_run >= 16 and .tests_skipped == 0' qualification.json
+          python3 tools/test_server_image.py --check-evidence qualification.json \
+            --revision "$GITHUB_SHA" --arch "$ASM_ARCH"
           docker load --input runtime.tar
           test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
           test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Architecture}}')" = "$ASM_ARCH"

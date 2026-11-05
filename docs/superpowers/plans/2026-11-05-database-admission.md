@@ -16,15 +16,17 @@ This is an admission implementation candidate, dated 5 November 2026.
 The reviewed diagnostic ran once at the source recorded below.
 Its expected native RED was accepted before implementation started.
 The registered workflow was then restored from the retained original blob.
-The new implementation has not been pushed or run in CI.
-No native Linux GREEN result is claimed for this implementation.
-It does not authorize publication, image changes, or deployment.
+The owner later reviewed the implementation and authorized one native source gate at commit `2881779f1927f660b367d48af08a28a3c09292be`.
+Both native targets passed all twenty-eight cases in that uncapped gate.
+The owner then authorized the local actual-image integration described below.
+That image gate remains unrun, and neither publication nor deployment is authorized.
 
 The source inspected is canonical HTTP commit `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
 The public main inspected is `7efb4b7b543018d68e5c5801e5f4b7eef74772b5`.
 The checkpoint branch is `codex/db-admission`.
 The coordinator's coherent reconciliation is `7e67d7131377590b924d07191ccb174b51bf22c2`.
 The checkpoint adopted it through normal merge `5992c3016f6a0ba972665054b5b4856659336d31`.
+The operator and canonical HTTP base `1fcc70452ff9fba7008a495b406ce61c43aaf364` was later merged without conflicts into `2881779f1927f660b367d48af08a28a3c09292be`.
 
 The operator audit reports an ignored `ASM_DATABASE_POOL_SIZE=8` variable.
 That variable does not establish a runtime limit.
@@ -239,9 +241,9 @@ These references were checked on 5 November 2026.
 - [x] Add the named eight-slot limit and aligned counter to each port.
 - [x] Add the local flag and bounded acquisition before connection creation.
 - [x] Release from the common epilogue after `PQfinish`, including null-connection failures.
-- [ ] Run the candidate until its complete saturation and recovery assertion passes.
-- [ ] Run the existing native runtime suite without skips on every claimed target.
-- [ ] Keep the independent RISC-V six-client regression and its result unchanged in reporting.
+- [x] Run the candidate until its complete saturation and recovery assertion passes.
+- [x] Run the existing native runtime suite without skips on every claimed native target: AMD64 and ARM64.
+- [x] Keep the independent RISC-V six-client regression and its result unchanged in reporting.
 
 Cross-assembly checks do not establish native saturation, cancellation, or recovery.
 Do not weaken a timing assertion or query guard to obtain a pass.
@@ -265,15 +267,17 @@ Do not weaken a timing assertion or query guard to obtain a pass.
 - [x] Add a dedicated null-connection fixture with a fixed precompiled read-only library input.
 - [x] Add both modules to the documented native server test gate.
 - [x] Document fixed admission separately from persistent connection reuse and unsupported environment settings.
-- [ ] Run `make -C server test` with the reviewed dependency prefixes and exact source revision.
+- [x] Run `make -C server test` with the reviewed dependency prefixes and exact source revision at `2881779f1927f660b367d48af08a28a3c09292be`.
 - [ ] Review the full diff, source integration, failure records, and security effects before any publication decision.
 
 Do not add application metrics in this task.
 Allocation-failure injection is not present in the existing HTTP fixture.
 If a deterministic allocation/header failure gate is required, coordinate a separate bounded fixture rather than claiming socket abort covers it.
-The checked items above record source additions, not native passes.
+The cleanup assertions passed in the later accepted native source gate.
+The actual-image gate remains unrun.
 Discovery now finds sixteen unchanged baseline methods and twelve capacity methods, for twenty-eight total cases.
-All new native cases remain unrun on this implementation.
+All new native cases were unrun at the initial implementation checkpoint `815eea50876b6a6bd495e5f088d735c094b7417d`.
+The accepted native result at `2881779f1927f660b367d48af08a28a3c09292be` is recorded below.
 
 ## Evidence and limits
 
@@ -314,7 +318,9 @@ Precompiled-fixture path and permission rejection checks, C syntax, actionlint, 
 The first cross-assembly command stopped before compilation because its source paths repeated the `server` directory.
 The corrected command assembled all three runtime sources; no assembly failure is concealed by that correction.
 
-Native GREEN, full failure cleanup, disconnect recovery, and resource-capacity qualification remain required.
+The initial checkpoint lacked native GREEN, full failure cleanup, and disconnect recovery evidence.
+The later accepted native gate exercised all twenty-eight cases on AMD64 and ARM64.
+Actual-image and private resource-capacity qualification remain separate requirements.
 An independent agent review identified two candidate-test gaps, which were corrected and reviewed again.
 That advice does not replace the missing native gate.
 
@@ -342,6 +348,51 @@ The retained failure is `/private/tmp/asm-admission-native-gate-20261105/boundar
 After the recorder changed, all nine recorder checks passed.
 Their controlled metadata does not establish native runtime behavior.
 The existing native workflow and combined Make test command remain unchanged.
+
+### Actual-image gate implementation
+
+The owner accepted native run `42060225513` at source `2881779f1927f660b367d48af08a28a3c09292be`.
+Both native targets passed all twenty-eight hosted cases, including the fixed read-only NULL fixture.
+That uncapped source gate does not qualify the derived images.
+
+The image gate will run two sequential containers: `baseline` with all sixteen cases and `capacity` with all twelve cases.
+Each container retains the existing 180-second watchdog, two CPUs, 512 MiB memory, 128 processes, and 256 MiB noexec temporary filesystem.
+The combined test watchdog budget therefore increases from 180 to 360 seconds.
+The workflow orchestration step increases from five to ten minutes for preflight and cleanup around those parts.
+This preserves each callback deadline and allows the expanded coverage to finish without weakening runtime assertions.
+It adds a second owned PostgreSQL fixture and container startup to qualification cost.
+Neither the source gate nor this proposed image gate establishes private deployment capacity.
+
+The build stage uses the existing `test-admission-fixture` target under `/build/server`.
+Only the qualification stage receives `/qualification/fixtures/connect-null.so`, root-owned with mode `0444`.
+The served runtime receives neither the fixture nor a compiler.
+
+The aggregate scope is `assembly-canonical-exports-admission`.
+Each part uses `assembly-image-runtime-part` and names its `suite`.
+Both parts must identify the same architecture, execution mode, source commit, runtime image ID, qualification image ID, ELF artifact, library digests, fixture descriptor, and security settings.
+The fixture descriptor records its fixed path, SHA-256, byte count, mode, UID, and GID.
+Each part records all discovered tests, zero skips, elapsed time, and the unchanged container limits.
+The aggregate requires exactly one part of each name, at least twenty-eight total tests, and the exact sum of both part counts.
+Legacy sixteen-case scopes, missing or duplicate parts, mismatched identities, exclusions, and malformed count types fail closed.
+The child publisher and combined-index publisher consume the same Python evidence contract.
+Raw part output and bounded timeout or failure outcomes remain available when aggregation fails.
+
+- [x] Add observable acceptance and rejection contracts before changing the harness.
+- [x] Retain the initial failure, including rejection of a legacy sixteen-case receipt.
+- [x] Add the qualification-only fixture and two-part harness without changing frozen product or test bytes.
+- [x] Update both publisher consumers, self-tests, and image documentation; retain both explicit publication holds.
+- [x] Run focused contract, parity, syntax, and workflow checks; freeze a clean local checkpoint for owner review.
+
+Local checks passed thirteen admission-image contracts, six image self-tests, nine native recorder contracts, and four source-package contracts.
+All three workflows passed actionlint.
+An isolated import of the qualification COPY inputs discovered exactly sixteen baseline and twelve capacity methods.
+Nineteen frozen source, query, fixture, native-gate, and input-allowlist files matched the accepted native source byte for byte.
+The served runtime Docker stage also remained unchanged.
+These are local metadata, orchestration, source, and syntax checks, not actual-image execution.
+The retained first failures and local check logs are under `/private/tmp/asm-admission-image-gate`.
+
+Docker execution, downloads, CI dispatch, publication, and a main merge are outside this local checkpoint.
+The prior six-client RISC-V failure remains visible and requires its own diagnosis.
 
 The complete available Git history has not been reviewed for a merge decision.
 That review remains required before merging the eventual implementation.

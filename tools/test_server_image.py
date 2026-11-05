@@ -8,13 +8,15 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
-import importlib.util
+import importlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
 import re
 import struct
+import stat
 import subprocess
 import sys
 import tempfile
@@ -34,8 +36,19 @@ EF_RISCV_RVC = 0x1
 EF_RISCV_FLOAT_ABI = 0x6
 EF_RISCV_FLOAT_ABI_DOUBLE = 0x4
 REPORT_PREFIX = "ASM_SERVER_QUALIFICATION="
-QUALIFICATION_SCOPE = "assembly-canonical-exports"
-MIN_RUNTIME_TESTS = 16
+QUALIFICATION_SCOPE = "assembly-canonical-exports-admission"
+PART_SCOPE = "assembly-image-runtime-part"
+SUITES = {"baseline": ("test_runtime", 16), "capacity": ("test_capacity", 12)}
+MIN_RUNTIME_TESTS = 28
+FIXTURE_PATH = "/qualification/fixtures/connect-null.so"
+SECURITY = {"uid": 65532, "gid": 65532, "read_only_root": True,
+            "effective_capabilities": 0, "no_new_privileges": True}
+CONTAINER_LIMITS = {"cpus": 2, "memory_bytes": 536870912, "pids": 128,
+                    "tmpfs_bytes": 268435456, "tmpfs_noexec": True, "watchdog_seconds": 180}
+COMMON_FIELDS = {"architecture", "os", "execution", "source_revision", "runtime_image_id",
+                 "qualification_image_id", "binary", "binary_permissions", "executable_files",
+                 "libraries", "fixture", "security", "container_limits"}
+PART_FIELDS = COMMON_FIELDS | {"schema", "status", "scope", "suite", "tests_run", "tests_skipped", "seconds"}
 REPOSITORY = "ghcr.io/stubbi/asm-hub"
 
 
@@ -45,15 +58,120 @@ def binary_permissions(value):
     return {"mode": "0555", "uid": 0, "gid": 0}
 
 
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def typed_equal(actual, expected):
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(typed_equal(actual[k], v) for k, v in expected.items())
+    return actual == expected
+
+
+def sha256_value(value, *, identifier=False):
+    return isinstance(value, str) and re.fullmatch(("sha256:" if identifier else "") + r"[0-9a-f]{64}", value)
+
+
+def common_evidence_contract(report, arch, revision):
+    require(arch in TARGETS and report.get("architecture") == arch and report.get("os") == "linux"
+            and report.get("execution") in ("native", "emulated") and report.get("source_revision") == revision,
+            "The image part identifies a different target, execution mode, or source.")
+    require(all(sha256_value(report.get(key), identifier=True)
+                for key in ("runtime_image_id", "qualification_image_id")), "Missing immutable image identity.")
+    binary = report.get("binary")
+    require(isinstance(binary, dict) and type(binary.get("machine")) is int and binary["machine"] == TARGETS[arch][1]
+            and type(binary.get("elf_flags")) is int and sha256_value(binary.get("sha256"))
+            and type(binary.get("bytes")) is int and binary["bytes"] > 0
+            and binary.get("declared_target") == DECLARED_TARGETS[arch]
+            and binary.get("declaration_limit") == DECLARATION_LIMIT, "Incomplete executable identity.")
+    flags = binary["elf_flags"]
+    require((flags & EF_RISCV_FLOAT_ABI == EF_RISCV_FLOAT_ABI_DOUBLE
+             and not flags & ~(EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_DOUBLE)) if arch == "riscv64" else flags == 0,
+            "The reported executable ABI differs.")
+    require(typed_equal(report.get("binary_permissions"), {"mode": "0555", "uid": 0, "gid": 0}),
+            "The image part changed executable ownership or permissions.")
+    files = report.get("executable_files")
+    require(isinstance(files, dict) and 3 <= len(files) <= 33
+            and all(isinstance(name, str) and name.startswith("/") and sha256_value(value) for name, value in files.items())
+            and files.get("/usr/local/bin/asm-hub") == binary["sha256"]
+            and all(name in files for name in ("/opt/asm/mhd/lib/libmicrohttpd.so.12", "/opt/asm/postgres/lib/libpq.so.5")),
+            "The executable or shared-library inventory is incomplete.")
+    require(typed_equal(report.get("libraries"), {"libmicrohttpd": "1.0.3", "libpq": "16.15"}),
+            "The image part changed its library source versions.")
+    fixture = report.get("fixture")
+    require(isinstance(fixture, dict) and set(fixture) == {"path", "sha256", "bytes", "mode", "uid", "gid"}
+            and fixture.get("path") == FIXTURE_PATH and sha256_value(fixture.get("sha256"))
+            and type(fixture.get("bytes")) is int and 0 < fixture["bytes"] <= 1024 * 1024
+            and typed_equal({key: fixture[key] for key in ("mode", "uid", "gid")},
+                            {"mode": "0444", "uid": 0, "gid": 0}), "The fixed read-only fixture is unqualified.")
+    require(typed_equal(report.get("security"), SECURITY) and typed_equal(report.get("container_limits"), CONTAINER_LIMITS),
+            "The image part lacks the required isolation and resource bounds.")
+
+
+def part_evidence_contract(report, suite, arch, revision):
+    require(isinstance(report, dict) and set(report) == PART_FIELDS
+            and type(report.get("schema")) is int and report["schema"] == 1
+            and report.get("status") == "pass" and report.get("scope") == PART_SCOPE
+            and report.get("suite") == suite, "The runtime part is missing, duplicated, excluded, or malformed.")
+    common_evidence_contract(report, arch, revision)
+    require(type(report.get("tests_run")) is int and report["tests_run"] >= SUITES[suite][1]
+            and type(report.get("tests_skipped")) is int and report["tests_skipped"] == 0,
+            "The complete image part did not pass without skips.")
+    seconds = report.get("seconds")
+    require(type(seconds) in (int, float) and 0 <= seconds <= 180 and math.isfinite(seconds),
+            "The part elapsed time exceeds its unchanged watchdog or is malformed.")
+
+
+def aggregate_reports(parts, arch, revision):
+    require(isinstance(parts, dict) and set(parts) == set(SUITES), "Both distinct runtime parts are required.")
+    for name in SUITES:
+        part_evidence_contract(parts[name], name, arch, revision)
+    first = parts["baseline"]
+    require(all(typed_equal(parts["capacity"][key], first[key]) for key in COMMON_FIELDS),
+            "The two runtime parts identify different images, source, libraries, fixture, or isolation.")
+    count = sum(part["tests_run"] for part in parts.values())
+    require(count >= MIN_RUNTIME_TESTS, "The admission image requires at least twenty-eight executed cases.")
+    return {"schema": 1, "status": "pass", "scope": QUALIFICATION_SCOPE,
+            **{key: first[key] for key in COMMON_FIELDS}, "parts": parts,
+            "tests_run": count, "tests_skipped": 0,
+            "seconds": round(sum(part["seconds"] for part in parts.values()), 3), "test_watchdog_seconds": 360}
+
+
 def runtime_evidence_contract(evidence, arch, revision):
-    if (not isinstance(evidence, dict) or type(evidence.get("schema")) is not int
-            or evidence["schema"] != 1 or evidence.get("status") != "pass"
-            or evidence.get("scope") != QUALIFICATION_SCOPE or evidence.get("architecture") != arch
-            or evidence.get("os") != "linux" or evidence.get("execution") not in ("native", "emulated")
-            or evidence.get("source_revision") != revision
-            or type(evidence.get("tests_run")) is not int or evidence["tests_run"] < MIN_RUNTIME_TESTS
-            or type(evidence.get("tests_skipped")) is not int or evidence["tests_skipped"] != 0):
-        raise ValueError("The image lacks complete canonical-export runtime qualification.")
+    required = COMMON_FIELDS | {"schema", "status", "scope", "parts", "tests_run", "tests_skipped", "seconds", "test_watchdog_seconds"}
+    require(isinstance(evidence, dict) and required <= set(evidence)
+            and set(evidence) <= required | {"nonroot_configuration_refusal_exit", "observed_at"}
+            and type(evidence.get("schema")) is int and evidence["schema"] == 1
+            and evidence.get("status") == "pass" and evidence.get("scope") == QUALIFICATION_SCOPE,
+            "The image lacks complete admission qualification.")
+    expected = aggregate_reports(evidence["parts"], arch, revision)
+    require(all(typed_equal(evidence[key], expected[key]) for key in required - {"parts"}),
+            "The aggregate changed a part identity, count, elapsed time, or watchdog budget.")
+    if "nonroot_configuration_refusal_exit" in evidence:
+        require(type(evidence["nonroot_configuration_refusal_exit"]) is int and evidence["nonroot_configuration_refusal_exit"] == 78,
+                "The packaged executable did not reject absent configuration.")
+
+
+def strict_json(raw):
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, "Duplicate JSON evidence field.")
+            result[key] = value
+        return result
+    def constant(_):
+        raise ValueError("Nonfinite JSON evidence value.")
+    return json.loads(raw, object_pairs_hook=unique, parse_constant=constant)
+
+
+def read_evidence(path):
+    require(Path(path).stat().st_size <= 2 * 1024 * 1024, "The evidence report exceeds two MiB.")
+    return strict_json(Path(path).read_bytes())
 
 
 def index_contract(index, expected):
@@ -125,16 +243,15 @@ def security_arguments():
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "512m", "--cpus", "2"]
 
 
-def runtime_files(image_id, arch):
-    base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
-    output = command([*base, "--entrypoint", "/usr/bin/ldd", image_id, "/usr/local/bin/asm-hub"]).stdout.decode()
+def executable_inventory(execute):
+    output = execute("/usr/bin/ldd", "/usr/local/bin/asm-hub").stdout.decode()
     if "not found" in output:
         raise ValueError("A runtime library is missing.")
     paths = sorted(set(re.findall(r"(?:=>\s+)?(/[^\s()]+)", output)))
     if not paths or len(paths) > 32:
         raise ValueError("The runtime library inventory is unavailable or exceeds its bound.")
     paths.append("/usr/local/bin/asm-hub")
-    output = command([*base, "--entrypoint", "/usr/bin/sha256sum", image_id, *paths]).stdout.decode()
+    output = execute("/usr/bin/sha256sum", *paths).stdout.decode()
     files = {}
     for line in output.splitlines():
         digest, name = line.split("  ", 1)
@@ -146,11 +263,26 @@ def runtime_files(image_id, arch):
     return files
 
 
+def runtime_files(image_id, arch):
+    base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
+    return executable_inventory(lambda executable, *args: command([*base, "--entrypoint", executable, image_id, *args]))
+
+
+def fixture_descriptor(mode, digest):
+    fields = mode.strip().split(":")
+    require(len(fields) == 4 and fields[:3] == ["444", "0", "0"] and fields[3].isdigit(),
+            "The fixture must be root-owned with mode 0444.")
+    require(sha256_value(digest) and 0 < int(fields[3]) <= 1024 * 1024, "The fixture digest or byte count is invalid.")
+    return {"path": FIXTURE_PATH, "sha256": digest, "bytes": int(fields[3]), "mode": "0444", "uid": 0, "gid": 0}
+
+
 def inside(args):
     if platform.system() != "Linux" or platform.machine() != TARGETS[args.arch][0]:
         raise ValueError("The test process is not running the requested Linux architecture.")
     if os.geteuid() != 65532 or os.getegid() != 65532 or not os.statvfs("/").f_flag & os.ST_RDONLY:
         raise ValueError("The qualification container must use UID/GID 65532 and a read-only root filesystem.")
+    if not os.statvfs("/tmp").f_flag & os.ST_NOEXEC:
+        raise ValueError("The temporary filesystem must forbid executable code.")
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
     if status.get("NoNewPrivs", "").strip() != "1" or int(status.get("CapEff", "1").strip(), 16) != 0:
         raise ValueError("The qualification process has unexpected Linux capabilities or privilege authority.")
@@ -158,36 +290,86 @@ def inside(args):
     artifact = elf_contract(binary.read_bytes(), args.arch)
     if artifact["sha256"] != args.expected_binary_sha256:
         raise ValueError("The test image changed the runtime executable.")
+    info = binary.stat()
+    permissions = binary_permissions(f"{stat.S_IMODE(info.st_mode):o}:{info.st_uid}:{info.st_gid}")
+    fixture_path = Path(FIXTURE_PATH)
+    info = fixture_path.lstat()
+    require(stat.S_ISREG(info.st_mode), "The fixed fixture must be a regular file.")
+    fixture = fixture_descriptor(f"{stat.S_IMODE(info.st_mode):o}:{info.st_uid}:{info.st_gid}:{info.st_size}",
+                                 hashlib.sha256(fixture_path.read_bytes()).hexdigest())
+    require(fixture["sha256"] == args.expected_fixture_sha256, "The image part changed the fixed fixture.")
+    files = executable_inventory(lambda executable, *values: command([executable, *values]))
     mhd = ctypes.CDLL("/opt/asm/mhd/lib/libmicrohttpd.so.12")
     mhd.MHD_get_version.restype = ctypes.c_char_p
     if mhd.MHD_get_version() != b"1.0.3":
         raise ValueError("The loaded HTTP library is not libmicrohttpd 1.0.3.")
     os.environ.update(ASM_SERVER_BINARY=str(binary), ASM_SERVER_SOURCE_REVISION=args.revision,
-                      ASM_PROTO_PG_BINDIR="/opt/asm/postgres/bin",
-                      ASM_PROTO_LIBPQ="/opt/asm/postgres/lib/libpq.so.5")
-    spec = importlib.util.spec_from_file_location("asm_image_runtime_tests", "/qualification/server/test_runtime.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+                      ASM_PROTO_PG_BINDIR="/opt/asm/postgres/bin", ASM_PROTO_LIBPQ="/opt/asm/postgres/lib/libpq.so.5",
+                      ASM_SERVER_CONNECT_NULL_FIXTURE=FIXTURE_PATH)
+    sys.path.insert(0, "/qualification/server")
+    module = importlib.import_module(SUITES[args.suite][0])
     suite = unittest.defaultTestLoader.loadTestsFromModule(module)
     count = suite.countTestCases()
-    if count < MIN_RUNTIME_TESTS:
-        raise ValueError("The runtime qualification suite is incomplete.")
+    if count < SUITES[args.suite][1]:
+        raise ValueError("The runtime qualification part is incomplete.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
     if not result.wasSuccessful() or result.skipped or result.testsRun != count:
-        raise ValueError("The architecture's complete runtime suite did not pass without skips.")
-    report = {"schema": 1, "status": "pass", "scope": QUALIFICATION_SCOPE,
+        raise ValueError("The architecture's complete runtime part did not pass without skips.")
+    report = {"schema": 1, "status": "pass", "scope": PART_SCOPE, "suite": args.suite,
               "architecture": args.arch, "os": "linux", "execution": args.execution,
-              "source_revision": args.revision, "binary": artifact,
+              "source_revision": args.revision, "binary": artifact, "binary_permissions": permissions,
+              "runtime_image_id": args.runtime_image_id, "qualification_image_id": args.qualification_image_id,
+              "fixture": fixture, "executable_files": files, "container_limits": dict(CONTAINER_LIMITS),
               "tests_run": result.testsRun, "tests_skipped": 0,
               "seconds": round(time.monotonic() - started, 3),
-              "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"},
-              "security": {"uid": 65532, "gid": 65532, "read_only_root": True,
-                           "effective_capabilities": 0, "no_new_privileges": True}}
+              "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"}, "security": dict(SECURITY)}
+    part_evidence_contract(report, args.suite, args.arch, args.revision)
     print(REPORT_PREFIX + json.dumps(report, sort_keys=True))
 
 
+def run_image_part(args, common, suite, directory):
+    name = "asm-server-qualification-" + suite + "-" + uuid.uuid4().hex
+    # A failed or timed-out part never leaves a successful aggregate receipt.
+    outcome = {"status": "fail", "suite": suite, "timed_out": False, "exit_code": None}
+    try:
+        try:
+            result = subprocess.run(
+                ["docker", "run", "--rm", "--name", name, "--platform", "linux/" + args.arch,
+                 *security_arguments(), "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m,uid=65532,gid=65532,mode=0700",
+                 "--entrypoint", "/usr/bin/python3", common["qualification_image_id"], "/qualification/tools/test_server_image.py",
+                 "--inside", "--suite", suite, "--arch", args.arch, "--revision", args.revision, "--execution", args.execution,
+                 "--runtime-image-id", common["runtime_image_id"], "--qualification-image-id", common["qualification_image_id"],
+                 "--expected-binary-sha256", common["binary"]["sha256"], "--expected-fixture-sha256", common["fixture"]["sha256"]],
+                capture_output=True, timeout=180)
+            stdout, stderr = result.stdout, result.stderr
+            outcome["exit_code"] = result.returncode
+        except subprocess.TimeoutExpired as error:
+            stdout, stderr = error.stdout or b"", error.stderr or b""
+            outcome["timed_out"] = True
+        (directory / (suite + ".stdout.log")).write_bytes(stdout)
+        (directory / (suite + ".stderr.log")).write_bytes(stderr)
+        if outcome["timed_out"]:
+            raise ValueError(suite + " exceeded its unchanged 180-second image watchdog.")
+        require(outcome["exit_code"] == 0, suite + " image qualification failed; inspect its retained raw logs.")
+        reports = [line[len(REPORT_PREFIX):] for line in stdout.decode().splitlines() if line.startswith(REPORT_PREFIX)]
+        require(len(reports) == 1, "Expected exactly one successful runtime part report.")
+        report = strict_json(reports[0])
+        part_evidence_contract(report, suite, args.arch, args.revision)
+        require(all(typed_equal(report[key], common[key]) for key in COMMON_FIELDS),
+                "The image part changed the runtime, source, library, fixture, or isolation binding.")
+        (directory / (suite + ".qualification.json")).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        outcome["status"] = "pass"
+        return report
+    finally:
+        (directory / (suite + ".outcome.json")).write_text(json.dumps(outcome, indent=2) + "\n")
+        subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
+
+
 def qualify(args):
+    output = Path(args.output)
+    output.write_text(json.dumps({"schema": 1, "scope": QUALIFICATION_SCOPE, "status": "fail",
+                                 "source_revision": args.revision, "parts": {}}, indent=2) + "\n")
     if args.execution == "native" and platform.machine() != TARGETS[args.arch][0]:
         raise ValueError("The runner architecture cannot supply native qualification for this target.")
     images = []
@@ -215,33 +397,27 @@ def qualify(args):
                           *security_arguments(), "--entrypoint", "/bin/cat", image_id,
                           "/usr/local/bin/asm-hub"]).stdout
     artifact = elf_contract(executable, args.arch)
-    name = "asm-server-qualification-" + uuid.uuid4().hex
-    try:
-        result = subprocess.run(
-            ["docker", "run", "--rm", "--name", name, "--platform", "linux/" + args.arch,
-             *security_arguments(), "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m,uid=65532,gid=65532,mode=0700",
-             "--entrypoint", "/usr/bin/python3", test_id, "/qualification/tools/test_server_image.py",
-             "--inside", "--arch", args.arch, "--revision", args.revision, "--execution", args.execution,
-             "--expected-binary-sha256", artifact["sha256"]], capture_output=True, timeout=180)
-        sys.stdout.buffer.write(result.stdout)
-        sys.stderr.buffer.write(result.stderr)
-        if result.returncode:
-            raise ValueError("The image runtime qualification failed.")
-        reports = [line[len(REPORT_PREFIX):] for line in result.stdout.decode().splitlines()
-                   if line.startswith(REPORT_PREFIX)]
-        if len(reports) != 1:
-            raise ValueError("Expected one successful runtime qualification report.")
-        report = json.loads(reports[0])
-        runtime_evidence_contract(report, args.arch, args.revision)
-        if report["binary"] != artifact or report["source_revision"] != args.revision:
-            raise ValueError("The image qualification report identifies different bytes or source.")
-        report.update(runtime_image_id=image_id, qualification_image_id=test_id,
-                      binary_permissions=permissions, nonroot_configuration_refusal_exit=smoke.returncode,
-                      executable_files=files,
-                      observed_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-        Path(args.output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-    finally:
-        subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
+    # Read the qualification-only library without placing it in runtime data storage.
+    for forbidden in (FIXTURE_PATH, "/usr/bin/cc", "/usr/bin/gcc", "/usr/bin/clang"):
+        command([*base, "--entrypoint", "/usr/bin/test", image_id, "!", "-e", forbidden])
+    mode = command([*base, "--entrypoint", "/usr/bin/stat", test_id, "-c", "%a:%u:%g:%s", FIXTURE_PATH]).stdout.decode()
+    digest = command([*base, "--entrypoint", "/usr/bin/sha256sum", test_id, FIXTURE_PATH]).stdout.decode().split()
+    require(len(digest) == 2 and digest[1] == FIXTURE_PATH, "The fixed fixture digest is unavailable.")
+    fixture = fixture_descriptor(mode, digest[0])
+    common = {"architecture": args.arch, "os": "linux", "execution": args.execution, "source_revision": args.revision,
+              "runtime_image_id": image_id, "qualification_image_id": test_id,
+              "binary": artifact, "binary_permissions": permissions, "executable_files": files,
+              "fixture": fixture, "security": dict(SECURITY), "container_limits": dict(CONTAINER_LIMITS),
+              "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"}}
+    parts = {}
+    for suite in SUITES:
+        parts[suite] = run_image_part(args, common, suite, output.parent)
+    report = aggregate_reports(parts, args.arch, args.revision)
+    report.update(nonroot_configuration_refusal_exit=smoke.returncode,
+                  observed_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    runtime_evidence_contract(report, args.arch, args.revision)
+    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(json.dumps({"status": "pass", "tests_run": report["tests_run"], "report": str(output)}))
 
 
 def publish_index(args):
@@ -253,7 +429,7 @@ def publish_index(args):
         ref = (directory / "registry-digest.txt").read_text().strip()
         if not re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[0-9a-f]{64}", ref):
             raise ValueError("A child publication record has an unexpected repository or digest.")
-        evidence = json.loads((directory / "qualification.json").read_text())
+        evidence = read_evidence(directory / "qualification.json")
         runtime_evidence_contract(evidence, arch, args.revision)
         manifest = json.loads(command(["docker", "buildx", "imagetools", "inspect", "--raw", ref]).stdout)
         if manifest.get("config", {}).get("digest") != evidence["runtime_image_id"]:
@@ -357,13 +533,22 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             index_contract(changed, expected)
 
-    def test_index_refuses_foundation_or_incomplete_catalog_evidence(self):
+    def test_index_refuses_foundation_or_incomplete_admission_evidence(self):
         revision = "c" * 40
         arch = next(iter(TARGETS))
-        complete = {"schema": 1, "status": "pass", "scope": "assembly-canonical-exports",
-                    "architecture": arch, "os": "linux", "execution": "native",
-                    "source_revision": revision, "tests_run": 16, "tests_skipped": 0,
-                    "runtime_image_id": "sha256:" + "d" * 64}
+        common = {"architecture": arch, "os": "linux", "execution": "native", "source_revision": revision,
+                  "runtime_image_id": "sha256:" + "d" * 64, "qualification_image_id": "sha256:" + "e" * 64,
+                  "binary": elf_contract(self.elf(), arch), "binary_permissions": {"mode": "0555", "uid": 0, "gid": 0},
+                  "libraries": {"libmicrohttpd": "1.0.3", "libpq": "16.15"},
+                  "fixture": {"path": "/qualification/fixtures/connect-null.so", "sha256": "f" * 64,
+                              "bytes": 16000, "mode": "0444", "uid": 0, "gid": 0},
+                  "security": dict(SECURITY), "container_limits": dict(CONTAINER_LIMITS)}
+        common["executable_files"] = {"/usr/local/bin/asm-hub": common["binary"]["sha256"],
+                                      "/opt/asm/mhd/lib/libmicrohttpd.so.12": "1" * 64,
+                                      "/opt/asm/postgres/lib/libpq.so.5": "2" * 64}
+        complete = aggregate_reports({name: {**common, "schema": 1, "status": "pass", "scope": PART_SCOPE,
+                                             "suite": name, "tests_run": count, "tests_skipped": 0, "seconds": 1.0}
+                                      for name, count in (("baseline", 16), ("capacity", 12))}, arch, revision)
         runtime_evidence_contract(complete, arch, revision)
         with tempfile.TemporaryDirectory(prefix="asm-image-evidence-") as directory:
             child = Path(directory) / f"server-image-digest-{arch}-{revision}"
@@ -372,7 +557,7 @@ class ContractTests(unittest.TestCase):
             args = argparse.Namespace(revision=revision, children_directory=directory,
                                       index_tag="sha-" + revision + "-run-1-1")
             for change in ({"scope": "assembly-runtime-foundation"}, {"scope": "unknown"},
-                           {"tests_run": 15}, {"tests_run": "16"}, {"schema": 2}, {"schema": True},
+                           {"tests_run": 27}, {"tests_run": "28"}, {"scope": "assembly-canonical-exports"}, {"schema": 2}, {"schema": True},
                            {"execution": []}, {"tests_skipped": False},
                            {"status": "fail"}, {"tests_skipped": 1},
                            {"architecture": "wrong"}, {"source_revision": "f" * 40}):
@@ -389,6 +574,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--inside", action="store_true")
+    parser.add_argument("--suite", choices=SUITES)
+    parser.add_argument("--check-evidence", type=Path)
+    parser.add_argument("--runtime-image-id")
+    parser.add_argument("--qualification-image-id")
+    parser.add_argument("--expected-fixture-sha256")
     parser.add_argument("--publish-index", action="store_true")
     parser.add_argument("--arch", choices=TARGETS)
     parser.add_argument("--revision")
@@ -412,11 +602,20 @@ def main():
             parser.error("Supply --children-directory, --index-tag and --output.")
         publish_index(args)
         return
+    if args.check_evidence:
+        if not args.arch:
+            parser.error("Supply --arch with --check-evidence.")
+        runtime_evidence_contract(read_evidence(args.check_evidence), args.arch, args.revision)
+        return
     if not args.arch or not args.execution:
         parser.error("Supply --arch and --execution.")
     if args.inside:
         if not re.fullmatch(r"[0-9a-f]{64}", args.expected_binary_sha256 or ""):
             parser.error("Supply --expected-binary-sha256 inside the qualification image.")
+        if not args.suite or not sha256_value(args.expected_fixture_sha256):
+            parser.error("Supply --suite and --expected-fixture-sha256 inside the image.")
+        if not all(sha256_value(value, identifier=True) for value in (args.runtime_image_id, args.qualification_image_id)):
+            parser.error("Supply both immutable image IDs inside the image.")
         inside(args)
     else:
         if not args.image or not args.qualification_image or not args.output:
@@ -427,6 +626,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         print(f"Server image qualification failed: {error}", file=sys.stderr)
         raise SystemExit(1)
