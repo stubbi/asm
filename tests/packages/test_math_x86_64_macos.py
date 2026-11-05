@@ -21,18 +21,19 @@ ROOT = Path(__file__).resolve().parents[2]
 @unittest.skipUnless(platform.system() == "Darwin", "Apple clang and macOS are required")
 class MathX8664MacosTests(unittest.TestCase):
     def test_unsigned_values_preserved_registers_and_output_failure(self):
-        package = ROOT / "examples/math-x86_64-macos"
+        package = ROOT / "examples/math"
+        prefix = "targets/x86_64-macos/"
         compiler = shutil.which("clang")
         if not compiler:
             self.skipTest("Apple clang is required")
         with tempfile.TemporaryDirectory(prefix="asm-math-intel-macos-") as directory:
             outputs = []
             for source, name in (("src/main.s", "demo"), ("tests/main.s", "tests")):
-                self.assertTrue((package / source).is_file(), f"Missing {package / source}")
+                self.assertTrue((package / prefix / source).is_file(), f"Missing {package / prefix / source}")
                 output = Path(directory) / name
                 result = subprocess.run(
                     [compiler, "-arch", "x86_64", "-mmacosx-version-min=15.0",
-                     "-Wl,-no_uuid", source, "-o", str(output)],
+                     "-Wl,-no_uuid", prefix + source, "-o", str(output)],
                     cwd=package, capture_output=True, timeout=30,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -54,7 +55,7 @@ class MathX8664MacosTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, expected)
                 self.assertEqual(result.stderr, b"")
-            with (package / "src/min.s").open("rb") as read_only:
+            with (package / prefix / "src/min.s").open("rb") as read_only:
                 result = subprocess.run(
                     runner + [str(outputs[0])], stdout=read_only,
                     stderr=subprocess.PIPE, timeout=10,

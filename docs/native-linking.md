@@ -11,8 +11,8 @@ Dependable reuse requires explicit inputs, retained ABI checks, and understandab
 
 ## Manifest
 
-The existing four required manifest fields remain unchanged.
-These optional quoted strings belong to `[build]`:
+The legacy four required manifest fields remain supported.
+These optional quoted strings belong to `[build]` or an individual `[target.<id>]` table:
 
 ```toml
 link = "c"
@@ -23,6 +23,7 @@ check = "abi-check.c"
 `link = "c"` selects the system C ABI and startup objects.
 Without `link`, Asm retains its existing standalone build.
 Other link values are errors.
+Named target tables do not share or inherit these fields.
 `libraries` and `check` require `link = "c"`.
 Duplicate fields and explicitly empty strings are errors.
 
@@ -176,3 +177,11 @@ The source-only hosted handoff is `codex/server-runtime-ports`, commits `e3fabf0
 It contains no image, installer, or release changes.
 The native-package workflow separately exercises current Linux x86-64 and ARM64 CLI builds and both server suites.
 The hosted image workflow owns native x86-64/ARM64 and explicitly emulated RISC-V image qualification.
+The [multi-target completion record](multi-target-projects-completion-evidence.json) identifies the current native-library, target-selection, and dependency-lock checks.
+The Linux runs used an ARM virtual machine and an emulated x86-64 Linux machine.
+These results do not establish physical Linux hardware qualification.
+Cross-target native-library linking still requires a separate sysroot contract.
+
+The [earlier native-linking record](native-linking-evidence.json) remains historical evidence for its stated source and artifact digests.
+Its failed attempts and unrun gates are retained.
+Later results apply to the exact bytes in the multi-target completion record.

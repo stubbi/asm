@@ -165,3 +165,12 @@ jobs:
             ${{ runner.temp }}/asm-server-source.tar.gz
           if-no-files-found: error
           retention-days: 7
+      - name: Check canonical catalog publication with PostgreSQL TLS
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
+          make hosted-registry-test

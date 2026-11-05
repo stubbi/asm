@@ -48,7 +48,10 @@ class DependencyCliTests(unittest.TestCase):
             for relative in ("LICENSE", "README.md", "asm.toml", "src/main.s", "src/min.s", "tests/main.s"):
                 if relative in omit:
                     continue
-                path = ROOT / "examples/math" / relative
+                fixture_root = ROOT / "examples/math"
+                if relative.startswith(("src/", "tests/")):
+                    fixture_root = fixture_root / "targets/x86_64-linux"
+                path = fixture_root / relative
                 data = path.read_bytes()
                 if relative == "asm.toml":
                     # Fixture versions must not depend on the current example release.
@@ -65,13 +68,14 @@ class DependencyCliTests(unittest.TestCase):
                 member.mode = 0o644
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
-        path = self.work / f"{name}-{version}.tar.gz"
+        suffix = "" if target == TARGET else f"-{target}"
+        path = self.work / f"{name}-{version}{suffix}.tar.gz"
         path.write_bytes(gzip.compress(payload.getvalue(), mtime=0))
         return path
 
-    def metadata(self, archive, version, name="math", digest=None):
+    def metadata(self, archive, version, name="math", digest=None, *, target=TARGET):
         return "\t".join([
-            f"stubbi/{name}", version, TARGET, "source",
+            f"stubbi/{name}", version, target, "source",
             digest or hashlib.sha256(archive.read_bytes()).hexdigest(),
             f"https://github.com/stubbi/asm/releases/download/v0.1.0/{name}-{version}.tar.gz",
             str(archive.stat().st_size), "Unsigned minimum function",
@@ -99,6 +103,111 @@ class DependencyCliTests(unittest.TestCase):
     def package_cache(self, version="0.1.0", name="math", project=None):
         return (project or self.project) / f".asm/packages/stubbi/{name}/{version}/{TARGET}"
 
+    def named_targets(self, project=None):
+        project = project or self.project
+        (project / "asm.toml").write_text(
+            '[package]\nname = "app"\nversion = "0.1.0"\n'
+            f'[target.{OTHER_TARGET}]\nsource = "src/foreign.s"\n'
+            f'[target.{TARGET}]\nsource = "src/main.s"\n')
+
+    def add_foreign(self, version="0.2.0"):
+        archive = self.make_archive(version, target=OTHER_TARGET)
+        row = self.metadata(archive, version, target=OTHER_TARGET)
+        self.write_index(self.row, row)
+        self.cli("add", f"stubbi/math@{version}", "--target", OTHER_TARGET,
+                 "--index", self.index, "--artifact", archive)
+        return archive, row
+
+    def test_multi_target_lock_preserves_versions_update_and_remove_selection(self):
+        self.named_targets()
+        self.add()
+        archive, foreign_row = self.add_foreign()
+        lock = self.project / "asm.lock"
+        self.assertEqual(lock.read_text(), "# asm-lock-v2\n# registry local\n" + self.row + foreign_row)
+        self.assertEqual(json.loads(self.cli("lock", "--json").stdout)["dependencies"], 1)
+        self.assertEqual(json.loads(self.cli("lock", "--target", OTHER_TARGET, "--json").stdout)["dependencies"], 1)
+        second = self.make_archive("0.3.0", target=OTHER_TARGET)
+        second_row = self.metadata(second, "0.3.0", target=OTHER_TARGET)
+        self.write_index(self.row, second_row)
+        self.cli("update", "stubbi/math@0.3.0", "--target", OTHER_TARGET,
+                 "--index", self.index, "--artifact", second)
+        self.assertEqual(lock.read_text(), "# asm-lock-v2\n# registry local\n" + self.row + second_row)
+        self.cli("remove", "stubbi/math", "--target", OTHER_TARGET)
+        self.assertEqual(lock.read_text(), "# asm-lock-v2\n# registry local\n" + self.row)
+        self.assertTrue((self.project / f".asm/packages/stubbi/math/0.2.0/{OTHER_TARGET}").is_dir())
+        self.cli("remove", "stubbi/math", "--target", OTHER_TARGET, code=1)
+        self.assertEqual(json.loads(self.cli("lock", "--target", OTHER_TARGET, "--json").stdout)["dependencies"], 0)
+
+    def test_multi_target_build_ignores_missing_inactive_cache_but_checks_all_metadata(self):
+        self.named_targets()
+        self.add()
+        archive, foreign_row = self.add_foreign()
+        self.consumer()
+        self.cli("build", "--locked")
+        previous = (self.project / "build/app").read_bytes()
+        shutil.rmtree(self.project / f".asm/packages/stubbi/math/0.2.0/{OTHER_TARGET}")
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (self.project / f".asm/cache/{digest}.tar.gz").unlink()
+        self.cli("build", "--locked")
+        lock = self.project / "asm.lock"
+        valid = lock.read_bytes()
+        fields = foreign_row.rstrip("\n").split("\t")
+        undeclared = next(target for target in ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos")
+                          if target not in {TARGET, OTHER_TARGET})
+        malformed = [valid + foreign_row.encode()]
+        for index, value in ((2, undeclared), (2, "unknown-target"), (3, "executable"), (4, "bad-digest")):
+            changed = fields.copy()
+            changed[index] = value
+            malformed.append(("# asm-lock-v2\n# registry local\n" + self.row + "\t".join(changed) + "\n").encode())
+        for data in malformed:
+            with self.subTest(data=data[-150:]):
+                lock.write_bytes(data)
+                self.cli("build", "--locked", code=1)
+                self.assertEqual((self.project / "build/app").read_bytes(), previous)
+                self.assertEqual(lock.read_bytes(), data)
+        lock.write_bytes(valid)
+        source = self.package_cache() / "src/min.s"
+        source.write_bytes(source.read_bytes() + b"\n# changed selected dependency\n")
+        self.cli("build", "--locked", code=1)
+        self.assertEqual((self.project / "build/app").read_bytes(), previous)
+
+    def test_multi_target_sync_restores_only_selected_row_without_lock_changes(self):
+        self.named_targets()
+        self.add()
+        archive, foreign_row = self.add_foreign()
+        clone = self.work / "multi clone"
+        self.cli("new", clone)
+        self.named_targets(clone)
+        shutil.copyfile(self.project / "asm.lock", clone / "asm.lock")
+        before = (clone / "asm.lock").read_bytes()
+        self.cli("sync", "--artifact", self.archive, cwd=clone)
+        self.assertFalse((clone / f".asm/packages/stubbi/math/0.2.0/{OTHER_TARGET}").exists())
+        self.assertEqual(json.loads(self.cli("sync", "--target", OTHER_TARGET, "--artifact", archive,
+                                           "--json", cwd=clone).stdout)["dependencies"], 1)
+        self.assertEqual((clone / "asm.lock").read_bytes(), before)
+        self.cli("lock", "--target", OTHER_TARGET, cwd=clone)
+
+    def test_v1_lock_upgrades_after_success_and_failed_foreign_update_preserves_bytes(self):
+        self.add()
+        lock = self.project / "asm.lock"
+        legacy = lock.read_bytes()
+        self.assertTrue(legacy.startswith(b"# asm-lock-v1\n"))
+        self.named_targets()
+        self.cli("lock")
+        self.assertEqual(lock.read_bytes(), legacy)
+        archive, foreign_row = self.add_foreign()
+        before = lock.read_bytes()
+        self.assertTrue(before.startswith(b"# asm-lock-v2\n"))
+        self.write_index(self.row, self.metadata(archive, "0.2.0", digest="0" * 64, target=OTHER_TARGET))
+        self.cli("update", "stubbi/math@0.2.0", "--target", OTHER_TARGET,
+                 "--index", self.index, "--artifact", archive, code=1)
+        self.assertEqual(lock.read_bytes(), before)
+        newer = self.make_archive("0.4.0", target=OTHER_TARGET)
+        self.write_index(self.row, self.metadata(newer, "0.4.0", digest="0" * 64, target=OTHER_TARGET))
+        self.cli("update", "stubbi/math@0.4.0", "--target", OTHER_TARGET,
+                 "--index", self.index, "--artifact", newer, code=1)
+        self.assertEqual(lock.read_bytes(), before)
+
     def test_add_lock_and_real_assembly_import(self):
         result = json.loads(self.add().stdout)
         self.assertEqual(result["package"], "stubbi/math")
@@ -111,6 +220,39 @@ class DependencyCliTests(unittest.TestCase):
         before = (self.project / "asm.lock").read_bytes()
         self.add()
         self.assertEqual((self.project / "asm.lock").read_bytes(), before)
+
+    def test_named_target_project_uses_and_checks_native_dependency_lock(self):
+        (self.project / "asm.toml").write_text(
+            '[package]\nname = "app"\nversion = "0.1.0"\n'
+            f'[target.{OTHER_TARGET}]\nsource = "src/foreign.s"\n'
+            f'[target.{TARGET}]\nsource = "src/main.s"\n')
+        self.add()
+        self.consumer()
+        self.cli("run", "--locked")
+        self.assertEqual(json.loads(self.cli("lock", "--json").stdout)["dependencies"], 1)
+        previous = (self.project / "build/app").read_bytes()
+        source = self.package_cache() / "src/min.s"
+        source.write_bytes(source.read_bytes() + b"\n# changed dependency\n")
+        self.cli("build", "--locked", code=1)
+        self.assertEqual((self.project / "build/app").read_bytes(), previous)
+        self.cli("remove", "stubbi/math")
+        self.assertEqual(json.loads(self.cli("lock", "--json").stdout)["dependencies"], 0)
+
+    def test_legacy_cross_target_first_add_writes_a_reusable_v2_lock(self):
+        (self.project / "asm.toml").write_text(
+            '[package]\nname = "app"\nversion = "0.1.0"\n'
+            f'[build]\nsource = "src/main.s"\ntarget = "{OTHER_TARGET}"\n')
+        archive = self.make_archive("0.1.0", target=OTHER_TARGET)
+        row = self.metadata(archive, "0.1.0").replace(
+            f"\t{TARGET}\tsource\t", f"\t{OTHER_TARGET}\tsource\t")
+        self.write_index(row)
+        self.cli("add", "stubbi/math@0.1.0", "--target", OTHER_TARGET,
+                 "--index", self.index, "--artifact", archive)
+        self.assertTrue((self.project / "asm.lock").read_bytes().startswith(b"# asm-lock-v2\n"))
+        self.assertEqual(json.loads(self.cli("lock", "--target", OTHER_TARGET, "--json").stdout)["dependencies"], 1)
+        self.cli("sync", "--target", OTHER_TARGET, "--artifact", archive)
+        self.cli("remove", "stubbi/math", "--target", OTHER_TARGET)
+        self.assertEqual(json.loads(self.cli("lock", "--target", OTHER_TARGET, "--json").stdout)["dependencies"], 0)
 
     def test_default_build_rejects_changed_missing_and_extra_source_cache(self):
         self.add()
@@ -212,7 +354,7 @@ class DependencyCliTests(unittest.TestCase):
         lock = self.project / "asm.lock"
         valid = lock.read_bytes()
         malformed = [
-            b"", b"# asm-lock-v2\n# registry local\n",
+            b"", b"# asm-lock-v3\n# registry local\n",
             valid + self.row.encode(),
             valid.replace(b"source\t", b"executable\t"),
             valid.replace((TARGET + "\t").encode(), (OTHER_TARGET + "\t").encode()),

@@ -16,7 +16,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE = ROOT / "examples/math-riscv64"
+PACKAGE = ROOT / "examples/math"
+VERSION = json.loads((ROOT / "cli/commands.json").read_text())["version"]
+TARGET_PATH = "targets/riscv64-linux/"
 sys.path.insert(0, str(ROOT / "tools"))
 import registry
 
@@ -37,12 +39,12 @@ class MathRiscv64ArchiveTests(unittest.TestCase):
         self.assertTrue(PACKAGE.is_dir(), "The RV64I math package is missing")
         archive = registry.make_archive(registry.collect_files(PACKAGE))
         files = registry.read_archive(archive)
-        registry.validate_project(files, "stubbi/math", "0.6.0", "riscv64-linux")
+        registry.validate_project(files, "stubbi/math", VERSION, "riscv64-linux")
         self.assertEqual(files["LICENSE"], (ROOT / "examples/math/LICENSE").read_bytes())
-        self.assertIn("src/min.s", files)
-        self.assertIn("tests/main.s", files)
+        self.assertIn(TARGET_PATH + "src/min.s", files)
+        self.assertIn(TARGET_PATH + "tests/main.s", files)
         with self.assertRaisesRegex(registry.RegistryError, "target"):
-            registry.validate_project(files, "stubbi/math", "0.6.0", "aarch64-linux")
+            registry.validate_project(files, "stubbi/math", VERSION, "x86_64-freebsd")
 
 
 class MathRiscv64NativeTests(unittest.TestCase):
@@ -65,8 +67,8 @@ class MathRiscv64NativeTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(prefix="math-riscv64-", dir=ROOT / "build")
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.work = Path(cls.temporary.name)
-        cls.demo = cls.build(PACKAGE / "src/main.s", "demo")
-        cls.tests = cls.build(PACKAGE / "tests/main.s", "tests")
+        cls.demo = cls.build(PACKAGE / TARGET_PATH / "src/main.s", "demo")
+        cls.tests = cls.build(PACKAGE / TARGET_PATH / "tests/main.s", "tests")
         if "QEMU_RISCV64" in os.environ:
             cls.runner = command("QEMU_RISCV64", "")
         elif platform.system() == "Linux" and platform.machine() == "riscv64":
@@ -131,18 +133,18 @@ class MathRiscv64NativeTests(unittest.TestCase):
 
     def test_machine_mode_callable_cases_with_semihosting(self):
         """This exercises the routine, separately from the Linux process tests."""
-        source = (PACKAGE / "tests/main.s").read_text()
+        source = (PACKAGE / TARGET_PATH / "tests/main.s").read_text()
         # QEMU's bare-metal virt boot starts at the load address, not ELF e_entry.
         # Put the caller first without changing the function's source or cases.
-        source = source.replace('.include "src/min.s"\n', "", 1)
+        source = source.replace(f'.include "{TARGET_PATH}src/min.s"\n', "", 1)
         source = source.replace("_start:\n", "_start:\n    la sp, .Lmachine_stack_top\n", 1)
         source = source.replace("    li a7, SYS_EXIT\n    ecall\n", "    j .Lsemihost_exit\n")
-        source += '\n.include "src/min.s"\n'
+        source += f'\n.include "{TARGET_PATH}src/min.s"\n'
         self.run_machine_mode(source, "machine-caller")
 
     def test_write_loop_handles_injected_short_interrupted_zero_and_error_results(self):
         """Inject only the syscall result; execute the actual write-loop instructions."""
-        main = (PACKAGE / "src/main.s").read_text()
+        main = (PACKAGE / TARGET_PATH / "src/main.s").read_text()
         start = main.index(".type .Lwrite_all, @function")
         end = main.index(".size .Lwrite_all, .-.Lwrite_all")
         loop = main[start:end].replace("    ecall\n", "    jal t6, .Lwrite_fixture\n")

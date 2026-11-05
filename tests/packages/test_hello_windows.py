@@ -19,9 +19,10 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION = json.loads((ROOT / "cli/commands.json").read_text())["version"]
 TARGETS = (
-    ("hello-x86_64-windows", "x86_64-windows", "x86_64-pc-windows-msvc", "x64", 0x8664),
-    ("hello-aarch64-windows", "aarch64-windows", "aarch64-pc-windows-msvc", "arm64", 0xAA64),
+    ("hello", "x86_64-windows", "x86_64-pc-windows-msvc", "x64", 0x8664),
+    ("hello", "aarch64-windows", "aarch64-pc-windows-msvc", "arm64", 0xAA64),
 )
 
 
@@ -101,7 +102,9 @@ class WindowsHelloTests(unittest.TestCase):
     def build(self, directory, target, source):
         package_name, _, triple, machine, _ = target
         package = ROOT / "examples" / package_name
-        self.assertTrue((package / source).is_file(), f"Missing package source: {package / source}")
+        target_path = Path("targets") / target[1]
+        source_path = target_path / source
+        self.assertTrue((package / source_path).is_file(), f"Missing package source: {package / source_path}")
         clang = os.environ.get("CLANG", shutil.which("clang"))
         linker = find_linker()
         if not clang or not linker:
@@ -109,15 +112,15 @@ class WindowsHelloTests(unittest.TestCase):
         obj = directory / ("test.obj" if source.startswith("tests/") else "hello.obj")
         exe = obj.with_suffix(".exe")
         library = directory / "kernel32.lib"
-        self.run_tool([linker, "/lib", f"/machine:{machine}", f"/def:{package / 'kernel32.def'}",
+        self.run_tool([linker, "/lib", f"/machine:{machine}", f"/def:{package / target_path / 'kernel32.def'}",
                        f"/out:{library}"], package)
-        self.run_tool([clang, f"--target={triple}", "-c", source, "-o", str(obj)], package)
+        self.run_tool([clang, f"--target={triple}", "-c", str(source_path), "-o", str(obj)], package)
         self.run_tool([linker, f"/machine:{machine}", "/entry:mainCRTStartup", "/subsystem:console",
                        "/nodefaultlib", "/dynamicbase", "/nxcompat", "/timestamp:0", "/WX",
                        f"/out:{exe}", str(obj), str(library)], package)
-        sources = {package / source, *(package / "src").glob("*.s")}
+        sources = {package / source_path, *(package / target_path / "src").glob("*.s")}
         print(json.dumps({"phase": "build", "package": package_name, "target": target[1], "source": source,
-                          "source_sha256": hashlib.sha256((package / source).read_bytes()).hexdigest(),
+                          "source_sha256": hashlib.sha256((package / source_path).read_bytes()).hexdigest(),
                           "assembly_sources_sha256": {path.relative_to(package).as_posix():
                               hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
                           "artifact_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
@@ -189,9 +192,10 @@ class WindowsHelloTests(unittest.TestCase):
                 package = ROOT / "examples" / name
                 self.assertTrue((package / "asm.toml").is_file(), f"Missing package: {name}")
                 manifest = tomllib.loads((package / "asm.toml").read_text())
-                self.assertEqual(manifest["package"], {"name": "hello", "version": "0.6.0"})
-                self.assertEqual(manifest["build"], {"source": "src/main.s", "target": target})
-                self.assertEqual((package / "LICENSE").read_bytes(), (ROOT / "examples/hello/LICENSE").read_bytes())
+                self.assertEqual(manifest["package"], {"name": "hello", "version": VERSION})
+                self.assertEqual(manifest["target"][target], {"source": f"targets/{target}/src/main.s",
+                                                             "test": f"targets/{target}/tests/main.s"})
+                self.assertEqual((package / "LICENSE").read_bytes(), (ROOT / "LICENSES/MIT.txt").read_bytes())
 
     def test_main_and_assembly_contract_tests_build_for_each_windows_target(self):
         # Incorrect imports, assembly, ABI metadata, or PE permissions break the package build.
