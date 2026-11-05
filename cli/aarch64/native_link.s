@@ -340,22 +340,20 @@ native_link_build:
     ret
 
 /* Input: x0=the fixed executable pointer selected by a CLI call. Output:
- * x9=borrowed environment pointer array. C compiler children receive only
- * PATH and LC_ALL. On macOS the assembler's clang driver also uses that
- * environment for native builds. Application execution retains user settings.
+ * x9=borrowed environment pointer array. Every fixed compiler, assembler,
+ * and linker child receives only PATH and LC_ALL, including tool startup.
+ * Application execution retains user settings.
  * Scratch: x9-x11/x16; stack: none; preserves callee-saved registers. */
 native_link_child_environment:
     ARM_ADDR x16, native_cc_path
     cmp x0, x16
     b.eq .Lnative_fixed_environment
-.if NATIVE_LINK_MACOS
     ARM_ADDR x16, as_path
     cmp x0, x16
-    b.ne .Lnative_inherited_environment
-    ARM_ADDR x16, package_link
-    ldrb w10, [x16]
-    cbnz w10, .Lnative_fixed_environment
-.endif
+    b.eq .Lnative_fixed_environment
+    ARM_ADDR x16, ld_path
+    cmp x0, x16
+    b.eq .Lnative_fixed_environment
 .Lnative_inherited_environment:
     ARM_ADDR x16, envp
     ldr x9, [x16]

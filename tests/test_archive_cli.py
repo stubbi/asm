@@ -101,6 +101,23 @@ class NativeArchiveTests(unittest.TestCase):
         directory = Path(cls.build.name)
         (directory / "harness.s").write_text(
             (ROOT / "tests/aarch64/archive_harness.s").read_text() if IS_ARM64 else HARNESS)
+        if IS_MACOS and not IS_ARM64:
+            import sys
+            sys.path.insert(0, str(ROOT / "tools"))
+            import macos_x86_64
+            harness = HARNESS.replace(".global _start", ".global _main").replace("\n_start:\n", "\n_main:\n")
+            harness = harness.replace("cmp qword ptr [rsp], 4", "cmp edi, 4")
+            harness = harness.replace("    mov rax, [rsp + 16]\n    mov rdi, [rsp + 24]\n    mov rsi, [rsp + 32]",
+                                      "    mov rax, [rsi + 8]\n    mov rdi, [rsi + 16]\n    mov rsi, [rsi + 24]")
+            path = directory / "harness.s"
+            path.write_text(harness)
+            source = macos_x86_64.complete().replace("_main", "_asm_cli_entry")
+            source += macos_x86_64.prepare(path)
+            path.write_text(source)
+            cls.binary = directory / "archive-test"
+            subprocess.run(["/usr/bin/clang", "-arch", "x86_64", "-mmacosx-version-min=15.0",
+                            "-Wl,-adhoc_codesign", "-o", str(cls.binary), str(path)], check=True)
+            return
         if IS_MACOS:
             import sys
             sys.path.insert(0, str(ROOT / "tools"))

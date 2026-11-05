@@ -5,7 +5,8 @@ Status: build and qualification implementation, 5 November 2026.
 This path builds the canonical-export assembly runtime for Linux AMD64, ARM64, and RISC-V64.
 An entry in the build matrix is not a supported-target claim.
 Each architecture must compile its actual port and pass the complete runtime suite.
-The canonical-export image jobs have not yet supplied that evidence.
+Earlier canonical-export jobs passed natively on AMD64 and ARM64 but failed under RISC-V user emulation.
+The [retained results](#canonical-export-results) do not qualify the integrated source.
 Earlier foundation-image results do not qualify this additional routing and database behavior.
 
 The operator outcome is an immutable image connected to its source, executable, target, and observed checks.
@@ -91,6 +92,44 @@ The result identifies source, image ID, ELF target, executable digest, library d
 The report scope is `assembly-canonical-exports`.
 The publication gate rejects foundation reports, other scopes, incomplete test counts, and skipped tests.
 These checks do not qualify the complete registry or its deployment.
+
+## Completed prior-image checks
+
+[Run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) passed all 11 runtime cases for each architecture, without skips.
+It tested PR merge revision `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
+
+| Image platform | Execution | Executable SHA-256 |
+| --- | --- | --- |
+| [Linux AMD64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984484580) | Native | `ad1f6cff7a36a9171af6928b3667ba73cf24f6412cdd63f831ba35d06bc95b45` |
+| [Linux ARM64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984485001) | Native | `456da6cd1ee4c0532e44b7e009cf712d79709ad7c2e591c5ae17219a64c58288` |
+| [Linux RISC-V64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984484813) | QEMU user emulation | `03efff97e1f1f86255d50d142a3b695c8656fd36253db0303495a6605af0b218` |
+
+These results do not qualify head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later source changes.
+Current-head qualification remains a separate gate.
+Native instruction execution does not qualify a physical hardware range.
+RISC-V emulation supplies no native RISC-V hardware or performance evidence.
+Canonical HTTP integration, capacity, recovery, publication, and deployment remain separate gates.
+
+## Canonical export results
+
+[Run 42013635598](https://github.com/stubbi/asm/actions/runs/42013635598) tested merge revision `437fa424157d5e884a11bd2643b1eaca71674fc1` from branch head `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
+Native AMD64 and ARM64 each passed sixteen runtime methods without skips.
+
+| Image platform | Execution | Executable SHA-256 |
+| --- | --- | --- |
+| [Linux AMD64](https://github.com/stubbi/asm/actions/runs/42013635598/job/127198578067) | Native | `f178082cb027b6c487ae9b646eef674f68295d8dbd06b0834f4eb6bb2209ad10` |
+| [Linux ARM64](https://github.com/stubbi/asm/actions/runs/42013635598/job/127198578643) | Native | `b6ccc00d781e064f9a63d25005994986b7fe2799ba29173e97b6a5f1d144296d` |
+
+The RISC-V job ran sixteen methods with six concurrent-response assertions failing: HTTP 503 replaced the required HTTP 200.
+Its other fifteen methods passed.
+The workflow failed, and publication did not run.
+No causal fix has been established.
+
+The [isolated diagnostic run 42035969713](https://github.com/stubbi/asm/actions/runs/42035969713) rebuilt the same application source with a derived diagnostic layer.
+It observed both eight-response concurrency waves passing unchanged byte and status assertions.
+The observation used instrumentation and selected methods, so it cannot replace complete qualification.
+CPU throttling accompanied those successful waves; this does not establish the cause of the original failure.
+Fresh checks must qualify the complete integrated source with the existing deadlines, resource limits, and concurrency assertions.
 
 ## Verified inputs
 

@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, IS_MACOS, TARGET, exit_source
+from host import IS_ARM64, IS_MACOS, TARGET, MAC_ARCH, exit_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,12 +18,23 @@ ASM = ROOT / "build/asm"
 
 
 def main_source():
+    if IS_MACOS and not IS_ARM64:
+        return ('.intel_syntax noprefix\n.global _main\n.text\n_main:\n'
+                'push rbp\nmov rbp, rsp\nlea rdi, [rip + message]\ncall _puts\n'
+                'xor eax, eax\npop rbp\nret\n'
+                '.data\nmessage: .asciz "native linked"\n')
     if IS_MACOS:
         return ('.global _main\n.text\n_main:\n'
                 'stp x29, x30, [sp, #-16]!\nmov x29, sp\n'
                 'adrp x0, message@PAGE\nadd x0, x0, message@PAGEOFF\nbl _puts\n'
                 'mov w0, #0\nldp x29, x30, [sp], #16\nret\n'
                 '.data\nmessage: .asciz "native linked"\n')
+    if TARGET == "riscv64-linux":
+        return ('.attribute arch, "rv64gc"\n.attribute stack_align, 16\n'
+                '.global main\n.text\nmain:\naddi sp, sp, -16\nsd ra, 8(sp)\n'
+                'la a0, message\ncall puts\nli a0, 0\nld ra, 8(sp)\n'
+                'addi sp, sp, 16\nret\n.section .rodata\n'
+                'message: .asciz "native linked"\n.section .note.GNU-stack,"",@progbits\n')
     if IS_ARM64:
         return ('.global main\n.text\nmain:\n'
                 'stp x29, x30, [sp, #-16]!\nmov x29, sp\n'
@@ -93,6 +104,20 @@ class NativeLinkTests(unittest.TestCase):
                               or (tag == 0x6FFFFFFB and bool(value & 1)))
         self.assertTrue(immediate, "ELF lacks immediate binding")
 
+    def test_response_file_checker_is_rejected_before_compilation(self):
+        self.cli("build")
+        before = (self.work / "build/app").read_bytes()
+        (self.work / "literal.c").write_text("-x c /dev/null\n")
+        for name in ["@literal.c", "nested/@literal.c"]:
+            checker = self.work / name
+            checker.parent.mkdir(exist_ok=True)
+            checker.write_text('_Static_assert(sizeof(void *) == 8, "LP64");\n')
+            self.manifest.write_text(self.base + f'link = "c"\ncheck = "{name}"\n')
+            result = self.cli("build", success=False)
+            self.assertIn("invalid or missing asm.toml", result.stderr)
+            self.assertEqual((self.work / "build/app").read_bytes(), before)
+
+
     def test_c_abi_build_and_run_have_real_libc_output(self):
         self.cli("build")
         self._assert_hardened((self.work / "build/app").read_bytes())
@@ -118,11 +143,11 @@ class NativeLinkTests(unittest.TestCase):
         output = library / ("libasmfixture.dylib" if IS_MACOS else "libasmfixture.so")
         mode = (["-dynamiclib", "-Wl,-install_name,@rpath/libasmfixture.dylib"] if IS_MACOS
                 else ["-shared", "-fPIC", "-Wl,-soname,libasmfixture.so"])
-        subprocess.run(["/usr/bin/cc", *mode, "-o", str(output), str(source)],
+        subprocess.run(["/usr/bin/cc", *(["-arch", MAC_ARCH] if IS_MACOS else []), *mode, "-o", str(output), str(source)],
                        check=True, capture_output=True, timeout=20)
         assembly = main_source()
-        call = "bl _native_value" if IS_MACOS else ("bl native_value" if IS_ARM64 else "call native_value")
-        marker = "mov w0, #0" if IS_ARM64 else "xor eax, eax"
+        call = ("bl _native_value" if IS_ARM64 else "call _native_value") if IS_MACOS else ("bl native_value" if IS_ARM64 else "call native_value")
+        marker = "li a0, 0" if TARGET == "riscv64-linux" else ("mov w0, #0" if IS_ARM64 else "xor eax, eax")
         assembly = assembly.replace(marker, call + "\n" + marker)
         (self.work / "main.s").write_text(assembly)
         self.manifest.write_text(self.base + 'link = "c"\nlibraries = "asmfixture"\ncheck = "check.c"\n')

@@ -119,7 +119,10 @@ Projected-volume rotation must still pass against the actual private deployment.
 ## Build and test
 
 Use a matching Linux x86-64, ARMv8-A AArch64, or RV64GC/LP64D host.
-Use GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15.
+Install GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15 for that host.
+The Makefile selects the assembly port from the host architecture.
+If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
+This build does not cross-compile.
 Use Python 3.11 or later and an OpenSSL command for the integration fixture.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
@@ -179,7 +182,9 @@ This result covers the stated TLS, configuration, readiness, identity, and idle-
 It does not qualify deployment compatibility, catalog behavior, saturation, or recovery.
 
 The legacy `guard.sql` retains its provenance notice and checksum for the separate reference.
-The runtime now includes `catalog/reader-guard.sql` and reads the complete canonical ledger.
+The runtime and reference guards compare temporary-schema prefixes literally.
+The retained migration bytes and checksum remain unchanged.
+The runtime includes `catalog/reader-guard.sql` and reads the complete canonical ledger.
 It does not infer missing fields or targets from the prototype schema.
 The canonical component's [qualification record](catalog/README.md#qualification) remains separate from HTTP evidence.
 
@@ -200,11 +205,34 @@ The corrected test requests the affected route and preserves its null-result ref
 It does not require unrelated valid routes to fail after that trusted administrator change.
 The reviewed SQL, reader guard, and enforced non-null storage constraints remain unchanged.
 Local cross-assembly passed for x86-64 and AArch64 after the routing change.
-Apple's installed clang cannot assemble the RISC-V target; no local RISC-V assembly or execution result is claimed.
+Apple's clang rejected the RISC-V assembly attempt; that earlier check supplied no RISC-V result.
+A later local check used Homebrew Clang 23.1.4 on 5 November 2026.
+It assembled the runtime and configuration sources for x86-64, AArch64, and RV64GC/LP64D.
+These six source checks did not link or execute an application.
+The current `make -C server test` attempt refused the macOS host before compilation.
+The current `make hosted-registry-test` attempt failed because reviewed PostgreSQL 16.15 fixture paths were unavailable.
+Its six operator-plan tests passed, but no database test ran.
+The port-evidence regression first failed because a fifteen-test log qualified; the corrected sixteen-test minimum then passed all nine checks.
+
+The [prior foundation image run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) passed eleven runtime tests per architecture without skips.
+Those earlier tests did not cover canonical exports.
+The [image guide](../docs/server-images.md#completed-prior-image-checks) retains their source revisions, executable digests, and execution limits.
+
+The four-export [image run 42013635598](https://github.com/stubbi/asm/actions/runs/42013635598) tested merge revision `437fa424157d5e884a11bd2643b1eaca71674fc1`, containing source head `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
+Native AMD64 and ARM64 each passed all sixteen runtime methods without skips.
+RISC-V user emulation ran sixteen methods in 63.995 seconds.
+Six concurrent-response assertions received HTTP 503 instead of HTTP 200; the other fifteen methods passed.
+The image workflow failed and did not publish images.
+No causal fix has been established.
+The [isolated diagnostic run 42035969713](https://github.com/stubbi/asm/actions/runs/42035969713) rebuilt that application source with a derived diagnostic layer.
+Both observed eight-response waves passed the unchanged assertions, including their exact response bytes.
+Instrumentation, a rebuild, and selected method execution make this diagnostic evidence; it does not qualify the original or current image.
+CPU throttling occurred in the successful diagnostic waves and does not establish the cause of the original failures.
+Fresh complete runtime and image checks remain required for the integrated source.
 
 These requirements remain open:
 
-- Runtime qualification of canonical HTTP serving on ARM64 and RISC-V64.
+- Complete RISC-V64 canonical HTTP qualification after the retained concurrent-response failure.
 - Runtime and image qualification of the integrated four-export catalog contract.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
 - Bounded hostname resolution compatible with private service discovery.

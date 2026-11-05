@@ -12,8 +12,10 @@ from pathlib import Path
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import tarfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -697,6 +699,58 @@ empty = []
         _, regenerated = registry.make_indexes([record], {(record["name"], record["version"])}, dependency_metadata=metadata)
         self.assertEqual(regenerated["packages"][0]["versions"][0]["artifacts"][0]["dependency_metadata"]["dependencies"], [])
 
+    def shared_target_release(self):
+        project = ROOT / "examples/hello"
+        version = tomllib.loads((project / "asm.toml").read_text())["package"]["version"]
+        data = registry.make_archive(registry.collect_files(project))
+        record, _ = release(version)
+        record["source"]["path"] = "examples/hello"
+        record["artifacts"] = [{"target": target, "kind": "source", "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "url": f"https://github.com/stubbi/asm/releases/download/v{version}/hello-{version}-{target}.tar.gz"}
+            for target in ("x86_64-linux", "aarch64-linux", "riscv64-linux")]
+        return record, data
+
+    def test_dependency_export_keeps_each_target_for_one_shared_source_archive(self):
+        record, data = self.shared_target_release()
+        original = copy.deepcopy(record)
+        before, _ = registry.make_indexes([record])
+        metadata = {}
+        for artifact in record["artifacts"]:
+            registry.validate_artifact(data, record, artifact, dependency_metadata=metadata)
+        after, index = registry.make_indexes([record], {(record["name"], record["version"])},
+                                             dependency_metadata=metadata)
+        self.assertEqual(after, before)
+        self.assertEqual(record, original)
+        exported = index["packages"][0]["versions"][0]["artifacts"]
+        self.assertEqual([artifact["target"] for artifact in exported],
+                         ["aarch64-linux", "riscv64-linux", "x86_64-linux"])
+        for artifact in exported:
+            self.assertEqual(artifact["dependency_metadata"], {"schema": 1,
+                "source_sha256": hashlib.sha256(data).hexdigest(), "dependencies": [], "features": {}})
+
+    def test_site_exports_separate_target_declarations_for_one_shared_archive(self):
+        with patch.object(sys, "path", [str(ROOT / "tools"), *sys.path]):
+            import build_site
+        record, data = self.shared_target_release()
+        catalog = self.root / "catalog"
+        self.save_record(catalog, record)
+        output = self.root / "site"
+        result = build_site.build_site(ROOT, catalog, output, verify=True,
+                                       artifact_reader=lambda *args, **kwargs: data)
+        self.assertEqual(result["artifact_checked_releases"], 1)
+        declarations = json.loads((output / "registry/v1/dependencies.json").read_bytes())
+        self.assertEqual(declarations, {"schema": 1, "sources": [{
+            "name": record["name"], "version": record["version"], "target": target,
+            "metadata": {"schema": 1, "source_sha256": hashlib.sha256(data).hexdigest(),
+                         "dependencies": [], "features": {}}}
+            for target in ("aarch64-linux", "riscv64-linux", "x86_64-linux")]})
+        expected_tsv, _ = registry.make_indexes([record])
+        self.assertEqual((output / "registry/v1/index.tsv").read_bytes(), expected_tsv.encode("ascii"))
+        index = json.loads((output / "registry/v1/index.json").read_bytes())
+        self.assertTrue(all("dependency_metadata" not in artifact
+            for artifact in index["packages"][0]["versions"][0]["artifacts"]))
+
     def test_dependency_export_rejects_forged_or_mismatched_source_bindings(self):
         record, data = release()
         artifact = record["artifacts"][0]
@@ -704,15 +758,23 @@ empty = []
         metadata = {}
         registry.validate_artifact(data, record, artifact, dependency_metadata=metadata)
         checked = {(record["name"], record["version"])}
-        for forged in ({digest: {"schema": 1, "source_sha256": digest, "dependencies": [], "features": {}}},
-                       {"0" * 64: metadata[digest]}):
+        identity = ("hello", record["version"], artifact["target"], artifact["bytes"], digest)
+        verified = next(iter(metadata.values()))
+        for forged in ({identity: {"schema": 1, "source_sha256": digest, "dependencies": [], "features": {}}},
+                       {(*identity[:-1], "0" * 64): verified}, {digest: verified}):
             with self.subTest(metadata=forged), self.assertRaises(registry.RegistryError):
                 registry.make_indexes([record], checked, dependency_metadata=forged)
         with self.assertRaises(registry.RegistryError):
             registry.make_indexes([record], dependency_metadata=metadata)
-        for field, value in (("target", "aarch64-linux"), ("bytes", artifact["bytes"] + 1), ("kind", "executable")):
+        for field, value in (("target", "aarch64-linux"), ("bytes", artifact["bytes"] + 1),
+                             ("kind", "executable"), ("sha256", "b" * 64)):
             candidate = copy.deepcopy(record)
             candidate["artifacts"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(registry.RegistryError):
+                registry.make_indexes([candidate], checked, dependency_metadata=metadata)
+        for field, value in (("name", "stubbi/other"), ("version", "0.2.0")):
+            candidate = copy.deepcopy(record)
+            candidate[field] = value
             with self.subTest(field=field), self.assertRaises(registry.RegistryError):
                 registry.make_indexes([candidate], checked, dependency_metadata=metadata)
 

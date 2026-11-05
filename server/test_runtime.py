@@ -385,8 +385,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.request("/health/ready")[0], 200)
         for schema in ("pgxtemp_", "pgxtempx", "pgxtoast_temp_", "pgxtoastxtempx"):
             with self.subTest(schema=schema):
-                self.admin.execute(f'CREATE SCHEMA "{schema}"; GRANT CREATE ON SCHEMA "{schema}" TO "{role}"')
+                self.admin.execute(f'CREATE SCHEMA "{schema}"')
                 try:
+                    self.admin.execute(f'GRANT CREATE ON SCHEMA "{schema}" TO "{role}"')
                     self.assertEqual(self.request("/health/ready")[0], 503)
                     self.assertEqual(self.request("/registry/v1/index.json")[0], 503)
                     self.assertEqual(self.request("/health/live")[0], 200)

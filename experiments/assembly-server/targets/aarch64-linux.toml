@@ -1,0 +1,11 @@
+# Linux AArch64, AAPCS64, LP64. Use a source-built Asm CLI.
+[package]
+name = "asm-server"
+version = "0.1.0"
+
+[build]
+source = "aarch64/server.s"
+target = "aarch64-linux"
+link = "c"
+libraries = "microhttpd pq pthread"
+check = "abi-check.c"
