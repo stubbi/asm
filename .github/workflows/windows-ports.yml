@@ -3,7 +3,7 @@ name: Native Windows ports
 on:
   pull_request:
   push:
-    branches: [main, 'codex/windows-*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
