@@ -63,7 +63,8 @@ jobs:
           cache: false
       - name: Check evidence refusal and bounded process capture
         run: |
-          python -m unittest discover -s tests/release -p test_windows_verifier_gate.py -v
+          New-Item -ItemType Directory -Force -Path build/windows-verifier-checks | Out-Null
+          python -m unittest discover -s tests/release -p test_windows_verifier_gate.py -v 2>&1 | Tee-Object -FilePath build/windows-verifier-checks/unit-tests.log
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Run the complete native verifier suite
         env:
@@ -76,6 +77,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-windows-verifier-${{ matrix.target }}-${{ github.sha }}
-          path: build/windows-verifier-evidence/*
+          path: |
+            build/windows-verifier-checks/*
+            build/windows-verifier-evidence/*
           if-no-files-found: error
           retention-days: 14

@@ -105,16 +105,18 @@ class WindowsVerifierGateTests(unittest.TestCase):
                                  dict(os.environ), self.base / "raw.jsonl", **options)
 
     def test_failed_capture_retains_the_exact_bounded_output(self):
-        code = self.capture("import sys; print('failure detail', flush=True); sys.exit(7)")
+        code = self.capture("import sys; sys.stdout.buffer.write(b'failure detail\\n'); "
+                            "sys.stdout.buffer.flush(); sys.exit(7)")
         self.assertEqual(code, 7)
         self.assertEqual((self.base / "raw.jsonl").read_bytes(), b"failure detail\n")
         with self.assertRaisesRegex(RuntimeError, "byte limit"):
-            self.capture("import sys; sys.stdout.buffer.write(b'x' * 4096)", limit=128)
+            self.capture("import sys; sys.stdout.buffer.write(b'x' * 4096); sys.stdout.buffer.flush()", limit=128)
         self.assertEqual((self.base / "raw.jsonl").read_bytes(), b"x" * 128)
 
     def test_go_diagnostics_do_not_corrupt_the_json_stream(self):
         diagnostics = self.base / "stderr.log"
-        code = self.capture("import sys; print('{}'); print('go: downloading fixture', file=sys.stderr)",
+        code = self.capture("import sys; sys.stdout.buffer.write(b'{}\\n'); sys.stdout.buffer.flush(); "
+                            "sys.stderr.buffer.write(b'go: downloading fixture\\n'); sys.stderr.buffer.flush()",
                             stderr_path=diagnostics)
         self.assertEqual(code, 0)
         self.assertEqual((self.base / "raw.jsonl").read_bytes(), b"{}\n")
@@ -122,11 +124,12 @@ class WindowsVerifierGateTests(unittest.TestCase):
 
     def test_stalled_child_and_descendant_held_pipe_cannot_hang_capture(self):
         with self.assertRaisesRegex(RuntimeError, "time limit"):
-            self.capture("import time; print('before stall', flush=True); time.sleep(30)", timeout=2)
+            self.capture("import sys,time; sys.stdout.buffer.write(b'before stall\\n'); "
+                         "sys.stdout.buffer.flush(); time.sleep(30)", timeout=2)
         self.assertEqual((self.base / "raw.jsonl").read_bytes(), b"before stall\n")
         code = self.capture("import subprocess,sys; subprocess.Popen([sys.executable,'-I','-c',"
                             "'import time; time.sleep(30)'], stdout=sys.stdout, stderr=sys.stderr); "
-                            "print('completed parent', flush=True)", timeout=2)
+                            "sys.stdout.buffer.write(b'completed parent\\n'); sys.stdout.buffer.flush()", timeout=2)
         self.assertEqual(code, 0)
         self.assertEqual((self.base / "raw.jsonl").read_bytes(), b"completed parent\n")
 
