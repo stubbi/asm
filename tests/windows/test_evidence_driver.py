@@ -599,6 +599,33 @@ class OutcomeGateTests(unittest.TestCase):
     def run_case(self, case):
         return unittest.TextTestRunner(stream=io.StringIO(), resultclass=driver.EvidenceResult).run(case)
 
+    def test_subtest_outcomes_match_actual_unittest_failures_and_errors(self):
+        class CustomFailure(RuntimeError):
+            pass
+
+        class MixedSubtests(unittest.TestCase):
+            def test_case(self):
+                with self.subTest(kind='assertion'):
+                    self.assertEqual(1, 2, 'assertion subtest')
+                with self.subTest(kind='exception'):
+                    raise ValueError('non-assertion subtest')
+
+        # A custom assertion exception catches implementations that hard-code
+        # AssertionError instead of honoring the TestCase's failure contract.
+        for failure_type in (AssertionError, CustomFailure):
+            with self.subTest(failure_type=failure_type.__name__):
+                MixedSubtests.failureException = failure_type
+                result = self.run_case(MixedSubtests('test_case'))
+                self.assertEqual(result.testsRun, 1)
+                self.assertEqual((len(result.failures), len(result.errors)), (1, 1))
+                outcomes = [row['outcome'] for row in result.records]
+                self.assertEqual(outcomes, ['fail', 'error'])
+                self.assertEqual((outcomes.count('fail'), outcomes.count('error')),
+                                 (len(result.failures), len(result.errors)))
+                self.assertIn('assertion subtest', result.records[0]['detail'])
+                self.assertIn('ValueError: non-assertion subtest', result.records[1]['detail'])
+                self.assertFalse(driver.qualifies_result(result))
+
     def test_expected_failure_is_recorded_and_cannot_qualify(self):
         class KnownFailure(unittest.TestCase):
             @unittest.expectedFailure

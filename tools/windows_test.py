@@ -124,8 +124,9 @@ class EvidenceResult(unittest.TextTestResult):
 
     def addSubTest(self, test, subtest, error):
         super().addSubTest(test, subtest, error)
-        if error:
-            self.record(subtest, "fail", self._exc_info_to_string(error, test))
+        if error is not None:
+            outcome = "fail" if issubclass(error[0], test.failureException) else "error"
+            self.record(subtest, outcome, self._exc_info_to_string(error, test))
 
 
 def qualifies_result(result):
