@@ -30,6 +30,8 @@ all:
 	@set -eu; umask 077; \
 	  test ! -L "$(BUILD)" || { echo "BUILD must not be a symlink." >&2; exit 1; }; \
 	  mkdir -p "$(BUILD)"; \
+	  test ! -L "$(BUILD)/asm-hub" && test ! -d "$(BUILD)/asm-hub" || \
+	    { echo "asm-hub must not be a symlink or directory." >&2; exit 1; }; \
 	  stage=$$(mktemp -d "$(BUILD)/.asm-server.XXXXXXXX"); \
 	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
 	  $(CC) $(TARGET_FLAGS_$(TARGET)) -std=c11 -Wall -Wextra -Werror \
@@ -39,7 +41,7 @@ all:
 	  $(CC) $(TARGET_FLAGS_$(TARGET)) -g -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
 	    -x assembler-with-cpp -DASM_SOURCE_REVISION='"$(SOURCE_REVISION)"' \
 	    -o "$$stage/asm-hub" $(SOURCES_$(TARGET)) $(LIBRARIES); \
-	  mv -f -- "$$stage/asm-hub" "$(BUILD)/asm-hub"
+	  mv -fT -- "$$stage/asm-hub" "$(BUILD)/asm-hub"
 
 test: all
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
