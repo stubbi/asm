@@ -204,6 +204,72 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
         text = text.replace(anchor, 'smp_host_suffix: .asciz "-x86_64-windows.exe"')
     if source.name == 'dependencies.s':
         text = text.replace('dependency_acquire:\n', 'dependency_acquire:\n    call win_managed_check_workspace\n', 1)
+    if source.name == 'resolver.s':
+        # Adapt only the resolver's owned <=4000-byte directory copy. Public
+        # drive-relative input must not reach win_open's internal C: root form.
+        # Keep the mature component walk; skip only a validated drive prefix.
+        anchor = '    lea r12, [rip + res_artifact_path]\n    mov r13, r12\n.Lres_dir_component:\n'
+        assert text.count(anchor) == 1, 'resolver artifact directory walk'
+        text = text.replace(anchor, '''    lea r12, [rip + res_artifact_path]
+    mov rdx, r12
+.Lwin_res_slashes:
+    mov al, [rdx]
+    test al, al
+    jz .Lwin_res_prefix
+    cmp al, 92
+    jne .Lwin_res_slash_next
+    mov byte ptr [rdx], '/'
+.Lwin_res_slash_next:
+    inc rdx
+    jmp .Lwin_res_slashes
+.Lwin_res_prefix:
+    /* RDX is the owned copy's end. R13 starts its component scan. */
+    mov r13, r12
+    cmp byte ptr [r13], 0
+    je registry_bad_args
+    cmp byte ptr [r13], '/'
+    jne .Lwin_res_drive
+    inc r13
+    cmp byte ptr [r13], 0
+    je registry_bad_args
+    cmp byte ptr [r13 + 1], ':'
+    jne registry_bad_args
+.Lwin_res_drive:
+    cmp byte ptr [r13 + 1], ':'
+    jne .Lwin_res_terminal
+    movzx eax, byte ptr [r13]
+    or eax, 32
+    cmp eax, 'a'
+    jb registry_bad_args
+    cmp eax, 'z'
+    ja registry_bad_args
+    cmp byte ptr [r13 + 2], '/'
+    jne registry_bad_args
+    add r13, 3
+.Lwin_res_terminal:
+    /* A non-root terminal slash would be an empty native component. Remove
+     * exactly one before inspection; repeated separators stay invalid. */
+    cmp rdx, r13
+    je .Lres_dir_component
+    cmp byte ptr [rdx - 1], '/'
+    jne .Lres_dir_component
+    cmp byte ptr [rdx - 2], '/'
+    je registry_bad_args
+    mov byte ptr [rdx - 1], 0
+.Lres_dir_component:
+''')
+        anchor = '.Lres_dir_final:\n    call res_check_artifact_dir\n    mov rdi, r13\n'
+        assert text.count(anchor) == 1, 'resolver archive separator'
+        text = text.replace(anchor, '''.Lres_dir_final:
+    call res_check_artifact_dir
+    /* Reuse the separator retained for a drive root. All other terminal
+     * separators were removed only in the owned copy before inspection. */
+    cmp byte ptr [r13 - 1], '/'
+    jne .Lwin_res_suffix
+    dec r13
+.Lwin_res_suffix:
+    mov rdi, r13
+''')
     if source.name == 'self_update.s':
         anchor = '    mov eax, 2\n    lea rdi, [rip + self_proc_exe]\n    mov esi, O_CLOEXEC + O_NONBLOCK\n    xor edx, edx\n    syscall\n    test rax, rax\n'
         assert text.count(anchor) == 1

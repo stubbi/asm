@@ -94,6 +94,7 @@ class HostShims(unittest.TestCase):
         cls.build_device_names()
         cls.build_diagnostic_last_error()
         cls.build_rename_constructor()
+        cls.build_resolver_offline_path()
 
     @classmethod
     def tearDownClass(cls):
@@ -710,6 +711,149 @@ die:
                 result = self.run_fixture('publication-target',target,str(pe_valid))
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertEqual(result.stdout.strip(),expected)
+
+    @classmethod
+    def build_resolver_offline_path(cls):
+        # Reuse the fixture's actual drive/component parser and external API
+        # boundaries; no Windows filesystem semantics are claimed by this test.
+        assembly = (cls.directory / 'extended-cwd.s').read_text()
+        assembly += '\n.text\n' + block(cls.prepared,'res_offline_path','res_check_immutable')
+        assembly += block(cls.prepared,'strlen','write_cstr')
+        assembly += f'''
+.text
+.global resolver_path_case
+resolver_path_case:
+    WFRAME
+    mov [rip + res_artifacts],rdi
+    mov [rip + resolver_mode],esi
+    call res_offline_path
+    lea rax,[rip + res_artifact_path]
+    WLEAVE
+.global resolver_direct_open
+resolver_direct_open:
+    mov rsi,rdi
+    mov rdi,-100
+    xor edx,edx
+    xor r10d,r10d
+    jmp win_open
+registry_bad_args:
+    mov edi,2
+    and rsp,-16
+    call {cls.prefix}resolver_finish
+    ud2
+registry_io_error:
+    mov edi,1
+    and rsp,-16
+    call {cls.prefix}resolver_finish
+    ud2
+win_syscall:
+    WFRAME
+    cmp eax,6
+    jne .Lresolver_unexpected
+    call {cls.prefix}resolver_observe
+    mov rsi,[rbp - 48]
+    mov rdi,-100
+    xor edx,edx
+    xor r10d,r10d
+    call win_open
+    test rax,rax
+    js .Lresolver_stat_done
+    mov eax,[rip + resolver_mode]
+    cmp eax,3
+    je .Lresolver_stat_error
+    mov rdx,[rbp - 56]
+    mov dword ptr [rdx + 24],16384
+    test eax,eax
+    jz .Lresolver_stat_good
+    mov dword ptr [rdx + 24],32768
+    cmp eax,2
+    jne .Lresolver_stat_good
+    mov dword ptr [rdx + 24],40960
+.Lresolver_stat_good:
+    xor eax,eax
+.Lresolver_stat_done:
+    WLEAVE
+.Lresolver_stat_error:
+    mov rax,-5
+    WLEAVE
+.Lresolver_unexpected:
+    ud2
+.data
+res_artifacts: .quad 0
+registry_selected: .quad resolver_row
+resolver_row: .space 32
+    .quad resolver_digest
+resolver_digest: .asciz "{'a'*64}"
+res_slash: .asciz "/"
+res_archive_suffix: .asciz ".tar.gz"
+resolver_mode: .long 0
+registry_stat: .space 144
+res_artifact_path: .space 4096
+'''
+        # No writable/creating open is permitted, including path controls.
+        anchor = 'win_nt_open:\n'
+        assert assembly.count(anchor) == 1
+        assembly = assembly.replace(anchor, anchor + '''    test r10d, -65537
+    jnz .Lresolver_unexpected
+''')
+        driver = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern const char*resolver_path_case(const char*,int);
+extern long resolver_direct_open(const char*);
+static const char*input;static char original[8192],prefixes[32768];static int checks;
+void resolver_observe(const char*p){if(checks++)strcat(prefixes,"|");if(strlen(prefixes)+strlen(p)>=sizeof prefixes)abort();strcat(prefixes,p);}
+void resolver_finish(int code){printf("%d %d %d\n\n%s\n",code,checks,!strcmp(input,original),prefixes);exit(0);}
+int main(int n,char**a){
+    if(n==2){printf("%ld\n",resolver_direct_open(a[1]));return 0;}
+    input=a[1];if(strlen(input)>=sizeof original)return 3;strcpy(original,input);
+    const char*p=resolver_path_case(input,atoi(a[2]));printf("0 %d %d\n%s\n%s\n",checks,!strcmp(input,original),p,prefixes);
+}
+'''
+        cls.build('resolver-path',assembly,driver,['resolver_path_case','resolver_direct_open'])
+
+    def test_resolver_artifact_paths_normalize_owned_copy_and_keep_strict_walk(self):
+        suffix = 'a'*64 + '.tar.gz'
+        cases = [
+            ('C:/fixtures','C:/fixtures', ['C:/fixtures']),
+            ('C:/fixtures/sub','C:/fixtures/sub',['C:/fixtures','C:/fixtures/sub']),
+            ('C:\\fixtures\\sub','C:/fixtures/sub',['C:/fixtures','C:/fixtures/sub']),
+            ('C:/fixtures/','C:/fixtures',['C:/fixtures']),
+            ('C:\\fixtures\\','C:/fixtures',['C:/fixtures']),
+            ('C:/','C:', ['C:/']), ('C:\\','C:', ['C:/']),
+            ('/C:/fixtures/','/C:/fixtures',['/C:/fixtures']),
+            ('/C:/','/C:', ['/C:/']),
+            ('fixtures/sub','fixtures/sub',['fixtures','fixtures/sub']),
+            ('fixtures\\sub\\','fixtures/sub',['fixtures','fixtures/sub']),
+            ('fixtures/','fixtures',['fixtures']), ('fixtures','fixtures',['fixtures']),
+        ]
+        for value, parent, prefixes in cases:
+            with self.subTest(value=value):
+                result = self.run_fixture('resolver-path',value,'0')
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.splitlines(),[f'0 {len(prefixes)} 1',parent+'/'+suffix,'|'.join(prefixes)])
+        for value in ['','C:','C:fixtures','C:fixtures/sub','/C:','/C:relative','//C:/fixtures','\\\\server\\share','1:/fixtures']:
+            with self.subTest(refused_before_stat=value):
+                result = self.run_fixture('resolver-path',value,'0')
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.splitlines()[0],'2 0 1')
+        for value in ['C://fixtures','C:/fixtures//sub','C:/fixtures//','fixtures/../other','fixtures/CON','fixtures/file:stream']:
+            with self.subTest(strict_parser_refusal=value):
+                result = self.run_fixture('resolver-path',value,'0')
+                self.assertEqual(result.returncode,0,result.stderr)
+                fields = result.stdout.splitlines()[0].split()
+                self.assertNotEqual(fields[0],'0')
+                self.assertEqual(fields[2],'1')
+        for mode in ['1','2','3']:
+            result = self.run_fixture('resolver-path','C:/fixtures',mode)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(result.stdout.splitlines()[0],'1 1 1')
+        result = self.run_fixture('resolver-path','x'*4001,'0')
+        self.assertEqual(result.stdout.splitlines()[0],'2 0 1')
+        # Internal bare-drive root opens remain available to existing walkers.
+        self.assertEqual(self.run_fixture('resolver-path','C:').stdout.strip(),'3')
+        self.assertEqual(self.run_fixture('resolver-path','C:relative').stdout.strip(),'-22')
 
 
     @classmethod
