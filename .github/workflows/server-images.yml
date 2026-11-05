@@ -20,7 +20,7 @@ jobs:
     # This outer budget also covers checkout, downloads, source selection, and upload.
     timeout-minutes: 35
     env:
-      ASM_FIXTURE_REVISION: REVIEWED_FIXTURE_COMMIT_REQUIRED
+      ASM_FIXTURE_REVISION: 48f55e1357edeead605cd20664ca5d6338faf0b5
       ASM_EVIDENCE: ${{ github.workspace }}/server-observations-evidence
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
