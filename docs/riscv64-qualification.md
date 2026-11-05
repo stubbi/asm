@@ -43,10 +43,17 @@ python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode nat
 ```
 
 The expected final line contains `qualification: pass` when all required checks pass.
-A missing tool, failed command, timeout, changed artifact, or skipped check produces a failure.
+A missing tool, failed command, timeout, changed artifact, or skipped CLI check produces a failure.
 The command retains the failed check and leaves later checks marked `not-run`.
 
-The runner executes `make test ARCH=riscv64` and the focused RISC-V tests.
+The runner executes unchanged `make test ARCH=riscv64` and the focused RISC-V tests.
+Schema 2 scopes the result to `native-cli-behavior`.
+The current Makefile automatically loads every root `tests/test_*.py` module.
+The runner records their names and digests without a second execution mechanism.
+Both suites require nonempty tests, exit zero, and no skips or expected failures.
+`make package-test` remains a separate reference-target gate.
+Earlier attempts included foreign reference suites inside `make test`.
+Those raw skipped outcomes remain retained and do not become passing CLI checks.
 The complete suite covers project creation, builds, execution, archives, registry inputs, dependencies, publication requests, installed programs, and update recovery.
 These tests include unsupported targets, corrupt artifacts, network failures, and existing destinations.
 Tests create private transport and verification fixtures.
@@ -54,7 +61,8 @@ Those fixtures do not establish real release-signature verification.
 
 Some cross-user checks require a root test process.
 Run those checks in an isolated machine or the disposable CI job.
-A skipped check prevents this runner from reporting complete qualification.
+A skipped Make or focused check prevents CLI qualification.
+Foreign reference packages retain their separate native-target qualification requirements.
 
 ## Emulated Linux qualification
 
@@ -73,6 +81,7 @@ They must not be applied to a person's workstation.
 The override is accepted only on Linux.
 It does not implement CLI commands or change production executable bytes.
 Fault-injection filters still use actual host-kernel syscall numbers.
+The three kernel-denial assertions remain unchanged and mandatory in the strict CLI suite.
 An emulation difference that prevents a required assertion remains a failed check.
 QEMU can combine distinct guest resource-limit operations into the host `prlimit64` call.
 Complete syscall-failure qualification can therefore require a full-system guest or a native host.

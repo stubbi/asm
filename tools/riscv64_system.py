@@ -9,11 +9,13 @@ import argparse
 from datetime import datetime, timezone
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import selectors
 import shlex
 import shutil
 import signal
@@ -35,7 +37,7 @@ IMAGES = {
 }
 LIMITS = {"memory_mib": 3072, "cpus": 2, "overlay_bytes": 8589934592,
           "boot_seconds": 900, "provision_seconds": 900, "test_seconds": 2400,
-          "total_seconds": 5400}
+          "total_seconds": 3600}
 GUEST = "/tmp/asm-riscv64-ci"
 
 
@@ -46,7 +48,9 @@ def digest(path):
 
 def bind_guest(report, artifact, commit, provenance_digest):
     """Require independently copied bytes, exact source and complete guest gates."""
-    if (report.get("schema") != 1 or report.get("target") != "riscv64-linux"
+    if (not isinstance(report, dict) or report.get("schema") != 2
+            or report.get("qualification_scope") != "native-cli-behavior"
+            or report.get("target") != "riscv64-linux"
             or report.get("outcome") != "pass" or report.get("execution_mode") != "emulated"
             or report.get("emulation_kind") != "system" or report.get("native_qualified") is not False
             or report.get("release_qualified") is not False):
@@ -66,12 +70,22 @@ def bind_guest(report, artifact, commit, provenance_digest):
             raise ValueError(f"Guest required check did not pass: {name}")
         if name in ("make_test", "focused_tests"):
             if (type(check.get("tests_run")) is not int or check["tests_run"] <= 0
-                    or check.get("skipped_checks") is not False or check.get("exit_code") != 0):
+                    or check.get("skipped_checks") is not False or check.get("exit_code") != 0
+                    or check.get("timed_out") is not False or check.get("incomplete_checks") is not False):
                 raise ValueError(f"Guest suite was empty, skipped, or failed: {name}")
     if artifact.is_symlink() or not artifact.is_file() or not 0 < artifact.stat().st_size <= 67108864:
         raise ValueError("Copied CLI artifact is absent or outside its bound")
     if report.get("artifact", {}).get("sha256") != digest(artifact):
         raise ValueError("Copied CLI artifact differs from the guest report")
+
+
+def bind_root_modules(record, directory):
+    files = sorted(directory.glob("test_*.py"))
+    if not files or any(path.is_symlink() or not path.is_file() for path in files):
+        raise ValueError("Host root CLI module inventory is empty or invalid")
+    expected = {path.stem: {"path": path.name, "sha256": digest(path)} for path in files}
+    if record != expected:
+        raise ValueError("Guest root CLI module metadata does not bind every host module")
 
 
 class Runner:
@@ -89,61 +103,72 @@ class Runner:
 
     def run(self, command, name, timeout=60, *, data=None, check=True, maximum_log_bytes=67108864,
             stderr_name=None):
-        path = self.output / name
-        timeout = min(timeout, max(1, self.deadline - time.monotonic()))
+        command = list(map(str, command))
+        expires = min(self.deadline, time.monotonic() + timeout)
         process = subprocess.Popen(list(map(str, command)), cwd=ROOT, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE if stderr_name else subprocess.STDOUT,
                                    start_new_session=True)
-        exceeded = []
-
-        def collect(source, destination):
-            total = 0
-            with destination.open("wb") as stream:
-                while block := source.read(65536):
-                    remaining = maximum_log_bytes - total
-                    stream.write(block[:remaining])
-                    total += len(block)
-                    if total > maximum_log_bytes:
-                        exceeded.append(True)
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        break
-
-        def feed():
-            try:
-                if data:
-                    process.stdin.write(data)
-                process.stdin.close()
-            except BrokenPipeError:
-                pass
-
-        readers = [threading.Thread(target=collect, args=(process.stdout, path), daemon=True)]
+        streams = [(process.stdout, self.output / name)]
         if stderr_name:
-            readers.append(threading.Thread(target=collect, args=(process.stderr, self.output / stderr_name), daemon=True))
-        writer = threading.Thread(target=feed, daemon=True)
-        for reader in readers:
-            reader.start()
-        writer.start()
-        timed_out = False
+            streams.append((process.stderr, self.output / stderr_name))
+        selector = selectors.DefaultSelector()
+        outputs = []
+        payload = memoryview(data or b"")
+        position = 0
         try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+            for pipe, path in streams:
+                os.set_blocking(pipe.fileno(), False)
+                output = path.open("wb")
+                outputs.append(output)
+                selector.register(pipe, selectors.EVENT_READ, {"output": output, "bytes": 0})
+            if payload:
+                os.set_blocking(process.stdin.fileno(), False)
+                selector.register(process.stdin, selectors.EVENT_WRITE, None)
+            else:
+                process.stdin.close()
+            # The deadline covers the leader, descendants and inherited pipes.
+            while selector.get_map() or process.poll() is None:
+                remaining = expires - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                for key, events in selector.select(min(remaining, .1)):
+                    if events & selectors.EVENT_WRITE:
+                        try:
+                            position += os.write(key.fd, payload[position:position + 65536])
+                        except BlockingIOError:
+                            continue
+                        except BrokenPipeError:
+                            position = len(payload)
+                        if position == len(payload):
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                    else:
+                        try:
+                            block = os.read(key.fd, 65536)
+                        except BlockingIOError:
+                            continue
+                        if not block:
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                            continue
+                        record = key.data
+                        record["output"].write(block[:max(0, maximum_log_bytes - record["bytes"])])
+                        record["bytes"] += len(block)
+                        if record["bytes"] > maximum_log_bytes:
+                            raise ValueError(f"Command output exceeds {maximum_log_bytes} bytes: {name}")
         finally:
-            for reader in readers:
-                reader.join(timeout=5)
-            writer.join(timeout=5)
-            process.stdout.close()
-            if process.stderr:
-                process.stderr.close()
-        if timed_out:
-            raise subprocess.TimeoutExpired(list(map(str, command)), timeout)
-        if exceeded:
-            raise ValueError(f"Command output exceeds {maximum_log_bytes} bytes: {name}")
+            # Kill before closing any pipe. No reader thread can hold a close lock.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=1)
+            selector.close()
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None:
+                    pipe.close()
+            for output in outputs:
+                output.close()
         if check and process.returncode:
             raise ValueError(f"Command failed with exit {process.returncode}: {name}")
         return process.returncode
@@ -327,6 +352,19 @@ def execute(args, report):
                     raise ValueError("Source bundle exceeds 512 MiB")
                 report["source"].update(clean=True, bundle_sha256=digest(bundle), bundle_bytes=bundle.stat().st_size)
                 report["checks"][current] = {"outcome": "pass"}
+                current = "guest_tool_inputs"
+                if args.guest_binutils is None:
+                    raise ValueError("Full-system checks require --guest-binutils from the reviewed provider")
+                spec = importlib.util.spec_from_file_location("guest_binutils", ROOT / "tools/riscv64_guest_binutils.py")
+                provider = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(provider)
+                guest_tools = provider.validate_manifest(args.guest_binutils)
+                tool_names = provider.TOOL_NAMES
+                tool_manifest = args.guest_binutils / "manifest.json"
+                shutil.copy2(tool_manifest, output / "guest-binutils-manifest.json")
+                report["guest_binutils"] = {"manifest_sha256": digest(tool_manifest),
+                                             "source": guest_tools["source"], "tools": guest_tools["tools"]}
+                report["checks"][current] = {"outcome": "pass"}
                 current = "images"
                 print("Full-system check: download and verify the pinned guest images", flush=True)
                 images = runner.images()
@@ -346,6 +384,7 @@ def execute(args, report):
                                            "arguments": arguments[1:]},
                               "host": {"system": platform.system(), "machine": platform.machine(), "release": platform.release()},
                               "images": images, "source": report["source"], "limits": LIMITS,
+                              "guest_binutils": report["guest_binutils"],
                               "boot": {"firmware_sha256": digest(firmware), "seed_sha256": digest(seed),
                                        "loaded_kernel_sha256": digest(private / "kernel-raw")},
                               "run_url": report["run_url"]}
@@ -360,7 +399,7 @@ def execute(args, report):
                 print("Full-system check: install native guest tools and transfer the exact source", flush=True)
                 runner.ssh("sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update\n"
                            "sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y "
-                           "python3 git curl gzip binutils gcc libc6-dev make binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu\n"
+                           "python3 git curl gzip binutils gcc libc6-dev make\n"
                            "uname -a\ncat /etc/os-release\ndpkg-query -W\n"
                            "test $(uname -m) = riscv64\n", "guest-provision.log", LIMITS["provision_seconds"])
                 runner.copy_in(bundle, "/home/asmci/source.bundle", "source-transfer.log")
@@ -372,10 +411,34 @@ def execute(args, report):
                 runner.copy_in(provenance_path, "/home/asmci/provenance.json", "provenance-transfer.log")
                 runner.ssh(f"sudo -n install -m 644 /home/asmci/provenance.json {GUEST}/build/riscv64-system-provenance.json\n",
                            "guest-provenance.log")
+                runner.copy_in(tool_manifest, "/home/asmci/guest-binutils-manifest.json", "tool-manifest-transfer.log")
+                for name in tool_names:
+                    runner.copy_in(args.guest_binutils / "bin" / name, "/home/asmci/" + name, "tool-transfer-" + name + ".log")
+                install = ("sudo -n /usr/bin/python3 - <<'ASM_TOOLS'\n"
+                           "import hashlib,json,os,stat,subprocess\n"
+                           "from pathlib import Path\n"
+                           "manifest=Path('/home/asmci/guest-binutils-manifest.json')\n"
+                           f"assert hashlib.sha256(manifest.read_bytes()).hexdigest()=={digest(tool_manifest)!r}\n"
+                           "record=json.loads(manifest.read_bytes())\n"
+                           f"for name in {tuple(tool_names)!r}:\n"
+                           "    expected=record['tools'][name]\n"
+                           "    source=os.open('/home/asmci/'+name,os.O_RDONLY|os.O_NOFOLLOW)\n"
+                           "    info=os.fstat(source)\n"
+                           "    assert stat.S_ISREG(info.st_mode) and 64<=info.st_size<=67108864\n"
+                           "    data=os.fdopen(source,'rb').read(67108865)\n"
+                           "    assert len(data)==expected['bytes'] and hashlib.sha256(data).hexdigest()==expected['sha256']\n"
+                           "    destination='/usr/bin/'+name\n"
+                           "    target=os.open(destination,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o755)\n"
+                           "    os.fchmod(target,0o755)\n"
+                           "    with os.fdopen(target,'wb') as output: output.write(data)\n"
+                           "    assert hashlib.sha256(Path(destination).read_bytes()).hexdigest()==expected['sha256']\n"
+                           "    subprocess.run([destination,'--version'],check=True,timeout=30)\n"
+                           "ASM_TOOLS\n")
+                runner.ssh(install, "guest-tools.log", 180)
                 report["checks"][current] = {"outcome": "pass"}
                 current = "qualification"
                 print("Full-system check: run the unchanged CLI and focused suites as guest root", flush=True)
-                report["scope"] = "full-system emulation of the unchanged CLI and focused test suites"
+                report["scope"] = "full-system emulation of native CLI behavior through unchanged make test and focused tests"
                 write_report(output, report)
                 script = (f"cd {GUEST}\nsudo -n env -i HOME=/root PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 "
                           "/bin/bash -se <<'ASM_GUEST'\n"
@@ -406,7 +469,11 @@ def execute(args, report):
                             report["copied_evidence"][destination] = {"outcome": "fail", "error": str(error)}
                 runner.stop()
             guest = json.loads((output / "guest-qualification.json").read_bytes())
+            report["guest_checks"] = guest.get("checks", {})
+            report["reference_package_gate"] = guest.get("reference_package_gate", {"outcome": "not-run"})
             bind_guest(guest, output / "asm-riscv64-linux", args.commit, report["provenance_sha256"])
+            bind_root_modules(guest.get("root_cli_modules"), ROOT / "tests")
+            report["root_cli_modules"] = guest["root_cli_modules"]
             if runner.console_exceeded:
                 raise ValueError("Guest serial output exceeded 64 MiB")
             for name, record in report["copied_evidence"].items():
@@ -434,11 +501,12 @@ def execute(args, report):
 
 def initial_report(commit):
     return {"schema": 1, "target": "riscv64-linux", "execution_mode": "emulated",
+            "qualification_scope": "native-cli-behavior",
             "emulation_kind": "system", "outcome": "fail", "scope": "runtime not reached",
             "native_qualified": False, "release_qualified": False,
             "started_at": datetime.now(timezone.utc).isoformat(), "source": {"commit": commit},
             "checks": {name: {"outcome": "not-run"} for name in
-                       ("source", "images", "boot", "provision", "qualification", "binding")}}
+                       ("source", "guest_tool_inputs", "images", "boot", "provision", "qualification", "binding")}}
 
 
 def write_report(output, report):
@@ -453,6 +521,7 @@ def main(arguments=None):
     parser.add_argument("--initialize-only", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("build/riscv64-system"))
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--guest-binutils", type=Path)
     args = parser.parse_args(arguments)
     if not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         parser.error("--commit must be an exact Git commit")

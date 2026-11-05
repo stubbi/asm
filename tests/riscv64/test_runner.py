@@ -87,6 +87,19 @@ class QualificationRunnerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.system_emulator_provenance(path, commit)
 
+    def test_expected_failure_cannot_qualify_a_required_suite(self):
+        module = runner_module()
+        fixture = ("import unittest\nclass Case(unittest.TestCase):\n"
+                   " @unittest.expectedFailure\n def test_incomplete(self): self.fail('not proven')\n"
+                   "unittest.main()\n")
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "expected-failure.log"
+            result = module.run([sys.executable, "-c", fixture], log)
+            self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["outcome"], "fail")
+            self.assertTrue(result["incomplete_checks"])
+            self.assertIn("expected failures=1", log.read_text())
+
     def test_absent_artifact_is_a_failure_with_unrun_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence = Path(directory) / "evidence.json"
@@ -97,6 +110,8 @@ class QualificationRunnerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertTrue(evidence.is_file(), result.stderr)
             report = json.loads(evidence.read_text())
+            self.assertEqual(report["schema"], 2)
+            self.assertEqual(report["qualification_scope"], "native-cli-behavior")
             self.assertEqual(report["outcome"], "fail")
             self.assertEqual(report["execution_mode"], "emulated")
             self.assertFalse(report["native_qualified"])

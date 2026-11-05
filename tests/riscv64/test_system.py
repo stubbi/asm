@@ -10,12 +10,50 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class SystemEvidenceTests(unittest.TestCase):
+    def test_root_module_metadata_cannot_omit_or_change_a_source(self):
+        spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertTrue(callable(getattr(module, "bind_root_modules", None)), "Root source binding is absent")
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            (path / "test_alpha.py").write_bytes(b"alpha")
+            manifest = {"test_alpha": {"path": "test_alpha.py", "sha256": hashlib.sha256(b"alpha").hexdigest()}}
+            module.bind_root_modules(manifest, path)
+            (path / "test_beta.py").write_bytes(b"beta")
+            with self.assertRaises(ValueError):
+                module.bind_root_modules(manifest, path)
+            (path / "test_beta.py").unlink()
+            (path / "test_alpha.py").write_bytes(b"changed")
+            with self.assertRaises(ValueError):
+                module.bind_root_modules(manifest, path)
+
+    def test_inherited_output_pipe_obeys_deadline_and_terminates_descendant(self):
+        spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            runner = module.Runner(path, path)
+            marker = path / "descendant-survived"
+            code = ("import os,time; p=os.fork(); "
+                    "os._exit(0) if p else None; print('descendant-ready',flush=True); time.sleep(2); "
+                    f"open({str(marker)!r},'w').write('alive'); os._exit(0)")
+            start = time.monotonic()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.run([sys.executable, "-c", code], "inherited-pipe.log", .5)
+            self.assertLess(time.monotonic() - start, 1.5)
+            self.assertIn(b"descendant-ready", (path / "inherited-pipe.log").read_bytes())
+            time.sleep(2.1)
+            self.assertFalse(marker.exists(), "Inherited-pipe descendant survived the deadline")
+
     def test_guest_startup_timeout_keeps_polling_within_the_boot_deadline(self):
         spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
         module = importlib.util.module_from_spec(spec)
@@ -101,7 +139,8 @@ class SystemEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             artifact = Path(temporary) / "asm"
             artifact.write_bytes(b"artifact")
-            report = {"schema": 1, "target": "riscv64-linux", "outcome": "pass",
+            report = {"schema": 2, "qualification_scope": "native-cli-behavior",
+                      "target": "riscv64-linux", "outcome": "pass",
                       "execution_mode": "emulated", "emulation_kind": "system",
                       "native_qualified": False, "release_qualified": False,
                       "host": {"system": "Linux", "machine": "riscv64"},
@@ -111,8 +150,16 @@ class SystemEvidenceTests(unittest.TestCase):
                       "checks": {name: {"outcome": "pass"} for name in
                                  ("artifact", "runtime", "toolchain", "make_test", "focused_tests", "artifact_binding")}}
             for name in ("make_test", "focused_tests"):
-                report["checks"][name].update(tests_run=1, skipped_checks=False, exit_code=0)
+                report["checks"][name].update(tests_run=1, skipped_checks=False, incomplete_checks=False,
+                                              exit_code=0, timed_out=False)
             module.bind_guest(report, artifact, "1" * 40, "2" * 64)
+            for field, value in (("outcome", "fail"), ("exit_code", 1), ("timed_out", True),
+                                 ("incomplete_checks", True)):
+                original = report["checks"]["make_test"][field]
+                report["checks"]["make_test"][field] = value
+                with self.assertRaises(ValueError):
+                    module.bind_guest(report, artifact, "1" * 40, "2" * 64)
+                report["checks"]["make_test"][field] = original
             for field, value in (("native_qualified", True), ("outcome", "fail")):
                 changed = {**report, field: value}
                 with self.assertRaises(ValueError):

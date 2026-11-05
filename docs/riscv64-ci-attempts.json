@@ -551,6 +551,90 @@
       "run_url": "https://github.com/stubbi/asm/actions/runs/42009042720",
       "scope": "guest boot reached; CLI qualification not run",
       "setup_failure": "A transient 10-second SSH readiness probe timeout escaped the intended 900-second guest readiness loop. All pinned image digests passed; serial output reached Ubuntu24.04.5 login and cloud-init around guest uptime68seconds."
+    },
+    {
+      "artifact_status": "not-built",
+      "checkout_commit": "8ef04128353517310b13773ffd59f8007e2e2190",
+      "checks": {
+        "binding": {
+          "outcome": "not-run"
+        },
+        "boot": {
+          "error": "Timed out: ssh-readiness.log",
+          "outcome": "fail"
+        },
+        "images": {
+          "outcome": "pass"
+        },
+        "provision": {
+          "outcome": "not-run"
+        },
+        "qualification": {
+          "outcome": "not-run"
+        },
+        "source": {
+          "outcome": "pass"
+        }
+      },
+      "correction": "The distinct timeout-only readiness correction is retained; this completed failure was not cancelled.",
+      "emulation_kind": "system",
+      "execution_mode": "emulated",
+      "head_commit": "afb07943bd8e332c13499baad6c12de74748a627",
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42009507460/artifacts/riscv64-system-emulated-8ef04128353517310b13773ffd59f8007e2e2190-1/report.json",
+        "sha256": "9ff47a8074302bda8af9bb7db3a3709484caa8d83029a51dcd52676eaf9bbe33"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42009507460/full.log",
+        "sha256": "590fbf5fb13bef830ce9b846dc1828bbd167e111a94a171265ba43568ea9a73e"
+      },
+      "run_id": 42009507460,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42009507460",
+      "scope": "CLI qualification not run",
+      "setup_failure": "The original single SSH readiness probe timed out before the overall boot deadline."
+    },
+    {
+      "artifact_status": "not-built",
+      "checkout_commit": "ea6f75b8e55ba55b34b82dc912ae2e004a3f92da",
+      "checks": {
+        "binding": {
+          "outcome": "not-run"
+        },
+        "boot": {
+          "outcome": "pass"
+        },
+        "images": {
+          "outcome": "pass"
+        },
+        "provision": {
+          "error": "Command failed with exit 100: guest-provision.log",
+          "outcome": "fail"
+        },
+        "qualification": {
+          "outcome": "not-run"
+        },
+        "source": {
+          "outcome": "pass"
+        }
+      },
+      "correction": "Provide exact native RISC-V GNU foreign-target tools from a pinned Canadian-cross build; keep all cross-build CLI assertions unchanged.",
+      "emulation_kind": "system",
+      "execution_mode": "emulated",
+      "head_commit": "1c3f0fc519e9ae9275c1f4c5c9627089f31f9b11",
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42009884385/artifacts/riscv64-system-emulated-ea6f75b8e55ba55b34b82dc912ae2e004a3f92da-1/report.json",
+        "sha256": "6d0363f117f9de3cf5bf1808cee645d8a9412de13e6c3fe58fea8a049d5ab4c0"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42009884385/full.log",
+        "sha256": "52461150551f27aa9c289f7514df110a52bf1d86fb3a2b7739b16c20409a701e"
+      },
+      "run_id": 42009884385,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42009884385",
+      "scope": "CLI qualification not run",
+      "setup_failure": "Guest boot and cloud-init passed. Native tool provisioning exited100 because Noble RISC-V archives lack the requested x86-64 and AArch64 cross-binutils packages."
     }
   ],
   "execution_mode": "emulated",

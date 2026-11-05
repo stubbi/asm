@@ -11,7 +11,8 @@ This serves dependable reuse, inspectable evidence, and preservation of user fil
 
 Native resolver implementations cover Linux x86-64, Linux AArch64, and Apple Silicon macOS.
 They select the current host target, without cross-compilation or execution of another target.
-RISC-V64 Linux, Intel macOS, and Windows need separate native ports and qualification.
+RISC-V64 Linux also has an unreleased native implementation whose qualification remains separate.
+Intel macOS and Windows need separate native ports and qualification.
 Registry acceptance of a package target does not establish CLI host support.
 
 The existing exact dependency commands and v1 locks remain supported.

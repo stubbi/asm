@@ -142,10 +142,11 @@ def run(command, log, *, environment=None, timeout=30):
             child.wait()
     output = log.read_text(errors="replace")
     skipped = bool(re.search(r"(?:skipped=[1-9]|\bskipped ['\"])", output))
+    incomplete = bool(re.search(r"(?:expected failures|unexpected successes)=[1-9]", output))
     return {"command": list(map(str, command)), "exit_code": child.returncode,
-            "outcome": "pass" if child.returncode == 0 and not timed_out and not skipped else "fail",
+            "outcome": "pass" if child.returncode == 0 and not timed_out and not skipped and not incomplete else "fail",
             "seconds": round(time.monotonic() - start, 3), "timed_out": timed_out,
-            "skipped_checks": skipped, "log": str(log), "log_sha256": digest(log)}
+            "skipped_checks": skipped, "incomplete_checks": incomplete, "log": str(log), "log_sha256": digest(log)}
 
 
 def tool_identity(path):
@@ -171,7 +172,8 @@ def main(arguments=None):
     logs = evidence.parent / (evidence.stem + "-logs")
     logs.mkdir(exist_ok=True)
     names = ("artifact", "runtime", "toolchain", "make_test", "focused_tests", "artifact_binding")
-    report = {"schema": 1, "target": "riscv64-linux", "execution_mode": args.execution_mode,
+    report = {"schema": 2, "target": "riscv64-linux", "execution_mode": args.execution_mode,
+              "qualification_scope": "native-cli-behavior",
               "emulation_kind": args.emulation_kind if args.execution_mode == "emulated" else None,
               "started_at": datetime.now(timezone.utc).isoformat(), "outcome": "fail",
               "native_qualified": False, "release_qualified": False,
@@ -260,6 +262,12 @@ def main(arguments=None):
         environment = dict(os.environ, ASM_TEST_TARGET="riscv64-linux", ASM_RISCV64_CLI=str(artifact),
                            ASM_RISCV64_EXECUTION_MODE=args.execution_mode)
         current = "make_test"
+        root_modules = sorted((ROOT / "tests").glob("test_*.py"))
+        if not root_modules or any(path.is_symlink() or not path.is_file() for path in root_modules):
+            raise ValueError("The root CLI test inventory is empty or contains a nonregular module")
+        report["root_cli_modules"] = {path.stem: {"path": path.name, "sha256": digest(path)} for path in root_modules}
+        report["reference_package_gate"] = {"command": ["make", "package-test"], "outcome": "not-run",
+                                             "scope": "separate native reference-target qualification"}
         report["checks"][current] = run(["make", "test", "ARCH=riscv64", f"PYTHON={sys.executable}"],
                                         logs / "make-test.log", environment=environment, timeout=args.suite_timeout)
         current = "focused_tests"

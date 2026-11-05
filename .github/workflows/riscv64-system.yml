@@ -33,16 +33,22 @@ jobs:
         run: |
           set -o pipefail
           timeout 600 sudo apt-get update 2>&1 | tee build/riscv64-system/host-apt-update.log
-          timeout 600 sudo apt-get install --no-install-recommends -y qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl 2>&1 | tee build/riscv64-system/host-apt-install.log
-          dpkg-query -W qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl > build/riscv64-system/host-packages.txt
+          timeout 600 sudo apt-get install --no-install-recommends -y qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl build-essential bison flex texinfo gcc-riscv64-linux-gnu g++-riscv64-linux-gnu libc6-dev-riscv64-cross 2>&1 | tee build/riscv64-system/host-apt-install.log
+          dpkg-query -W qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl build-essential bison flex texinfo gcc-riscv64-linux-gnu g++-riscv64-linux-gnu libc6-dev-riscv64-cross > build/riscv64-system/host-packages.txt
+      - name: Build verified GNU cross-tools that execute inside the RISC-V guest
+        run: |
+          set -o pipefail
+          timeout 900 python3 tools/riscv64_guest_binutils.py --output build/riscv64-guest-binutils 2>&1 | tee build/riscv64-system/guest-binutils-provider.log
       - name: Build and check with native guest tools and kernel
         run: |
-          python3 tools/riscv64_system.py --output build/riscv64-system --commit "$GITHUB_SHA"
+          python3 tools/riscv64_system.py --output build/riscv64-system --commit "$GITHUB_SHA" --guest-binutils build/riscv64-guest-binutils
       - name: Retain exact bytes and every available failed or passed result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: riscv64-system-emulated-${{ github.sha }}-${{ github.run_attempt }}
-          path: build/riscv64-system/*
+          path: |
+            build/riscv64-system/*
+            build/riscv64-guest-binutils/
           if-no-files-found: error
           retention-days: 14

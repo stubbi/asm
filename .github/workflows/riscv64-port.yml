@@ -37,7 +37,8 @@ jobs:
 
           checks = ("artifact", "runtime", "toolchain", "make_test", "focused_tests", "artifact_binding")
           report = {
-              "schema": 1,
+              "schema": 2,
+              "qualification_scope": "native-cli-behavior",
               "target": "riscv64-linux",
               "execution_mode": "emulated",
               "scope": "runtime not reached",
