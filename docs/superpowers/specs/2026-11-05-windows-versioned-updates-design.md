@@ -31,11 +31,10 @@ Existing invocations continue using their old payload.
 An error before activation preserves the selected version and its bytes.
 The update does not execute the downloaded candidate.
 
-Add a Windows installation action to the downloaded native CLI: `asm self install`.
-This action consumes an already independently verified or source-built executable.
-It cannot authenticate the download that started its own process.
-Preserve the existing bootstrap rule: verify provenance and exact bytes before executing the downloaded candidate.
-Adapt the existing Python bootstrap front end for Windows verification and private staging before it invokes `self install`.
+Adapt the existing Python bootstrap front end for Windows verification, private staging, and layout publication.
+Installation and updating must never execute the candidate, including after verification.
+There is no new candidate-executed installation command.
+Reuse the existing explicit source-install boundary for a deliberately source-built artifact.
 Python remains an installer prerequisite, not a CLI runtime or package backend.
 Use the existing fixed GitHub verifier and its required identity and source bindings.
 The native installed CLI requires no Python or shell backend.
@@ -120,7 +119,10 @@ Direct invocation of an inactive retained payload may inspect that version but m
 
 Use a dedicated launcher wait path that preserves the payload's complete Windows exit status.
 Do not reuse the general x64 wait normalization for statuses above 255.
-Keep the normal console process group and stream behavior; add native control-event tests before claiming transparent cancellation.
+Keep the normal console process group and inherited streams.
+The launcher handles its own Ctrl+C and Ctrl+Break notifications while waiting for the payload's resulting status.
+Do not set an inheritable global ignore state that suppresses the payload's normal control events.
+Add native owned-console control-event tests before claiming transparent cancellation.
 Do not silently add a job policy that kills deliberately detached application descendants.
 Use a separate suspended-child image-binding adapter; the current self-only mapping helper cannot verify a different process.
 
