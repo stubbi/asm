@@ -931,7 +931,7 @@ class WindowsRuntimeTests(unittest.TestCase):
             source, obj = directory / "fixture.c", directory / "fixture.obj"
             archive = directory / "asmprivatefixture.lib"
             source.write_text('#include <asm_private_abi.h>\n' + body, encoding="utf-8")
-            commands = ([clang, "--no-default-config", "--target=" + triple, "-O2", "-ffreestanding",
+            commands = ([clang, "--no-default-config", "--target=" + triple, "-fms-runtime-lib=dll", "-O2", "-ffreestanding",
                          "-fno-builtin", "-fno-stack-protector", "-I", include, "-c", source, "-o", obj],
                         [linker, "/lib", "/machine:" + machine, "/out:" + str(archive), obj])
             for command in commands:
