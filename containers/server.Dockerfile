@@ -73,6 +73,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/asm/postgres /opt/asm/postgres
 COPY server/test_runtime.py /qualification/server/test_runtime.py
+COPY server/catalog/schema.sql /qualification/server/catalog/schema.sql
+COPY tools/registry.py tools/registry_admin.py /qualification/tools/
+COPY registry/packages /qualification/registry/packages
 COPY experiments/assembly-server/local_postgres.py experiments/assembly-server/guard.sql /qualification/experiments/assembly-server/
 COPY experiments/assembly-server/fixtures/0001_registry.sql /qualification/experiments/assembly-server/fixtures/0001_registry.sql
 COPY tools/test_server_image.py /qualification/tools/test_server_image.py
