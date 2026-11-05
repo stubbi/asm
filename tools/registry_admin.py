@@ -30,8 +30,9 @@ MAX_RECORD_BYTES = 65536
 MAX_RECORDS_BYTES = 16 * 1024 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024
 MAX_OUTPUT_BYTES = 9 * 1024 * 1024
-ROUTES = ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv", "/registry/v1/index.json")
-MIGRATION_SHA384 = "259a54d22fcd1e53addf4f5f197d7ca0f7c5040e2492776fc60a30f59cd1428a6618f4ec39fa1f3df867d4b05ee2d9ae"
+ROUTES = ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv",
+          "/registry/v1/index-all.tsv", "/registry/v1/index.json")
+MIGRATION_SHA384 = "7626f1fbee350bc04442bf5a53b78ae146c566da21cde76b56e88afe19d473787bd92cb324c9c4865623c80e6bf0a860"
 
 
 class AdminError(ValueError):
@@ -155,8 +156,9 @@ def prepare_import(repository: Path, commit: str, expected_revision: int):
     records = committed_records(repository, commit)
     canonical = [registry.json_bytes(record).decode("ascii") for record in records]
     tsv, index = registry.make_indexes(records)
-    exports = (registry.legacy_tsv(tsv), tsv, registry.json_bytes(index).decode("ascii"))
-    require(len(exports[2].encode("ascii")) <= MAX_JSON_BYTES, "The JSON export exceeds four MiB.")
+    exports = (registry.legacy_tsv(tsv), registry.macos_compat_tsv(tsv), tsv,
+               registry.json_bytes(index).decode("ascii"))
+    require(len(exports[3].encode("ascii")) <= MAX_JSON_BYTES, "The JSON export exceeds four MiB.")
     plan = {"schema": 1, "acceptance_repository": ACCEPTANCE_REPOSITORY,
             "acceptance_commit": commit, "expected_revision": expected_revision,
             "record_count": len(records), "records_sha256": hashlib.sha256(registry.json_bytes(records)).hexdigest(),
@@ -348,7 +350,7 @@ def grant(connection):
       GRANT SELECT ON asm_catalog.current_exports,asm_catalog.schema_version TO asm_reader,asm_operator;
       GRANT SELECT ON asm_catalog.releases,asm_catalog.head,asm_catalog.snapshots,asm_catalog.namespaces TO asm_operator;
       GRANT EXECUTE ON FUNCTION asm_catalog.bind_namespace(text,bigint,text),
-        asm_catalog.publish(text,bigint,text[],text,text,text) TO asm_operator;
+        asm_catalog.publish(text,bigint,text[],text,text,text,text) TO asm_operator;
       COMMIT;""")
     return {"status": "granted", "reader_role": "asm_reader", "operator_role": "asm_operator"}
 
