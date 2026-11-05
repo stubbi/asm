@@ -294,6 +294,45 @@
       "remaining_failures": "Protected HOME and direct installation checks stop most program/self-update cases before transport; five valid archive ABI-harness cases return failure. Failure-injection paths remain unproven and cannot be skipped.",
       "run_id": 41941931995,
       "run_url": "https://github.com/stubbi/asm/actions/runs/41941931995"
+    },
+    {
+      "artifact_status": "not-built",
+      "checkout_commit": "adb29711b962fbf40718bc309bc5c8256600d6e7",
+      "checks": {
+        "artifact": {
+          "outcome": "not-run"
+        },
+        "artifact_binding": {
+          "outcome": "not-run"
+        },
+        "focused_tests": {
+          "outcome": "not-run"
+        },
+        "make_test": {
+          "outcome": "not-run"
+        },
+        "runtime": {
+          "outcome": "not-run"
+        },
+        "toolchain": {
+          "outcome": "not-run"
+        }
+      },
+      "correction": "Print and resolve each runtime path. Preserve an existing path only when it resolves to the exact expected target source; refuse unrelated entries.",
+      "head_commit": "9f8031150ff4d5231894877e40dd2ac291f954b9",
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/41942936774/artifacts/riscv64-emulated-adb29711b962fbf40718bc309bc5c8256600d6e7/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "0243a2753a7ba16f757f716f537ea5216ffbf54b4e8b3f802c1b0f2c2025107b"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/41942936774/full.log",
+        "sha256": "226aea0e94aff5dca3b9fc1316a5ac5c8e8902eb2c5e9760a6ae6e9383c6e886"
+      },
+      "run_id": 41942936774,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41942936774",
+      "scope": "runtime not reached",
+      "setup_failure": "Loader setup absent-path assertion exited1; shell log does not identify which expression. No runtime or complete suite ran."
     }
   ],
   "execution_mode": "emulated",

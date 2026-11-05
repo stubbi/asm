@@ -73,16 +73,28 @@ jobs:
           sudo ln -sfn /usr/bin/riscv64-linux-gnu-gcc /usr/bin/cc
       - name: Expose the target loader without changing the guest filesystem root
         run: |
-          loader=/usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1
-          libraries=/usr/riscv64-linux-gnu/lib
-          test -f "$loader"
-          test -f "$libraries/libc.so.6"
-          test ! -e /lib/ld-linux-riscv64-lp64d.so.1
-          test ! -L /lib/ld-linux-riscv64-lp64d.so.1
-          test ! -e /lib/riscv64-linux-gnu
-          test ! -L /lib/riscv64-linux-gnu
-          sudo ln -s "$loader" /lib/ld-linux-riscv64-lp64d.so.1
-          sudo ln -s "$libraries" /lib/riscv64-linux-gnu
+          sudo python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+
+          links = {
+              Path("/lib/ld-linux-riscv64-lp64d.so.1"): Path("/usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1"),
+              Path("/lib/riscv64-linux-gnu"): Path("/usr/riscv64-linux-gnu/lib"),
+          }
+          for destination, source in links.items():
+              print(f"Target runtime path: {destination}; source: {source}", flush=True)
+              expected = source.resolve(strict=True)
+              if destination.exists() or destination.is_symlink():
+                  print(f"Existing path: {destination}; link: {destination.is_symlink()}; resolved: {destination.resolve()}", flush=True)
+                  if destination.resolve(strict=True) != expected:
+                      raise SystemExit(f"Refusing unrelated target runtime path: {destination}")
+              else:
+                  os.symlink(source, destination)
+              if destination.resolve(strict=True) != expected:
+                  raise SystemExit(f"Target runtime link differs: {destination}")
+          if not Path("/lib/riscv64-linux-gnu/libc.so.6").is_file():
+              raise SystemExit("Target libc is missing at its standard runtime path")
+          PYTHON
       - name: Build and run the complete CLI contract
         working-directory: /tmp/asm-riscv64-ci
         run: |
