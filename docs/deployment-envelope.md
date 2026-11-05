@@ -29,6 +29,7 @@ The ordinary admission module remains twelve cases.
 Its 180-second image watchdog and other architectures remain separate from this native AMD64 profile.
 The profile preserves the existing request, TLS, role, byte, and recovery assertions.
 It does not extend their deadlines.
+Neither PostgreSQL 18 profile accepts expected failures or unexpected successes as qualification evidence.
 
 The producer records cgroup limits, current and peak memory, events, swap, and CPU counters.
 It captures each test boundary and the final suite closure before exit.

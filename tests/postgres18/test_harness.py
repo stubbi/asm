@@ -30,6 +30,33 @@ class HarnessTests(unittest.TestCase):
         guard.start()
         self.addCleanup(guard.stop)
 
+    def test_expected_failure_cannot_qualify_required_assertions(self):
+        class RequiredAssertion(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_required_assertion(self):
+                self.assertEqual("actual", "required")
+        result = unittest.TestResult()
+        RequiredAssertion("test_required_assertion").run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(len(result.expectedFailures), 1)
+        self.assertTrue(result.wasSuccessful())
+        contract = getattr(harness, "suite_contract", harness.operator.test_contract)
+        with self.assertRaises(ValueError):
+            contract(result, 1)
+
+    def test_unexpected_success_cannot_qualify_required_assertions(self):
+        class RequiredAssertion(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_required_assertion(self):
+                self.assertEqual("required", "required")
+        result = unittest.TestResult()
+        RequiredAssertion("test_required_assertion").run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(len(result.unexpectedSuccesses), 1)
+        contract = getattr(harness, "suite_contract", harness.operator.test_contract)
+        with self.assertRaises(ValueError):
+            contract(result, 1)
+
     def test_runtime_inventory_uses_the_owned_container_runner(self):
         calls = []
         def run(image, *arguments, entrypoint):

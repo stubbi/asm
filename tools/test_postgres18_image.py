@@ -261,6 +261,12 @@ def registry_admin_routes():
     return ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv", "/registry/v1/index-all.tsv", "/registry/v1/index.json")
 
 
+def suite_contract(result, count):
+    need(not result.expectedFailures and not result.unexpectedSuccesses,
+         "The required suite contains an expected failure or an unexpected success.")
+    return operator.test_contract(result, count)
+
+
 def admission_fixture(image, runner):
     mode = runner(image, "-c", "%a:%u:%g:%s", server.FIXTURE_PATH, entrypoint="/usr/bin/stat").decode()
     fields = runner(image, server.FIXTURE_PATH, entrypoint="/usr/bin/sha256sum").decode().split()
@@ -330,7 +336,7 @@ def inside(args):
     need(count >= minimum, "The complete compatibility suite is unavailable.")
     samples = []
     result = envelope.run_suite(suite, samples) if constrained else unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
-    exclusions = operator.test_contract(result, count)
+    exclusions = suite_contract(result, count)
     need(args.suite == "operator" or not exclusions, "An HTTP compatibility assertion was excluded.")
     need(len(identities) == 1, "The suite did not establish exactly one owned database identity.")
     report = {"schema": 1, "status": "pass", "scope": "selected-cnpg18-compatibility", "suite": args.suite,

@@ -1,0 +1,16 @@
+test_expected_failure_cannot_qualify_required_assertions (test_harness.HarnessTests.test_expected_failure_cannot_qualify_required_assertions) ... FAIL
+test_unexpected_success_cannot_qualify_required_assertions (test_harness.HarnessTests.test_unexpected_success_cannot_qualify_required_assertions) ... ok
+
+======================================================================
+FAIL: test_expected_failure_cannot_qualify_required_assertions (test_harness.HarnessTests.test_expected_failure_cannot_qualify_required_assertions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tests/postgres18/test_harness.py", line 44, in test_expected_failure_cannot_qualify_required_assertions
+    with self.assertRaises(ValueError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=1)

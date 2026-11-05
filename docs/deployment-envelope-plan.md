@@ -40,3 +40,9 @@ Those checks failed before their fixes and passed after their fixes.
 The final local gates passed 45 PostgreSQL fixture contracts, 17 admission image contracts, and three operator image contracts.
 The fixture entrypoint passed Bash syntax validation.
 These local results do not establish native container or database behavior.
+
+The review follow-up rejects expected failures and unexpected successes in both PostgreSQL 18 execution profiles.
+The [raw failing contract output](deployment-envelope-expected-failure-red.txt) records the expected-failure defect before its fix.
+It used `python3 -m unittest discover -s tests/postgres18 -p test_harness.py -k required_assertions -v`.
+The complete PostgreSQL contract gate passed 47 tests after this fix.
+No native execution accompanied the follow-up.
