@@ -1494,7 +1494,14 @@ spawn_wait:
     mov rdx, [rip + envp]
     lea rcx, [rip + native_cc_path]
     cmp rdi, rcx
+    je .Lspawn_compiler_environment
+    lea rcx, [rip + as_path]
+    cmp rdi, rcx
+    je .Lspawn_compiler_environment
+    lea rcx, [rip + ld_path]
+    cmp rdi, rcx
     jne .Lspawn_environment_ready
+.Lspawn_compiler_environment:
     lea rdx, [rip + native_tool_env]
 .Lspawn_environment_ready:
     syscall

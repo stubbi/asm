@@ -28,7 +28,8 @@
       "cli/self_update_verify.s": "dbf07d7739389adba34f72495e7e426a54bb2c40f5ed06ad75664da8054e8442",
       "cli/templates.s": "d418e9b35373c462d4bd663d5caa583236d8fd4b62a61d698a45ebbe31bca4f2",
       "tools/macos_x86_64.py": "f306b65c86268d0574c4c32e70283c9f16b45eb7b9ec5970f52d84ca886c3009"
-    }
+    },
+    "source_commit": "978a69cf67f1503ddae2eb2ed5c31f8e519d3a58"
   },
   "artifact": {
     "bytes": 157680,
@@ -68,7 +69,9 @@
     "Clang @response checker injection executed a harmless review constructor; response-form build paths are now rejected.",
     "A ./ filename prefix alone did not stop cc1 main-file-name response expansion; that attempt was replaced by validation.",
     "A successful off_t 0xffffffff was mistaken for errno; 64-bit result adapters and a sparse-file regression fixed it.",
-    "Development Rosetta suites encountered 10/15/30-second process timeouts; final frozen 175-case run passed without increased deadlines."
+    "Development Rosetta suites encountered 10/15/30-second process timeouts; final frozen 175-case run passed without increased deadlines.",
+    "First native Intel CI passed 174/175; the assembler inherited poisoned SDKROOT. All fixed compiler children now use PATH and LC_ALL only.",
+    "A post-environment-fix Rosetta targeted run timed out on the first fresh project build at its unchanged 20-second deadline; the native Intel rerun remains the decisive qualification gate."
   ],
   "limits": [
     "Package integrity does not establish publisher identity or harmlessness.",
@@ -84,5 +87,19 @@
     "skipped": 0,
     "bytes": 276432,
     "sha256": "5bbe712c93c37cb47a63ba65673d96e1cff2edfbff37ceb3712890fa7d0b8851"
+  },
+  "native_intel_initial": {
+    "source_commit": "978a69cf67f1503ddae2eb2ed5c31f8e519d3a58",
+    "run": "https://github.com/stubbi/asm/actions/runs/41939836596",
+    "execution": "native",
+    "macos": "15.7.9",
+    "tests": 175,
+    "failures": 1,
+    "skipped": 0,
+    "reproducible_builds": 2,
+    "artifact_sha256": "b016e68208330a7cc2165b0ef9f41026b0e5771295bf1b07726d97ab82d4578c",
+    "result": "fail",
+    "case": "test_compiler_ignores_ambient_tool_and_include_configuration",
+    "cause": "Xcode clang startup received the poisoned SDKROOT during assembly; compiler environment isolation must include as_path and ld_path."
   }
 }
