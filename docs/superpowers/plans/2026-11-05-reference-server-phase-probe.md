@@ -29,7 +29,9 @@ The original failed 19-test result remains failed.
 - Verify that the two private database URLs differ only by port. Do not publish either URL.
 - Keep the other five original tests marked not-run.
 - Preload only the exact server child. Never preload Python or PostgreSQL.
-- Publish no SQL, parameter strings, password, URL, or arbitrary error text.
+- Publish no database SQL, provider parameter strings, password, connection URL, or arbitrary error text.
+- Retain the existing bounded synthetic HTTP fixture records with their response redaction.
+- Use only integer fixture indices in provider traces and the stdout summary.
 - Do not push, dispatch, deploy, or change the product before the source review.
 
 ## Review focus
