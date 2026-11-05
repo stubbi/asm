@@ -144,7 +144,7 @@ build/asm-verify-aarch64-macos: VERIFIER_GOARCH := arm64
 build/asm-verify-riscv64-linux: VERIFIER_GOOS := linux
 build/asm-verify-riscv64-linux: VERIFIER_GOARCH := riscv64
 
-$(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
+$(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go verifier/internal/securefs/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
 	mkdir -p build
 	cd verifier && CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
 	CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
