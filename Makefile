@@ -33,7 +33,7 @@ REPLACE ?= 0
 GO ?= go
 TRUSTED_DISTRIBUTION ?= 0
 
-.PHONY: all test clean install uninstall check build/asm
+.PHONY: all test package-test clean install uninstall check build/asm
 all: build/asm
 
 ifeq ($(ARCH),aarch64)
@@ -85,11 +85,20 @@ else
 endif
 endif
 
-TEST_DIRECTORY := $(if $(filter Darwin,$(HOST_OS)),tests/macos,tests)
+ifeq ($(HOST_OS),Darwin)
 test: build/asm
-	$(PYTHON) -m unittest discover -s $(TEST_DIRECTORY) -p 'test_*.py' -v
+	$(PYTHON) -m unittest discover -s tests/macos -p 'test_*.py' -v
+else
+# Select every root module without recursing into cross-host package suites.
+CLI_TEST_MODULES := $(patsubst tests/%.py,%,$(wildcard tests/test_*.py))
+test: build/asm
+	PYTHONPATH="tests$${PYTHONPATH:+:$$PYTHONPATH}" $(PYTHON) -m unittest -v $(CLI_TEST_MODULES)
+endif
 
-check: test
+package-test:
+	$(PYTHON) -m unittest discover -s tests/packages -p 'test_*.py' -v
+
+check: test package-test
 	$(PYTHON) -m unittest discover -s tests/registry -p 'test_*.py' -v
 	$(PYTHON) -m unittest discover -s tests/release -p 'test_*.py' -v
 	node --test tests/site.test.cjs

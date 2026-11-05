@@ -88,6 +88,13 @@ Private, root-owned source snapshots stay below `/tmp`.
 This is a test-runner requirement.
 The CLI installation contract still uses the caller's account.
 
+`make test` runs every root-level CLI test module on Linux.
+On macOS, it runs the native suite in `tests/macos`.
+`make package-test` runs all reference-package tests.
+`make check` runs both suites and the registry, release, and site checks.
+Package skips identify unsupported hosts or unavailable tools.
+They do not qualify a CLI host or package target.
+
 The legacy `--native-input DIRECTORY` argument identifies macOS qualification output.
 Use `--native-input-for aarch64-linux DIRECTORY` for the ARM64 Linux input.
 Both directories must come from the same exact source commit.
