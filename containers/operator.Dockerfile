@@ -31,7 +31,6 @@ RUN python3 /source/tools/operator_source.py restore --bundle /source/source.bun
       --manifest /source/source.json --revision "$ASM_SOURCE_REVISION" --destination /opt/asm/source.git \
     && python3 -c 'import hashlib,json,pathlib; root=pathlib.Path("/source"); data=json.loads((root/"source.json").read_bytes()); assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in data["files"].items())' \
     && chmod -R a=rX /opt/asm/source.git
-RUN python3 /source/tools/test_operator_image.py --make-projection-fixtures /build/projected
 
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
 ARG ASM_SOURCE_REVISION
@@ -68,8 +67,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/asm/postgres /opt/asm/postgres
 COPY --from=build /usr/bin/openssl /usr/bin/openssl
+COPY --from=build /etc/ssl/openssl.cnf /usr/lib/ssl/openssl.cnf
 COPY --from=build /usr/share/doc/openssl/copyright /usr/share/licenses/asm-operator/qualification-openssl/COPYRIGHT
-COPY --from=build /build/projected /qualification/projected
 COPY tools/test_operator_image.py tools/operator_source.py tools/operator_publication.py /qualification/tools/
 COPY server/test_runtime.py /qualification/server/test_runtime.py
 COPY experiments/assembly-server/local_postgres.py experiments/assembly-server/guard.sql /qualification/experiments/assembly-server/
@@ -84,7 +83,8 @@ RUN ln -s /app/tools/registry.py /qualification/tools/registry.py \
     && ln -s /app/tools/prepare_operator.py /qualification/tools/prepare_operator.py \
     && ln -s /app/tools/operator_entrypoint.py /qualification/tools/operator_entrypoint.py \
     && ln -s /app/server/catalog /qualification/server/catalog \
-    && chmod 0555 /opt/asm/postgres/bin/psql
+    && chmod 0555 /opt/asm/postgres/bin/psql \
+    && python3 /qualification/tools/test_operator_image.py --make-projection-fixtures /qualification/projected
 USER 65532:65532
 
 FROM runtime AS final

@@ -150,6 +150,8 @@ The dedicated `operator-images.yml` workflow starts with read authority and no r
 It builds native AMD64 and a derived isolated qualification image.
 The test image adds PostgreSQL server tools and synthetic projected files.
 Those additions do not enter the final image.
+It retains the build's OpenSSL configuration at the compiled default path.
+It generates synthetic projections at their final qualification path, so fixed TLS URL identities match that mount.
 
 The harness checks exact final-image plan commands, missing-credential refusal, and absent compiler/server tools.
 It compares application and loaded dependency bytes between final and derived images.
@@ -188,6 +190,19 @@ Packaging review failures also retain regressions for executable temporary fixtu
 Candidate `751b3f2` failed packaging review for missing loaded-image validation and duplicate JSON fields.
 Regressions retain those cases and number-representation failures.
 Local source tests do not substitute for the pending native image gate.
+
+The first native preflight used temporary source `3c4a328`, derived from candidate `c50a043`.
+[Run 42042696593](https://github.com/stubbi/asm/actions/runs/42042696593) built both images but failed actual qualification.
+It executed 39 tests with one projection failure and one SQL class setup error.
+The 17 SQL and entrypoint class cases did not execute.
+
+Diagnostic source `e13ba24` preserved those checks.
+[Run 42048497201](https://github.com/stubbi/asm/actions/runs/42048497201) observed missing OpenSSL configuration and a TLS path identity refusal.
+Fixture URLs named the build directory, while the test used the qualification mount.
+The valid projection retained root ownership, GID 65532, and the required modes.
+This result contradicted the ownership-loss hypothesis.
+The qualifier now supplies the configuration and generates fixtures at their actual mount path.
+This correction requires a new actual-image check; diagnostic images do not qualify the final candidate.
 
 Git object-enumeration references checked on 5 November 2026:
 [git cat-file](https://git-scm.com/docs/git-cat-file) and
