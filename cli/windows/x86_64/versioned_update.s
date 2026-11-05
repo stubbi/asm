@@ -43,6 +43,13 @@ win_managed_open_installation:
     cmp dword ptr [rip + self_filesystem_stat], 0x5346544e
     jne self_filesystem_error
     call win_managed_check_absolute_installation
+    /* Shared verifier paths start at the held store, where private staging
+     * occurs. The original bin path still anchors installation rechecks. */
+    mov rdi, [rip + wm_store_fd]
+    lea rsi, [rip + self_parent_path]
+    call win_managed_fd_path
+    test rax, rax
+    js self_io_error
     mov rdi, [rip + wm_store_fd]
     mov esi, 1030
     call win_duplicate

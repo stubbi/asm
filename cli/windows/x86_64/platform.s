@@ -96,13 +96,24 @@ win_utf8:
 .Lwu_return:
     WLEAVE
 
-/* Startup owns argv/environment storage for process lifetime. Bounds: 512
+/* Startup owns argv/environment storage for process lifetime. Bounds: 1023
  * arguments, 65536 argument bytes, 512 environment entries, 65536 bytes.
  * USERPROFILE supplies HOME only when HOME is absent. HOME uses /C:/... form
  * internally so the shared absolute-path walker retains its explicit contract.
  * RAX=0 or 1; no project files are changed. */
 win_initialize:
     WFRAME
+    /* Borrow standard streams before parsing, so early refusal can report
+     * its existing diagnostic. No handle ownership or inheritance changes. */
+    mov ecx, -10
+    call GetStdHandle
+    mov [rip + win_handles], rax
+    mov ecx, -11
+    call GetStdHandle
+    mov [rip + win_handles + 8], rax
+    mov ecx, -12
+    call GetStdHandle
+    mov [rip + win_handles + 16], rax
     call GetCommandLineW
     mov rcx, rax
     lea rdx, [rip + win_argc]
@@ -113,7 +124,7 @@ win_initialize:
     mov eax, [rip + win_argc]
     test eax, eax
     jz .Lwi_free_bad
-    cmp eax, 512
+    cmp eax, 1023
     ja .Lwi_free_bad
     mov [rip + argc], rax
     lea rax, [rip + win_argv]
@@ -232,16 +243,6 @@ win_initialize:
     jmp .Lwi_replace_home
 .Lwi_environment_ready:
     mov [rip + envp], rcx
-    /* Non-inheritable native std descriptors. */
-    mov ecx, -10
-    call GetStdHandle
-    mov [rip + win_handles], rax
-    mov ecx, -11
-    call GetStdHandle
-    mov [rip + win_handles + 8], rax
-    mov ecx, -12
-    call GetStdHandle
-    mov [rip + win_handles + 16], rax
     call win_security_initialize
     test eax, eax
     jnz .Lwi_bad
@@ -1178,7 +1179,7 @@ win_error_initialize: .asciz "cannot initialize Windows arguments, paths, or use
 .section .bss
 .p2align 3
 win_argc: .space 8
-win_argv: .space 4104
+win_argv: .space 1024 * 8 /* 1023 arguments and the NULL terminator */
 win_arguments: .space 65536
 win_environment: .space 4104
 win_environment_bytes: .space 65536

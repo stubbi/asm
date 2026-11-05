@@ -21,6 +21,7 @@ check: $(BINARY)
 
 host-check:
 	$(PYTHON) cli/windows/x86_64/test_host_shims.py
+	$(PYTHON) cli/windows/x86_64/test_native_regressions.py
 
 clean:
 	$(PYTHON) -c "from pathlib import Path; [p.unlink(missing_ok=True) for p in map(Path, ['$(OUT)/asm.s', '$(OUT)/asm.obj', '$(BINARY)'])]"
