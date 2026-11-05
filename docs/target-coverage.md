@@ -125,23 +125,38 @@ They do not change published host support.
 
 | Component | Observed result | Remaining gate |
 | --- | --- | --- |
-| Intel macOS CLI | Native Intel qualification passed 175 cases at `cea61bdfc8f87555f93d2e00bde15063f3df680b`. [Run](https://github.com/stubbi/asm/actions/runs/41940484143). | Requalify the unified target contracts, then complete distribution integration. |
+| Intel macOS CLI | Native Intel qualification passed 209 cases at `4fe09795245dc0b6bf42289d0deae371680196ab`. [Run](https://github.com/stubbi/asm/actions/runs/42010080612). | Integrate the qualified source delta and recheck combined source. Complete distribution integration. |
 | Linux x86-64 and ARM64 servers | Both native targets passed the corrected schema-privilege suites. [Run](https://github.com/stubbi/asm/actions/runs/41944988752). | Preserve the [exact package evidence](server-package-evidence.json) during integration. Deployment has separate gates. |
 | RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
 | RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
-| Windows x86-64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix access checks and process execution. Pass the expanded 45-case suite and updater identity checks. |
-| Windows ARM64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix the observed runtime failures. Pass the expanded 45-case suite and updater identity checks. |
+| Windows x86-64 CLI | The fourth native run passed 35 methods; 11 failure records and one error remain. | Pass all 45 methods, archive workflows, and updater identity and recovery checks. |
+| Windows ARM64 CLI | The fourth native run passed 22 methods; 24 failure records remain. | Correct PE validation and output finalization. Pass all 45 methods and updater checks. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
-| Windows verifier | The frozen helper source builds for both Windows targets. | Run independent native Go suites with protected NTFS fixtures. Trust activation remains separate. |
+| Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
-The second Windows result used source `74221fc69af0b19444dede9eb71c400effdd1855` in [run 41947783095](https://github.com/stubbi/asm/actions/runs/41947783095).
-The first [failed run](https://github.com/stubbi/asm/actions/runs/41942208419) remains part of the evidence.
+The fourth Windows result used source `e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3` in [run 42015009621](https://github.com/stubbi/asm/actions/runs/42015009621).
+Subtests can produce multiple failure records for one method.
+The first three failed runs remain part of the evidence.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
 
-The combined worktree passed 263 native Apple Silicon CLI tests, 73 registry tests, and seven server-evidence parser tests.
+The fourth candidate passed 270 native Apple Silicon CLI tests.
+The integrated catalog source passed 86 registry tests; the server-evidence parser passed seven tests.
 Earlier local bootstrap timeouts remain recorded in the coordination ledger.
 These local checks do not replace a clean release build or another target's runtime qualification.
+
+The Intel run also built and tested the unified hello and math examples through the native CLI.
+Separate injected-write package checks used Rosetta; they are not native Intel evidence.
+Its source binding and two equal clean builds are recorded with the exact artifact digest.
+
+The Windows verifier runs cover source-tested behavior, not an admitted release artifact.
+Each target passed 39 top-level tests and 70 subtests; one Darwin-only test was inapplicable.
+The executed test executables were not retained, so their exact digests cannot be recovered.
+Production verifier source matches the frozen source; one fixture file changed.
+
+General integration [run 42015109983](https://github.com/stubbi/asm/actions/runs/42015109983) passed Linux, macOS, and release-contract jobs at the fourth candidate.
+The separate server run stopped before its suites because the shared harness rejected explicit matching Linux targets.
+The harness correction requires a fresh server run; earlier server qualification remains scoped to its recorded source.
 
 The merge queue owns integration into `main`.
 The bounded 0.6.0 release retains only its independently qualified existing hosts.
