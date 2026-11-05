@@ -161,6 +161,14 @@ class MetadataTests(unittest.TestCase):
             with self.subTest(target=target):
                 self.assertEqual(layout.read_pe_metadata(bytes(image(target)), target), expected)
 
+    def test_cli_metadata_requires_the_console_subsystem(self):
+        # A generic GUI package PE is not a console CLI launcher or payload.
+        for subsystem in (0, 1, 2, 5, 9, 10, 14):
+            data = image()
+            struct.pack_into('<H', data, OPTIONAL + 68, subsystem)
+            with self.subTest(subsystem=subsystem), self.assertRaises(ValueError):
+                layout.read_pe_metadata(bytes(data), TARGET)
+
     def test_release_version_must_match_metadata(self):
         self.assertEqual(layout.read_pe_metadata(bytes(image()), TARGET,
                                                expected_version='1.2.3')['version'], '1.2.3')

@@ -108,6 +108,8 @@ def read_pe_metadata(data: bytes, target: str, *, expected_version: str | None =
         version_tuple(expected_version)
     validate_pe(data, target)
     pe = struct.unpack_from('<I', data, 0x3c)[0]
+    _require(struct.unpack_from('<H', data, pe + 24 + 68)[0] == 3,
+             'Windows CLI requires the console subsystem')
     count = struct.unpack_from('<H', data, pe + 6)[0]
     optional_size = struct.unpack_from('<H', data, pe + 20)[0]
     table = pe + 24 + optional_size
