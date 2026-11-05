@@ -105,9 +105,21 @@ class RuntimeTests(unittest.TestCase):
         with registry_admin.Connection(cls.configs["migrator"], psql, cls.roles["migrator"]) as connection:
             registry_admin.migrate(connection)
         records = registry.read_records(HERE.parent / "registry")
+        # Synthetic metadata distinguishes all six target vocabularies. These
+        # test-only artifacts are neither downloaded nor executed.
+        records.append({
+            "schema": 1, "name": "fixture/all-targets", "version": "1.0.0", "license": "MIT",
+            "summary": "Synthetic six-target HTTP metadata fixture.", "yanked": False,
+            "source": {"repository": "https://github.com/stubbi/asm", "commit": cls.revision, "path": "fixtures"},
+            "artifacts": [{"target": target, "kind": "source", "bytes": 1024, "sha256": "a" * 64,
+                "url": "https://github.com/stubbi/asm/releases/download/runtime-fixture/all-targets-" + target + ".tar.gz"}
+                for target in ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos",
+                               "x86_64-windows", "aarch64-windows")],
+        })
         full_tsv, index = registry.make_indexes(records)
         cls.exports = dict(zip(registry_admin.ROUTES, (
-            registry.legacy_tsv(full_tsv).encode("ascii"), full_tsv.encode("ascii"), registry.json_bytes(index))))
+            registry.legacy_tsv(full_tsv).encode("ascii"), registry.macos_compat_tsv(full_tsv).encode("ascii"),
+            full_tsv.encode("ascii"), registry.json_bytes(index)), strict=True))
         with registry_admin.Connection(cls.configs["operator"], psql, cls.roles["operator"]) as connection:
             for namespace in sorted({record["name"].split("/")[0] for record in records}):
                 connection.execute("SELECT asm_catalog.bind_namespace(" + registry_admin.sql_text(namespace) +
@@ -214,8 +226,22 @@ class RuntimeTests(unittest.TestCase):
                                  else "text/tab-separated-values; charset=utf-8")
                 self.assertEqual(headers["Cache-Control"], "no-store")
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
-        self.assertNotIn(b"aarch64-macos", self.exports["/registry/v1/index.tsv"])
-        self.assertIn(b"aarch64-macos", self.exports["/registry/v1/index-macos.tsv"])
+        vocabularies = {
+            "/registry/v1/index.tsv": {"x86_64-linux", "aarch64-linux", "riscv64-linux"},
+            "/registry/v1/index-macos.tsv": {"x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"},
+            "/registry/v1/index-all.tsv": {"x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos",
+                                            "x86_64-windows", "aarch64-windows"},
+        }
+        for path, expected_targets in vocabularies.items():
+            with self.subTest(vocabulary=path):
+                code, _, body = self.raw_request(path)
+                self.assertEqual(code, 200)
+                rows = [line.split(b"\t") for line in body.splitlines() if not line.startswith(b"#")]
+                self.assertEqual({row[2].decode("ascii") for row in rows}, expected_targets)
+        code, _, body = self.raw_request("/registry/v1/index.json")
+        self.assertEqual(code, 200)
+        self.assertIn(b"x86_64-windows", body)
+        self.assertIn(b"aarch64-windows", body)
 
     def test_unimplemented_write_routes_do_not_claim_success(self):
         self.assertEqual(self.request("/api/v2/packages")[0], 404)
@@ -227,6 +253,9 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual(self.request(path, method="POST")[0], 405)
                 self.assertEqual(self.request(path, body=b"x")[0], 400)
                 self.assertEqual(self.request(path + "?route=untrusted")[0], 400)
+                self.assertEqual(self.request(path + "x")[0], 404)
+                self.assertEqual(self.request(path + "/")[0], 404)
+                self.assertEqual(self.request(path[:-1])[0], 404)
 
     def test_concurrent_exports_keep_independent_response_ownership(self):
         paths = list(self.exports) * 2
@@ -252,18 +281,22 @@ class RuntimeTests(unittest.TestCase):
 
     def test_exports_reject_missing_null_duplicate_and_unready_results(self):
         columns = "route,body,sha256,media_type,revision,acceptance_commit"
-        variants = (
-            "SELECT " + columns + " FROM {source} WHERE route <> '/registry/v1/index.json'",
-            "SELECT route,CASE WHEN route='/registry/v1/index.json' THEN NULL::text ELSE body END AS body,"
-                "sha256,media_type,revision,acceptance_commit FROM {source}",
+        variants = [
             "SELECT " + columns + " FROM {source} UNION ALL SELECT " + columns + " FROM {source}",
             "SELECT " + columns + " FROM {source} WHERE false",
-        )
+        ]
+        for path in self.exports:
+            variants.extend((
+                "SELECT " + columns + " FROM {source} WHERE route <> '" + path + "'",
+                "SELECT route,CASE WHEN route='" + path + "' THEN NULL::text ELSE body END AS body,"
+                    "sha256,media_type,revision,acceptance_commit FROM {source}",
+            ))
         for select in variants:
             with self.subTest(select=select), self.export_view(select):
-                code, _, body = self.request("/registry/v1/index.json")
-                self.assertEqual(code, 503)
-                self.assertEqual(body["error"]["code"], "temporarily_unavailable")
+                for path in self.exports:
+                    code, _, body = self.request(path)
+                    self.assertEqual(code, 503)
+                    self.assertEqual(body["error"]["code"], "temporarily_unavailable")
                 self.assertEqual(self.request("/health/live")[0], 200)
         original = self.admin.execute("SELECT sha384 FROM asm_catalog.schema_version")[0][0]
         self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=repeat('0',96)")
