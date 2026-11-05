@@ -20,6 +20,10 @@ if TEST_TARGET == "x86_64-macos":
     if not IS_MACOS:
         raise RuntimeError("The Intel Darwin suite requires macOS.")
     IS_ARM64 = False
+elif TEST_TARGET in {"x86_64-linux", "aarch64-linux"}:
+    native_linux = "aarch64-linux" if IS_ARM64 else "x86_64-linux"
+    if platform.system() != "Linux" or TEST_TARGET != native_linux:
+        raise RuntimeError(f"The explicit target {TEST_TARGET} does not match this native Linux host.")
 elif TEST_TARGET:
     raise RuntimeError(f"Unsupported explicit test target: {TEST_TARGET}")
 if MACHINE not in {"x86_64", "amd64", "aarch64", "arm64"}:
