@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 typedef unsigned short W;
-typedef unsigned long D;
+typedef unsigned int D;
 typedef unsigned long long Q;
 typedef void *H;
 typedef struct { D length; void *descriptor; int inherit; } SECURITY;
@@ -20,7 +20,9 @@ typedef struct {
 typedef struct { BASIC_LIMITS basic; Q io[6], process_memory, job_memory, peak_process, peak_job; } JOB_LIMITS;
 _Static_assert(sizeof(D) == 4 && sizeof(W) == 2 && sizeof(H) == 8, "Win64 ABI required");
 _Static_assert(sizeof(BASIC_LIMITS) == 64 && sizeof(JOB_LIMITS) == 144, "Win64 job limits ABI required");
+#ifndef API
 #define API __declspec(dllimport)
+#endif
 API W *GetCommandLineW(void);
 API W **CommandLineToArgvW(const W *, int *);
 API H LocalFree(H);
@@ -121,7 +123,7 @@ static void decimal(Q value) {
     do { reverse[n++] = '0' + (char)(value % 10); value /= 10; } while (value);
     while (n) character(reverse[--n]);
 }
-static int reaped(H process) { return !process || WaitForSingleObject(process, 0) == 0; }
+static int reaped(H process) { return process && WaitForSingleObject(process, 0) == 0; }
 static int stop(H process) {
     if (!process) return 1;
     if (WaitForSingleObject(process, 0) != 0) TerminateProcess(process, 97);
@@ -158,7 +160,7 @@ static void controller(int count, W **args) {
     static const W payload_option[] = {'-','-','c','o','n','s','o','l','e','-','p','a','y','l','o','a','d',0};
     const W *parts[5];
     D event = 0, requested = 0, used = 0, actual = 0, payload_actual = 0, error = 0, i, length;
-    int ready = 0, sent = 0, got_exit = 0, got_payload_exit = 0, child_reaped = 1, payload_reaped = 1;
+    int ready = 0, sent = 0, got_exit = 0, got_payload_exit = 0, child_reaped = 0, payload_reaped = 0;
     H marker = INVALID, selected = 0, job = 0;
     Q handshake[2], started = GetTickCount64();
     const char *status = "invalid-arguments";
@@ -219,7 +221,8 @@ static void controller(int count, W **args) {
     if (!got_payload_exit) { error = GetLastError(); goto finish; }
     status = "complete";
 finish:
-    /* Explicit reaping supplements the fixture-only job on each normal return. */
+    /* A missing readiness handshake leaves payload termination unobserved.
+     * Report false even though closing the fixture job contains descendants. */
     if (selected) payload_reaped = stop(selected);
     if (child.process) child_reaped = stop(child.process);
     text("{\"status\":\""); text(status); text("\",\"event\":"); decimal(event);
