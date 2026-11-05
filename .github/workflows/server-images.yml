@@ -1,38 +1,123 @@
-name: Assembly server images
+name: UNQUALIFIED RISC-V server observations
 
+# This isolated branch diagnoses a failed gate. It cannot publish an image.
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: server-images-${{ github.ref }}
-  cancel-in-progress: true
+  group: riscv-server-observations-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  qualify:
-    name: Qualify ${{ matrix.arch }} (${{ matrix.execution }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, arch: amd64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04-arm, arch: arm64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04, arch: riscv64, execution: emulated, minutes: 90 }
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.minutes }}
+  observe:
+    name: Observe the unchanged 14 HTTP cases (UNQUALIFIED)
+    runs-on: ubuntu-24.04
+    # The inner host budget is 600 seconds, including evidence collection.
+    # This outer budget also covers checkout, downloads, source selection, and upload.
+    timeout-minutes: 35
+    env:
+      ASM_FIXTURE_REVISION: REVIEWED_FIXTURE_COMMIT_REQUIRED
+      ASM_EVIDENCE: ${{ github.workspace }}/server-observations-evidence
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Check the qualification harness
-        run: python3 tools/test_server_image.py --self-test
-      - name: Install the pinned Ubuntu RISC-V user emulator
-        if: matrix.arch == 'riscv64'
+      - name: Initialize failure evidence and check the diagnostic harness
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ASM_CONTEXT="$RUNNER_TEMP/asm-observations-context"
+          export ASM_INPUTS="$RUNNER_TEMP/asm-observations-inputs"
+          printf 'ASM_CONTEXT=%s\nASM_INPUTS=%s\n' "$ASM_CONTEXT" "$ASM_INPUTS" >> "$GITHUB_ENV"
+          mkdir -p "$ASM_EVIDENCE" "$ASM_INPUTS"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          report = {"schema": 1, "scope": "UNQUALIFIED-riscv-server-observations", "outcome": "fail",
+                    "source_revision": os.environ["GITHUB_SHA"], "execution": "qemu-user",
+                    "application_qualified": False, "native_qualified": False, "release_qualified": False,
+                    "original_19_test_gate": "fail", "error": "The diagnostic has not completed."}
+          Path(os.environ["ASM_EVIDENCE"], "initial-report.json").write_text(json.dumps(report, indent=2) + "\n")
+          PYTHON
+          python3 tools/riscv64_server_observations.py --self-test \
+            2>&1 | tee "$ASM_EVIDENCE/self-tests.log"
+      - name: Download only the two reviewed artifacts under exact byte bounds
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          import time
+          sys.path.insert(0, "tools")
+          from riscv64_combined import bounded_process
+
+          inputs = Path(os.environ["ASM_INPUTS"])
+          evidence = Path(os.environ["ASM_EVIDENCE"])
+          deadline = time.monotonic() + 240
+          def remaining(limit):
+              seconds = min(limit, deadline - time.monotonic())
+              if seconds <= 0:
+                  raise ValueError("The shared artifact download deadline expired.")
+              return seconds
+          pins = (
+              ("image", 13423240467, 42035969713, "1b4f34899cbf67edba1cfc5ba7ed08ea97269f66", 84388798,
+               "e3e47e75585b85ab148ae8b596d73b6eca9dbedc0f1f7e6a2f0493e845b55817"),
+              # The API records the PR head; the retained receipt binds its tested merge separately.
+              ("server", 13426312471, 42042426725, "66f432bb129c0c56922ec8edfa657e82b4fb9851", 27690874,
+               "bc398de445a950e65f6cf1690dac89610129cf4c2ccc16b0ebb1997d4ff44136"),
+          )
+          for label, artifact, run, revision, size, digest in pins:
+              endpoint = f"repos/stubbi/asm/actions/artifacts/{artifact}"
+              metadata = evidence / (label + "-artifact.json")
+              result = bounded_process(["gh", "api", endpoint], metadata, timeout=remaining(30), max_bytes=65536)
+              if result["outcome"] != "pass":
+                  raise ValueError("Cannot read the pinned artifact metadata.")
+              receipt = json.loads(metadata.read_text())
+              if (receipt["id"] != artifact or receipt["expired"] is not False
+                      or receipt["size_in_bytes"] != size or receipt["digest"] != "sha256:" + digest
+                      or receipt["workflow_run"]["id"] != run
+                      or receipt["workflow_run"]["repository_id"] != 1441332955
+                      or receipt["workflow_run"]["head_repository_id"] != 1441332955
+                      or receipt["workflow_run"]["head_sha"] != revision):
+                  raise ValueError("The artifact metadata differs from the reviewed pin.")
+              archive = inputs / (label + ".zip")
+              result = bounded_process(["gh", "api", endpoint + "/zip"], archive,
+                                       timeout=remaining(180), max_bytes=size)
+              if result["outcome"] != "pass" or archive.stat().st_size != size:
+                  raise ValueError("The artifact download failed or has an unexpected byte size.")
+              with archive.open("rb") as stream:
+                  actual = hashlib.file_digest(stream, "sha256").hexdigest()
+              if actual != digest:
+                  raise ValueError("The artifact download differs from its reviewed digest.")
+              remaining(1)
+          PYTHON
+      - name: Materialize the reviewed fixture and original package source
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$ASM_FIXTURE_REVISION" 04c93b3f0200173298d24f22a06393bc359a1af0
+          python3 tools/riscv64_server_observations.py --prepare-context "$ASM_CONTEXT" \
+            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION"
+          cp "$ASM_CONTEXT/input-manifest.json" "$ASM_EVIDENCE/input-manifest.json"
+      - name: Install and verify the original pinned user emulator
+        timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
@@ -52,176 +137,28 @@ jobs:
           grep -Fx 'interpreter /usr/libexec/qemu-binfmt/riscv64-binfmt-P' /proc/sys/fs/binfmt_misc/qemu-riscv64
           test "$(readlink -f /usr/libexec/qemu-binfmt/riscv64-binfmt-P)" = /usr/bin/qemu-riscv64-static
           grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
-      - name: Record the runner and emulator boundary
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-          ASM_EXECUTION: ${{ matrix.execution }}
-        run: |
-          set -euo pipefail
-          mkdir -p server-image-evidence
           {
             uname -a
             docker version
-            docker buildx version
-            printf 'target=linux/%s execution=%s\n' "$ASM_ARCH" "$ASM_EXECUTION"
-            if test "$ASM_ARCH" = riscv64; then
-              cat /proc/sys/fs/binfmt_misc/qemu-riscv64
-              grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
-              /usr/bin/qemu-riscv64-static --version
-              dpkg-query --show qemu-user-static systemd
-              sha256sum /usr/bin/qemu-riscv64-static
-            fi
-          } | tee server-image-evidence/environment.txt
-      - name: Build the target runtime and its derived qualification image
+            cat /proc/sys/fs/binfmt_misc/qemu-riscv64
+            /usr/bin/qemu-riscv64-static --version
+            dpkg-query --show qemu-user-static systemd
+            sha256sum /usr/bin/qemu-riscv64-static
+          } > "$ASM_EVIDENCE/environment.txt"
+      - name: Observe the exact failed binary with unchanged assertions and limits
+        timeout-minutes: 12
         shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
-            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
-            --tag "asm-server:runtime-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-runtime.log
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
-            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
-            --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
-      - name: Run the actual HTTP, PostgreSQL, TLS, and security suite
-        timeout-minutes: 5
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-          ASM_EXECUTION: ${{ matrix.execution }}
-        run: |
-          set -euo pipefail
-          python3 tools/test_server_image.py --arch "$ASM_ARCH" --execution "$ASM_EXECUTION" \
-            --revision "$GITHUB_SHA" --image "asm-server:runtime-$ASM_ARCH" \
-            --qualification-image "asm-server:qualification-$ASM_ARCH" \
-            --output server-image-evidence/qualification.json \
-            2>&1 | tee server-image-evidence/runtime-tests.log
-      - name: Retain the exact qualified runtime image
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{json .}}' > server-image-evidence/image.json
-          docker save --output server-image-evidence/runtime.tar "asm-server:runtime-$ASM_ARCH"
-          (cd server-image-evidence && sha256sum runtime.tar > runtime.sha256)
-      - name: Retain successful and failed qualification evidence
+          python3 tools/riscv64_server_observations.py --run-image \
+            --image-zip "$ASM_INPUTS/image.zip" --server-zip "$ASM_INPUTS/server.zip" \
+            --context "$ASM_CONTEXT" --output "$ASM_EVIDENCE"
+      - name: Retain bounded observations from success or failure
+        timeout-minutes: 2
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: server-image-${{ matrix.arch }}-${{ github.sha }}
-          path: server-image-evidence/
+          name: UNQUALIFIED-server-observations-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: server-observations-evidence/
           if-no-files-found: error
-          retention-days: 3
-
-  publish:
-    needs: qualify
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64, riscv64]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: server-image-${{ matrix.arch }}-${{ github.sha }}
-      - name: Load only this run's exact qualified runtime image
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          sha256sum --check runtime.sha256
-          jq --exit-status --arg revision "$GITHUB_SHA" --arg arch "$ASM_ARCH" \
-            '.status == "pass" and .scope == "assembly-runtime-foundation" and .source_revision == $revision and .architecture == $arch and .tests_run >= 11 and .tests_skipped == 0' qualification.json
-          docker load --input runtime.tar
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Architecture}}')" = "$ASM_ARCH"
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
-          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
-          docker tag "asm-server:runtime-$ASM_ARCH" "ghcr.io/stubbi/asm-hub:$ASM_TAG"
-      - name: Publish the qualified image and record its registry digest
-        id: image
-        shell: bash
-        env:
-          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
-          docker push "ghcr.io/stubbi/asm-hub:$ASM_TAG"
-          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-hub:$ASM_TAG" --format '{{index .RepoDigests 0}}')"
-          case "$ASM_REF" in ghcr.io/stubbi/asm-hub@sha256:*) ;; *) exit 1 ;; esac
-          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$ASM_REF" | tee registry-digest.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Attest the exact public source and qualified image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ghcr.io/stubbi/asm-hub
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: server-image-digest-${{ matrix.arch }}-${{ github.sha }}
-          path: |
-            registry-digest.txt
-            qualification.json
-          if-no-files-found: error
-          retention-days: 30
-
-  publish-index:
-    needs: publish
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: server-image-digest-*-${{ github.sha }}
-          path: child-images
-      - name: Authenticate only for the trusted main publication
-        env:
-          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Verify all published children and create the combined index
-        id: index
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/test_server_image.py --publish-index --revision "$GITHUB_SHA" \
-            --children-directory child-images --index-tag "sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-            --output index-report.json | tee index-digest.txt
-          printf 'digest=%s\n' "$(jq -r .index_digest index-report.json)" >> "$GITHUB_OUTPUT"
-          cat index-digest.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Attest the verified combined index
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ghcr.io/stubbi/asm-hub
-          subject-digest: ${{ steps.index.outputs.digest }}
-          push-to-registry: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: server-image-index-${{ github.sha }}
-          path: |
-            index-report.json
-            index-digest.txt
-          if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
