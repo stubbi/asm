@@ -15,12 +15,14 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
 import shutil
 import signal
 import struct
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import unittest
 import uuid
@@ -30,6 +32,127 @@ HOSTED_REVISION = "4fe2c25277ed40a163b48b727ab814225d227cf8"
 PACKAGE_REVISION = "fb72db4b59038801b41a5b4b314007cfcf158d33"
 SUITE_FILES = {"test_fixture.py": 2, "test_server.py": 14,
                "test_runtime_versions.py": 1, "test_package.py": 2}
+
+LOG_BYTE_LIMIT = 4 * 1024 * 1024
+RUNTIME_LOG_BYTE_LIMIT = 16 * 1024 * 1024
+EVIDENCE_TOTAL_LIMIT = 128 * 1024 * 1024
+EVIDENCE_LIMITS = {name + ".log": LOG_BYTE_LIMIT for name in
+                   ("generated_source", "cli_build", "first_project", "native_link",
+                    "prepare_package", "pack_package", "server_package")}
+EVIDENCE_LIMITS.update({"qualification.json": 1024 * 1024,
+                        "asm-riscv64-linux": 64 * 1024 * 1024,
+                        "asm-server-riscv64-linux": 64 * 1024 * 1024,
+                        "asm-server-source.tar.gz": 16 * 1024 * 1024})
+EVIDENCE_FILE_LIMIT = len(EVIDENCE_LIMITS)
+TAR_OVERHEAD_LIMIT = 64 * 1024
+
+
+def bounded_process(arguments, log, *, cwd=None, timeout=30, max_bytes=LOG_BYTE_LIMIT):
+    """Drain one merged pipe under byte/time limits, even after its leader exits.
+
+    The caller owns log. A bound failure kills the original process group and
+    keeps at most max_bytes of output. The deadline includes descendant pipes.
+    """
+    if timeout <= 0 or max_bytes < 0:
+        raise ValueError("Use a positive deadline and a nonnegative byte limit.")
+    started = time.monotonic()
+    size = 0
+    failure = None
+    process = subprocess.Popen(list(map(str, arguments)), cwd=cwd, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    pipe_open = True
+    completed = False
+    try:
+        with log.open("wb") as stream:
+            while pipe_open or process.poll() is None:
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    failure = "deadline"
+                    break
+                if not pipe_open:
+                    time.sleep(min(0.01, remaining))
+                    continue
+                for key, _ in selector.select(min(0.1, remaining)):
+                    data = os.read(key.fd, min(65536, max_bytes - size + 1))
+                    if not data:
+                        selector.unregister(process.stdout)
+                        pipe_open = False
+                        break
+                    accepted = data[:max_bytes - size]
+                    stream.write(accepted)
+                    size += len(accepted)
+                    if len(data) != len(accepted):
+                        failure = "byte-limit"
+                        break
+                if failure:
+                    break
+            completed = True
+    finally:
+        if not completed or failure or process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        selector.close()
+        process.stdout.close()
+        process.wait(timeout=2)
+    return {"outcome": "pass" if not failure and process.returncode == 0 else "fail",
+            "exit_code": process.returncode, "failure": failure, "bytes": size,
+            "seconds": round(time.monotonic() - started, 3)}
+
+
+def collect_file(arguments, filename, destination, budget, *, max_bytes=None, timeout=20):
+    """Receive one allowlisted regular tar member under host-enforced limits.
+
+    The transport is bounded before parsing. Finalization occurs only after
+    all member, file-count, and aggregate-byte checks pass.
+    """
+    if filename not in EVIDENCE_LIMITS or budget["files"] >= EVIDENCE_FILE_LIMIT:
+        raise ValueError("The guest evidence file count or name exceeds its allowlist.")
+    limit = EVIDENCE_LIMITS[filename] if max_bytes is None else min(max_bytes, EVIDENCE_LIMITS[filename])
+    remaining = EVIDENCE_TOTAL_LIMIT - budget["bytes"]
+    if remaining < 0:
+        raise ValueError("The guest evidence exceeds its aggregate byte limit.")
+    with tempfile.TemporaryDirectory(prefix=".asm-collect-", dir=destination) as temporary:
+        base = Path(temporary)
+        archive = base / "transport.tar"
+        result = bounded_process(arguments, archive, timeout=timeout,
+                                 max_bytes=min(limit, remaining) + TAR_OVERHEAD_LIMIT)
+        if result["outcome"] != "pass":
+            raise ValueError(f"Cannot collect {filename}: bounded transport failed ({result['failure'] or result['exit_code']}).")
+        stage = base / "member"
+        # Fixed short filenames need no tar extensions. Parse only the first
+        # 512-byte header, so a hostile PAX length cannot allocate unbounded data.
+        with archive.open("rb") as packed:
+            header = packed.read(512)
+            if len(header) != 512:
+                raise ValueError("The guest evidence tar header is truncated.")
+            member = tarfile.TarInfo.frombuf(header, encoding="utf-8", errors="strict")
+            if (member.name != filename or member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                    or member.size < 0 or member.size > limit or member.size > remaining):
+                raise ValueError(f"Cannot collect {filename}: unexpected member type, name, or size.")
+            with stage.open("xb") as stream:
+                left = member.size
+                while left:
+                    data = packed.read(min(65536, left))
+                    if not data:
+                        raise ValueError("The guest evidence tar member is truncated.")
+                    stream.write(data)
+                    left -= len(data)
+            # Reject extra members and nonzero padding before finalization.
+            trailing = 0
+            while data := packed.read(65536):
+                trailing += len(data)
+                if any(data):
+                    raise ValueError(f"Cannot collect {filename}: the archive contains extra members.")
+            padding = (-member.size) % 512
+            if trailing < padding + 1024 or (archive.stat().st_size % 512):
+                raise ValueError("The guest evidence tar end records are truncated.")
+        os.replace(stage, destination / filename)
+        budget["bytes"] += member.size
+        budget["files"] += 1
 
 
 def sha256(path):
@@ -79,8 +202,13 @@ def result_contract(result):
 
 
 def command(arguments, *, cwd=None, timeout=30):
-    return subprocess.run(list(map(str, arguments)), cwd=cwd, check=True,
-                          capture_output=True, timeout=timeout)
+    with tempfile.TemporaryDirectory(prefix="asm-combined-command-") as temporary:
+        log = Path(temporary) / "output"
+        result = bounded_process(arguments, log, cwd=cwd, timeout=timeout)
+        data = log.read_bytes()
+        if result["outcome"] != "pass":
+            raise ValueError(f"The bounded command failed ({result['failure'] or result['exit_code']}): {arguments[0]}")
+        return subprocess.CompletedProcess(arguments, 0, stdout=data, stderr=b"")
 
 
 def prepare_context(destination, revision):
@@ -177,24 +305,13 @@ def inside(output):
             nonlocal stage
             stage = name
             log = output.parent / (name + ".log")
-            started = time.monotonic()
-            with log.open("wb") as stream:
-                process = subprocess.Popen(list(map(str, arguments)), cwd=cwd, stdout=stream,
-                                           stderr=subprocess.STDOUT, start_new_session=True)
-                try:
-                    process.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                    raise ValueError(f"The {name} check exceeded its {timeout}-second deadline.")
+            check = bounded_process(arguments, log, cwd=cwd, timeout=timeout)
+            check.update(command=list(map(str, arguments)), log_sha256=sha256(log))
+            report["checks"][name] = check
             text = log.read_text(errors="replace")
             print(text, end="", flush=True)
-            check = {"outcome": "fail", "exit_code": process.returncode,
-                     "command": list(map(str, arguments)), "log_sha256": sha256(log),
-                     "seconds": round(time.monotonic() - started, 3)}
-            report["checks"][name] = check
-            if process.returncode:
-                raise ValueError(f"The {name} check failed. Inspect its retained log.")
+            if check["outcome"] != "pass":
+                raise ValueError(f"The {name} check failed ({check['failure'] or check['exit_code']}). Inspect its retained log.")
             if expected is not None:
                 check["tests_run"] = suite_contract(text, expected)
                 check["tests_skipped"] = 0
@@ -261,9 +378,11 @@ def inside(output):
         for name, path in artifacts:
             if path.is_file():
                 try:
+                    if path.stat().st_size > EVIDENCE_LIMITS[name]:
+                        raise ValueError("A generated artifact exceeds its evidence file limit.")
                     shutil.copy2(path, output.parent / name)
                     report.setdefault("retained_artifacts", {})[name] = {"sha256": sha256(path), "bytes": path.stat().st_size}
-                except OSError as failure:
+                except (OSError, ValueError) as failure:
                     report["outcome"] = "fail"
                     report["collection_error"] = str(failure)
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
@@ -290,24 +409,40 @@ def run_image(image, build_image, output):
         if labels.get("build.asm.hosted-build-id") != base["Id"]:
             raise ValueError("The inherited build image ID does not match its recorded identity.")
         write_report(output / "images.json", {"hosted_build": base, "qualification": derived})
-        with (output / "runtime.log").open("wb") as stream:
-            process = subprocess.run(["docker", "run", "--pull=never", "--name", name,
-                                      "--platform", "linux/riscv64", "--network", "none", "--user", "65532:65532",
-                                      "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256",
-                                      "--memory", "2g", "--cpus", "2", derived["Id"]],
-                                     stdout=stream, stderr=subprocess.STDOUT, timeout=600)
-        if process.returncode:
+        runtime = bounded_process(
+            ["docker", "run", "--pull=never", "--name", name,
+             "--platform", "linux/riscv64", "--network", "none", "--user", "65532:65532",
+             "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256",
+             "--memory", "2g", "--cpus", "2", derived["Id"]],
+            output / "runtime.log", timeout=600, max_bytes=RUNTIME_LOG_BYTE_LIMIT)
+        report["runtime"] = runtime
+        if runtime["outcome"] != "pass":
             raise ValueError("The combined qualification failed. Inspect runtime.log and the guest report.")
     except (OSError, ValueError, subprocess.SubprocessError) as failure:
         report["error"] = str(failure)
     finally:
         # Collect from the stopped writable layer, including failed test logs.
         try:
-            subprocess.run(["docker", "stop", "--time", "5", name], capture_output=True, timeout=15)
-            copied = subprocess.run(["docker", "cp", name + ":/work/evidence/.", str(output)],
-                                    capture_output=True, timeout=30)
-            if copied.returncode:
-                raise ValueError(copied.stderr.decode(errors="replace"))
+            command(["docker", "stop", "--time", "5", name], timeout=15)
+            budget = {"bytes": 0, "files": 0}
+            collection_errors = {}
+            collected = set()
+            deadline = time.monotonic() + 90
+            for filename in ("qualification.json", *[item for item in EVIDENCE_LIMITS if item != "qualification.json"]):
+                try:
+                    collect_file(["docker", "cp", name + ":/work/evidence/" + filename, "-"],
+                                 filename, output, budget, timeout=min(20, deadline - time.monotonic()))
+                    collected.add(filename)
+                except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as failure:
+                    collection_errors[filename] = str(failure)
+            report["collection"] = {**budget, "errors": collection_errors, "collected": sorted(collected),
+                                    "byte_limit": EVIDENCE_TOTAL_LIMIT, "file_limit": EVIDENCE_FILE_LIMIT}
+            if collection_errors:
+                report["collection_error"] = "Some allowlisted guest evidence was absent or exceeded its bounds."
+            required = {"qualification.json", "asm-riscv64-linux", "asm-server-riscv64-linux", "asm-server-source.tar.gz"}
+            missing = required - collected
+            if missing:
+                raise ValueError("Current collection did not supply required evidence: " + ", ".join(sorted(missing)))
             guest = output / "qualification.json"
             result = json.loads(guest.read_text())
             result_contract(result)
@@ -319,9 +454,10 @@ def run_image(image, build_image, output):
             report["inputs"] = result.get("inputs", {})
             if result.get("inputs", {}).get("candidate_revision") != labels.get("build.asm.candidate-revision"):
                 raise ValueError("The guest source revision differs from the qualification image label.")
-            if "error" not in report:
+            if "error" not in report and not collection_errors:
                 report["outcome"] = "pass"
-        except (OSError, ValueError, subprocess.SubprocessError) as failure:
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError,
+                subprocess.SubprocessError) as failure:
             report["collection_error"] = str(failure)
         if "images" in locals():
             report["hosted_build_image_id"] = images[0]["Id"]
@@ -329,8 +465,8 @@ def run_image(image, build_image, output):
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_report(output / "combined-report.json", report)
         try:
-            subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
-        except (OSError, subprocess.SubprocessError):
+            command(["docker", "rm", "--force", name], timeout=15)
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass  # The report above already retains the runtime or collection failure.
     return 0 if report["outcome"] == "pass" else 1
 

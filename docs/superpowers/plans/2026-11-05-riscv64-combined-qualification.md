@@ -27,3 +27,17 @@ The gate publishes no image or release and changes no deployment.
 Local validation uses deterministic rejection tests and workflow/source inspection.
 Docker builds and runtime execution require a healthy Linux CI host.
 No local Docker call or dependency download is authorized for this implementation task.
+
+Host evidence collection uses an explicit eleven-file allowlist.
+Each guest command log has a 4 MiB limit.
+The outer runtime log has a 16 MiB limit.
+A streamed overflow or deadline terminates the original process group.
+The deadline includes descendants that retain the output pipe after their leader exits.
+Collected evidence has a 128 MiB aggregate limit and separate file limits.
+Each file travels through a bounded tar stream before host finalization.
+The host rejects links, directories, extra members, and extended tar headers.
+Short fixed evidence filenames require no extended headers.
+Failed transport, truncated logs, and rejected evidence cannot produce a pass.
+
+Only files collected successfully during the current run can reach report parsing or artifact hashing.
+A failed collection preserves earlier files and records a failure.
