@@ -105,6 +105,25 @@ class BootstrapSmokeDriverTests(unittest.TestCase):
             self.assertIn('error', oversized)
             self.assertNotIn('sha256', oversized)
 
+    def test_private_temp_fixture_bytes_are_retained_without_following_links(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, output = base / 'owned', base / 'evidence'
+            root.mkdir()
+            output.mkdir()
+            (root / 'partial').write_bytes(b'partial publication\x00')
+            outside = base / 'unrelated'
+            outside.write_bytes(b'unrelated bytes')
+            if os.name != 'nt':
+                (root / 'alias').symlink_to(outside)
+            rows = driver.retain_fixture(root, output)
+            self.assertEqual((output / 'retained-fixture/partial').read_bytes(), b'partial publication\x00')
+            self.assertEqual((root / 'partial').read_bytes(), b'partial publication\x00')
+            if os.name != 'nt':
+                self.assertIn('error', next(row for row in rows if row['path'] == 'alias'))
+                self.assertFalse((output / 'retained-fixture/alias').exists())
+            self.assertEqual(outside.read_bytes(), b'unrelated bytes')
+
     def test_independent_publication_check_rejects_record_payload_and_execution_changes(self):
         spec = importlib.util.spec_from_file_location('smoke_pe_fixture', ROOT / 'tests/release/test_windows_bootstrap.py')
         fixture = importlib.util.module_from_spec(spec)

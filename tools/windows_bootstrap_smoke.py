@@ -253,6 +253,28 @@ def inventory(root):
     return rows
 
 
+def retain_fixture(root, output):
+    """Retain bounded raw bytes from a private TEMP fixture for artifact upload."""
+    rows = inventory(root)
+    destination = output / 'retained-fixture'
+    destination.mkdir()
+    for row in rows:
+        if 'error' in row:
+            continue
+        relative = Path(row['path'])
+        source, target = root / relative, destination / relative
+        if stat.S_ISDIR(row['mode']):
+            target.mkdir(exist_ok=True)
+        else:
+            data = bounded_bytes(source)
+            if hashlib.sha256(data).hexdigest() != row['sha256']:
+                raise ValueError('Fixture bytes changed before evidence retention.')
+            with target.open('xb') as stream:
+                stream.write(data)
+            row['retained_path'] = target.relative_to(output).as_posix()
+    return rows
+
+
 def marker_assembly(target, version, marker):
     # Input: no arguments. Output: marker creation and ExitProcess(73).
     # x64 reserves 32-byte shadow space and aligned 64-byte argument storage.
@@ -379,13 +401,16 @@ def main(argv=None):
         if output.exists():
             raise ValueError('Use a new output directory; existing evidence must be preserved.')
         output.mkdir(parents=True)
-        owned = Path(tempfile.mkdtemp(prefix='owned bootstrap ', dir=output))
+        # Native fourth-run descriptors show the workspace drive/ancestors
+        # violate the unchanged guard policy. Ordinary runtime fixtures use
+        # the current user's TEMP chain, whose descriptors were also retained.
+        owned = Path(tempfile.mkdtemp(prefix='owned bootstrap '))
         home = owned / 'HOME with spaces'
         home.mkdir()
         fixture_spec = importlib.util.spec_from_file_location('asm_smoke_fixture_security', ROOT / 'tests/windows/fixture_security.py')
         fixture = importlib.util.module_from_spec(fixture_spec)
         fixture_spec.loader.exec_module(fixture)
-        fixture.own_directory(owned, output)
+        fixture.own_directory(owned, owned.parent)
         fixture.own_directory(home, owned)
         environment = {key: os.environ[key] for key in ('SystemRoot', 'WINDIR', 'ComSpec') if key in os.environ}
         environment.update(HOME=str(home), USERPROFILE=str(home), TEMP=str(home), TMP=str(home),
@@ -444,8 +469,14 @@ def main(argv=None):
             except (OSError, ValueError) as error:
                 report['inputs'][relative] = {'error': str(error)}
         if owned:
-            report['owned_root'] = owned.relative_to(output).as_posix()
+            report['original_owned_root'] = str(owned)
+            report['owned_root'] = 'retained-fixture'
             report['files'] = inventory(owned)
+            try:
+                report['files'] = retain_fixture(owned, output)
+            except (OSError, ValueError) as error:
+                report['retention_error'] = str(error)
+                report['outcome'] = 'fail'
             report['package_executed_marker_present'] = (owned / 'PACKAGE_EXECUTED').exists()
             if report['package_executed_marker_present'] or any('error' in row for row in report['files']):
                 report['outcome'] = 'fail'
