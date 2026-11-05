@@ -18,7 +18,7 @@ SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s
 SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s
 TARGET_FLAGS_riscv64-linux := -march=rv64gc -mabi=lp64d
 
-.PHONY: all test
+.PHONY: all test test-admission-fixture
 all:
 	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
 	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
@@ -43,7 +43,20 @@ all:
 	    -o "$$stage/asm-hub" $(SOURCES_$(TARGET)) $(LIBRARIES); \
 	  mv -fT -- "$$stage/asm-hub" "$(BUILD)/asm-hub"
 
-test: all
+test-admission-fixture: all
+	@set -eu; umask 077; \
+	  test ! -L "$(BUILD)/connect-null.so" && test ! -d "$(BUILD)/connect-null.so" || \
+	    { echo "connect-null.so must not be a symlink or directory." >&2; exit 1; }; \
+	  stage=$$(mktemp -d "$(BUILD)/.asm-admission-fixture.XXXXXXXX"); \
+	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
+	  $(CC) $(TARGET_FLAGS_$(TARGET)) -std=c11 -Wall -Wextra -Werror -fPIC -shared \
+	    -Wl,-z,relro,-z,now,-z,noexecstack \
+	    -o "$$stage/connect-null.so" test_connect_null.c -ldl; \
+	  chmod 0444 "$$stage/connect-null.so"; \
+	  mv -fT -- "$$stage/connect-null.so" "$(BUILD)/connect-null.so"
+
+test: test-admission-fixture
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
 	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
-	python3 test_runtime.py
+	ASM_SERVER_CONNECT_NULL_FIXTURE="$(abspath $(BUILD))/connect-null.so" \
+	python3 -m unittest -v test_runtime test_capacity
