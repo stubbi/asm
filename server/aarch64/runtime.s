@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Native ARMv8-A, little-endian Linux LP64, AAPCS64.
  * HTTP framing belongs to libmicrohttpd 1.0.3; PostgreSQL/auth/TLS to libpq.
- * Runtime foundation: explicit database TLS policy; no catalog endpoints.
+ * Canonical read-only catalog with explicit database TLS policy.
  */
 
 /* All routines use Linux AAPCS64: x0-x7 arguments, x0 result, x19-x29
@@ -23,6 +23,8 @@
 .equ STAT_UID, 24
 .equ DB_DEADLINE_MS, 2000
 .equ MAX_REPLY, 16384
+.equ MAX_TSV, 1048576
+.equ MAX_JSON, 4194304
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
@@ -33,11 +35,15 @@ env_database: .asciz "ASM_DATABASE_URL_FILE"
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
 db_error: .asciz "asm-hub: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub: the HTTP listener could not start.\n"
-started: .asciz "asm-hub: listening; health and source identity only.\n"
+started: .asciz "asm-hub: listening.\n"
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
 path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
+path_linux: .asciz "/registry/v1/index.tsv"
+path_macos: .asciz "/registry/v1/index-macos.tsv"
+path_all: .asciz "/registry/v1/index-all.tsv"
+path_index: .asciz "/registry/v1/index.json"
 empty: .asciz ""
 header_te: .asciz "Transfer-Encoding"
 header_cl: .asciz "Content-Length"
@@ -46,6 +52,8 @@ header_cache: .asciz "Cache-Control"
 header_nosniff: .asciz "X-Content-Type-Options"
 header_connection: .asciz "Connection"
 type_json: .asciz "application/json; charset=utf-8"
+type_index: .asciz "application/json"
+type_tsv: .asciz "text/tab-separated-values; charset=utf-8"
 cache_no_store: .asciz "no-store"
 nosniff: .asciz "nosniff"
 close_value: .asciz "close"
@@ -75,8 +83,12 @@ db_key_application: .asciz "application_name"
 timeout_value: .asciz "2"
 db_options: .asciz "-c default_transaction_read_only=on -c statement_timeout=1000 -c lock_timeout=200 -c search_path=pg_catalog,public"
 application_name: .asciz "asm-hub"
+begin_read_only: .asciz "BEGIN READ ONLY"
 guard_sql:
-.incbin "guard.sql"
+.incbin "catalog/reader-guard.sql"
+.byte 0
+export_sql:
+.incbin "catalog/read-exports.sql"
 .byte 0
 .section .data.rel.ro,"aw"
 .balign 8
@@ -441,10 +453,12 @@ wait_database:
     ldp x29, x30, [sp], #64
     ret
 
-/* x0=fixed SQL, w1=count, x2=borrowed parameter array. x0=owned PGresult
- * or NULL; caller clears it. Frame 80 saves x19-x24. Owns exactly one
- * connection and one bounded, one-row/one-column result. All I/O/drain stages
- * share one two-second deadline; every failure clears and closes ownership. */
+/* x0=fixed SQL or NULL for guard only, w1=count, x2=parameters,
+ * w3=positive byte bound <=MAX_JSON. x0=owned PGresult or NULL; caller clears.
+ * Frame 80 saves x19-x24; local bound/phase occupy offsets 64/72.
+ * One TLS connection sends BEGIN READ ONLY, guard, then optional fixed SQL.
+ * Every command drains; all I/O shares one absolute two-second deadline.
+ * PQfinish closes the transaction; an accepted PGresult remains owned. */
 database_query:
     stp x29, x30, [sp, #-80]!
     mov x29, sp
@@ -456,6 +470,12 @@ database_query:
     mov x21, x2
     mov x23, #0
     mov x24, #0
+    str w3, [sp, #64]
+    str wzr, [sp, #72]
+    cmp w3, #0
+    b.le .Ldb_failed
+    cmp w3, #MAX_JSON
+    b.hi .Ldb_failed
     bl clock_ms
     cmp x0, #0
     b.lt .Ldb_failed
@@ -500,11 +520,26 @@ database_query:
     mov w1, #1
     bl PQsetnonblocking
     cbnz w0, .Ldb_failed
+.Ldb_send:
+    bl clock_ms
+    cmp x0, #0
+    b.lt .Ldb_failed
+    cmp x0, x22
+    b.hs .Ldb_failed
     mov x0, x23
+    ADDR x1, begin_read_only
+    mov w2, #0
+    mov x4, #0
+    ldr w8, [sp, #72]
+    cbz w8, .Ldb_send_selected
+    ADDR x1, guard_sql
+    cmp w8, #1
+    b.eq .Ldb_send_selected
     mov x1, x19
     mov w2, w20
-    mov x3, #0
     mov x4, x21
+.Ldb_send_selected:
+    mov x3, #0
     mov x5, #0
     mov x6, #0
     mov w7, #0
@@ -549,6 +584,12 @@ database_query:
     cbnz x24, .Ldb_extra_result
     mov x24, x0
     bl PQresultStatus
+    ldr w8, [sp, #72]
+    cbnz w8, .Ldb_tuple_status
+    cmp w0, #1
+    b.ne .Ldb_failed
+    b .Ldb_read
+.Ldb_tuple_status:
     cmp w0, #2
     b.ne .Ldb_failed
     mov x0, x24
@@ -570,7 +611,22 @@ database_query:
     bl PQgetlength
     cmp w0, #0
     b.le .Ldb_failed
-    cmp w0, #MAX_REPLY
+    ldr w8, [sp, #72]
+    cmp w8, #1
+    b.ne .Ldb_export_length
+    cmp w0, #1
+    b.ne .Ldb_failed
+    mov x0, x24
+    mov w1, #0
+    mov w2, #0
+    bl PQgetvalue
+    ldrh w8, [x0]
+    cmp w8, #49
+    b.ne .Ldb_failed
+    b .Ldb_read
+.Ldb_export_length:
+    ldr w8, [sp, #64]
+    cmp w0, w8
     b.hi .Ldb_failed
     b .Ldb_read
 .Ldb_extra_result:
@@ -578,6 +634,21 @@ database_query:
     b .Ldb_failed
 .Ldb_complete:
     cbz x24, .Ldb_failed
+    ldr w8, [sp, #72]
+    cmp w8, #2
+    b.eq .Ldb_finish
+    cmp w8, #1
+    b.ne .Ldb_next
+    cbz x19, .Ldb_finish
+.Ldb_next:
+    mov x0, x24
+    bl PQclear
+    mov x24, #0
+    ldr w8, [sp, #72]
+    add w8, w8, #1
+    str w8, [sp, #72]
+    b .Ldb_send
+.Ldb_finish:
     mov x0, x23
     bl PQfinish
     mov x0, x24
@@ -609,9 +680,10 @@ database_ready:
     stp x29, x30, [sp, #-32]!
     mov x29, sp
     stp x19, x20, [sp, #16]
-    ADDR x0, guard_sql
+    mov x0, #0
     mov w1, #0
     mov x2, #0
+    mov w3, #1
     bl database_query
     cbz x0, .Lready_no
     mov x19, x0
@@ -665,10 +737,41 @@ header_bound:
     mov w0, #0
     ret
 
-/* x0=borrowed connection, w1=status, x2=NUL body <=MAX_REPLY.
- * Frame 64 saves x19-x23. Owns each response until MHD copies/queues the
- * body and destroys the response on success or error. No result survives. */
+/* x0=connection, w1=status, x2=NUL fixed JSON body <=MAX_REPLY.
+ * w0=MHD_Result. Frame 48 saves x19-x21. The common response path copies bytes. */
 queue_json:
+    stp x29, x30, [sp, #-48]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    str x21, [sp, #32]
+    mov x19, x0
+    mov w20, w1
+    mov x21, x2
+    mov x0, x2
+    mov x1, #(MAX_REPLY + 1)
+    bl strnlen
+    cmp x0, #MAX_REPLY
+    b.hi .Lfixed_queue_no
+    mov x3, x0
+    mov x0, x19
+    mov w1, w20
+    mov x2, x21
+    ADDR x4, type_json
+    ldr x21, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    b queue_response
+.Lfixed_queue_no:
+    mov w0, #0
+    ldr x21, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    ret
+
+/* x0=connection,w1=status,x2=borrowed bytes,x3=length<=MAX_JSON,x4=fixed type.
+ * w0=MHD_Result. Frame 64 saves x19-x23 and stores type at 56.
+ * MHD copies before return. Every path destroys its response; failure closes HTTP. */
+queue_response:
     stp x29, x30, [sp, #-64]!
     mov x29, sp
     stp x19, x20, [sp, #16]
@@ -677,18 +780,18 @@ queue_json:
     mov x19, x0
     mov w20, w1
     mov x21, x2
-    mov x0, x2
-    mov x1, #(MAX_REPLY + 1)
-    bl strnlen
-    cmp x0, #MAX_REPLY
+    str x4, [sp, #56]
+    cbz x3, .Lqueue_no
+    cmp x3, #MAX_JSON
     b.hi .Lqueue_no
+    mov x0, x3
     mov x1, x21
     mov w2, #2
     bl MHD_create_response_from_buffer
     cbz x0, .Lqueue_no
     mov x22, x0
     ADDR x1, header_type
-    ADDR x2, type_json
+    ldr x2, [sp, #56]
     bl MHD_add_response_header
     cmp w0, #1
     b.ne .Lqueue_destroy_no
@@ -806,6 +909,22 @@ handle_request:
     ADDR x1, path_status
     bl strcmp
     cbz w0, .Lstatus
+    mov x0, x20
+    ADDR x1, path_linux
+    bl strcmp
+    cbz w0, .Llinux_export
+    mov x0, x20
+    ADDR x1, path_macos
+    bl strcmp
+    cbz w0, .Lmacos_export
+    mov x0, x20
+    ADDR x1, path_all
+    bl strcmp
+    cbz w0, .Lall_export
+    mov x0, x20
+    ADDR x1, path_index
+    bl strcmp
+    cbz w0, .Ljson_export
     b .Lnot_found
 
 .Llive:
@@ -825,6 +944,53 @@ handle_request:
     ADDR x2, status_body
     mov w1, #200
     b .Lfixed_response
+.Llinux_export:
+    ADDR x0, path_linux
+    b .Ltsv_export
+.Lmacos_export:
+    ADDR x0, path_macos
+    b .Ltsv_export
+.Lall_export:
+    ADDR x0, path_all
+.Ltsv_export:
+    mov w23, #MAX_TSV
+    ADDR x24, type_tsv
+    b .Lcatalog_export
+.Ljson_export:
+    ADDR x0, path_index
+    mov w23, #MAX_JSON
+    ADDR x24, type_index
+.Lcatalog_export:
+    str x0, [sp, #104]         /* router-owned literal, not request text */
+    ADDR x1, stop_requested
+    ldar w0, [x1]
+    cbnz w0, .Lunavailable
+    ADDR x0, export_sql
+    mov w1, #1
+    add x2, sp, #104
+    mov w3, w23
+    bl database_query
+    cbz x0, .Lunavailable
+    mov x22, x0
+    mov w1, #0
+    mov w2, #0
+    bl PQgetlength
+    mov w23, w0
+    mov x0, x22
+    mov w1, #0
+    mov w2, #0
+    bl PQgetvalue
+    mov x2, x0
+    mov x0, x19
+    mov w1, #200
+    mov w3, w23
+    mov x4, x24
+    bl queue_response
+    mov w21, w0
+    mov x0, x22
+    bl PQclear
+    mov w0, w21
+    b .Lrequest_return
 .Lnot_found:
     ADDR x2, not_found_body
     mov w1, #404

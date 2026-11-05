@@ -17,8 +17,10 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 TARGETS = {"amd64": ("x86_64", 62), "arm64": ("aarch64", 183), "riscv64": ("riscv64", 243)}
@@ -32,6 +34,8 @@ EF_RISCV_RVC = 0x1
 EF_RISCV_FLOAT_ABI = 0x6
 EF_RISCV_FLOAT_ABI_DOUBLE = 0x4
 REPORT_PREFIX = "ASM_SERVER_QUALIFICATION="
+QUALIFICATION_SCOPE = "assembly-canonical-exports"
+MIN_RUNTIME_TESTS = 16
 REPOSITORY = "ghcr.io/stubbi/asm-hub"
 
 
@@ -39,6 +43,17 @@ def binary_permissions(value):
     if value.strip() != "555:0:0":
         raise ValueError("The packaged runtime executable must be root-owned with mode 0555 for UID 65532.")
     return {"mode": "0555", "uid": 0, "gid": 0}
+
+
+def runtime_evidence_contract(evidence, arch, revision):
+    if (not isinstance(evidence, dict) or type(evidence.get("schema")) is not int
+            or evidence["schema"] != 1 or evidence.get("status") != "pass"
+            or evidence.get("scope") != QUALIFICATION_SCOPE or evidence.get("architecture") != arch
+            or evidence.get("os") != "linux" or evidence.get("execution") not in ("native", "emulated")
+            or evidence.get("source_revision") != revision
+            or type(evidence.get("tests_run")) is not int or evidence["tests_run"] < MIN_RUNTIME_TESTS
+            or type(evidence.get("tests_skipped")) is not int or evidence["tests_skipped"] != 0):
+        raise ValueError("The image lacks complete canonical-export runtime qualification.")
 
 
 def index_contract(index, expected):
@@ -155,13 +170,13 @@ def inside(args):
     spec.loader.exec_module(module)
     suite = unittest.defaultTestLoader.loadTestsFromModule(module)
     count = suite.countTestCases()
-    if count < 11:
+    if count < MIN_RUNTIME_TESTS:
         raise ValueError("The runtime qualification suite is incomplete.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
     if not result.wasSuccessful() or result.skipped or result.testsRun != count:
         raise ValueError("The architecture's complete runtime suite did not pass without skips.")
-    report = {"schema": 1, "status": "pass", "scope": "assembly-runtime-foundation",
+    report = {"schema": 1, "status": "pass", "scope": QUALIFICATION_SCOPE,
               "architecture": args.arch, "os": "linux", "execution": args.execution,
               "source_revision": args.revision, "binary": artifact,
               "tests_run": result.testsRun, "tests_skipped": 0,
@@ -217,6 +232,7 @@ def qualify(args):
         if len(reports) != 1:
             raise ValueError("Expected one successful runtime qualification report.")
         report = json.loads(reports[0])
+        runtime_evidence_contract(report, args.arch, args.revision)
         if report["binary"] != artifact or report["source_revision"] != args.revision:
             raise ValueError("The image qualification report identifies different bytes or source.")
         report.update(runtime_image_id=image_id, qualification_image_id=test_id,
@@ -238,10 +254,7 @@ def publish_index(args):
         if not re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[0-9a-f]{64}", ref):
             raise ValueError("A child publication record has an unexpected repository or digest.")
         evidence = json.loads((directory / "qualification.json").read_text())
-        if (evidence.get("status") != "pass" or evidence.get("architecture") != arch
-                or evidence.get("source_revision") != args.revision or evidence.get("tests_run", 0) < 11
-                or evidence.get("tests_skipped") != 0):
-            raise ValueError("A child publication lacks complete runtime qualification.")
+        runtime_evidence_contract(evidence, arch, args.revision)
         manifest = json.loads(command(["docker", "buildx", "imagetools", "inspect", "--raw", ref]).stdout)
         if manifest.get("config", {}).get("digest") != evidence["runtime_image_id"]:
             raise ValueError("The published child config differs from the tested image ID.")
@@ -343,6 +356,33 @@ class ContractTests(unittest.TestCase):
         changed["manifests"][0]["digest"] = "sha256:" + "f" * 64
         with self.assertRaises(ValueError):
             index_contract(changed, expected)
+
+    def test_index_refuses_foundation_or_incomplete_catalog_evidence(self):
+        revision = "c" * 40
+        arch = next(iter(TARGETS))
+        complete = {"schema": 1, "status": "pass", "scope": "assembly-canonical-exports",
+                    "architecture": arch, "os": "linux", "execution": "native",
+                    "source_revision": revision, "tests_run": 16, "tests_skipped": 0,
+                    "runtime_image_id": "sha256:" + "d" * 64}
+        runtime_evidence_contract(complete, arch, revision)
+        with tempfile.TemporaryDirectory(prefix="asm-image-evidence-") as directory:
+            child = Path(directory) / f"server-image-digest-{arch}-{revision}"
+            child.mkdir()
+            (child / "registry-digest.txt").write_text(REPOSITORY + "@sha256:" + "e" * 64 + "\n")
+            args = argparse.Namespace(revision=revision, children_directory=directory,
+                                      index_tag="sha-" + revision + "-run-1-1")
+            for change in ({"scope": "assembly-runtime-foundation"}, {"scope": "unknown"},
+                           {"tests_run": 15}, {"tests_run": "16"}, {"schema": 2}, {"schema": True},
+                           {"execution": []}, {"tests_skipped": False},
+                           {"status": "fail"}, {"tests_skipped": 1},
+                           {"architecture": "wrong"}, {"source_revision": "f" * 40}):
+                with self.subTest(change=change):
+                    (child / "qualification.json").write_text(json.dumps(complete | change))
+                    with patch.object(sys.modules[__name__], "command") as registry:
+                        registry.side_effect = AssertionError("Unqualified evidence reached the registry.")
+                        with self.assertRaises(ValueError):
+                            publish_index(args)
+                        registry.assert_not_called()
 
 
 def main():

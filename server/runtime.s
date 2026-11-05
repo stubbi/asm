@@ -2,11 +2,13 @@
  * GNU Intel-syntax assembly, Linux x86-64 System V ABI.
  * HTTP parsing belongs to libmicrohttpd 1.0.3. PostgreSQL protocol and TLS
  * belong to libpq. No C, Rust, Python, or shell application backend is used.
- * Bounded runtime foundation. Catalog exports and operator commands are absent.
+ * Canonical read-only catalog. Operator commands remain a separate tool.
  */
 .intel_syntax noprefix
 .equ DB_DEADLINE_MS, 2000
 .equ MAX_REPLY, 16384
+.equ MAX_TSV, 1048576
+.equ MAX_JSON, 4194304
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
@@ -17,11 +19,15 @@ env_database: .asciz "ASM_DATABASE_URL_FILE"
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
 db_error: .asciz "asm-hub: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub: the HTTP listener could not start.\n"
-started: .asciz "asm-hub: listening; health and source identity only.\n"
+started: .asciz "asm-hub: listening.\n"
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
 path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
+path_linux: .asciz "/registry/v1/index.tsv"
+path_macos: .asciz "/registry/v1/index-macos.tsv"
+path_all: .asciz "/registry/v1/index-all.tsv"
+path_index: .asciz "/registry/v1/index.json"
 empty: .asciz ""
 header_te: .asciz "Transfer-Encoding"
 header_cl: .asciz "Content-Length"
@@ -30,6 +36,8 @@ header_cache: .asciz "Cache-Control"
 header_nosniff: .asciz "X-Content-Type-Options"
 header_connection: .asciz "Connection"
 type_json: .asciz "application/json; charset=utf-8"
+type_index: .asciz "application/json"
+type_tsv: .asciz "text/tab-separated-values; charset=utf-8"
 cache_no_store: .asciz "no-store"
 nosniff: .asciz "nosniff"
 close_value: .asciz "close"
@@ -59,8 +67,12 @@ db_key_application: .asciz "application_name"
 timeout_value: .asciz "2"
 db_options: .asciz "-c default_transaction_read_only=on -c statement_timeout=1000 -c lock_timeout=200 -c search_path=pg_catalog,public"
 application_name: .asciz "asm-hub"
+begin_read_only: .asciz "BEGIN READ ONLY"
 guard_sql:
-.incbin "guard.sql"
+.incbin "catalog/reader-guard.sql"
+.byte 0
+export_sql:
+.incbin "catalog/read-exports.sql"
 .byte 0
 .section .data.rel.ro,"aw"
 .balign 8
@@ -435,10 +447,12 @@ wait_database:
     pop rbx
     ret
 
-/* Input RDI=fixed SQL, ESI=parameter count, RDX=parameter pointers.
+/* Input RDI=fixed SQL or NULL for guard only; ESI=count, RDX=parameters,
+ * ECX=positive result byte limit, at most MAX_JSON. Borrows all arguments.
  * Output RAX=owned PGresult with one non-null field, or NULL. Caller PQclear.
- * Owns one nonblocking connection and one result; closes the connection on
- * every path. Connect, write, read, and drain share one two-second deadline.
+ * One connection runs BEGIN READ ONLY, the exact guard, then the optional SQL.
+ * Every command drains before the next. One absolute deadline covers all I/O.
+ * PQfinish closes the transaction on every path; the result remains owned.
  * libpq handles framing, parameter encoding, authentication, and any TLS.
  * Arguments remain valid for this call. Callee-saved registers preserved.
  * Stack: 56 bytes local/outgoing arguments plus six saved registers. */
@@ -455,7 +469,13 @@ database_query:
     mov r12d, esi
     mov r13, rdx
     mov qword ptr [rbp - 48], 0
+    mov dword ptr [rbp - 56], 0  /* phase: BEGIN, guard, export */
+    mov [rbp - 64], ecx
     xor r15d, r15d
+    test ecx, ecx
+    jle .Ldb_failed
+    cmp ecx, MAX_JSON
+    ja .Ldb_failed
     call clock_ms
     test rax, rax
     js .Ldb_failed
@@ -504,11 +524,26 @@ database_query:
     call PQsetnonblocking@PLT
     test eax, eax
     jnz .Ldb_failed
+.Ldb_send:
+    call clock_ms
+    test rax, rax
+    js .Ldb_failed
+    cmp rax, r14
+    jae .Ldb_failed
     mov rdi, r15
+    lea rsi, [rip + begin_read_only]
+    xor edx, edx
+    xor r8d, r8d
+    cmp dword ptr [rbp - 56], 0
+    je .Ldb_send_selected
+    lea rsi, [rip + guard_sql]
+    cmp dword ptr [rbp - 56], 1
+    je .Ldb_send_selected
     mov rsi, rbx
     mov edx, r12d
-    xor ecx, ecx                 /* infer types in the fixed SQL */
     mov r8, r13
+.Ldb_send_selected:
+    xor ecx, ecx                 /* infer types in the fixed SQL */
     xor r9d, r9d                /* null lengths: text parameters */
     mov qword ptr [rsp], 0       /* text formats */
     mov qword ptr [rsp + 8], 0   /* text result */
@@ -560,6 +595,12 @@ database_query:
     mov [rbp - 48], rax
     mov rdi, rax
     call PQresultStatus@PLT
+    cmp dword ptr [rbp - 56], 0
+    jne .Ldb_tuple_status
+    cmp eax, 1                   /* PGRES_COMMAND_OK for BEGIN */
+    jne .Ldb_failed
+    jmp .Ldb_read
+.Ldb_tuple_status:
     cmp eax, 2                   /* PGRES_TUPLES_OK */
     jne .Ldb_failed
     mov rdi, [rbp - 48]
@@ -582,7 +623,19 @@ database_query:
     call PQgetlength@PLT
     test eax, eax
     jle .Ldb_failed
-    cmp eax, MAX_REPLY
+    cmp dword ptr [rbp - 56], 1
+    jne .Ldb_export_length
+    cmp eax, 1
+    jne .Ldb_failed
+    mov rdi, [rbp - 48]
+    xor esi, esi
+    xor edx, edx
+    call PQgetvalue@PLT
+    cmp word ptr [rax], 49       /* exact '1', NUL */
+    jne .Ldb_failed
+    jmp .Ldb_read
+.Ldb_export_length:
+    cmp eax, [rbp - 64]
     ja .Ldb_failed
     jmp .Ldb_read                /* drain to NULL before closing */
 .Ldb_extra_result:
@@ -592,6 +645,19 @@ database_query:
 .Ldb_complete:
     cmp qword ptr [rbp - 48], 0
     je .Ldb_failed
+    cmp dword ptr [rbp - 56], 2
+    je .Ldb_finish
+    cmp dword ptr [rbp - 56], 1
+    jne .Ldb_next
+    test rbx, rbx
+    jz .Ldb_finish
+.Ldb_next:
+    mov rdi, [rbp - 48]
+    call PQclear@PLT
+    mov qword ptr [rbp - 48], 0
+    inc dword ptr [rbp - 56]
+    jmp .Ldb_send
+.Ldb_finish:
     mov rdi, r15
     call PQfinish@PLT
     mov rax, [rbp - 48]
@@ -624,9 +690,10 @@ ignore_notice:
 /* Output EAX=1 only when the fixed guard returns exactly '1'. */
 database_ready:
     push rbx
-    lea rdi, [rip + guard_sql]
+    xor edi, edi
     xor esi, esi
     xor edx, edx
+    mov ecx, 1
     call database_query
     test rax, rax
     jz .Lready_no
@@ -761,6 +828,26 @@ handle_request:
     call strcmp@PLT
     test eax, eax
     jz .Lstatus
+    mov rdi, r12
+    lea rsi, [rip + path_linux]
+    call strcmp@PLT
+    test eax, eax
+    jz .Llinux_export
+    mov rdi, r12
+    lea rsi, [rip + path_macos]
+    call strcmp@PLT
+    test eax, eax
+    jz .Lmacos_export
+    mov rdi, r12
+    lea rsi, [rip + path_all]
+    call strcmp@PLT
+    test eax, eax
+    jz .Lall_export
+    mov rdi, r12
+    lea rsi, [rip + path_index]
+    call strcmp@PLT
+    test eax, eax
+    jz .Ljson_export
     jmp .Lnot_found
 .Llive:
     lea rdx, [rip + live_body]
@@ -779,6 +866,55 @@ handle_request:
     lea rdx, [rip + status_body]
     mov esi, 200
     jmp .Lfixed_response
+.Llinux_export:
+    lea rax, [rip + path_linux]
+    jmp .Ltsv_export
+.Lmacos_export:
+    lea rax, [rip + path_macos]
+    jmp .Ltsv_export
+.Lall_export:
+    lea rax, [rip + path_all]
+.Ltsv_export:
+    mov r14d, MAX_TSV
+    lea r15, [rip + type_tsv]
+    jmp .Lcatalog_export
+.Ljson_export:
+    lea rax, [rip + path_index]
+    mov r14d, MAX_JSON
+    lea r15, [rip + type_index]
+.Lcatalog_export:
+    /* Only router-owned literals enter the borrowed parameter array. */
+    mov [rbp - 80], rax
+    cmp dword ptr [rip + stop_requested], 0
+    jne .Lunavailable
+    lea rdi, [rip + export_sql]
+    mov esi, 1
+    lea rdx, [rbp - 80]
+    mov ecx, r14d
+    call database_query
+    test rax, rax
+    jz .Lunavailable
+    mov r12, rax                /* own PGresult until MHD has copied it */
+    mov rdi, r12
+    xor esi, esi
+    xor edx, edx
+    call PQgetlength@PLT
+    mov r14d, eax
+    mov rdi, r12
+    xor esi, esi
+    xor edx, edx
+    call PQgetvalue@PLT
+    mov rdi, rbx
+    mov esi, 200
+    mov rdx, rax
+    mov ecx, r14d
+    mov r8, r15
+    call queue_response
+    mov r13d, eax
+    mov rdi, r12
+    call PQclear@PLT
+    mov eax, r13d
+    jmp .Lrequest_return
 .Lnot_found:
     lea rdx, [rip + not_found_body]
     mov esi, 404
@@ -823,11 +959,42 @@ handle_request:
     pop rbp
     ret
 
-/* Input RDI=MHD connection, ESI=status, RDX=NUL-terminated <=16384 body.
- * Output EAX=MHD_Result. MHD receives its own body copy before return.
- * On every error the response is destroyed and the connection is closed.
- * Callee-saved preserved; stack: 16 local bytes + five saved registers. */
+/* Fixed JSON wrapper: RDI=connection, ESI=status, RDX=NUL body <=MAX_REPLY.
+ * EAX=MHD_Result. Preserves callee-saved registers; stack 24 saved bytes.
+ * The common response path copies the body before returning. */
 queue_json:
+    push rbx
+    push r12
+    push r13
+    mov rbx, rdi
+    mov r12d, esi
+    mov r13, rdx
+    mov rdi, rdx
+    mov esi, MAX_REPLY + 1
+    call strnlen@PLT
+    cmp rax, MAX_REPLY
+    ja .Lfixed_queue_no
+    mov rdi, rbx
+    mov esi, r12d
+    mov rdx, r13
+    mov rcx, rax
+    lea r8, [rip + type_json]
+    pop r13
+    pop r12
+    pop rbx
+    jmp queue_response
+.Lfixed_queue_no:
+    xor eax, eax
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* RDI=connection, ESI=status, RDX=borrowed bytes, RCX=length <=MAX_JSON,
+ * R8=fixed content type. EAX=MHD_Result. MHD copies before return.
+ * Owns/destroys the response on every path; allocation failure closes HTTP.
+ * Callee-saved preserved; stack 16 local bytes plus five saved registers. */
+queue_response:
     push rbx
     push r12
     push r13
@@ -837,12 +1004,12 @@ queue_json:
     mov rbx, rdi
     mov r12d, esi
     mov r13, rdx
-    mov rdi, rdx
-    mov esi, MAX_REPLY + 1
-    call strnlen@PLT
-    cmp rax, MAX_REPLY
+    mov [rsp], r8
+    test rcx, rcx
+    jz .Lqueue_no
+    cmp rcx, MAX_JSON
     ja .Lqueue_no
-    mov rdi, rax
+    mov rdi, rcx
     mov rsi, r13
     mov edx, 2
     call MHD_create_response_from_buffer@PLT
@@ -851,7 +1018,7 @@ queue_json:
     mov r14, rax
     mov rdi, r14
     lea rsi, [rip + header_type]
-    lea rdx, [rip + type_json]
+    mov rdx, [rsp]
     call MHD_add_response_header@PLT
     cmp eax, 1
     jne .Lqueue_destroy_no
