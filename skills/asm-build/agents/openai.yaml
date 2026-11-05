@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build with Asm"
+  short_description: "Build assembly with explicit targets and evidence"
+  default_prompt: "Use $asm-build to create and check assembly software for my deployment targets."

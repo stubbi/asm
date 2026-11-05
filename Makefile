@@ -94,6 +94,10 @@ check: test
 	$(PYTHON) -m unittest discover -s tests/release -p 'test_*.py' -v
 	node --test tests/site.test.cjs
 
+.PHONY: agent-test
+agent-test:
+	$(PYTHON) -m unittest discover -s tests/agents -p 'test_*.py' -v
+
 install: build/asm
 	sh cli/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
 

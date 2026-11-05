@@ -184,6 +184,86 @@ An absent version license is unavailable; consumers must not substitute the late
 
 Current evidence has `metadata`, `artifacts`, `provenance`, `formal`, and `agent_review` keys. Metadata is `validated` after schema checks. Artifacts are `validated` only after the tool checks the actual bytes, including archive, ELF, or Mach-O structure. Without that step, artifacts are `not-run`. The other three fields are `not-run` until their separate verification services exist. None of these fields is a safety rating.
 
+#### Declared source dependencies
+
+A verified site build writes optional declarations to `registry/v1/dependencies.json`.
+The existing catalog JSON and native TSV formats remain unchanged for existing clients.
+The builder derives declarations from each source artifact's root `asm.toml` after size, SHA-256, archive, and project validation.
+It reuses the existing artifact download and does not execute or resolve package code.
+
+The declaration file has `schema: 1` and a `sources` array.
+Each source entry contains `name`, `version`, `target`, and `metadata`.
+The name, version, target, and source digest must match an exact catalog artifact before the website displays its metadata.
+The file has a four-MiB limit and at most 4096 source entries.
+Duplicate source identities make the declaration file unavailable in the browser.
+Missing or invalid declarations must not make the package catalog unavailable.
+The `metadata` object contains these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `schema` | Integer `1` for this generated metadata format |
+| `source_sha256` | Exact source artifact SHA-256 |
+| `dependencies` | Direct declarations sorted by package identity |
+| `features` | Declared feature names mapped to their manifest member strings |
+
+Each dependency contains `name`, `requirement`, `optional`, `default_features`, and `features`.
+String requirements normalize to `optional: false`, `default_features: true`, and an empty feature list.
+Inline declarations retain their explicit values and use those defaults for omitted fields.
+The manifest extension below defines accepted requirements, features, and bounds.
+
+A checked legacy source manifest has empty dependency and feature declarations.
+An unchecked source artifact has no source entry; its declarations are unavailable, not known empty.
+Executable artifacts never inherit source dependency declarations.
+Different target artifacts can declare different dependencies for the same package version.
+These declarations do not describe resolved transitive dependencies, assembler includes, or executable contents.
+
+The optional file does not change published release records, source archives, or existing registry indexes.
+Its source digest identifies the checked bytes; it does not authenticate the publisher.
+
+#### Dependency manifest extension
+
+Source archives can declare dependencies with this explicit schema:
+
+```toml
+[resolution]
+schema = "1"
+
+[dependencies]
+"example/math" = "^1.2.0"
+"example/vector" = { version = "~2.3.0", optional = true, default-features = false, features = ["portable"] }
+
+[features]
+default = ["vectors"]
+vectors = ["dep:example/vector", "example/math/checked"]
+```
+
+The extension uses a strict single-line ASCII TOML subset with an 8190-byte manifest limit.
+Existing package and build fields remain required.
+Unknown fields, duplicate declarations, escapes, unsupported syntax, and malformed references are errors.
+Dependency inline tables accept only `version`, `optional`, `default-features`, and `features`.
+`version` is required. `optional` defaults to false; `default-features` defaults to true.
+Requested features default to an empty list.
+
+Requirements accept exact `X.Y.Z`, `*`, `^X.Y.Z`, `~X.Y.Z`, and comma-separated comparisons.
+Comparison operators are `=`, `<`, `<=`, `>`, and `>=`; all terms must hold.
+Ranges contain at most 128 bytes and eight terms.
+Version components range from zero through 2147483647 without leading zeros.
+Partial versions, prereleases, build metadata, and OR expressions are unsupported.
+Bare versions are exact. Caret preserves the first nonzero component; tilde preserves major and minor components.
+These declarations do not make the published CLI a transitive resolver.
+
+Each manifest can declare at most 64 dependencies and 64 features.
+Each feature or requested-feature list can contain at most 64 unique entries.
+Feature names contain at most 32 lowercase ASCII letters, digits, underscores, or hyphens, with an initial letter.
+A member names a local feature, `dep:owner/name`, or `owner/name/feature`.
+`dep:` members must name declared optional dependencies.
+Dependency-feature members must name declared dependencies.
+Local feature references must exist and contain no cycles.
+
+The website shows these direct declarations for each source target and version.
+It links available package records and labels packages absent from the catalog.
+Assembly include directives remain explicit source-code instructions.
+
 ### Download counts
 
 `downloads.json` has `schema: 1`, `source: "github-release-assets"`, an `observed_at` UTC timestamp, and a `packages` object. A package has a `total` and a `versions` map. Values are non-negative integers or `null`.

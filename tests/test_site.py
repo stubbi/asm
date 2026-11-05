@@ -97,6 +97,7 @@ class SearchDiscoveryTests(unittest.TestCase):
         repo = Path(cls.temporary.name) / "repo"
         repo.mkdir()
         shutil.copytree(SITE, repo / "site")
+        shutil.copytree(ROOT / "skills/asm-build", repo / "skills/asm-build")
         shutil.copytree(ROOT / "cli", repo / "cli")
         # Source archives have no Git metadata. Record an isolated fixture so
         # the generated reference uses the same exact-commit path in either form.
