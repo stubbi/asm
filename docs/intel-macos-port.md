@@ -133,7 +133,7 @@ The Intel adapter uses `/usr/local/opt/llvm/bin/clang` and `/usr/local/opt/lld/b
 It passes explicit triples, ELF linker emulations, bounded arguments, and the existing fixed compiler environment.
 Foreign execution and cross-target native-library linking remain refused before output changes.
 The native suite now includes the shared selected-target and v2-lock cases, plus both unified reference projects.
-Qualification requires at least 206 cases, without skips or expected failures.
+Qualification requires at least 209 cases, without skips or expected failures.
 The standalone workflow installs the required cross tools and retains exact-source build and runtime records.
 
 The first local integration suite ran through Rosetta: 205 cases, 15 failures, two errors, and one skip.
@@ -166,3 +166,7 @@ Seven real-repository regressions cover commit, tree, and blob replacements, bot
 All seven passed; all five substitution cases rejected the earlier archive-based extraction in an isolated mutation check.
 The registry suite then passed 76 cases.
 The earlier 89cdfb1 workflow remains an intermediate result; final qualification must use the corrected source reader.
+
+The final release-base sync retains main `6d7c7df` and its existing-host 0.6.0 preparation.
+Its three additional native response-file regressions raise the Intel suite to 209 cases.
+No 0.6.0 release record or published byte is changed by this port.

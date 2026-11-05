@@ -1,7 +1,11 @@
 # Native library builds
 
-Status: implementation contract for source builds.
-Published Asm 0.5.0 binaries do not support this extension.
+Status: Asm 0.6.0 native-library contract.
+Earlier published binaries do not support this extension.
+The [release notes](releases/0.6.0.md) state the publication gates and artifact scope.
+
+Source, test, and checker path components cannot start with `@`.
+Compilers can interpret that prefix as an argument file instead of the declared input.
 
 ## Purpose
 
