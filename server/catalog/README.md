@@ -258,7 +258,7 @@ It refuses existing database targets and requires the reviewed PostgreSQL 16.15 
 Run the focused suite with the fixture paths:
 
 ```sh
-ASM_PROTO_PG_BINDIR=PG16_BIN ASM_PROTO_LIBPQ=PG16_LIBPQ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/hosted_registry -p 'test_*.py' -v
+ASM_PROTO_PG_BINDIR=PG16_BIN ASM_PROTO_LIBPQ=PG16_LIBPQ make hosted-registry-test
 ```
 
 Run the existing registry gate:
@@ -271,7 +271,7 @@ Tests cover current-catalog parity, macOS preservation, immutable history, names
 They also cover duplicate or noncanonical JSON, role denial, dangerous default grants, credential file permissions, and TLS policy refusal.
 Reader tests exercise function-only authority, indirect roles, column writes, views, sequences, missing reads, and exact migration binding.
 The macOS extended ACL regression runs on macOS.
-No Makefile target or CI job for this component is added by this change.
+The assembly-server workflow runs this gate on Linux with the pinned PostgreSQL build and TLS enabled.
 Native macOS database evidence does not qualify Linux server ABIs, HTTP response ownership, Kubernetes deployment, capacity, or backup restoration.
 
 The PostgreSQL 16.15 source archive used for native qualification has SHA-256:
