@@ -15,7 +15,7 @@ import tempfile
 import time
 import unittest
 
-from host import IS_ARM64, IS_MACOS, OTHER_TARGET, TARGET, program
+from host import IS_ARM64, IS_MACOS, OTHER_TARGET, TARGET, program, MAC_ARCH
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -33,7 +33,12 @@ class InstalledProgramTests(unittest.TestCase):
             project = fixtures / f"program-{number}"
             subprocess.run([str(ASM), "new", str(project)], cwd=fixtures, check=True,
                            capture_output=True, timeout=15)
-            if IS_MACOS:
+            if IS_MACOS and not IS_ARM64:
+                body = ("lea rdi, [rip + marker]\nmov esi, 1537\nmov edx, 384\nxor eax, eax\n"
+                        "call _open\n"
+                        f"mov edi, {73 + number}\ncall _exit\n"
+                        '.data\nmarker: .asciz "PACKAGE_EXECUTED"')
+            elif IS_MACOS:
                 body = ("stp x29, x30, [sp, #-16]!\n"
                         "adrp x0, marker@PAGE\nadd x0, x0, marker@PAGEOFF\n"
                         "mov x1, #1537\nsub sp, sp, #16\nmov x2, #384\nstr x2, [sp]\n"
@@ -121,7 +126,7 @@ class InstalledProgramTests(unittest.TestCase):
         """
         if IS_MACOS:
             source = self.work / "inventory-failure.s"
-            subprocess.run([sys.executable, str(ROOT / "tools/macos.py"), "--output", str(source)],
+            subprocess.run([sys.executable, str(ROOT / ("tools/macos.py" if IS_ARM64 else "tools/macos_x86_64.py")), "--output", str(source)],
                            cwd=ROOT, check=True, capture_output=True, timeout=30)
             text = source.read_text()
         else:
@@ -136,7 +141,7 @@ class InstalledProgramTests(unittest.TestCase):
                 operation = "    ARM_CALL arm_renameat\n"
                 replacement = "    mov x2, #-1\n" + operation
             else:
-                operation = "    syscall\n"
+                operation = "    call mac_syscall\n" if IS_MACOS else "    syscall\n"
                 replacement = "    mov rdx, -1\n" + operation
             self.assertEqual(commit.count(operation), 1, "Fault must affect only the final inventory rename")
             text = text[:start] + commit.replace(operation, replacement) + text[end:]
@@ -157,11 +162,13 @@ class InstalledProgramTests(unittest.TestCase):
                     injected = ("    push rax\n    mov eax, 39\n    syscall\n    mov rdi, rax\n"
                                 f"    mov esi, {int(signal.SIGSTOP)}\n    mov eax, 62\n    syscall\n    pop rax\n")
             self.assertEqual(text.count(operation), 1, "Fault must occur after this invocation creates its probe")
+            if IS_MACOS and not IS_ARM64:
+                injected = injected.replace("syscall", "call mac_syscall")
             text = text.replace(operation, operation + injected)
         binary = self.work / "inventory-failure"
         if IS_MACOS:
             source.write_text(text)
-            command = ["/usr/bin/clang", "-arch", "arm64", "-mmacosx-version-min=15.0",
+            command = ["/usr/bin/clang", "-arch", MAC_ARCH, "-mmacosx-version-min=15.0", "-Wl,-adhoc_codesign",
                        "-Wl,-no_uuid", "-o", str(binary), str(source)]
         else:
             modified_module = self.work / "programs-failure.s"

@@ -1699,6 +1699,12 @@ spawn_wait:
     lea rcx, [rip + native_cc_path]
     cmp rdi, rcx
     je .Lspawn_fixed_environment
+    lea rcx, [rip + as_path]
+    cmp rdi, rcx
+    je .Lspawn_fixed_environment
+    lea rcx, [rip + ld_path]
+    cmp rdi, rcx
+    je .Lspawn_fixed_environment
     cmp rdi, [rip + cross_as]
     je .Lspawn_fixed_environment
     cmp rdi, [rip + cross_ld]
