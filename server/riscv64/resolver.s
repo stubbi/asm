@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Linux RV64GC/LP64D startup resolver. glibc owns DNS and its worker threads.
  * One lookup pins an IPv4 address while retaining the TLS certificate host.
- * The signal watchdog applies while the submitting thread can receive ALRM;
- * glibc's masked helper-creation interval is an explicit specification limit.
+ * One owned monotonic SIGKILL timer also covers fully masked submission.
+ * glibc owns the opaque timer_t; no raw kernel timer ID is inferred.
  */
 .option pic
 .option norelax
@@ -12,8 +12,9 @@
 .equ RR_IPPROTO_TCP, 6
 .equ RR_SIGALRM, 14
 .equ RR_SIGPIPE, 13
+.equ RR_SIGKILL, 9
+.equ RR_TIMER_ABSTIME, 1
 .equ RR_SIG_BLOCK, 0
-.equ RR_SIG_UNBLOCK, 1
 .equ RR_SIG_SETMASK, 2
 .equ RR_CLOCK_MONOTONIC, 1
 .equ RR_EAI_INPROGRESS, -100
@@ -37,15 +38,14 @@
 .Lrr_hints: .zero 48
 .Lrr_notification: .zero 64
 .Lrr_address: .zero 16
-.Lrr_old_action: .zero 160
-.Lrr_action: .zero 160
 .Lrr_old_mask: .zero 128
 .Lrr_alarm_set: .zero 128
 .Lrr_pipe_set: .zero 128
 .Lrr_pending: .zero 128
 .Lrr_old_timer: .zero 32
-.Lrr_timer: .zero 32
-.Lrr_zero_timer: .zero 32
+.Lrr_hard_event: .zero 64
+.Lrr_hard_id: .zero 8
+.Lrr_hard_value: .zero 32
 .Lrr_deadline: .zero 16
 .Lrr_now: .zero 16
 .Lrr_remaining: .zero 16
@@ -53,33 +53,34 @@
 .section .text
 .globl resolve_database_address
 .type resolve_database_address,@function
-/* a0=persistent validated hostname[<=254], borrowed until process termination.
+/* a0=persistent validated hostname[1..253] plus NUL, borrowed until exit.
  * Returns a0=1 after appending to owned db_config[4098], or exits process78.
- * Changes caller-saved registers; preserves s0-s11/gp/tp. Frame64, SP16.
+ * A deadline can instead terminate every thread with SIGKILL.
+ * Changes caller-saved registers; preserves s0-s11/gp/tp. Frame48, SP16.
  * Uses asserted LP64 libc resolver/signal/time layouts; never cancels a worker.
  * This startup-only routine is called once before database and HTTP threads. */
 resolve_database_address:
-    addi sp, sp, -64
+    addi sp, sp, -48
     sd ra, 0(sp)
     sd s0, 8(sp)
     sd s1, 16(sp)
     sd s2, 24(sp)
     sd s3, 32(sp)
-    sd s4, 40(sp)
     mv s0, a0
-    li s4, 0                  /* A fatal diagnostic needs an eligible watchdog. */
 
-    li a0, RR_SIG_SETMASK
-    li a1, 0
+    la a0, .Lrr_alarm_set
+    call sigemptyset
+    bnez a0, .Lrr_direct_fail
+    la a0, .Lrr_alarm_set
+    li a1, RR_SIGALRM
+    call sigaddset
+    bnez a0, .Lrr_direct_fail
+    li a0, RR_SIG_BLOCK
+    la a1, .Lrr_alarm_set
     la a2, .Lrr_old_mask
     call sigprocmask
     bnez a0, .Lrr_direct_fail
-    li a0, RR_SIGALRM
-    li a1, 0
-    la a2, .Lrr_old_action
-    call sigaction
-    bnez a0, .Lrr_direct_fail
-    li a0, 0                  /* ITIMER_REAL */
+    li a0, 0                  /* ITIMER_REAL is inspected, never changed. */
     la a1, .Lrr_old_timer
     call getitimer
     bnez a0, .Lrr_direct_fail
@@ -92,19 +93,6 @@ resolve_database_address:
     ld t2, 24(t0)
     or t1, t1, t2
     bnez t1, .Lrr_direct_fail
-
-    la a0, .Lrr_alarm_set
-    call sigemptyset
-    bnez a0, .Lrr_direct_fail
-    la a0, .Lrr_alarm_set
-    li a1, RR_SIGALRM
-    call sigaddset
-    bnez a0, .Lrr_direct_fail
-    li a0, RR_SIG_BLOCK
-    la a1, .Lrr_alarm_set
-    li a2, 0
-    call sigprocmask
-    bnez a0, .Lrr_direct_fail
     la a0, .Lrr_pending
     call sigpending
     bnez a0, .Lrr_direct_fail
@@ -122,32 +110,32 @@ resolve_database_address:
     addi t2, t1, 2
     blt t2, t1, .Lrr_direct_fail
     sd t2, 0(t0)
-    la a0, .Lrr_action
-    addi a0, a0, 8            /* libc sa_mask, not the kernel ABI */
-    call sigemptyset
-    bnez a0, .Lrr_direct_fail
-    la t0, .Lrr_action
-    la t1, .Lrr_alarm
-    sd t1, 0(t0)
-    li a0, RR_SIGALRM
+    la t0, .Lrr_hard_event
+    li t1, RR_SIGKILL          /* Zero sigev_notify is SIGEV_SIGNAL. */
+    sw t1, 8(t0)
+    li a0, RR_CLOCK_MONOTONIC
     mv a1, t0
-    li a2, 0
-    call sigaction
+    la a2, .Lrr_hard_id
+    call timer_create
     bnez a0, .Lrr_direct_fail
-    la t0, .Lrr_timer
-    li t1, 2
+    la t0, .Lrr_deadline
+    ld t1, 0(t0)
+    ld t2, 8(t0)
+    la t0, .Lrr_hard_value
     sd t1, 16(t0)
-    li a0, 0
-    mv a1, t0
-    li a2, 0
-    call setitimer
+    sd t2, 24(t0)
+    la t1, .Lrr_hard_id
+    ld a0, 0(t1)               /* Checked libc timer_t, not a raw kernel ID. */
+    li a1, RR_TIMER_ABSTIME
+    mv a2, t0
+    li a3, 0
+    call timer_settime
     bnez a0, .Lrr_direct_fail
-    li a0, RR_SIG_UNBLOCK
-    la a1, .Lrr_alarm_set
+    li a0, RR_SIG_SETMASK
+    la a1, .Lrr_old_mask
     li a2, 0
     call sigprocmask
     bnez a0, .Lrr_direct_fail
-    li s4, 1
 
     la t0, .Lrr_request
     sd s0, 0(t0)
@@ -248,16 +236,11 @@ resolve_database_address:
     mv a0, s1
     call freeaddrinfo
 
+    /* The hard timer remains armed across pending/deadline checks. */
     li a0, RR_SIG_BLOCK
     la a1, .Lrr_alarm_set
     li a2, 0
     call sigprocmask
-    bnez a0, .Lrr_direct_fail
-    li s4, 0
-    li a0, 0
-    la a1, .Lrr_zero_timer
-    li a2, 0
-    call setitimer
     bnez a0, .Lrr_direct_fail
     call .Lrr_time_left
     beqz a0, .Lrr_direct_fail
@@ -268,34 +251,28 @@ resolve_database_address:
     li a1, RR_SIGALRM
     call sigismember
     bnez a0, .Lrr_direct_fail
-    li a0, 0
-    la a1, .Lrr_old_timer
-    li a2, 0
-    call setitimer
-    bnez a0, .Lrr_direct_fail
-    li a0, RR_SIGALRM
-    la a1, .Lrr_old_action
-    li a2, 0
-    call sigaction
-    bnez a0, .Lrr_direct_fail
     li a0, RR_SIG_SETMASK
     la a1, .Lrr_old_mask
     li a2, 0
     call sigprocmask
     bnez a0, .Lrr_direct_fail
+    la t0, .Lrr_hard_id
+    ld a0, 0(t0)
+    call timer_delete
+    bnez a0, .Lrr_direct_fail
+    call .Lrr_time_left
+    beqz a0, .Lrr_direct_fail
     li a0, 1
     ld ra, 0(sp)
     ld s0, 8(sp)
     ld s1, 16(sp)
     ld s2, 24(sp)
     ld s3, 32(sp)
-    ld s4, 40(sp)
-    addi sp, sp, 64
+    addi sp, sp, 48
     ret
 .Lrr_fail:
-    beqz s4, .Lrr_direct_fail
     /* A closed stderr must not replace status78 with SIGPIPE termination.
-     * ALRM remains unblocked so a full pipe is covered by the live watchdog. */
+     * The owned hard timer remains armed if this diagnostic blocks. */
     la a0, .Lrr_pipe_set
     call sigemptyset
     bnez a0, .Lrr_direct_fail
@@ -305,11 +282,6 @@ resolve_database_address:
     bnez a0, .Lrr_direct_fail
     li a0, RR_SIG_BLOCK
     la a1, .Lrr_pipe_set
-    li a2, 0
-    call sigprocmask
-    bnez a0, .Lrr_direct_fail
-    li a0, RR_SIG_UNBLOCK
-    la a1, .Lrr_alarm_set
     li a2, 0
     call sigprocmask
     bnez a0, .Lrr_direct_fail
@@ -379,13 +351,4 @@ resolve_database_address:
     ret
 .size .Lrr_time_left,.-.Lrr_time_left
 
-.type .Lrr_alarm,@function
-/* Signal input ignored. No calls, logging, stack, allocation, or cleanup.
- * Raw exit_group terminates resolver workers as well as the receiving thread. */
-.Lrr_alarm:
-    li a0, 78
-    li a7, RR_SYS_EXIT_GROUP
-    ecall
-    unimp
-.size .Lrr_alarm,.-.Lrr_alarm
 .section .note.GNU-stack,"",@progbits

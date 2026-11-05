@@ -118,9 +118,9 @@ __attribute__((constructor)) static void initialize(void) {
         if (log_fd < 0) _exit(99);
     }
     if (!mode) return;
-    if (is_mode("deny-timer-create")) { install_denial(SYS_timer_create, EPERM); return; }
-    if (is_mode("deny-timer-settime")) { install_denial(SYS_timer_settime, EPERM); return; }
-    if (is_mode("deny-timer-delete")) { install_denial(SYS_timer_delete, EPERM); return; }
+    if (is_mode("deny-timer-create")) install_denial(SYS_timer_create, EPERM);
+    if (is_mode("deny-timer-settime")) install_denial(SYS_timer_settime, EPERM);
+    if (is_mode("deny-timer-delete")) install_denial(SYS_timer_delete, EPERM);
     if (is_mode("deny-openat2")) { install_denial(SYS_openat2, EPERM); return; }
     if (is_mode("unsupported-openat2")) { install_denial(SYS_openat2, ENOSYS); return; }
     if (is_mode("interrupt-read")) { install_denial(SYS_read, EINTR); return; }
@@ -168,16 +168,28 @@ __attribute__((constructor)) static void initialize(void) {
     if (is_mode("submit-stall-worker") || is_mode("submit-stall-masked")) start_blocked_worker();
 }
 
-static void watchdog_observation(void) {
+static int initial_signal_state_matches(void) {
     struct sigaction action;
     struct itimerval timer;
     sigset_t mask;
     if (sigaction(SIGALRM, NULL, &action) || getitimer(ITIMER_REAL, &timer) ||
-        sigprocmask(SIG_SETMASK, NULL, &mask)) _exit(99);
-    int armed = timer.it_value.tv_sec || timer.it_value.tv_usec;
-    int valid = armed && timer.it_value.tv_sec <= 2 &&
-        !sigismember(&mask, SIGALRM) && action.sa_handler != inherited_alarm &&
-        action.sa_handler != SIG_DFL && action.sa_handler != SIG_IGN;
+        sigprocmask(SIG_SETMASK, NULL, &mask)) return 0;
+    if (action.sa_handler != initial_action.sa_handler || action.sa_flags != initial_action.sa_flags ||
+        timer.it_value.tv_sec != initial_timer.it_value.tv_sec ||
+        timer.it_value.tv_usec != initial_timer.it_value.tv_usec ||
+        timer.it_interval.tv_sec != initial_timer.it_interval.tv_sec ||
+        timer.it_interval.tv_usec != initial_timer.it_interval.tv_usec) return 0;
+    for (int number = 1; number < NSIG; number++) {
+        if (sigismember(&mask, number) != sigismember(&initial_mask, number) ||
+            sigismember(&action.sa_mask, number) != sigismember(&initial_action.sa_mask, number)) return 0;
+    }
+    return 1;
+}
+
+static void watchdog_observation(void) {
+    int empty_alarm = !initial_timer.it_value.tv_sec && !initial_timer.it_value.tv_usec &&
+                      !initial_timer.it_interval.tv_sec && !initial_timer.it_interval.tv_usec;
+    int valid = hard_created && hard_armed && !hard_deleted && empty_alarm && initial_signal_state_matches();
     event(valid ? "watchdog-ready" : "watchdog-invalid");
 }
 
@@ -321,10 +333,20 @@ int clock_gettime(clockid_t clock, struct timespec *value) {
 }
 
 /* Observe the libc timer interface. The kernel still owns every timer. */
+static void timer_failure(const char *operation, int error) {
+    char line[96];
+    snprintf(line, sizeof(line), "hard-timer-%s-failed-errno=%d", operation, error);
+    event(line);
+}
+
 int timer_create(clockid_t clock, struct sigevent *notification, timer_t *identifier) {
+    int entry_errno = errno;
     int (*next)(clockid_t, struct sigevent *, timer_t *) = dlsym(RTLD_NEXT, "timer_create");
     if (!next) _exit(99);
+    event("hard-timer-create-attempt");
+    errno = entry_errno;
     int result = next(clock, notification, identifier);
+    int result_errno = errno;
     if (!result) {
         if (hard_created || clock != CLOCK_MONOTONIC || !notification || !identifier ||
             notification->sigev_notify != SIGEV_SIGNAL || notification->sigev_signo != SIGKILL)
@@ -332,13 +354,16 @@ int timer_create(clockid_t clock, struct sigevent *notification, timer_t *identi
         hard_timer = *identifier;
         hard_created = 1;
         event("hard-timer-created");
-    }
+    } else timer_failure("create", result_errno);
+    errno = result_errno;
     return result;
 }
 
 int timer_settime(timer_t identifier, int flags, const struct itimerspec *value, struct itimerspec *old) {
+    int entry_errno = errno;
     int (*next)(timer_t, int, const struct itimerspec *, struct itimerspec *) = dlsym(RTLD_NEXT, "timer_settime");
     if (!next) _exit(99);
+    event("hard-timer-settime-attempt");
     if (!hard_created || identifier != hard_timer || flags != TIMER_ABSTIME || !value ||
         value->it_interval.tv_sec || value->it_interval.tv_nsec) event("hard-timer-invalid");
     struct timespec now;
@@ -348,23 +373,31 @@ int timer_settime(timer_t identifier, int flags, const struct itimerspec *value,
     if (remaining <= 0 || remaining > 2000000000LL || !start_clock_valid ||
         value->it_value.tv_sec != start_clock.tv_sec + 2 ||
         value->it_value.tv_nsec != start_clock.tv_nsec) event("hard-timer-invalid");
+    errno = entry_errno;
     int result = next(identifier, flags, value, old);
+    int result_errno = errno;
     if (!result) {
         hard_armed = 1;
         event("hard-timer-armed");
-    }
+    } else timer_failure("settime", result_errno);
+    errno = result_errno;
     return result;
 }
 
 int timer_delete(timer_t identifier) {
+    int entry_errno = errno;
     int (*next)(timer_t) = dlsym(RTLD_NEXT, "timer_delete");
     if (!next) _exit(99);
+    event("hard-timer-delete-attempt");
     if (!hard_created || !hard_armed || hard_deleted || identifier != hard_timer) event("hard-timer-invalid");
+    errno = entry_errno;
     int result = next(identifier);
+    int result_errno = errno;
     if (!result) {
         hard_deleted = 1;
         event("hard-timer-deleted");
-    }
+    } else timer_failure("delete", result_errno);
+    errno = result_errno;
     return result;
 }
 
@@ -388,6 +421,10 @@ void *PQconnectStartParams(const char *const *keys, const char *const *values, i
                 sigismember(&action.sa_mask, number) != sigismember(&initial_action.sa_mask, number)) valid = 0;
         }
         event(valid ? "state-restored" : "state-invalid");
+    }
+    if (!owned_request && !observed_connection) {
+        observed_connection = 1;
+        event(initial_signal_state_matches() ? "bypass-state-preserved" : "bypass-state-mutated");
     }
     if (owned_request) {
         const char *url = NULL;

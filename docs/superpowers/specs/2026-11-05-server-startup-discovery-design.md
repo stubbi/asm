@@ -30,26 +30,24 @@ The address remains fixed until process restart; readiness performs no DNS looku
 
 Use one absolute monotonic 2000 ms budget.
 Recompute the remaining wait after interruptions; never restart the budget.
-Reserve SIGALRM during this phase and arm a separate two-second ITIMER_REAL watchdog before submission.
-The handler terminates the whole process with exit status 78 through `exit_group`.
-It performs no logging, cancellation, allocation, or cleanup.
-glibc masks SIGALRM during helper-thread creation, including internal lock waits.
-The target contract additionally requires a kernel-owned CLOCK_MONOTONIC timer with SIGEV_SIGNAL and SIGKILL.
-Arm that timer at the same absolute 2000 ms deadline before submission.
-It must terminate a fully masked stalled submission under a responsive kernel and fair scheduling.
+Use one owned CLOCK_MONOTONIC POSIX timer with SIGEV_SIGNAL and SIGKILL.
+Arm it at the same absolute 2000 ms deadline before resolver submission.
+SIGKILL terminates a fully masked stalled submission under a responsive kernel and fair scheduling.
 A DNS deadline can exit with status 78 or termination by SIGKILL; malformed configuration still returns 78.
 No listener opens on either deadline outcome.
 Timer creation, arming, or deletion failure refuses startup with status 78.
-This backstop remains unimplemented until native probe and masked-submission failure evidence are retained.
+The assembly calls libc timer_create, timer_settime, and timer_delete with the checked opaque timer_t ABI.
+There is no helper process, application backend, or second watchdog.
 Require all inherited interval-timer value and interval fields to be zero.
 Refuse any nonzero inherited timer state rather than silently replacing it.
-Unblock SIGALRM while resolving.
+Save and restore the caller's signal mask around blocked pending-SIGALRM checks.
+Leave the original SIGALRM action and interval timer unchanged.
+Keep the hard timer armed during resolver submission, result handling, and fatal diagnostics.
 
-After success, block SIGALRM, disarm the watchdog, and reject an expired or pending deadline signal.
-Delete the owned hard timer and recheck the deadline before success.
-Restore the original empty interval timer, then restore the original handler and signal mask.
+After success, block SIGALRM and reject an expired deadline or pending alarm.
+Restore the original signal mask, then delete the owned hard timer.
+Recheck the absolute deadline before returning success.
 No watchdog remains during requests.
-Failure never opens a listener.
 The ordinary database connection/query/result deadline remains 2000 ms.
 These are configured deadlines, not hard real-time scheduler or kernel-I/O guarantees.
 

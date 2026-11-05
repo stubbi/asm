@@ -2,6 +2,7 @@
  * Linux AArch64 LP64, AAPCS64, glibc >= 2.34. Startup-only DNS.
  * libc owns resolver/TLS machinery; every retained request pointer below has
  * process lifetime. No request thread uses this module after startup.
+ * One kernel-owned monotonic SIGKILL timer also covers fully masked stalls.
  */
 .arch armv8-a
 .macro RES_ADDR reg, symbol
@@ -10,8 +11,12 @@
 .endm
 .equ RES_SIGALRM, 14
 .equ RES_SIGPIPE, 13
+.equ RES_SIGKILL, 9
 .equ RES_SIG_BLOCK, 0
 .equ RES_SIG_SETMASK, 2
+.equ RES_CLOCK_MONOTONIC, 1
+.equ RES_TIMER_ABSTIME, 1
+.equ RES_DEADLINE_SECONDS, 2
 .equ RES_EXIT_GROUP, 94
 .equ RES_WRITE, 64
 .equ RES_CONFIG_LIMIT, 4096
@@ -32,16 +37,14 @@
 .Lres_notification: .zero 64
 .Lres_list: .zero 8
 .Lres_numeric: .zero 16
-.Lres_old_action: .zero 160
-.Lres_new_action: .zero 160
 .Lres_old_mask: .zero 128
-.Lres_work_mask: .zero 128
 .Lres_alarm_mask: .zero 128
 .Lres_pending: .zero 128
 .Lres_pipe_mask: .zero 128
 .Lres_old_timer: .zero 32
-.Lres_watchdog: .zero 32
-.Lres_empty_timer: .zero 32
+.Lres_hard_event: .zero 64
+.Lres_hard_id: .zero 8
+.Lres_hard_value: .zero 32
 .Lres_deadline: .zero 16
 .Lres_now: .zero 16
 .Lres_remaining: .zero 16
@@ -51,21 +54,19 @@
 .type resolve_database_address,%function
 /* x0=validated persistent hostname, 1..253 bytes plus NUL. Returns w0=1
  * after appending one numeric hostaddr to global db_config[4098]. Failure
- * terminates the whole process with 78. Preserves x19-x29/SP; clobbers only
- * AAPCS64 caller-saved registers. Frame 64 bytes saves x19-x24 and FP/LR.
- * Owns process signal/timer state only before HTTP/database work begins.
- * The in-process watchdog needs an ALRM-eligible thread; glibc temporarily
- * masks ordinary signals during helper creation. This is not a hard limit
- * on that masked interval, scheduler delay, or uninterruptible kernel I/O.
+ * terminates the whole process with78, or SIGKILL on deadline expiration.
+ * Preserves x19-x29/SP; clobbers only AAPCS64 caller-saved registers.
+ * Frame48 saves x19-x22 and FP/LR. One owned kernel POSIX timer covers the
+ * exact monotonic deadline even when glibc masks signals in helper creation.
+ * Caller SIGALRM action and interval timer remain unchanged. Scheduler and
+ * uninterruptible kernel-I/O delays are not hard real-time guarantees.
  */
 resolve_database_address:
-    stp x29, x30, [sp, #-64]!
+    stp x29, x30, [sp, #-48]!
     mov x29, sp
     stp x19, x20, [sp, #16]
     stp x21, x22, [sp, #32]
-    stp x23, x24, [sp, #48]
     mov x19, x0
-    mov w24, #0                 /* diagnostic is safe only while armed/eligible */
 
     RES_ADDR x0, .Lres_alarm_mask
     bl sigemptyset
@@ -78,11 +79,6 @@ resolve_database_address:
     RES_ADDR x1, .Lres_alarm_mask
     RES_ADDR x2, .Lres_old_mask
     bl sigprocmask
-    cbnz w0, .Lres_direct_exit
-    mov w0, #RES_SIGALRM
-    mov x1, #0
-    RES_ADDR x2, .Lres_old_action
-    bl sigaction
     cbnz w0, .Lres_direct_exit
     mov w0, #0                  /* ITIMER_REAL */
     RES_ADDR x1, .Lres_old_timer
@@ -98,47 +94,39 @@ resolve_database_address:
     bl .Lres_alarm_pending
     cbnz w0, .Lres_direct_exit
 
-    RES_ADDR x9, .Lres_new_action
-    RES_ADDR x10, .Lres_watchdog_handler
-    str x10, [x9]
-    add x0, x9, #8
-    bl sigemptyset
-    cbnz w0, .Lres_direct_exit
-    mov w0, #RES_SIGALRM
-    RES_ADDR x1, .Lres_new_action
-    mov x2, #0
-    bl sigaction
-    cbnz w0, .Lres_direct_exit
-    mov w0, #1                  /* CLOCK_MONOTONIC */
+    mov w0, #RES_CLOCK_MONOTONIC
     RES_ADDR x1, .Lres_deadline
     bl clock_gettime
     cbnz w0, .Lres_direct_exit
     RES_ADDR x9, .Lres_deadline
     ldr x10, [x9]
-    add x10, x10, #2
+    add x10, x10, #RES_DEADLINE_SECONDS
     str x10, [x9]
-    RES_ADDR x9, .Lres_watchdog
-    mov x10, #2
-    str x10, [x9, #16]          /* no interval, two-second value */
-    mov w0, #0
-    mov x1, x9
-    mov x2, #0
-    bl setitimer
+    RES_ADDR x1, .Lres_hard_event
+    mov w10, #RES_SIGKILL
+    str w10, [x1, #8]          /* SIGEV_SIGNAL=0, signo=SIGKILL */
+    mov w0, #RES_CLOCK_MONOTONIC
+    RES_ADDR x2, .Lres_hard_id
+    bl timer_create
     cbnz w0, .Lres_direct_exit
-    RES_ADDR x0, .Lres_work_mask
-    RES_ADDR x1, .Lres_old_mask
-    mov x2, #128
-    bl memcpy
-    RES_ADDR x0, .Lres_work_mask
-    mov w1, #RES_SIGALRM
-    bl sigdelset
+    RES_ADDR x9, .Lres_deadline
+    ldp x10, x11, [x9]
+    RES_ADDR x9, .Lres_hard_value
+    stp x10, x11, [x9, #16]    /* no interval, exact absolute deadline */
+    RES_ADDR x9, .Lres_hard_id
+    ldr x0, [x9]
+    mov w1, #RES_TIMER_ABSTIME
+    RES_ADDR x2, .Lres_hard_value
+    mov x3, #0
+    bl timer_settime
     cbnz w0, .Lres_direct_exit
+    /* Restore the exact caller mask. SIGKILL cannot be masked by the main
+     * thread or any resolver helper. No ALRM handler/timer is installed. */
     mov w0, #RES_SIG_SETMASK
-    RES_ADDR x1, .Lres_work_mask
+    RES_ADDR x1, .Lres_old_mask
     mov x2, #0
     bl sigprocmask
     cbnz w0, .Lres_direct_exit
-    mov w24, #1
 
     RES_ADDR x9, .Lres_request
     str x19, [x9]
@@ -238,46 +226,34 @@ resolve_database_address:
     mov x0, x20
     bl freeaddrinfo             /* request is completed; no pending free/cancel */
 
-    mov w24, #0                /* from here no potentially blocking diagnostic */
     mov w0, #RES_SIG_BLOCK
     RES_ADDR x1, .Lres_alarm_mask
     mov x2, #0
     bl sigprocmask
     cbnz w0, .Lres_direct_exit
-    mov w0, #0
-    RES_ADDR x1, .Lres_empty_timer
-    mov x2, #0
-    bl setitimer
-    cbnz w0, .Lres_direct_exit
     bl .Lres_compute_remaining
     cbz w0, .Lres_direct_exit
     bl .Lres_alarm_pending
-    cbnz w0, .Lres_direct_exit
-    mov w0, #0
-    RES_ADDR x1, .Lres_old_timer
-    mov x2, #0
-    bl setitimer
-    cbnz w0, .Lres_direct_exit
-    mov w0, #RES_SIGALRM
-    RES_ADDR x1, .Lres_old_action
-    mov x2, #0
-    bl sigaction
     cbnz w0, .Lres_direct_exit
     mov w0, #RES_SIG_SETMASK
     RES_ADDR x1, .Lres_old_mask
     mov x2, #0
     bl sigprocmask
     cbnz w0, .Lres_direct_exit
+    RES_ADDR x9, .Lres_hard_id
+    ldr x0, [x9]
+    bl timer_delete
+    cbnz w0, .Lres_direct_exit
+    bl .Lres_compute_remaining
+    cbz w0, .Lres_direct_exit
     mov w0, #1
-    ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #64
+    ldp x29, x30, [sp], #48
     ret
 .Lres_failure:
-    cbz w24, .Lres_direct_exit
     /* Block only SIGPIPE. A closed diagnostic pipe must still return 78;
-     * an open full pipe remains under the armed ALRM watchdog. */
+     * an open full pipe remains covered by the owned monotonic hard timer. */
     RES_ADDR x0, .Lres_pipe_mask
     bl sigemptyset
     cbnz w0, .Lres_direct_exit
@@ -292,7 +268,7 @@ resolve_database_address:
     cbnz w0, .Lres_direct_exit
     /* This path cannot return. Callee-saved cursor/remainder survive the raw
      * calls; positive short writes advance, and EINTR has one finite budget.
-     * The original deadline and eligible ALRM mask remain unchanged. */
+     * The original deadline and all other signal mask bits stay unchanged. */
     RES_ADDR x19, .Lres_failure_text
     mov x20, #(.Lres_failure_end - .Lres_failure_text)
     mov x21, #RES_DIAGNOSTIC_INTERRUPTS
@@ -322,7 +298,7 @@ resolve_database_address:
 .size resolve_database_address,.-resolve_database_address
 
 /* No inputs; w0=0 iff blocked SIGALRM is not pending, else 1.
- * Frame16 saves FP/LR. Uses lifetime pending storage; caller owns ALRM. */
+ * Frame16 saves FP/LR. Uses lifetime storage; caller has blocked ALRM. */
 .Lres_alarm_pending:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
@@ -346,7 +322,7 @@ resolve_database_address:
 .Lres_compute_remaining:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
-    mov w0, #1
+    mov w0, #RES_CLOCK_MONOTONIC
     RES_ADDR x1, .Lres_now
     bl clock_gettime
     cbnz w0, .Lres_time_bad
@@ -358,8 +334,8 @@ resolve_database_address:
     subs x11, x11, x13
     b.ge .Lres_time_normal
     sub x10, x10, #1
-    mov x12, #0xca00
-    movk x12, #0x3b9a, lsl #16 /* 1,000,000,000 */
+    mov x12, #(RES_NANOSECONDS & 0xffff)
+    movk x12, #(RES_NANOSECONDS >> 16), lsl #16
     add x11, x11, x12
 .Lres_time_normal:
     cmp x10, #0
@@ -375,13 +351,5 @@ resolve_database_address:
 .Lres_time_return:
     ldp x29, x30, [sp], #16
     ret
-
-/* SIGALRM handler: raw Linux exit_group(78), all threads. No calls, stack,
- * logging, cleanup, allocation, cancellation, or thread-only exit. */
-.Lres_watchdog_handler:
-    mov x0, #78
-    mov x8, #RES_EXIT_GROUP
-    svc #0
-    b .Lres_watchdog_handler
 
 .section .note.GNU-stack,"",%progbits

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Linux x86-64 System V, glibc >= 2.34. Startup only, before HTTP threads.
- * libcs own NSS resolution. All asynchronous request storage lives to exit.
- * The SIGALRM watchdog cannot run during glibc's masked helper creation.
+ * libc owns NSS resolution. All asynchronous request storage lives to exit.
+ * A kernel-owned SIGKILL timer covers masked helper creation as well.
  */
 .intel_syntax noprefix
 .equ DNS_SECONDS, 2
@@ -26,11 +26,10 @@ dns_alarm_set: .zero 128
 dns_pipe_set: .zero 128
 dns_old_mask: .zero 128
 dns_pending: .zero 128
-dns_old_action: .zero 160
-dns_action: .zero 160
 dns_old_timer: .zero 32
-dns_timer: .zero 32
-dns_empty_timer: .zero 32
+dns_hard_event: .zero 64
+dns_hard_id: .zero 8
+dns_hard_value: .zero 32
 dns_deadline: .zero 16
 dns_remaining_time: .zero 16
 dns_now: .zero 16
@@ -86,39 +85,33 @@ resolve_database_address:
     call dns_check_pending
     test eax, eax
     jz dns_exit
-    mov edi, DNS_SIGALRM
-    xor esi, esi
-    lea rdx, [rip + dns_old_action]
-    call sigaction@PLT
-    test eax, eax
-    jnz dns_exit
-    lea rdi, [rip + dns_action + 8]
-    call sigemptyset@PLT
-    test eax, eax
-    jnz dns_exit
-    lea rax, [rip + dns_watchdog]
-    mov [rip + dns_action], rax
-    mov edi, DNS_SIGALRM
-    lea rsi, [rip + dns_action]
-    xor edx, edx
-    call sigaction@PLT
-    test eax, eax
-    jnz dns_exit
     mov edi, 1
     lea rsi, [rip + dns_deadline]
     call clock_gettime@PLT
     test eax, eax
     jnz dns_exit
     add qword ptr [rip + dns_deadline], DNS_SECONDS
-    mov qword ptr [rip + dns_timer + 16], DNS_SECONDS
-    xor edi, edi
-    lea rsi, [rip + dns_timer]
-    xor edx, edx
-    call setitimer@PLT
+    mov dword ptr [rip + dns_hard_event + 8], 9
+    mov edi, 1
+    lea rsi, [rip + dns_hard_event]
+    lea rdx, [rip + dns_hard_id]
+    call timer_create@PLT
     test eax, eax
     jnz dns_exit
-    mov edi, 1
-    lea rsi, [rip + dns_alarm_set]
+    mov rax, [rip + dns_deadline]
+    mov [rip + dns_hard_value + 16], rax
+    mov rax, [rip + dns_deadline + 8]
+    mov [rip + dns_hard_value + 24], rax
+    mov rdi, [rip + dns_hard_id]
+    mov esi, 1
+    lea rdx, [rip + dns_hard_value]
+    xor ecx, ecx
+    call timer_settime@PLT
+    test eax, eax
+    jnz dns_exit
+    /* Restore the caller mask before submission; SIGKILL cannot be masked. */
+    mov edi, 2
+    lea rsi, [rip + dns_old_mask]
     xor edx, edx
     call sigprocmask@PLT
     test eax, eax
@@ -207,17 +200,11 @@ resolve_database_address:
     call memcpy@PLT
     mov rdi, rbx
     call freeaddrinfo@PLT
-    /* From this point failures exit directly: no eligible watchdog diagnostic. */
+    /* Pending inherited ALRM must not become a successful startup. */
     xor edi, edi
     lea rsi, [rip + dns_alarm_set]
     xor edx, edx
     call sigprocmask@PLT
-    test eax, eax
-    jnz dns_exit
-    xor edi, edi
-    lea rsi, [rip + dns_empty_timer]
-    xor edx, edx
-    call setitimer@PLT
     test eax, eax
     jnz dns_exit
     call dns_remaining
@@ -226,24 +213,19 @@ resolve_database_address:
     call dns_check_pending
     test eax, eax
     jz dns_exit
-    xor edi, edi
-    lea rsi, [rip + dns_old_timer]
-    xor edx, edx
-    call setitimer@PLT
-    test eax, eax
-    jnz dns_exit
-    mov edi, DNS_SIGALRM
-    lea rsi, [rip + dns_old_action]
-    xor edx, edx
-    call sigaction@PLT
-    test eax, eax
-    jnz dns_exit
     mov edi, 2
     lea rsi, [rip + dns_old_mask]
     xor edx, edx
     call sigprocmask@PLT
     test eax, eax
     jnz dns_exit
+    mov rdi, [rip + dns_hard_id]
+    call timer_delete@PLT
+    test eax, eax
+    jnz dns_exit
+    call dns_remaining
+    test eax, eax
+    jz dns_exit
     mov eax, 1
     pop r13
     pop r12
@@ -304,9 +286,9 @@ dns_check_pending:
     add rsp, 8
     ret
 
-/* Fatal path reached with main's three saves still on stack. Keep ALRM
- * eligible and block SIGPIPE so a closed diagnostic pipe still exits78.
- * A full pipe is bounded by the armed watchdog; no cleanup/cancel is used. */
+/* Fatal path reached with main's three saves still on stack. Block SIGPIPE
+ * so a closed diagnostic pipe still exits78; SIGKILL remains unmaskable.
+ * A full pipe remains covered by the hard timer; no cleanup/cancel is used. */
 dns_refuse:
     lea rdi, [rip + dns_pipe_set]
     call sigemptyset@PLT
@@ -344,7 +326,6 @@ dns_refuse:
     sub r13, rax
     jnz .Ldns_write_error
 dns_exit:
-dns_watchdog:
     mov eax, DNS_EXIT_GROUP
     mov edi, 78
     syscall

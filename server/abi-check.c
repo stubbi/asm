@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/random.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/syscall.h>
@@ -57,6 +58,7 @@ _Static_assert(SYS_getgid == 176 && SYS_geteuid == 175 && SYS_getegid == 177 && 
  * on 2026-11-05. This executable checks the actual target's headers. */
 _Static_assert(offsetof(struct stat, st_size) == 48 && sizeof(((struct stat *)0)->st_size) == 8, "preparer file size ABI changed");
 _Static_assert(sizeof(struct statfs) <= 120 && offsetof(struct statfs, f_flags) == 80 && ST_RDONLY == 1, "preparer mount ABI changed");
+_Static_assert(GRND_NONBLOCK == 1, "preparer random flag changed");
 _Static_assert(SYS_openat2 == 437 && sizeof(struct open_how) == 24 && offsetof(struct open_how, flags) == 0 && offsetof(struct open_how, mode) == 8 && offsetof(struct open_how, resolve) == 16, "openat2 ABI changed");
 _Static_assert((RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV) == 11 && RENAME_NOREPLACE == 1 && AT_FDCWD == -100, "preparer path policy constants changed");
 _Static_assert(O_NONBLOCK == 0x800 && O_CLOEXEC == 0x80000 && O_CREAT == 64 && O_EXCL == 128 && O_WRONLY == 1, "preparer common open flags changed");
@@ -64,8 +66,9 @@ _Static_assert(sizeof(struct gaicb) == 56 && offsetof(struct gaicb, ar_name) == 
 _Static_assert(sizeof(struct addrinfo) == 48 && offsetof(struct addrinfo, ai_flags) == 0 && offsetof(struct addrinfo, ai_family) == 4 && offsetof(struct addrinfo, ai_socktype) == 8 && offsetof(struct addrinfo, ai_protocol) == 12 && offsetof(struct addrinfo, ai_addrlen) == 16 && sizeof(((struct addrinfo *)0)->ai_addrlen) == 4 && offsetof(struct addrinfo, ai_addr) == 24, "addrinfo ABI changed");
 _Static_assert(sizeof(struct sigevent) == 64 && offsetof(struct sigevent, sigev_notify) == 12 && SIGEV_NONE == 1 && GAI_NOWAIT == 1, "async resolver notification ABI changed");
 _Static_assert(EAI_INPROGRESS == -100 && EAI_ALLDONE == -103 && EAI_INTR == -104 && EAI_AGAIN == -3 && SOCK_STREAM == 1 && IPPROTO_TCP == 6, "resolver constants changed");
-_Static_assert(sizeof(sigset_t) == 128 && sizeof(struct sigaction) <= 160 && offsetof(struct sigaction, sa_handler) == 0 && offsetof(struct sigaction, sa_mask) == 8 && offsetof(struct sigaction, sa_flags) == 136, "libc signal ABI changed");
-_Static_assert(SIGALRM == 14 && SIGPIPE == 13 && SIG_BLOCK == 0 && SIG_UNBLOCK == 1 && SIG_SETMASK == 2 && ITIMER_REAL == 0, "watchdog signal constants changed");
+_Static_assert(sizeof(sigset_t) == 128, "libc signal-set capacity changed");
+_Static_assert(SIGALRM == 14 && SIGPIPE == 13 && SIG_BLOCK == 0 && SIG_SETMASK == 2 && ITIMER_REAL == 0, "watchdog signal constants changed");
+_Static_assert(sizeof(timer_t) == 8 && sizeof(struct itimerspec) == 32 && offsetof(struct itimerspec, it_interval) == 0 && offsetof(struct itimerspec, it_value) == 16 && offsetof(struct sigevent, sigev_signo) == 8 && SIGEV_SIGNAL == 0 && SIGKILL == 9 && TIMER_ABSTIME == 1, "kernel timer libc ABI changed");
 _Static_assert(sizeof(struct timeval) == 16 && offsetof(struct timeval, tv_usec) == 8 && sizeof(struct itimerval) == 32 && offsetof(struct itimerval, it_interval) == 0 && offsetof(struct itimerval, it_value) == 16, "interval timer ABI changed");
 _Static_assert(offsetof(struct sockaddr_in, sin_family) == 0 && offsetof(struct sockaddr_in, sin_addr) == 4, "resolver IPv4 ABI changed");
 /* Linux v6.17 UAPI values reviewed on 2026-11-05. The arm64 fcntl header

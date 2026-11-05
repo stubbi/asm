@@ -5,6 +5,7 @@ Python and the preload library are test fixtures, not an application backend.
 The TLS database is disposable. Preparer cases need no database.
 """
 from contextlib import contextmanager
+import errno
 import http.client
 import os
 from pathlib import Path
@@ -199,7 +200,12 @@ class StartupTests(unittest.TestCase):
         # A lookup would block: success therefore observes the bypass.
         with self.serving("submit-stall", self.tls.configs["reader"].read_text()):
             self.assertEqual(response(self.port, "/health/ready")[0], 200)
-        self.assertNotIn("lookup", events(self.base))
+        log = events(self.base)
+        self.assertNotIn("lookup", log)
+        self.assertFalse(any(item.startswith("hard-timer-") for item in log), log)
+        self.assertIn("bypass-state-preserved", log)
+        self.assertNotIn("bypass-state-mutated", log)
+        self.assertNotIn("state-invalid", log)
 
     def test_first_address_is_pinned_across_connections_and_no_watchdog_remains(self):
         with self.serving():
@@ -251,11 +257,14 @@ class StartupTests(unittest.TestCase):
                 self.assertNotIn("database-connect", log)
                 if mode == "submit-fail":
                     self.assertNotIn("freed-completed-result", log)
-        for mode in ("deny-timer-create", "deny-timer-settime", "deny-timer-delete"):
+        for operation in ("create", "settime", "delete"):
+            mode = "deny-timer-" + operation
             with self.subTest(mode=mode):
                 (self.base / "fixture.log").unlink(missing_ok=True)
                 log = self.refusal(mode)
                 self.assertIn("seccomp-installed", log)
+                self.assertIn("hard-timer-" + operation + "-attempt", log)
+                self.assertIn(f"hard-timer-{operation}-failed-errno={errno.EPERM}", log)
                 self.assertNotIn("database-connect", log)
                 self.assertNotIn("hard-timer-deleted", log)
                 if mode != "deny-timer-delete":
