@@ -126,17 +126,17 @@ They do not change published host support.
 | Component | Observed result | Remaining gate |
 | --- | --- | --- |
 | Intel macOS CLI | Native Intel qualification passed 209 cases at `4fe09795245dc0b6bf42289d0deae371680196ab`. [Run](https://github.com/stubbi/asm/actions/runs/42010080612). | Integrate the qualified source delta and recheck combined source. Complete distribution integration. |
-| Linux x86-64 and ARM64 servers | Both native targets passed the corrected schema-privilege suites. [Run](https://github.com/stubbi/asm/actions/runs/41944988752). | Preserve the [exact package evidence](server-package-evidence.json) during integration. Deployment has separate gates. |
+| Linux x86-64 and ARM64 servers | Both native targets passed the integrated package and runtime suites. [Run](https://github.com/stubbi/asm/actions/runs/42019255387). | Recheck the merge queue's combined source. Deployment has separate gates. |
 | RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
 | RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
-| Windows x86-64 CLI | The fourth native run passed 35 methods; 11 failure records and one error remain. | Pass all 45 methods, archive workflows, and updater identity and recovery checks. |
-| Windows ARM64 CLI | The fourth native run passed 22 methods; 24 failure records remain. | Correct PE validation and output finalization. Pass all 45 methods and updater checks. |
+| Windows x86-64 CLI | The fifth native run passed 40 methods; five failed. | Pass all 45 methods, archive workflows, and updater identity and recovery checks. |
+| Windows ARM64 CLI | The fifth native run passed 38 methods; seven failed. | Correct inventory round trips, archive workflows, and updater checks. Pass all 45 methods. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
-The fourth Windows result used source `e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3` in [run 42015009621](https://github.com/stubbi/asm/actions/runs/42015009621).
+The fifth Windows result used source `54625e990e81b603d8ea83c6f1554752c0052ed1` in [run 42019241381](https://github.com/stubbi/asm/actions/runs/42019241381).
 Subtests can produce multiple failure records for one method.
-The first three failed runs remain part of the evidence.
+The first four failed runs remain part of the evidence.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
 
@@ -155,8 +155,12 @@ The executed test executables were not retained, so their exact digests cannot b
 Production verifier source matches the frozen source; one fixture file changed.
 
 General integration [run 42015109983](https://github.com/stubbi/asm/actions/runs/42015109983) passed Linux, macOS, and release-contract jobs at the fourth candidate.
-The separate server run stopped before its suites because the shared harness rejected explicit matching Linux targets.
-The harness correction requires a fresh server run; earlier server qualification remains scoped to its recorded source.
+The first integrated server run stopped because the shared harness rejected explicit matching Linux targets.
+After that correction, both native server jobs passed at source `54625e990e81b603d8ea83c6f1554752c0052ed1`.
+Each target passed ten native-link, 19 extracted-package, 11 hosted-runtime, and four failure-preservation cases.
+The PostgreSQL TLS catalog checks also passed on both targets.
+Retained CLI, server, archive, and log digests match the qualification receipts.
+The earlier failed run remains recorded; these results apply only to their exact source and artifacts.
 
 The merge queue owns integration into `main`.
 The bounded 0.6.0 release retains only its independently qualified existing hosts.

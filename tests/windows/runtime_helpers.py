@@ -89,7 +89,7 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
 
     report = {"fixture": "error", "stage": "host", "timeout_seconds": timeout,
               "identity_api": "NtQueryInformationProcess/ProcessImageFileMapping(44)",
-              "rename_api": "SetFileInformationByHandle/FileRenameInfoEx/POSIX_SEMANTICS",
+              "rename_api": "NtSetInformationFile/FileRenameInformationEx(65)/POSIX_SEMANTICS",
               "native_api_qualification": False}
     if os.name != "nt":
         report["error"] = "The displaced-image fixture requires native Windows."
@@ -108,8 +108,6 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
     kernel.GetProcAddress.restype = VOID
     kernel.GetFileInformationByHandle.argtypes = [HANDLE, VOID]
     kernel.GetFileInformationByHandle.restype = wintypes.BOOL
-    kernel.SetFileInformationByHandle.argtypes = [HANDLE, ctypes.c_int, VOID, DWORD]
-    kernel.SetFileInformationByHandle.restype = wintypes.BOOL
     kernel.GetFinalPathNameByHandleW.argtypes = [HANDLE, wintypes.LPWSTR, DWORD, DWORD]
     kernel.GetFinalPathNameByHandleW.restype = DWORD
     kernel.SetFilePointerEx.argtypes = [HANDLE, ctypes.c_longlong, VOID, DWORD]
@@ -130,6 +128,13 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
     class RenameInformation(ctypes.Structure):
         _fields_ = [("flags", DWORD), ("root", HANDLE), ("length", DWORD),
                     ("name", wintypes.WCHAR * 1)]
+
+    class IoStatusResult(ctypes.Union):
+        _fields_ = [("status", wintypes.LONG), ("pointer", VOID)]
+
+    class IoStatusBlock(ctypes.Structure):
+        _anonymous_ = ("result",)
+        _fields_ = [("result", IoStatusResult), ("information", ctypes.c_size_t)]
 
     def require(condition, message):
         if not condition:
@@ -200,6 +205,10 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         address = kernel.GetProcAddress(kernel.GetModuleHandleW("ntdll.dll"), b"NtQueryInformationProcess")
         require(address, "NtQueryInformationProcess is unavailable; no path-only fallback is permitted.")
         query = ctypes.WINFUNCTYPE(wintypes.LONG, HANDLE, ctypes.c_int, VOID, DWORD, VOID)(address)
+        address = kernel.GetProcAddress(kernel.GetModuleHandleW("ntdll.dll"), b"NtSetInformationFile")
+        require(address, "NtSetInformationFile is unavailable; no pathname-only rename fallback is permitted.")
+        set_information = ctypes.WINFUNCTYPE(wintypes.LONG, HANDLE, ctypes.POINTER(IoStatusBlock),
+                                             VOID, DWORD, ctypes.c_int)(address)
         require(ctypes.sizeof(HANDLE) == 8, "The fixture requires a 64-bit native Python process.")
         require(installed.stat().st_size <= 8 * 1024 * 1024, "The fixture CLI exceeds its 8 MiB byte limit.")
         before = installed.read_bytes()
@@ -264,8 +273,8 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         report["original_mapping_before"] = mapping_status(original)
         require(report["original_mapping_before"] == 0, "The original file does not match the suspended process image.")
         report["stage"] = "rename-mapped-original"
-        # A simple basename avoids Win32 full-path conversion. Hold its parent
-        # explicitly and terminate FileName, while its byte length excludes NUL.
+        # Native class 65 consumes the held parent and relative basename directly.
+        # FileName is terminated, while its byte length excludes NUL.
         name = displaced.name.encode("utf-16-le")
         buffer = ctypes.create_string_buffer(ctypes.sizeof(RenameInformation) + len(name) + 2)
         rename = RenameInformation.from_buffer(buffer)
@@ -275,8 +284,15 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         ctypes.memmove(ctypes.byref(buffer, RenameInformation.name.offset), name, len(name))
         report["rename_input"] = {"name": displaced.name, "file_name_length_bytes": len(name),
                                   "buffer_bytes": len(buffer), "terminated": True, "held_parent": True}
-        if not kernel.SetFileInformationByHandle(original, 22, buffer, len(buffer)):
-            raise ctypes.WinError(ctypes.get_last_error())
+        completion = IoStatusBlock()
+        completion.status = 0x103  # STATUS_PENDING sentinel; the file HANDLE uses synchronous I/O.
+        status = set_information(original, ctypes.byref(completion), buffer, len(buffer), 65) & 0xFFFFFFFF
+        report["rename_status"] = status
+        report["rename_io_status"] = completion.status & 0xFFFFFFFF
+        report["rename_io_information"] = completion.information
+        require(status == 0 and report["rename_io_status"] == 0,
+                f"The native held-parent rename failed: NTSTATUS 0x{status:08X}, "
+                f"IO_STATUS_BLOCK 0x{report['rename_io_status']:08X}.")
         report["rename_succeeded"] = True
         report["original_final_path_after_rename"] = final_path(original)
         expected_displaced = report["parent_final_path"].rstrip("\\") + "\\" + displaced.name
