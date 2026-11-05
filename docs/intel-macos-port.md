@@ -1,6 +1,6 @@
 # Intel macOS CLI port
 
-Status: the original native Intel qualification passed. The integrated candidate requires a fresh native result.
+Status: native Intel qualification passed for integrated source `295c693`.
 No Intel release is declared.
 
 The user outcome is the current CLI workflow on an Intel Mac, including package management and native library linking.
@@ -170,3 +170,22 @@ The earlier 89cdfb1 workflow remains an intermediate result; final qualification
 The final release-base sync retains main `6d7c7df` and its existing-host 0.6.0 preparation.
 Its three additional native response-file regressions raise the Intel suite to 209 cases.
 No 0.6.0 release record or published byte is changed by this port.
+
+## Integrated native result
+
+[Fresh native Intel qualification](https://github.com/stubbi/asm/actions/runs/42009046954) passed for source `295c6936cce8de4886dbe7b2e04e0a09c7c565c1`.
+All 209 cases passed without skips, expected failures, or translation.
+The seven source-binding regressions also passed on that runner.
+Two guarded-source builds matched, and tests used those final bytes.
+The runner used macOS 15.7.9, Apple clang 17, and SDK 15.5.
+
+The unpublished CI file has 176896 bytes.
+Its SHA-256 is `6e7ccde57ab290cfbdc53e0b1b817f87d5e63a969e4aa34f83f7dbb9c4a5213d`.
+Downloaded bytes independently matched the receipt and passed strict code-signature verification.
+The [native record](intel-macos-native-evidence.json) retains current, intermediate, and original results without replacing failed evidence.
+The final local Apple Silicon regression passed 264 cases; registry checks passed 78 cases.
+The complete main history through `6d7c7df` contains 61 commits and has no shallow boundary.
+
+The artifact's 0.6.0 filename identifies its source version; it is not a published 0.6.0 release asset.
+Intel activation still needs a new version after the existing-host release and distribution-owner qualification.
+Ad-hoc signing, runtime tests, publisher provenance, Developer ID, and notarization remain distinct checks.
