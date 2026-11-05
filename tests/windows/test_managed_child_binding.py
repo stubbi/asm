@@ -364,7 +364,7 @@ class ManagedChildBindingTests(unittest.TestCase):
         (self.work / 'child-binding-result.json').write_text(json.dumps(self.receipt, indent=2) + '\n')
         self.receipt['retained_evidence'] = str(retain_installer_failure(self.work, self.receipt))
 
-    def artifact(self, path, role):
+    def record_artifact(self, path, role):
         data = path.read_bytes()
         runtime.TEST_ARTIFACTS.append({'role': 'child-binding-test-only-' + role, 'target': runtime.TARGET,
                                        'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
@@ -381,18 +381,18 @@ class ManagedChildBindingTests(unittest.TestCase):
     def build_image(self, source, name, extra=()):
         path = self.work / (name + '.s')
         path.write_text(source, encoding='utf-8')
-        self.artifact(path, name + '-source')
+        self.record_artifact(path, name + '-source')
         obj, binary = path.with_suffix('.obj'), path.with_suffix('.exe')
         triple = 'aarch64-pc-windows-msvc' if runtime.ARM64 else 'x86_64-pc-windows-msvc'
         self.build_command([runtime.TOOLCHAIN_BIN / 'clang.exe', '--no-default-config', '--target=' + triple,
                             '-c', path, '-o', obj])
-        self.artifact(obj, name + '-object')
+        self.record_artifact(obj, name + '-object')
         self.build_command([runtime.TOOLCHAIN_BIN / 'lld-link.exe',
                             '/machine:' + ('arm64' if runtime.ARM64 else 'x64'), '/entry:_start',
                             '/subsystem:console', '/nodefaultlib', '/nxcompat', '/dynamicbase', '/Brepro',
                             '/out:' + str(binary), obj, *extra, 'kernel32.lib', 'ntdll.lib',
                             'advapi32.lib', 'bcrypt.lib', 'shell32.lib'])
-        self.artifact(binary, name + '-image')
+        self.record_artifact(binary, name + '-image')
         return binary.read_bytes()
 
     def test_refused_suspended_payload_is_never_resumed_and_is_reaped(self):
@@ -402,16 +402,16 @@ class ManagedChildBindingTests(unittest.TestCase):
         original = module.prepare(entry)
         original_path = self.work / 'original-prepared.s'
         original_path.write_text(original, encoding='utf-8')
-        self.artifact(original_path, 'original-prepared-source')
+        self.record_artifact(original_path, 'original-prepared-source')
         fixture = self.work / 'child_binding_fixture.c'
         fixture.write_bytes((runtime.ROOT / 'tests/windows/child_binding_fixture.c').read_bytes())
-        self.artifact(fixture, 'observer-source')
+        self.record_artifact(fixture, 'observer-source')
         obj = fixture.with_suffix('.obj')
         triple = 'aarch64-pc-windows-msvc' if runtime.ARM64 else 'x86_64-pc-windows-msvc'
         self.build_command([runtime.TOOLCHAIN_BIN / 'clang.exe', '--no-default-config', '--target=' + triple,
                             '-Oz', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
                             '-fno-stack-protector', '-c', fixture, '-o', obj])
-        self.artifact(obj, 'observer-object')
+        self.record_artifact(obj, 'observer-object')
         launcher = self.build_image(instrument_source(original, runtime.ARM64), 'binding-refusal', (obj,))
         marker = self.work / 'SELECTED_PAYLOAD_EXECUTED'
         candidate = self.build_image(smoke.marker_assembly(runtime.TARGET, runtime.VERSION, marker), 'selected-marker')
@@ -494,12 +494,70 @@ def host_checks(output):
         results['contained_controller'] = controller_host_check()
     except Exception as error:
         results['contained_controller'] = {'result': 'fail', 'error': repr(error)}
+    try:
+        results['fixture_artifacts'] = artifact_host_check()
+    except Exception as error:
+        results['fixture_artifacts'] = {'result': 'fail', 'error': repr(error)}
     report = {'scope': 'host transform guards and actual C observer with controlled APIs; not native Windows execution', 'cases': results,
               'result': 'pass' if all(row['result'] == 'pass' for row in results.values()) else 'fail'}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
     return report['result'] != 'pass'
+
+
+def artifact_host_check():
+    """Run actual shared setup and artifact recording with controlled compilers."""
+    import importlib.util
+    from unittest.mock import patch
+    import managed_helpers
+    global runtime
+    previous, cases = runtime, {}
+    try:
+        with tempfile.TemporaryDirectory(prefix='asm-child-artifacts-host-') as temporary:
+            for target in ('x86_64-windows', 'aarch64-windows'):
+                spec = importlib.util.spec_from_file_location('child_artifact_runtime',
+                                                             ROOT / 'tests/windows/test_runtime.py')
+                current = importlib.util.module_from_spec(spec)
+                with patch.dict(os.environ, ASM_WINDOWS_EXE='unused-host-fixture.exe',
+                                ASM_WINDOWS_TARGET=target):
+                    spec.loader.exec_module(current)
+                runtime = current
+                case = ManagedChildBindingTests('test_refused_suspended_payload_is_never_resumed_and_is_reaped')
+                with patch.object(current, 'own_directory'), patch.object(
+                        managed_helpers, 'INSTALLER_FAILURES', Path(temporary) / target):
+                    try:
+                        case.setUp()
+                        assert case.artifact == case.work / 'payload'
+                        def build(argv):
+                            if str(argv[0]).endswith('clang.exe'):
+                                Path(argv[argv.index('-o') + 1]).write_bytes(b'object-bytes')
+                            else:
+                                assert str(argv[0]).endswith('lld-link.exe')
+                                Path(next(arg[5:] for arg in argv if str(arg).startswith('/out:'))).write_bytes(b'image-bytes')
+                        case.build_command = build
+                        image = case.build_image('.text\n', 'host-fixture')
+                        assert image == b'image-bytes'
+                        expected = []
+                        for role, suffix, data in (('source', '.s', b'.text\n'),
+                                                   ('object', '.obj', b'object-bytes'),
+                                                   ('image', '.exe', b'image-bytes')):
+                            expected.append({'role': 'child-binding-test-only-host-fixture-' + role,
+                                             'target': target, 'bytes': len(data),
+                                             'sha256': hashlib.sha256(data).hexdigest(),
+                                             'path': str(case.work / ('host-fixture' + suffix))})
+                        assert current.TEST_ARTIFACTS == expected, current.TEST_ARTIFACTS
+                        assert case.artifact == case.work / 'payload'
+                        cases[target] = {'result': 'pass', 'artifacts': current.TEST_ARTIFACTS}
+                    finally:
+                        cleaned = case.doCleanups()
+                        assert cleaned, 'The actual fixture cleanup failed.'
+                    assert not case.work.exists()
+                    assert Path(case.receipt['retained_evidence']).is_dir()
+    finally:
+        runtime = previous
+    return {'result': 'pass', 'scope': 'actual fixture setup and artifact rows with controlled owner/compilers; not native execution',
+            'cases': cases}
 
 
 def controller_host_check():
