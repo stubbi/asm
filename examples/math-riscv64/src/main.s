@@ -11,15 +11,23 @@
 .equ STDOUT, 1
 .equ STDERR, 2
 .equ EINTR, 4
+.equ MESSAGE_LENGTH, 17
+.equ WRITE_ERROR_LENGTH, 69
 
-/* GNU as requires these label differences to be absolute when LI is parsed. */
+/* LI uses absolute constants. These checks bind each length to its bytes. */
 .section .rodata
 message:
     .ascii "min(12, 37) = 12\n"
 message_end:
+.if message_end - message != MESSAGE_LENGTH
+    .error "MESSAGE_LENGTH does not match the message bytes"
+.endif
 write_error:
     .ascii "math: write failed.\nCheck standard output and run the example again.\n"
 write_error_end:
+.if write_error_end - write_error != WRITE_ERROR_LENGTH
+    .error "WRITE_ERROR_LENGTH does not match the diagnostic bytes"
+.endif
 
 .section .text
 .global _start
@@ -33,7 +41,7 @@ _start:
 
     li a0, STDOUT
     la a1, message
-    li a2, message_end - message
+    li a2, MESSAGE_LENGTH
     call .Lwrite_all
     bnez a0, .Lwrite_failure
     li a0, 0
@@ -43,7 +51,7 @@ _start:
 .Lwrite_failure:
     li a0, STDERR
     la a1, write_error
-    li a2, write_error_end - write_error
+    li a2, WRITE_ERROR_LENGTH
     call .Lwrite_all
 .Lfailure:
     li a0, 1
