@@ -8,7 +8,7 @@ The user outcome is a real RISC-V CLI build of the distributable server package.
 Dependable reuse and explicit evidence govern the change.
 
 1. Reuse the hosted Dockerfile `build` stage at `4fe2c25277ed40a163b48b727ab814225d227cf8`.
-2. Prepare the reference package from `fb72db4b59038801b41a5b4b314007cfcf158d33`.
+2. Prepare the reference package from `04c93b3f0200173298d24f22a06393bc359a1af0`.
 3. Bind the candidate source to the exact workflow checkout commit and archive digest.
 4. Use the full guest userland and fixed native guest `/usr/bin/cc`, `/usr/bin/as`, and `/usr/bin/ld`.
 5. Retain the existing libmicrohttpd 1.0.3 and PostgreSQL 16.15 source pins.

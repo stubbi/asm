@@ -29,7 +29,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 HOSTED_REVISION = "4fe2c25277ed40a163b48b727ab814225d227cf8"
-PACKAGE_REVISION = "fb72db4b59038801b41a5b4b314007cfcf158d33"
+PACKAGE_REVISION = "04c93b3f0200173298d24f22a06393bc359a1af0"
 SUITE_FILES = {"test_fixture.py": 2, "test_server.py": 14,
                "test_runtime_versions.py": 1, "test_package.py": 2}
 
@@ -336,7 +336,7 @@ def inside(output):
         run("first_project", [sys.executable, "-m", "unittest", "discover", "-s", "tests/riscv64",
                               "-p", "test_native.py", "-v"], expected=3)
         native_count = test_count(candidate / "tests/test_native_link.py")
-        if native_count < 9:
+        if native_count < 10:
             raise ValueError("The candidate must retain the native library linking contract tests.")
         run("native_link", [sys.executable, "-m", "unittest", "test_native_link", "-v"], expected=native_count)
         for filename, count in SUITE_FILES.items():

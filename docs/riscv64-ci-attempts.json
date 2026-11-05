@@ -1110,11 +1110,711 @@
       ],
       "run_id": 42013564914,
       "run_url": "https://github.com/stubbi/asm/actions/runs/42013564914"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "binding_result": "Guest artifact and source bindings passed. The host correctly rejected the failed root suite.",
+      "checkout_commit": "0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5",
+      "checks": {
+        "binding": {
+          "error": "Guest report does not declare successful full-system emulation",
+          "outcome": "fail"
+        },
+        "boot": {
+          "outcome": "pass"
+        },
+        "guest_tool_inputs": {
+          "outcome": "pass"
+        },
+        "images": {
+          "outcome": "pass"
+        },
+        "provision": {
+          "outcome": "pass"
+        },
+        "qualification": {
+          "exit_code": 1,
+          "outcome": "fail"
+        },
+        "source": {
+          "outcome": "pass"
+        }
+      },
+      "corrected_prior_cases": {
+        "focused_descendant_deadline": "pass",
+        "held_home_displacement": "pass"
+      },
+      "emulation_kind": "system",
+      "execution_mode": "emulated",
+      "fixture_reproduction": {
+        "raw_evidence": {
+          "path": "build/riscv64/bootstrap-interruption-readiness/patched-proof.json",
+          "sha256": "f70d6a7a2469f66801759087a732652021f9fff54594718ae644b4bf0ef16f96"
+        },
+        "scope": "Separate native Darwin fixture with a controlled six-second delay; not a reproduction of the actual guest cause"
+      },
+      "follow_up": "Overall full-system qualification remains pending. The corrected marker fixture requires a fresh complete gate.",
+      "guest_binutils_manifest": {
+        "path": "build/riscv64/ci/42020416471/artifacts/riscv64-system-emulated-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-1/riscv64-system/guest-binutils-manifest.json",
+        "sha256": "3cd65eadc5e92e94043d4aee4ba271b03fb95ab13a268434e86bd9a4ea50e4a8"
+      },
+      "guest_checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "24e2c9762d636504ad6e176b9e57b2a1e379a850b10eb54d02fe0804bb4867e2",
+          "outcome": "pass",
+          "seconds": 29.271,
+          "skipped_checks": false,
+          "tests_run": 35,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "76f6d857f34e11da7911524e950f2c569bbbe1f1defdf495e11d9f6eb07105d9",
+          "outcome": "fail",
+          "seconds": 877.608,
+          "skipped_checks": false,
+          "tests_run": 341,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.013,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-itw5cgha/probe"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.008,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "head_commit": "20d17ecebfd8b9560c1c637fde6b8587b5dd3dab",
+      "host": {
+        "machine": "riscv64",
+        "python": "3.12.3",
+        "release": "7.0.0-38-generic",
+        "system": "Linux"
+      },
+      "kernel_denial_checks": {
+        "getrlimit": {
+          "linux_riscv64_syscall": 163,
+          "outcome": "pass",
+          "test": "test_download_limit_setup_errors_stop_before_curl_exec"
+        },
+        "rt_sigprocmask": {
+          "linux_riscv64_syscall": 135,
+          "outcome": "pass",
+          "test": "test_signal_mask_syscall_failure_stops_before_verifier_exec"
+        },
+        "setrlimit": {
+          "linux_riscv64_syscall": 164,
+          "outcome": "pass",
+          "test": "test_download_limit_setup_errors_stop_before_curl_exec"
+        }
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 1,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 341
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 35
+      },
+      "outcome": "fail",
+      "qualification_schema": 2,
+      "qualification_scope": "native-cli-behavior",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42020416471/artifacts/riscv64-system-emulated-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-1/riscv64-system/report.json",
+        "sha256": "c04184844ee69756dcbc5415f830a2e88f68179fd5957c53f0f24cd96fcd28f8"
+      },
+      "raw_guest_evidence": {
+        "path": "build/riscv64/ci/42020416471/artifacts/riscv64-system-emulated-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-1/riscv64-system/guest-qualification.json",
+        "sha256": "91388baa212b652c54ba77050cf78eb6919f18ba711f48f16de2be6d3bc23ad7"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42020416471/full.log",
+        "sha256": "9c50165e385b7e5206ff796b0cb1e11e4bb3bd0343f3c797be6ad7024b1ad4dc"
+      },
+      "raw_provenance": {
+        "path": "build/riscv64/ci/42020416471/artifacts/riscv64-system-emulated-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-1/riscv64-system/provenance.json",
+        "sha256": "09e5a050f0ea5295591f90e4f62ce0266e98f1f86bb6abaa4cb9dea0af30db8d"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        {
+          "actual_guest_early_exit_or_delay": "unproven; the retained test output contains neither process status nor captured installer diagnostics",
+          "assertion": "Installer did not reach controlled download",
+          "fixture_wait_seconds": 5,
+          "phase": "The five-second marker precondition failed before SIGTERM and cleanup assertions.",
+          "test": "test_bootstrap.BootstrapUserFlowTests.test_interrupted_download_cleans_the_private_stage"
+        }
+      ],
+      "run_id": 42020416471,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42020416471"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "checkout_commit": "0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "a85b3e45d23bf714b92b705a57f0c6924cb6123c4038a8554650c3e4b37dcab7",
+          "outcome": "pass",
+          "seconds": 7.834,
+          "skipped_checks": false,
+          "tests_run": 35,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "3719b86b50e28ff8c4207c5a709e416283de45bcea39cd5b07ed8b2f83a8f8c5",
+          "outcome": "fail",
+          "seconds": 77.486,
+          "skipped_checks": false,
+          "tests_run": 341,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.004,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-xq0bolds/probe"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "failure_test_ids": [
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=97)",
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=160)",
+        "test_signal_mask_syscall_failure_stops_before_verifier_exec (test_self_update.SelfUpdateTests.test_signal_mask_syscall_failure_stops_before_verifier_exec)"
+      ],
+      "full_system_requirement": "These required denial assertions remain failed in user-mode evidence. Their complete guest-kernel qualification is separate.",
+      "head_commit": "20d17ecebfd8b9560c1c637fde6b8587b5dd3dab",
+      "host": {
+        "machine": "x86_64",
+        "python": "3.12.3",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux"
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 3,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 341
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 35
+      },
+      "outcome": "fail",
+      "qualification_schema": 2,
+      "qualification_scope": "native-cli-behavior",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42020416785/riscv64-emulated-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "4cbcc49d9cd7e854520e7feb649c6f9ce367ebe252209846ba9517f7772b89e2"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42020416785/full.log",
+        "sha256": "7b9ed01fe16d8a97661ef48f9da84af97e0afe6a3f049352d1b1b4ba7f1bf060"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        "Two resource-limit denial subcases still filter host operations rather than the guest kernel calls.",
+        "The user-mode signal-mask operation does not propagate the intended host filter error."
+      ],
+      "retention_summary": {
+        "path": "build/riscv64/ci/42020416785/retention-summary.json",
+        "sha256": "e78bbd4819f5845f9b3db7d192013e60817de43b81bcabd133af2a57fbab0a18"
+      },
+      "run_id": 42020416785,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42020416785"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "checkout_commit": "c6c1c3de927198668bced04276d30532817711da",
+      "checks": {
+        "cli_build": {
+          "exit_code": 0,
+          "log_sha256": "60b898236beeaa7bb24ec8d980244312a3e21a2f53c965821f58eac2cf5a2708",
+          "outcome": "pass"
+        },
+        "first_project": {
+          "exit_code": 0,
+          "log_sha256": "e74683f55328a0e9feca1b43418eb88a416c5f884e6975e2651987f0dd924f0f",
+          "outcome": "pass",
+          "tests_run": 3,
+          "tests_skipped": 0
+        },
+        "generated_source": {
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass"
+        },
+        "guest_environment": {
+          "outcome": "pass"
+        },
+        "native_link": {
+          "exit_code": 0,
+          "log_sha256": "30e7dc37df04f5c52c0e50baf39188d9b86b2c0537383054015a96a070527265",
+          "outcome": "pass",
+          "tests_run": 10,
+          "tests_skipped": 0
+        },
+        "pack_package": {
+          "exit_code": 0,
+          "log_sha256": "21032c2c15f3dad9e2ffbf36c6c16491ada518746a5f04c3e97cd438ea29ed0e",
+          "outcome": "pass"
+        },
+        "prepare_package": {
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass"
+        },
+        "server_package": {
+          "exit_code": 2,
+          "log_sha256": "0aaa53992da9b5cc43f2b0afcd586ceb5702ce9774b91541796a7b2b63e9bb86",
+          "outcome": "fail"
+        }
+      },
+      "collection_error": "Current collection did not supply required evidence: asm-server-riscv64-linux",
+      "collection_result": "Missing required server bytes correctly failed the collection gate.",
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "failure_detail": {
+        "check": "server_package",
+        "diagnostic": "The addend is not allowed for R_RISCV_GOT_HI20",
+        "exit_code": 2,
+        "expression": "la t4, listen_address + 2",
+        "source": "riscv64/server.s:289"
+      },
+      "head_commit": "290d7226bf6889b7c876d25fe7a1d35013140c8f",
+      "inputs": {
+        "archives": {
+          "candidate": {
+            "bytes": 5672960,
+            "commit": "c6c1c3de927198668bced04276d30532817711da",
+            "sha256": "01111c6bff9a7b521e3e9ce072d2fd3aaa78c0e0779a0e1b840fcbaf0e3940af",
+            "tree_sha256": "679cdd4edf60d2649de4025a4a3d5ed74d929d0f20e0a511341ada8a5d53e839"
+          },
+          "hosted": {
+            "bytes": 286720,
+            "commit": "4fe2c25277ed40a163b48b727ab814225d227cf8",
+            "sha256": "92a0029bd0784ebcb1066e703f74d68490093170519052678c8f71f00846e272",
+            "tree_sha256": "a6052ea28e7aed986a2dda5afc4be5eef33af891f5f6ebc1a7fad5c54f6f71bd"
+          },
+          "package-source": {
+            "bytes": 389120,
+            "commit": "fb72db4b59038801b41a5b4b314007cfcf158d33",
+            "sha256": "46151ccb245748d630d194105c144ce96eaa09620d14f374c5ebfd9971843542",
+            "tree_sha256": "54c848b214d21857f68769410af1c22d2c9991ef71da6151c119961c62a2d53e"
+          }
+        },
+        "candidate_revision": "c6c1c3de927198668bced04276d30532817711da",
+        "hosted_revision": "4fe2c25277ed40a163b48b727ab814225d227cf8",
+        "package_revision": "fb72db4b59038801b41a5b4b314007cfcf158d33",
+        "schema": 1
+      },
+      "native_qualified": false,
+      "outcome": "fail",
+      "raw_collection_evidence": {
+        "path": "build/riscv64/ci/42013564796/artifacts/riscv64-combined-c6c1c3de927198668bced04276d30532817711da-42013564796-1/combined-report.json",
+        "sha256": "7885de70cf8de8ebefb8565f6a1a5042e7576fe10a125bcc19c79372fb44a9b4"
+      },
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42013564796/artifacts/riscv64-combined-c6c1c3de927198668bced04276d30532817711da-42013564796-1/qualification.json",
+        "sha256": "4dc1420826145e4385f5492d691ec5fa77379d94c5be95b9d2ac6f588affa3e8"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42013564796/failed.log",
+        "sha256": "92e518a98c6a2ebd1476ac80a8f890f41af8206e8b1acdc02d7d55bd94e9159c"
+      },
+      "raw_log_scope": "Failed GitHub Actions job steps",
+      "release_qualified": false,
+      "remaining_limit": "Three first-project checks, ten native-link checks, and package preparation/packing passed. No server runtime qualification follows.",
+      "root_verified_evidence": {
+        "path": "build/riscv64/root-review/combined-failures-42013564796-42020416615.json",
+        "sha256": "a170a7fcda301e8d6c1809b98c7d864d619b5bba56c802df8a205a4d73661809"
+      },
+      "run_id": 42013564796,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42013564796",
+      "scope": "riscv64-cli-extracted-server-package",
+      "server_artifact_status": "not-built; required collected executable is missing",
+      "server_package_log": {
+        "path": "build/riscv64/ci/42013564796/artifacts/riscv64-combined-c6c1c3de927198668bced04276d30532817711da-42013564796-1/server_package.log",
+        "sha256": "0aaa53992da9b5cc43f2b0afcd586ceb5702ce9774b91541796a7b2b63e9bb86"
+      },
+      "server_tests": {
+        "outcome": "not-run",
+        "reason": "The packaged server did not link, so no server runtime suite started.",
+        "required_test_count": 19,
+        "tests_run": 0
+      },
+      "source_archive": {
+        "bytes": 69425,
+        "sha256": "641752f38d44271854b56c7500c88bffccf548b09560cf0a007d67a505c54473"
+      }
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "checkout_commit": "0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5",
+      "checks": {
+        "cli_build": {
+          "exit_code": 0,
+          "log_sha256": "60b898236beeaa7bb24ec8d980244312a3e21a2f53c965821f58eac2cf5a2708",
+          "outcome": "pass"
+        },
+        "first_project": {
+          "exit_code": 0,
+          "log_sha256": "cd0d1ba6f5599c3bb9f15594e6deadcf9d0e1b45f55c5eed128eedaed370da62",
+          "outcome": "pass",
+          "tests_run": 3,
+          "tests_skipped": 0
+        },
+        "generated_source": {
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass"
+        },
+        "guest_environment": {
+          "outcome": "pass"
+        },
+        "native_link": {
+          "exit_code": 0,
+          "log_sha256": "e51e5bc805e44de2d1954271d95d0d37f8a2785a0aa83996c80716a49c146c11",
+          "outcome": "pass",
+          "tests_run": 10,
+          "tests_skipped": 0
+        },
+        "pack_package": {
+          "exit_code": 0,
+          "log_sha256": "21032c2c15f3dad9e2ffbf36c6c16491ada518746a5f04c3e97cd438ea29ed0e",
+          "outcome": "pass"
+        },
+        "prepare_package": {
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass"
+        },
+        "server_package": {
+          "exit_code": 2,
+          "log_sha256": "0aaa53992da9b5cc43f2b0afcd586ceb5702ce9774b91541796a7b2b63e9bb86",
+          "outcome": "fail"
+        }
+      },
+      "collection_error": "Current collection did not supply required evidence: asm-server-riscv64-linux",
+      "collection_result": "Missing required server bytes correctly failed the collection gate.",
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "failure_detail": {
+        "check": "server_package",
+        "diagnostic": "The addend is not allowed for R_RISCV_GOT_HI20",
+        "exit_code": 2,
+        "expression": "la t4, listen_address + 2",
+        "source": "riscv64/server.s:289"
+      },
+      "head_commit": "20d17ecebfd8b9560c1c637fde6b8587b5dd3dab",
+      "inputs": {
+        "archives": {
+          "candidate": {
+            "bytes": 5703680,
+            "commit": "0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5",
+            "sha256": "72da7d988d521b6b70e4cecf4c587ca24837d961efbca5427e12f921adcbe2e1",
+            "tree_sha256": "b9ff1a5108325ef6ae105b353eb11c7844dbb4247f70afd003c8d3f95e58c7d8"
+          },
+          "hosted": {
+            "bytes": 286720,
+            "commit": "4fe2c25277ed40a163b48b727ab814225d227cf8",
+            "sha256": "92a0029bd0784ebcb1066e703f74d68490093170519052678c8f71f00846e272",
+            "tree_sha256": "a6052ea28e7aed986a2dda5afc4be5eef33af891f5f6ebc1a7fad5c54f6f71bd"
+          },
+          "package-source": {
+            "bytes": 389120,
+            "commit": "fb72db4b59038801b41a5b4b314007cfcf158d33",
+            "sha256": "46151ccb245748d630d194105c144ce96eaa09620d14f374c5ebfd9971843542",
+            "tree_sha256": "54c848b214d21857f68769410af1c22d2c9991ef71da6151c119961c62a2d53e"
+          }
+        },
+        "candidate_revision": "0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5",
+        "hosted_revision": "4fe2c25277ed40a163b48b727ab814225d227cf8",
+        "package_revision": "fb72db4b59038801b41a5b4b314007cfcf158d33",
+        "schema": 1
+      },
+      "native_qualified": false,
+      "outcome": "fail",
+      "raw_collection_evidence": {
+        "path": "build/riscv64/ci/42020416615/artifacts/riscv64-combined-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-42020416615-1/combined-report.json",
+        "sha256": "f4853bd7e78e8a2be5b9be8d6263b9e94654025d20a107043ed3132c482a2361"
+      },
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42020416615/artifacts/riscv64-combined-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-42020416615-1/qualification.json",
+        "sha256": "237d815bf94f3e747cd68e16620931d3f6e1b3a01b77c2edbbc7b27cc8a47aab"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42020416615/failed.log",
+        "sha256": "7cbd3e47d36492d53683567b4a9bd1d93050bc9fa1fd39e435413c5ee1e2a865"
+      },
+      "raw_log_scope": "Failed GitHub Actions job steps",
+      "release_qualified": false,
+      "remaining_limit": "Three first-project checks, ten native-link checks, and package preparation/packing passed. No server runtime qualification follows.",
+      "root_verified_evidence": {
+        "path": "build/riscv64/root-review/combined-failures-42013564796-42020416615.json",
+        "sha256": "a170a7fcda301e8d6c1809b98c7d864d619b5bba56c802df8a205a4d73661809"
+      },
+      "run_id": 42020416615,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42020416615",
+      "scope": "riscv64-cli-extracted-server-package",
+      "server_artifact_status": "not-built; required collected executable is missing",
+      "server_package_log": {
+        "path": "build/riscv64/ci/42020416615/artifacts/riscv64-combined-0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5-42020416615-1/server_package.log",
+        "sha256": "0aaa53992da9b5cc43f2b0afcd586ceb5702ce9774b91541796a7b2b63e9bb86"
+      },
+      "server_tests": {
+        "outcome": "not-run",
+        "reason": "The packaged server did not link, so no server runtime suite started.",
+        "required_test_count": 19,
+        "tests_run": 0
+      },
+      "source_archive": {
+        "bytes": 69425,
+        "sha256": "641752f38d44271854b56c7500c88bffccf548b09560cf0a007d67a505c54473"
+      }
     }
   ],
   "execution_mode": "emulated",
   "full_system_qualification_status": "pending",
-  "latest_completed_full_system_run": 42013564640,
+  "latest_completed_full_system_run": 42020416471,
+  "local_host_checks": [
+    {
+      "artifact_digest_status": "not recorded in the retained failure metadata",
+      "cause": "unexplained",
+      "error": "subprocess /bin/sh install.sh timed out after15seconds",
+      "error_test": "test_trusted_bootstrap_macos.MacTrustedBootstrapTests.test_installs_without_gh_and_checks_authorization_before_provenance",
+      "execution_mode": "native",
+      "id": "mainf29-native-macos-317-timeout",
+      "isolated_followup": {
+        "assertions_unchanged": true,
+        "outcome": "pass",
+        "raw_log": {
+          "path": "build/riscv64/mac-installer-timeout/test.log",
+          "sha256": "7fbe8a0f46f96623a5c60035d8860c70bddd79f07b2844ab8c4deaba42f848f0"
+        },
+        "seconds": 2.658,
+        "tests": 1,
+        "timeout_seconds": 15
+      },
+      "native_qualified": false,
+      "observed_suite": {
+        "errors": 1,
+        "failures": 0,
+        "seconds": 218.738,
+        "skipped": 0,
+        "tests": 317
+      },
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/mac-installer-timeout/retained-failure.json",
+        "sha256": "388d408feee3deda16d1a519f9d9429ff301dbe0af4a2df2a3678bb071115a06"
+      },
+      "raw_log": {
+        "path": "build/riscv64/mainf29-native-macos.log",
+        "sha256": "bcffc2fec0997114ba5ae69d12d314f09f4822ee57bcf667fa16b1143df0d1f9"
+      },
+      "release_qualified": false,
+      "remaining_limit": "The later passes do not explain or erase the original full-suite timeout. No assertion, fixture timeout, or production code changed between these runs.",
+      "scope": "Supplemental macOS CLI tests; no RISC-V hardware or release qualification",
+      "source_commit_status": "not recorded in the retained failure metadata",
+      "target": "aarch64-macos"
+    },
+    {
+      "artifact_digest_status": "not recorded in this local follow-up summary",
+      "cause_of_prior_timeout": "unexplained",
+      "execution_mode": "native",
+      "gate": "make test",
+      "id": "mainf29-native-macos-317-followup",
+      "native_qualified": false,
+      "observed_suite": {
+        "errors": 0,
+        "failures": 0,
+        "seconds": 141.122,
+        "skipped": 0,
+        "tests": 317
+      },
+      "outcome": "pass",
+      "prior_failure_retained": {
+        "path": "build/riscv64/mac-installer-timeout/retained-failure.json",
+        "sha256": "388d408feee3deda16d1a519f9d9429ff301dbe0af4a2df2a3678bb071115a06"
+      },
+      "raw_evidence": {
+        "path": "build/riscv64/mainf29-native-followup-result.json",
+        "sha256": "e8855f0d883e34435a00dbd4c08dc63c7df090b0f6549e7d8901bb695c0cbf89"
+      },
+      "raw_log": {
+        "path": "build/riscv64/mainf29-native-macos-followup.log",
+        "sha256": "1c123929b2e8b3c7d8287cce12a1cd18e4c45631855fe5a6615c929807940905"
+      },
+      "release_qualified": false,
+      "remaining_limit": "This native macOS gate does not qualify physical RISC-V hardware or release distribution.",
+      "scope": "Supplemental macOS CLI tests; no RISC-V hardware or release qualification",
+      "source_head": "20d17ecebfd8b9560c1c637fde6b8587b5dd3dab",
+      "target": "aarch64-macos"
+    }
+  ],
   "native_qualified": false,
   "release_qualified": false,
   "schema": 1,

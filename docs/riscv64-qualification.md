@@ -192,6 +192,55 @@ SHA-256: 83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0
 The attempt record retains each report and log digest.
 Native RISC-V hardware and release qualification remain unrun.
 
+The later [full-system run 42020416471](https://github.com/stubbi/asm/actions/runs/42020416471) passed all 35 focused tests.
+It again passed all three guest-kernel denial cases.
+Both previously failed held-HOME and descendant cases passed.
+The root suite ran 341 tests with one failure and no skips or expected failures.
+The failed bootstrap test did not reach its controlled-download marker within five seconds.
+Its original output does not distinguish early installer exit from delayed fixture startup.
+The interruption and cleanup assertions did not run for that failed case.
+The actual guest failure cause remains unproven.
+
+A separate controlled six-second delay reproduced the old precondition failure on macOS.
+The bounded correction then executed both shared interruption cases with their signal and cleanup assertions unchanged.
+This local reproduction does not convert the failed guest run into a pass.
+Full-system qualification still requires a complete successful rerun.
+
+[User-mode run 42020416785](https://github.com/stubbi/asm/actions/runs/42020416785) retained the three kernel-denial failures among 341 root tests.
+All 35 focused tests passed, with no skips or expected failures.
+These two later runs checked source `0eca8088b46e7a3c9f33d699ec5124b9e6a10fd5` for head `20d17ecebfd8b9560c1c637fde6b8587b5dd3dab`.
+Their executable digest remained the same `83801012…` value recorded above.
+
+## Combined application checks
+
+[Combined run 42013564796](https://github.com/stubbi/asm/actions/runs/42013564796) and [run 42020416615](https://github.com/stubbi/asm/actions/runs/42020416615) both failed during server linking.
+Each passed three first-project tests and ten native-link tests without skips.
+Package preparation and packing also passed.
+Both used RISC-V Linux programs through user-mode emulation.
+The CLI executable retained the same digest recorded above.
+
+Both packaged server source commit `fb72db4b59038801b41a5b4b314007cfcf158d33`.
+The linker rejected the addend in `la t4, listen_address + 2` from `riscv64/server.s`.
+Neither run produced the required server executable.
+All 19 server runtime tests remained `not-run`.
+The missing executable correctly failed the collection gate.
+The attempt record retains both failures and their exact source, archive, and log digests.
+
+## Supplemental macOS checks
+
+A local macOS suite ran 317 tests with one trusted-installer timeout at the unchanged 15-second limit.
+The cause remains unexplained.
+An isolated follow-up passed in 2.658 seconds with that same limit.
+The unchanged full follow-up passed all 317 tests in 141.122 seconds.
+The earlier timeout remains retained.
+
+These local summaries do not record an executable digest.
+They are supplemental macOS results and do not qualify RISC-V hardware or release distribution.
+Fresh full-system and combined results remain required for the next candidate.
+The retained `83801012…` results cover only their recorded source revisions.
+The later compiler-environment correction changed the CLI inputs.
+The new candidate requires its own executable digest and complete runtime results.
+
 ## Primary references
 
 The [RISC-V ABI specification](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/) defines the public calling convention and ELF flags.

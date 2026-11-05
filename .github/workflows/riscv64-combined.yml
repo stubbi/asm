@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 100
     env:
       ASM_HOSTED_REVISION: 4fe2c25277ed40a163b48b727ab814225d227cf8
-      ASM_PACKAGE_REVISION: fb72db4b59038801b41a5b4b314007cfcf158d33
+      ASM_PACKAGE_REVISION: 04c93b3f0200173298d24f22a06393bc359a1af0
       ASM_EVIDENCE: ${{ github.workspace }}/riscv64-combined-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
