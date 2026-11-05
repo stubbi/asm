@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_MACOS, TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE
+from host import IS_MACOS, TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE, MAC_PREPARED
 from host import exit_source, argc_source, illegal_source, undefined_symbol_source
 
 
@@ -313,6 +313,18 @@ class NativeCliTests(unittest.TestCase):
                 result = self.cli(command, "example", "--json", code=69)
                 self.assertFalse(json.loads(result.stderr)["ok"])
 
+    def test_response_file_source_is_rejected_before_assembly(self):
+        project = self.project()
+        self.cli("build", cwd=project)
+        previous = (project / "build/app").read_bytes()
+        (project / "@literal.s").write_bytes((project / "src/main.s").read_bytes())
+        (project / "literal.s").write_text("src/alternate.s\n")
+        (project / "src/alternate.s").write_text(exit_source(42))
+        self.replace_manifest(project, 'source = "src/main.s"', 'source = "@literal.s"')
+        result = self.cli("run", cwd=project, code=1)
+        self.assertIn("invalid or missing asm.toml", result.stderr)
+        self.assertEqual((project / "build/app").read_bytes(), previous)
+
     def test_no_shell_or_runtime_dependency(self):
         # An empty PATH must not affect fixed-path tool execution or native CLI.
         project = self.project()
@@ -330,7 +342,7 @@ class NativeCliTests(unittest.TestCase):
     def test_cli_builds_its_own_assembly_sources(self):
         shutil.copytree(ROOT / "cli", self.work / "cli")
         if IS_MACOS:
-            shutil.copyfile(ROOT / "build/macos/asm.s", self.work / CLI_SOURCE)
+            shutil.copyfile(ROOT / MAC_PREPARED, self.work / CLI_SOURCE)
         (self.work / "asm.toml").write_text(
             '[package]\nname = "asm"\nversion = "0.1.0"\n\n'
             f'[build]\nsource = "{CLI_SOURCE}"\ntarget = "{TARGET}"\n'

@@ -1177,6 +1177,8 @@ valid_source:
     xor edx, edx
 .Lsource_segment:
     mov al, [rdi + rcx]
+    cmp al, '@' /* compiler/assembler response files are not source paths */
+    je .Linvalid
     cmp al, '-'
     je .Linvalid
     mov edx, ecx

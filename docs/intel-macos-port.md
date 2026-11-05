@@ -1,0 +1,92 @@
+# Intel macOS CLI port
+
+Status: implementation and qualification in progress. No Intel release is declared.
+
+The user outcome is the current CLI workflow on an Intel Mac, including package management and native library linking.
+The foundation requires dependable reuse and independent evidence for each target.
+This port retains assembly package logic and the existing transport and cryptography boundary.
+
+The target is `x86_64-macos`, macOS 15+, Mach-O, Apple System V AMD64 LP64.
+The implementation uses baseline x86-64 instructions, without an additional AVX or CPU extension requirement.
+Darwin libSystem adapters preserve the shared Linux-shaped internal syscall and file-metadata contract.
+They align every external call and implement the native argument and error conventions.
+Build-time Python prepares assembler syntax and platform constants; it is not a runtime command backend.
+
+Implementation steps:
+
+1. Add an observable x86-64 build and first-project test; retain its initial failure.
+2. Add source preparation and assembly Darwin adapters, with checked SDK layouts and error normalization.
+3. Add bounded Mach-O validation, publication dispatch, installed-program and safe-update qualification.
+4. Reuse the shared command tests with target-correct fixtures, including native library builds and failure preservation.
+5. Add native Intel CI qualification and exact-source, exact-artifact evidence. Keep Rosetta results explicitly separate.
+6. Supply the implementation commit and integration contract to the release workstream through normal progress.
+
+Review focus includes ACL allow entries, ownership-disabled APFS, displaced running images, wrong-CPU executables,
+descriptor-relative operations, untrusted digest environments, failed children, and inventory alias protection.
+Existing immutable releases and declared host metadata remain unchanged until their owning release gates pass.
+
+Shared release, bootstrap, feed, and host-declaration integration belongs to the distribution session.
+This branch supplies `tools/macos_x86_64.py`, `cli/macos/x86_64/`, target tests, and a standalone build entry point.
+Native Intel CI must test the actual final x86-64 bytes; assembling or running under Rosetta alone is insufficient.
+
+Platform references, checked 5 November 2026:
+
+- [Apple Intel ABI](https://developer.apple.com/documentation/xcode/writing-64-bit-intel-code-for-apple-platforms).
+- [GitHub hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), including `macos-15-intel`.
+- The selected Xcode Command Line Tools SDK headers, asserted by the target ABI tests.
+
+Developer ID signing and notarization remain unavailable. Ad-hoc signatures and publisher provenance have separate meanings.
+
+Evidence and failed attempts will be recorded after execution, with source and artifact digests.
+
+## Build and qualification commands
+
+Install Apple's Command Line Tools, Make, Git, and Python 3.11+.
+The source entry point is separate until distribution integration is complete.
+
+```sh
+make -f cli/macos/x86_64/Makefile all
+make -f cli/macos/x86_64/Makefile test
+```
+
+The second command atomically selects the Intel test executable as `build/asm`.
+Do not run another architecture's suite against that alias concurrently.
+A plain source build uses fixed `/usr/local/bin/gh` for the existing manual-update provenance protocol.
+A release must supply the Intel bootstrap/verifier mapping through the distribution workstream.
+
+Native qualification uses two clean archives of one committed revision:
+
+```sh
+python3 tools/qualify_macos_x86_64.py --commit HEAD --output native-intel
+```
+
+This command rejects translated execution by default.
+`--allow-rosetta` records translated evidence and cannot label it native.
+It retains command output, tests, byte size, digest, source revision, ABI, OS minimum, and tool versions.
+The final tests run against the compared bytes, without resigning afterward.
+A failed or empty suite, skipped case, expected failure, or changed artifact stops qualification.
+
+## Retained local evidence
+
+The [5 November record](intel-macos-evidence.json) binds the frozen production inputs to the tested Intel bytes.
+The local macOS 15.6.1 host executed this x86-64 Mach-O through Rosetta.
+All 175 Intel cases passed, without skips or increased deadlines.
+The 42 registry tests passed.
+The native Apple Silicon regression suite passed 223 cases, without skips.
+That result remains separate from Intel qualification.
+
+The tested Intel file has 157680 bytes.
+Its SHA-256 is `b016e68208330a7cc2165b0ef9f41026b0e5771295bf1b07726d97ab82d4578c`.
+These are unpublished source-port bytes, with an ad-hoc signature.
+They do not extend the immutable published 0.5.0 release.
+A new release and final distribution qualification are still required.
+
+The shared native-link inputs originate from committed snapshot `997a9ab`.
+The newer 0.5.0 installed-program alias protection remains in place.
+Review found and fixed compiler response-file interpretation and a 64-bit result truncation defect.
+Build source and checker paths reject components that start with `@` before invoking tools.
+A Clang `./` prefix alone was insufficient because cc1 also receives the source basename.
+The regressions retain separate unprefixed response files so they exercise the original failure.
+
+Native Intel CI, final installer integration, release provenance, Developer ID, and notarization have distinct gates.
+The local record keeps them unrun until their actual results exist.

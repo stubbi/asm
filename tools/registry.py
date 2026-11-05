@@ -474,6 +474,7 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
                            {"source", "target"}, "project build")
         require(build["target"] == target, "project target does not match artifact")
         source = portable_path(build["source"])
+        require(not any(part.startswith("@") for part in source.split("/")), "build source cannot be a response file")
         require(source in files, "declared assembly source is missing")
         require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
         for field in ("link", "libraries", "check"):
@@ -489,6 +490,7 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
                     "build libraries must contain up to eight names separated by one space")
         if "check" in build:
             checker = portable_path(build["check"])
+            require(not any(part.startswith("@") for part in checker.split("/")), "build check cannot be a response file")
             require(checker.endswith(".c"), "build check must be a C file")
             require(checker in files, "declared compile checker is missing")
     except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:

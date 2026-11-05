@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "target": "x86_64-macos",
+  "execution": "rosetta",
+  "host": {
+    "machine": "arm64",
+    "macos": "15.6.1"
+  },
+  "source": {
+    "base_commit": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+    "shared_native_link_snapshot": "997a9ab",
+    "files_sha256": {
+      "cli/archive.s": "2b84d0b2c3bc23b48dd2a629ce47ba6705a08aaa530070e0bd375c713ba1eab6",
+      "cli/asm.s": "5efbe193d74317ce057ee2d46a1f2c54e4eb291c1793ef2305acbac8f2b32043",
+      "cli/dependencies.s": "c713523f2bf6b094ee88f8a0bfaedb4796380353a84f5b5c150d8cddfd7d6630",
+      "cli/elf.s": "52312e6f405c8c1abee9678a86b9bec880dfb43957131ab19a9779de9fab2e72",
+      "cli/macos/x86_64/macho.s": "42212d8ff6311b351047d616d53a5a88c18dff79d715c865cb86212b7d4bd7da",
+      "cli/macos/x86_64/platform.s": "e4e1a827c97fd69884337cca6844400c2cd4fa443f5923bc99bf5ea997641fab",
+      "cli/macos/x86_64/publish.s": "b279514595501a99642ba8239894fcb8cc71d20ec3a1cbd656e3abd133f46fdd",
+      "cli/native_link.s": "288853479b030a9c95029b3fbd3eea75385ebd4bd889a983d9565f7d343997b9",
+      "cli/programs.s": "1c2ffb1df1455e1f8f18bd765e4a361c6e965a4822c646f0b7c16c992d3ab9b2",
+      "cli/publish.s": "1b102893f0e3057303074c2244c3e34deda2d1a223cb62d7332384dd729b59cd",
+      "cli/registry.s": "a4a5bfa40a8c10eeed3d3921ac503f889a975911074e1def5b88bfa363c14c80",
+      "cli/self_update.s": "4b1dd43bc4c179b7d982360ebc358080c97d3acb3e6f58cb4f1d2fca95a99958",
+      "cli/self_update_metadata.s": "c4f80ff5fbf2d718cf4661f14e25d5650abf58e2c4f8becab35356e2a283d1b9",
+      "cli/self_update_trust.s": "82bb93315d2fd8a21be1c6aaf421ae9928f1a86041ef9cb55c4631aed3a97281",
+      "cli/self_update_verify.s": "dbf07d7739389adba34f72495e7e426a54bb2c40f5ed06ad75664da8054e8442",
+      "cli/templates.s": "d418e9b35373c462d4bd663d5caa583236d8fd4b62a61d698a45ebbe31bca4f2",
+      "tools/macos_x86_64.py": "f306b65c86268d0574c4c32e70283c9f16b45eb7b9ec5970f52d84ca886c3009"
+    }
+  },
+  "artifact": {
+    "bytes": 157680,
+    "sha256": "b016e68208330a7cc2165b0ef9f41026b0e5771295bf1b07726d97ab82d4578c",
+    "signature": "ad-hoc"
+  },
+  "runtime": {
+    "target": "x86_64-macos",
+    "tests": 175,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "expected_failures": 0,
+    "unexpected_successes": 0,
+    "status": "pass",
+    "failed_cases": []
+  },
+  "registry_tests": {
+    "tests": 42,
+    "status": "pass"
+  },
+  "native_intel": {
+    "status": "not-run",
+    "qualification_workflow": ".github/workflows/intel-macos.yml"
+  },
+  "publisher_provenance": "not-run; unpublished port artifact",
+  "developer_id": "not-run; identity unavailable",
+  "notarization": "not-run",
+  "installer_and_release": "not-run; distribution workstream owns new-release integration",
+  "retained_development_failures": [
+    "Missing Intel build entry point failed before implementation.",
+    "Starter message length emitted as a memory operand caused SIGSEGV; corrected to an immediate.",
+    "Alignment after a data label shifted a pointer table; corrected before labels.",
+    "Unsigned Intel project output failed the mandatory Mach-O code-signature gate; explicit ad-hoc signing added.",
+    "Native-library publication rejected the extended manifest; shared parser support and roundtrip tests added.",
+    "Gated embedded-verifier assembly rejected a symbol difference; a named absolute constant fixed preparation.",
+    "Clang @response checker injection executed a harmless review constructor; response-form build paths are now rejected.",
+    "A ./ filename prefix alone did not stop cc1 main-file-name response expansion; that attempt was replaced by validation.",
+    "A successful off_t 0xffffffff was mistaken for errno; 64-bit result adapters and a sparse-file regression fixed it.",
+    "Development Rosetta suites encountered 10/15/30-second process timeouts; final frozen 175-case run passed without increased deadlines."
+  ],
+  "limits": [
+    "Package integrity does not establish publisher identity or harmlessness.",
+    "Transport/verifier fixtures exercise policy, not genuine Sigstore signatures.",
+    "Gated bundled-verifier fixtures do not provision production trust.",
+    "Translated results do not establish native Intel qualification or performance."
+  ],
+  "apple_silicon_regression": {
+    "execution": "native",
+    "tests": 223,
+    "status": "pass",
+    "failures": 0,
+    "skipped": 0,
+    "bytes": 276432,
+    "sha256": "5bbe712c93c37cb47a63ba65673d96e1cff2edfbff37ceb3712890fa7d0b8851"
+  }
+}

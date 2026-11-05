@@ -54,9 +54,12 @@ class DependencyCliTests(unittest.TestCase):
                     # Fixture versions must not depend on the current example release.
                     data = (f'[package]\nname = "{name}"\nversion = "{version}"\n\n'
                             f'[build]\nsource = "src/main.s"\ntarget = "{target}"\n').encode()
+                elif IS_MACOS and not IS_ARM64 and relative == "src/min.s":
+                    data = (b".intel_syntax noprefix\n.global asm_u64_min\n.text\nasm_u64_min:\n"
+                            b"mov rax, rdi\ncmp rdi, rsi\ncmova rax, rsi\nret\n")
                 elif IS_ARM64 and relative == "src/min.s":
                     data = b".global asm_u64_min\n.text\nasm_u64_min:\n    cmp x0, x1\n    csel x0, x0, x1, ls\n    ret\n"
-                elif IS_ARM64 and relative in {"src/main.s", "tests/main.s"}:
+                elif IS_MACOS and relative in {"src/main.s", "tests/main.s"}:
                     data = exit_source(0).encode()
                 member = tarfile.TarInfo(relative)
                 member.mode = 0o644
@@ -89,7 +92,7 @@ class DependencyCliTests(unittest.TestCase):
                 'jne failure\nxor edi, edi\nmov eax, 60\nsyscall\n'
                 'failure:\nmov edi, 99\nmov eax, 60\nsyscall\n')
         if IS_MACOS:
-            body = body.replace("mov x8, #93\nsvc #0", "bl _exit")
+            body = body.replace("mov x8, #93\nsvc #0", "bl _exit") if IS_ARM64 else body.replace("mov eax, 60\nsyscall", "call _exit")
         (project / "src/main.s").write_text(
             f'.include "stubbi/{name}/{version}/{TARGET}/src/min.s"\n' + program(body))
 

@@ -33,6 +33,7 @@ Each name becomes one `-lNAME` argument.
 The field cannot contain linker flags or paths.
 
 `check` names a relative `.c` file using the existing source-path rules.
+Build-source and checker path components cannot start with `@`, which compilers can interpret as response-file input.
 Source archives must include that file.
 Archive paths retain the registry's stricter portable-path rules and 240-byte limit.
 Asm compiles it with `-fsyntax-only`, C11, and warnings as errors.

@@ -1778,6 +1778,8 @@ valid_source:
     mov x16, x0
     add x16, x16, x3
     ldrb w10, [x16]
+    cmp w10, #64 /* reject response-file path components before tools */
+    b.eq .Linvalid
     bfi x9, x10, #0, #8
     and w10, w9, #255
     ARM_IMM w11, 45
