@@ -23,8 +23,8 @@ A target declaration does not establish CLI host support or native qualification
 
 ## Run with Asm
 
-Use an Asm CLI built from this checkout.
-Published 0.5.0 binaries do not support this manifest extension.
+Use Asm 0.6.0 or later.
+Earlier binaries do not support this manifest extension.
 
 Native execution requires Linux x86-64, Linux AArch64, or Apple Silicon with macOS 15 or later.
 Linux builds require GNU Binutils.
@@ -111,10 +111,10 @@ The assembly includes now use paths relative to this project root.
 The previous checkout's AArch64 Linux, RISC-V64 Linux, and Apple Silicon startup tests remain in their target directories.
 The Intel macOS implementation has no manifest test; its package checks exercise output and failures.
 
-The root manifest retains checkout version `0.5.0`.
-This source-layout change is unreleased.
-Publishing these changed source bytes requires a new package version.
-Published versions, records, and qualification digests remain unchanged.
+The root manifest declares version `0.6.0`.
+Its Linux source archives contain all seven implementations.
+The release supplies hello executables for the three Linux targets only.
+Earlier published versions, records, and qualification digests remain unchanged.
 
 The project license is MIT.
 See [LICENSE](LICENSE).

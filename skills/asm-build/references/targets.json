@@ -14,7 +14,7 @@
       "limits": [
         "The reference executable uses the separate Linux x86-64 system-call convention; the math routine uses the System V AMD64 callable ABI.",
         "The reference object format is little-endian ELF64.",
-        "Published Asm 0.5.0 builds only for its own host target; unreleased source builds also support standalone Linux cross builds.",
+        "Asm 0.6.0 selects the native host by default and supports standalone Linux cross builds with fixed tools.",
         "An empty feature list means this guidance specifies no optional CPU extension; it does not qualify every package or machine.",
         "The registry target name does not select CPU features, ABI revisions, or runtime libraries.",
         "No Linux kernel minimum is established by this reference."
@@ -33,7 +33,7 @@
       "limits": [
         "The freestanding reference uses the separate Linux AArch64 system-call convention. A callable routine needs its own AAPCS64 contract and tests.",
         "The reference object format is little-endian ELF64.",
-        "Published Asm 0.5.0 builds only for its own host; unreleased source builds select standalone Linux targets with fixed cross tools.",
+        "Asm 0.6.0 selects the native host by default and supports standalone Linux targets with fixed cross tools.",
         "Emulated reference output does not establish physical-target performance.",
         "An empty feature list does not qualify optional instructions in a selected artifact.",
         "The registry does not select library ABIs or CPU features.",
@@ -55,7 +55,7 @@
         "Intel macOS is unsupported.",
         "Linux syscall conventions do not apply to macOS.",
         "Apple reserves x18; external calls require Apple's stack and argument conventions.",
-        "Published Asm 0.5.0 builds only for its own host target; unreleased source builds also support standalone Linux cross builds.",
+        "Asm 0.6.0 selects the native host by default and supports standalone Linux cross builds with fixed tools.",
         "An empty feature list does not establish compatibility for optional instructions.",
         "The recorded ad-hoc signature does not identify the publisher; Developer ID signing and notarization were not run."
       ]
@@ -72,8 +72,8 @@
       "execution_evidence": "docs/specs/registry.md records assembly, linking, and QEMU execution of the reference example. examples/hello/targets/riscv64-linux/README.md specifies RV64I, LP64, and disabled linker relaxation. Reviewed 2026-11-04; no physical RISC-V execution or performance claim follows.",
       "limits": [
         "The reference uses little-endian RV64I, LP64, and the Linux RISC-V system-call convention.",
-        "There is no native RISC-V Asm CLI. Unreleased source builds can cross-build standalone RISC-V Linux with explicit tools.",
-        "Use asm build --target riscv64-linux with an unreleased source CLI and its documented tools. asm run never executes this foreign target.",
+        "There is no native RISC-V Asm CLI. Asm 0.6.0 can cross-build standalone RISC-V Linux with explicit tools.",
+        "Use asm build --target riscv64-linux with Asm 0.6.0 and its documented tools. asm run never executes this foreign target.",
         "The empty optional-feature list applies only to the RV64I reference; a registry target name can cover packages with other requirements.",
         "LP64 does not imply LP64D or floating-point extensions.",
         "Emulated output does not qualify physical hardware or native performance.",

@@ -113,6 +113,43 @@ class ProjectTargetTests(unittest.TestCase):
             with self.subTest(fields=fields), self.assertRaises(registry.RegistryError):
                 self.validate(project_files(prefixes + fields + "\n"))
 
+    def test_response_file_inputs_are_rejected_in_active_and_inactive_recipes(self):
+        for target in ("x86_64-linux", "aarch64-linux"):
+            for field in ("source", "test", "check"):
+                suffix = ".c" if field == "check" else ".s"
+                for prefix in ("@input", "dir/@input"):
+                    path = prefix + suffix
+                    declarations = {
+                        "source": f'source = "{path}"\n',
+                        "test": f'source = "src/x86.s"\ntest = "{path}"\n',
+                        "check": f'source = "src/x86.s"\nlink = "c"\ncheck = "{path}"\n',
+                    }
+                    manifest = PACKAGE + f'[target.{target}]\n' + declarations[field]
+                    if target != "x86_64-linux":
+                        manifest += '[target.x86_64-linux]\nsource = "src/x86.s"\n'
+                    files = project_files(manifest)
+                    files[path] = b"Untrusted response-file input.\n"
+                    with self.subTest(target=target, field=field, path=path), \
+                         self.assertRaisesRegex(registry.RegistryError, "path has invalid characters"):
+                        self.validate(files)
+
+    def test_response_file_inputs_are_rejected_in_legacy_build_recipes(self):
+        for field in ("source", "test", "check"):
+            suffix = ".c" if field == "check" else ".s"
+            for prefix in ("@input", "dir/@input"):
+                path = prefix + suffix
+                declarations = {
+                    "source": f'source = "{path}"\n',
+                    "test": f'source = "src/x86.s"\ntest = "{path}"\n',
+                    "check": f'source = "src/x86.s"\nlink = "c"\ncheck = "{path}"\n',
+                }
+                manifest = PACKAGE + '[build]\ntarget = "x86_64-linux"\n' + declarations[field]
+                files = project_files(manifest)
+                files[path] = b"Untrusted response-file input.\n"
+                with self.subTest(field=field, path=path), \
+                     self.assertRaisesRegex(registry.RegistryError, "path has invalid characters"):
+                    self.validate(files)
+
     def test_ambiguous_or_unknown_declarations_are_rejected(self):
         candidates = [
             PACKAGE + TARGETS + '[build]\nsource = "src/x86.s"\ntarget = "x86_64-linux"\n',

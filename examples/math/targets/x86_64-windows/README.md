@@ -7,7 +7,7 @@ The assembler include path points to the project root.
 
 This package targets Windows x86-64 and the Microsoft x64 ABI.
 An ABI defines function calls, register use, and stack layout.
-This source package targets unreleased checkout version 0.5.0.
+This implementation belongs to the 0.6.0 source project.
 Native Windows qualification remains required.
 The program requires no C runtime.
 The source uses LLVM's assembler with Intel syntax.
@@ -76,7 +76,7 @@ It includes Windows unwind metadata and preserves nonvolatile registers.
 The linker enables address randomization and non-executable data sections.
 
 Cross-assembly and PE inspection do not establish native Windows behavior.
-Before publication, run the package tests on a matching Windows host.
+Before publishing a Windows executable, run the package tests on a matching Windows host.
 From the repository root, run `python -m unittest discover -s tests/packages -p test_math_windows.py -v`.
 That check covers captured output, read-only standard output, file preservation, the unsigned-value and ABI assembly tests, and the seven writer scenarios.
 The native runtime check reports a skip on other operating systems.
