@@ -12,6 +12,15 @@
 .equ STDERR, 2
 .equ EINTR, 4
 
+/* GNU as requires these label differences to be absolute when LI is parsed. */
+.section .rodata
+message:
+    .ascii "min(12, 37) = 12\n"
+message_end:
+write_error:
+    .ascii "math: write failed.\nCheck standard output and run the example again.\n"
+write_error_end:
+
 .section .text
 .global _start
 .type _start, @function
@@ -78,13 +87,5 @@ _start:
     li a0, -1
     ret
 .size .Lwrite_all, .-.Lwrite_all
-
-.section .rodata
-message:
-    .ascii "min(12, 37) = 12\n"
-message_end:
-write_error:
-    .ascii "math: write failed.\nCheck standard output and run the example again.\n"
-write_error_end:
 
 .section .note.GNU-stack,"",@progbits

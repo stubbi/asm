@@ -139,15 +139,26 @@ Their Linux execution remains unrun.
 
 | Local artifact | SHA-256 |
 | --- | --- |
-| Assembled Linux example | `014eb0b69a3a775af22d7cf5080c15a216014cc0333ff180d9ae5a362213eb44` |
+| Example source, `src/main.s` | `59ca09f3ae021cfe5a6c4f6e8d8b5d3b2444ebc200f02099831aafd5365e8c18` |
+| Assembled Linux example | `5a8095b8a97e269c86b5715f21b035de6dce893b1fd4f18940c310e70216a19b` |
 | Assembled Linux caller test | `29ac421b0252906a99df8e37506ff6d274530af56e243f8690d2e486ceaeb8c9` |
 | Executed machine-mode caller | `270868bd20b2b69e4b53b7e40cd23e7fb649d8fd7bdf6ec3ab91083eec4f317a` |
 
 These are local validation artifacts, not published release artifacts.
 The test rejected deliberate signed-comparison and interrupted-write regressions in temporary source copies.
 
-Earlier attempts exposed three limitations.
+Earlier attempts exposed these limitations.
 Apple Clang 17 had no RISC-V backend.
 The initial LLVM caller used an unsupported forward-expression immediate.
 The initial machine-mode harness started at the library function and timed out after 15 seconds.
 The current caller uses an end pointer, and the machine-mode harness places its entry point at the load address.
+
+GNU cross-assembly failed in [CI run 41940119622](https://github.com/stubbi/asm/actions/runs/41940119622).
+The `li` instructions used forward message-length expressions that GNU could not resolve when parsing those instructions.
+The source now defines both immutable messages before their length expressions.
+The strict GNU flags remain `--fatal-warnings -march=rv64i -mabi=lp64`.
+Local LLVM assembly and machine-mode execution passed after this change.
+GNU assembly and Linux process execution still require a new CI result.
+
+The earlier LLVM example digest was `014eb0b69a3a775af22d7cf5080c15a216014cc0333ff180d9ae5a362213eb44`.
+That local build did not establish GNU assembler compatibility.
