@@ -11,6 +11,8 @@ on:
       - 'tools/windows_bootstrap.py'
       - 'tools/windows-install.ps1.in'
       - 'tools/windows_layout.py'
+      - 'tools/windows_layout_rename_probe.py'
+      - 'tests/windows/test_layout_rename_probe.py'
 
 permissions:
   contents: read
@@ -54,7 +56,17 @@ jobs:
         run: |
           python -m unittest discover -s tests/windows -p test_bootstrap_smoke_driver.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests/windows -p test_layout_rename_probe.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Observe held file and directory publication
+        if: always()
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_layout_rename_probe.py --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --output build/layout-rename-probe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Observe source installation without executing the candidate
+        if: always()
         env:
           ASM_TARGET: ${{ matrix.target }}
         run: |
@@ -65,6 +77,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-bootstrap-${{ matrix.target }}-${{ github.sha }}-${{ github.run_attempt }}
-          path: build/bootstrap-smoke/
+          path: |
+            build/bootstrap-smoke/
+            build/layout-rename-probe/
           if-no-files-found: error
           retention-days: 14
