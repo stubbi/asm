@@ -20,23 +20,56 @@
  * Buffers: DOS64, NT264, sections3840, stat144. Owns and closes one descriptor.
  */
 validate_host_elf:
-    push rbx
     push r12
     push r13
     push r14
-    push r15
-    mov rbx, rsi
-    cmp rbx, 328
-    jb .Lpe_unopened
-    cmp rbx, 67108864
-    ja .Lpe_unopened
+    mov r13, rsi
     mov eax, 2
     xor esi, esi
     xor edx, edx
     call win_syscall
     test rax, rax
-    js .Lpe_unopened
+    js .Lpe_path_bad
     mov r12, rax
+    mov rdi, rax
+    mov rsi, r13
+    call win_pe_fd
+    mov r14, rax
+    mov rdi, r12
+    mov eax, 3
+    call win_syscall
+    test rax, rax
+    js .Lpe_path_bad
+    mov rax, r14
+    jmp .Lpe_path_done
+.Lpe_path_bad:
+    xor eax, eax
+.Lpe_path_done:
+    pop r14
+    pop r13
+    pop r12
+    ret
+/* RDI=borrowed FD, RSI=exact size. EAX=1/0. Rewinds the held file;
+ * never opens a path or closes the caller's descriptor. Same PE bounds. */
+win_pe_fd:
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    mov r12, rdi
+    mov rbx, rsi
+    cmp rbx, 328
+    jb .Lpe_unopened
+    cmp rbx, 67108864
+    ja .Lpe_unopened
+    xor esi, esi
+    xor edx, edx
+    mov eax, 8
+    call win_syscall
+    test rax, rax
+    js .Lpe_fail
+    mov rax, r12
     mov rdi, rax
     lea rsi, [rip + pe_stat]
     mov eax, 5
@@ -234,17 +267,9 @@ validate_host_elf:
     jnz .Lpe_section
     test r15d, r15d
     jz .Lpe_fail
-    mov rdi, r12
-    mov eax, 3
-    call win_syscall
-    test rax, rax
-    js .Lpe_unopened
     mov eax, 1
     jmp .Lpe_return
 .Lpe_fail:
-    mov rdi, r12
-    mov eax, 3
-    call win_syscall
 .Lpe_unopened:
     xor eax, eax
 .Lpe_return:
@@ -284,3 +309,91 @@ pe_stat: .space 144
 pe_file_mask: .space 4
 pe_section_mask: .space 4
 pe_mapped_end: .space 8
+.text
+/* RDI=borrowed FD, RSI=exact artifact size, RDX=owned metadata[64].
+ * RAX=0/-22. Performs full PE validation before reading the unique .asmmeta.
+ * Never owns, reopens, or closes the descriptor. Global PE scratch is shared
+ * only in this single-threaded CLI. WFRAME preserves all adapter inputs.
+ * Metadata numbers fit the canonical version range. No candidate is mapped. */
+win_managed_pe:
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    mov r12, rdi
+    mov r13, rdx
+    call win_pe_fd
+    test eax, eax
+    jz .Lwmp_bad
+    lea r14, [rip + pe_sections]
+    movzx r15d, word ptr [rip + pe_nt + 6]
+    xor ebx, ebx
+.Lwmp_section:
+    mov rax, 0x6174656d6d73612e /* .asmmeta */
+    cmp [r14], rax
+    jne .Lwmp_next
+    test rbx, rbx
+    jnz .Lwmp_bad
+    mov rbx, r14
+.Lwmp_next:
+    add r14, 40
+    dec r15d
+    jnz .Lwmp_section
+    test rbx, rbx
+    jz .Lwmp_bad
+    cmp dword ptr [rbx + 8], 64
+    jne .Lwmp_bad
+    cmp dword ptr [rbx + 16], 64
+    jb .Lwmp_bad
+    mov eax, [rbx + 36]
+    and eax, 0xe00000e0
+    cmp eax, 0x40000040
+    jne .Lwmp_bad
+    mov rdi, r12
+    mov esi, [rbx + 20]
+    xor edx, edx
+    mov eax, 8
+    call win_syscall
+    test rax, rax
+    js .Lwmp_bad
+    mov rdi, r12
+    mov rsi, r13
+    mov edx, 64
+    call elf_read_exact
+    test rax, rax
+    js .Lwmp_bad
+    mov rax, 0x0031494c434d5341 /* ASMCLI1 NUL */
+    cmp [r13], rax
+    jne .Lwmp_bad
+    mov ecx, 8
+.Lwmp_protocol:
+    cmp dword ptr [r13 + rcx], 1
+    jne .Lwmp_bad
+    add ecx, 4
+    cmp ecx, 24
+    jb .Lwmp_protocol
+.Lwmp_version:
+    cmp dword ptr [r13 + rcx], 2147483647
+    ja .Lwmp_bad
+    add ecx, 4
+    cmp ecx, 48
+    jb .Lwmp_version
+    mov rax, [r13 + 48]
+    or rax, [r13 + 56]
+    jnz .Lwmp_bad
+    xor eax, eax
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+.Lwmp_bad:
+    mov rax, -22
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret

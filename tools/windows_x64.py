@@ -4,10 +4,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 """
 from pathlib import Path
 import argparse
+import importlib.util
 import re
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / 'cli/windows/x86_64'
+_layout_spec = importlib.util.spec_from_file_location('asm_windows_layout', ROOT / 'tools/windows_layout.py')
+_layout = importlib.util.module_from_spec(_layout_spec)
+sys.path.insert(0, str(ROOT / 'tools'))
+_layout_spec.loader.exec_module(_layout)
+sys.path.pop(0)
 
 
 def replace_routine(text, name, following, replacement):
@@ -33,6 +40,7 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     call win_initialize
     test eax, eax
     jnz win_initialization_error
+    call win_managed_startup
     mov qword ptr [rip + argi], 1
 ''')
         text = replace_routine(text, 'spawn_wait', 'cmd_clean', '''spawn_wait:
@@ -64,6 +72,10 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
                             'lea rax, [rip + win_kernel32_lib]\n    mov [rip + child_argv + 48], rax\n    mov qword ptr [rip + child_argv + 56], 0\n    lea rdi, [rip + ld_path]')
         text = text.replace('valid_source:\n', 'valid_source:\n    jmp win_valid_source\nwin_shared_valid_source:\n', 1)
         text += '\n' + (LOCAL / 'platform.s').read_text()
+        for module in ('managed.s', 'launcher.s', 'versioned_update.s'):
+            text += '\n' + (LOCAL / module).read_text()
+        version = re.search(r'version_text: \.asciz "asm ([0-9]+\.[0-9]+\.[0-9]+) ', text).group(1)
+        text += '\n' + _layout.metadata_assembly(version, syntax='x86_64')
     if source.name == 'cross_build.s':
         text = replace_routine(text, 'cross_tools', 'cross_build_project', '''cross_tools:
     lea rdi, [rip + cross_unsupported_error]
@@ -71,6 +83,20 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     jmp die
 ''')
     if source.name == 'registry.s':
+        text = text.replace('registry_workspace:\n', '''registry_workspace:
+    cmp byte ptr [rip + self_active], 0
+    jne .Lwin_managed_workspace_allowed
+    call win_managed_check_workspace
+.Lwin_managed_workspace_allowed:
+''', 1)
+        text = text.replace('.Lprogram_fetch_finalization:\n', '''.Lprogram_fetch_finalization:
+    mov rsi, [rip + registry_output]
+    call win_program_absolute_path
+    lea rdi, [rip + program_path]
+    call win_managed_reserved_path
+    test eax, eax
+    jnz program_reserved_error
+''', 1)
         for output in ['registry_json_string', 'out']:
             anchor = '    mov rdi, [rip + registry_output]\n    call ' + output + '\n'
             assert text.count(anchor) == 1
@@ -112,6 +138,13 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
 ''')
         text += '\n.section .rodata\nwin_registry_linux: .asciz "x86_64-linux"\n'
     if source.name == 'programs.s':
+        anchor = '    lea rdi, [rip + program_state_path]\n    mov rsi, rbp\n    call program_walk_parent\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, '''    lea rdi, [rip + program_state_path]
+    call win_managed_reserved_path
+    test eax, eax
+    jnz program_reserved_error
+''' + anchor)
         for output in ['registry_json_string', 'out']:
             anchor = '    mov rdi, qword ptr [rbx + 40]\n    call ' + output + '\n'
             assert text.count(anchor) == 1
@@ -124,6 +157,10 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     call win_normalize_path
     test rax, rax
     js program_path_error
+    lea rdi, [rip + program_path]
+    call win_managed_reserved_path
+    test eax, eax
+    jnz program_reserved_error
     push rbx
 ''')
         text = text.replace('program_reserved_suffix: .asciz "/.local/bin/asm"',
@@ -150,10 +187,15 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     cmp byte ptr [rdi + 7], 0
     jne .Lp_cli_destination_safe
 ''')
+        anchor = '    call program_valid_absolute_path\n    test eax, eax\n    jz program_state_error\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor + '    mov rdi, qword ptr [rbx + 40]\n    call win_managed_reserved_path\n    test eax, eax\n    jnz program_state_error\n')
     if source.name == 'self_update_metadata.s':
         anchor = 'smp_host_suffix: .asciz "-x86_64-linux"'
         assert text.count(anchor) == 1
         text = text.replace(anchor, 'smp_host_suffix: .asciz "-x86_64-windows.exe"')
+    if source.name == 'dependencies.s':
+        text = text.replace('dependency_acquire:\n', 'dependency_acquire:\n    call win_managed_check_workspace\n', 1)
     if source.name == 'self_update.s':
         anchor = '    mov eax, 2\n    lea rdi, [rip + self_proc_exe]\n    mov esi, O_CLOEXEC + O_NONBLOCK\n    xor edx, edx\n    syscall\n    test rax, rax\n'
         assert text.count(anchor) == 1
@@ -174,6 +216,16 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
         begin = text.index('self_commit_update:\n')
         text = text[:begin] + text[begin:].replace('mov edx, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK',
                                                   'mov edx, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK + 0x20000002', 1)
+        for name, following in (
+                ('self_open_installation', 'self_open_parent'),
+                ('self_check_absolute_installation', 'self_check_file_stat'),
+                ('self_check_destination', 'self_release_paths'),
+                ('self_commit_update', 'self_update_cleanup')):
+            text = replace_routine(text, name, following, name + ':\n    jmp win_managed_' + name[5:] + '\n')
+        text = text.replace('self_update_cleanup:\n', 'self_update_cleanup:\n    call win_managed_update_cleanup\n', 1)
+        text = text.replace('.Lself_cleanup_done:\n    ret', '.Lself_cleanup_done:\n    call win_managed_cleanup\n    ret', 1)
+        text = text.replace('self update requires the direct HOME/.local/bin/asm installation; use the bootstrap installer or your package manager', 'self update requires the active managed Windows payload; start the installed command or use the Windows installer')
+        text = text.replace('Manually update the direct HOME/.local/bin/asm installation.', 'Manually update the active managed Windows CLI payload.')
     if source.name == 'self_update_verify.s':
         anchor = '    mov rsi, r12\n    call copy_string\n.ifdef ASM_TRUSTED_DISTRIBUTION\n'
         assert text.count(anchor) == 1

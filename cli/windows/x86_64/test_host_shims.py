@@ -933,16 +933,29 @@ image_access:
     xor r10d, r10d
     test edi, edi
     jz 1f
+    cmp edi, 2
+    je 2f
+    cmp edi, 3
+    je 3f
     mov r10d, 0x40000000
+    jmp 1f
+2:  mov r10d, 0x0a000000
+    jmp 1f
+3:  mov r10d, 0x08000000
 1:  xor edi, edi
     lea rsi, [rip + test_image_name]
     mov edx, 2
     xor r8d, r8d
     call win_nt_open
     mov eax, [rip + test_access]
+    mov edx, [rip + test_share]
+    shl rdx, 32
+    or rax, rdx
     WLEAVE
 NtCreateFile:
     mov [rip + test_access], edx
+    mov edx, [rsp + 56]
+    mov [rip + test_share], edx
     mov qword ptr [rcx], 77
     xor eax, eax
     ret
@@ -957,6 +970,7 @@ win_nt_error:
     ret
 .data
 test_access: .long 0
+test_share: .long 0
 test_image_name: .short 'a',0
 win_private_sd: .space 64
 """
@@ -989,6 +1003,14 @@ win_private_sd: .space 64
         image = int(self.run_fixture('image-access','1').stdout.strip())
         self.assertEqual(ordinary & 32,0)
         self.assertEqual(image,ordinary | 32)
+
+    def test_managed_snapshots_deny_write_and_allow_read_delete_sharing(self):
+        payload = int(self.run_fixture('image-access','2').stdout.strip())
+        record = int(self.run_fixture('image-access','3').stdout.strip())
+        self.assertEqual(payload >> 32, 5)
+        self.assertEqual(record >> 32, 5)
+        self.assertEqual(payload & 32, 32)
+        self.assertEqual(record & 32, 0)
 
     def test_image_open_checks_the_held_file_before_descriptor_allocation(self):
         self.assertEqual(self.run_fixture('image-open','0').stdout.strip(),'3 1 1 2')
@@ -1572,6 +1594,551 @@ class DiagnosticEvidence(unittest.TestCase):
         self.assertEqual(saved['commands'][0]['os_error']['errno'],2)
         self.assertEqual(saved['collection_error']['type'],'ValueError')
 
+
+class ManagedShims(unittest.TestCase):
+    """Execute the managed record parser, borrowed PE reader, and image query."""
+    build = classmethod(HostShims.build.__func__)
+    run_fixture = classmethod(HostShims.run_fixture.__func__)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.clang = shutil.which('clang')
+        cls.prefix = '_' if platform.system() == 'Darwin' else ''
+        cls.temp = tempfile.TemporaryDirectory(prefix='asm-managed-x64-')
+        cls.directory = Path(cls.temp.name)
+        source = (LOCAL / 'managed.s').read_text()
+        platform_source = (LOCAL / 'platform.s').read_text()
+        start = platform_source.index('.macro WFRAME\n')
+        end = platform_source.index('.text\n', start)
+        macros = '.intel_syntax noprefix\n.equ ARTIFACT_LIMIT,67108864\n' + platform_source[start:end]
+        registry = (ROOT / 'cli/registry.s').read_text()
+        assembly = macros + '\n.text\n' + source.split('/* BEGIN RECORD PARSER */')[1].split('/* END RECORD PARSER */')[0]
+        assembly += '\n.text\n' + block(registry, 'registry_valid_version', 'registry_valid_target')
+        assembly += block(registry, 'registry_size_value', 'registry_valid_index_url') if 'registry_valid_index_url:\n' in registry else registry[registry.index('registry_size_value:\n'):registry.index('/* Input: RDI=index URL')]
+        assembly += '''\nregistry_valid: mov eax,1\n ret\nregistry_invalid: xor eax,eax\n ret\n.equ ARTIFACT_LIMIT,67108864\n.global check_record\ncheck_record:\n jmp win_managed_parse_record\n'''
+        assembly += f'\nstreq: jmp {cls.prefix}same\nstrlen: jmp {cls.prefix}strlen\n'
+        assembly += '\n.data\nregistry_host: .asciz "x86_64-windows"\n'
+        driver = r'''
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern int check_record(char*,uint64_t);
+int same(const char*a,const char*b){return strcmp(a,b)==0;}
+int main(int argc,char**argv){char b[1024];FILE*f=fopen(argv[1],"rb");if(!f)return 2;size_t n=fread(b,1,sizeof b,f);fclose(f);printf("%d\n",check_record(b,n));return 0;}
+'''
+        cls.build('record', assembly, driver, ['check_record'])
+        assembly = macros + '\n.text\n' + block(source, 'win_managed_path_role', 'win_managed_hold')
+        assembly += '\n.global check_role\ncheck_role:\n sub rsp,8\n call win_managed_path_role\n add rsp,8\n ret\n'
+        assembly += f'\nstrlen: jmp {cls.prefix}strlen\n'
+        assembly += '\n.data\nwm_root_suffix: .asciz "/.local/bin/asm.exe"\nwm_exe_suffix: .asciz "/asm.exe"\nwm_versions_suffix: .asciz "/.asm-cli/versions/"\nwm_bin_suffix: .asciz "/.local/bin"\n'
+        cls.build('role', assembly, '#include <stdio.h>\nextern int check_role(char*);\nint main(int n,char**a){printf("%d\\n",check_role(a[1]));}\n', ['check_role'])
+        assembly = macros + '\n.text\n' + (LOCAL / 'pe.s').read_text()
+        assembly += f'''
+.text
+.global check_metadata
+check_metadata:
+    jmp win_managed_pe
+win_syscall:
+    WFRAME
+    mov rcx, rdx
+    mov rdx, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call {cls.prefix}io
+    WLEAVE
+'''
+        driver = r'''
+#include <stdint.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+extern long check_metadata(long,uint64_t,void*);
+static int opens,closes;
+long io(long n,long a,long b,long c){struct stat st;long r=-38;
+if(n==2){opens++;return -1;}if(n==3){closes++;return close(a);}
+if(n==0)r=read(a,(void*)b,c);if(n==8)r=lseek(a,b,c);
+if(n==5){r=fstat(a,&st);if(!r){memset((void*)b,0,144);*(uint32_t*)(b+24)=0100000;*(uint64_t*)(b+48)=st.st_size;}}
+return r;}
+int main(int n,char**a){struct stat st;char meta[64];int fd=open(a[1],O_RDONLY);fstat(fd,&st);lseek(fd,123,0);long r=check_metadata(fd,st.st_size,meta);printf("%ld %d %d %d\n",r,opens,closes,fcntl(fd,F_GETFD)>=0);close(fd);return 0;}
+'''
+        cls.build('metadata', assembly, driver, ['check_metadata'])
+        assembly = macros + '\n.text\n' + platform_source[platform_source.index('win_child_image_matches:\n'):platform_source.index('.text\n/* RDI=terminated path.', platform_source.index('win_child_image_matches:\n'))]
+        assembly += r'''
+.text
+.global check_remote
+check_remote:
+    mov [rip + query_status], edi
+    mov edi, 123
+    mov esi, 77
+    jmp win_child_image_matches
+GetModuleHandleW:
+    mov eax, 1
+    ret
+GetProcAddress:
+    lea rax, [rip + query]
+    ret
+query:
+    cmp rcx, 123
+    jne 1f
+    cmp edx, 44
+    jne 1f
+    cmp r9d, 8
+    jne 1f
+    cmp qword ptr [r8], 77
+    jne 1f
+    cmp qword ptr [rsp + 40], 0
+    jne 1f
+    mov eax, [rip + query_status]
+    ret
+1:  mov eax, 0xc000000d
+    ret
+.data
+query_status: .long 0
+'''
+        cls.build('remote', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern long check_remote(unsigned);\nint main(int n,char**a){printf("%ld\\n",check_remote(strtoul(a[1],0,0)));}\n', ['check_remote'])
+        cls.build_borrowed_hash(macros, platform_source)
+        cls.build_cleanup(macros, source)
+        cls.build_launcher(macros, platform_source)
+        cls.build_held_rename(macros, platform_source)
+
+    @classmethod
+    def build_held_rename(cls, macros, platform_source):
+        source = (LOCAL / 'versioned_update.s').read_text()
+        assembly = macros + '\n.text\n' + block(source, 'win_managed_rename_fd', 'win_managed_same_fd')
+        assembly += '\n.text\n' + block(platform_source, 'win_component_safe', 'win_prepare_verifier_environment')
+        assembly += r'''
+.text
+.global check_held_rename
+check_held_rename:
+    mov [rip + rename_status], edi
+    mov [rip + rename_mode], esi
+    mov ecx, esi
+    mov edi, 101
+    mov esi, 202
+    lea rdx, [rip + target_name]
+    jmp win_managed_rename_fd
+win_wide:
+    xor eax, eax
+1:  movzx ecx, byte ptr [rdi + rax]
+    mov [rsi + rax*2], cx
+    inc eax
+    test ecx, ecx
+    jnz 1b
+    ret
+NtSetInformationFile:
+    cmp rcx, 101
+    jne .Lheld_rename_bad
+    cmp qword ptr [r8 + 8], 202
+    jne .Lheld_rename_bad
+    cmp dword ptr [r8 + 16], 22
+    jne .Lheld_rename_bad
+    cmp r9d, 42
+    jne .Lheld_rename_bad
+    cmp dword ptr [rsp + 40], 65
+    jne .Lheld_rename_bad
+    mov eax, 3
+    sub eax, [rip + rename_mode]
+    cmp [r8], eax
+    jne .Lheld_rename_bad
+    cmp word ptr [r8 + 20], 'c'
+    jne .Lheld_rename_bad
+    cmp word ptr [r8 + 40], 'v'
+    jne .Lheld_rename_bad
+    mov eax, [rip + rename_status]
+    ret
+.Lheld_rename_bad:
+    ud2
+win_nt_error:
+    mov rax, -13
+    ret
+.data
+rename_status: .long 0
+rename_mode: .long 0
+target_name: .asciz "current.tsv"
+.p2align 3
+win_rename_info: .space 8216
+'''
+        cls.build('held-rename', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern long check_held_rename(unsigned,int);\nint main(int n,char**a){printf("%ld\\n",check_held_rename(strtoul(a[1],0,0),atoi(a[2])));}\n', ['check_held_rename'])
+
+    @classmethod
+    def build_launcher(cls, macros, platform_source):
+        assembly = macros + '\n' + (LOCAL / 'launcher.s').read_text()
+        assembly += '\n.text\n' + block(platform_source, 'win_close_child_streams', 'win_explicit_environment')
+        assembly += r'''
+.text
+.global check_launch
+check_launch:
+    WFRAME
+    mov [rip + exit_code], edi
+    mov [rip + fail_mode], esi
+    call win_managed_launch
+    mov r12, rax
+    cmp dword ptr [rip + controls], 2
+    jne bad_test
+    cmp dword ptr [rip + fail_mode], 2
+    je .Ltest_create_failed
+    cmp dword ptr [rip + closes], 5
+    jne bad_test
+    cmp dword ptr [rip + waits], 1
+    jne bad_test
+    cmp dword ptr [rip + fail_mode], 1
+    je .Ltest_mapping_failed
+    cmp dword ptr [rip + resumes], 1
+    jne bad_test
+    cmp dword ptr [rip + terminates], 0
+    jne bad_test
+    jmp .Ltest_launch_done
+.Ltest_mapping_failed:
+    cmp dword ptr [rip + resumes], 0
+    jne bad_test
+    cmp dword ptr [rip + terminates], 1
+    jne bad_test
+    jmp .Ltest_launch_done
+.Ltest_create_failed:
+    cmp dword ptr [rip + closes], 3
+    jne bad_test
+    cmp dword ptr [rip + waits], 0
+    jne bad_test
+    cmp dword ptr [rip + resumes], 0
+    jne bad_test
+.Ltest_launch_done:
+    mov rax, r12
+    WLEAVE
+bad_test:
+    ud2
+win_wide:
+    cmp byte ptr [rdi], 'C'
+    jne bad_test
+    mov eax, 1
+    ret
+GetCommandLineW:
+    lea rax, [rip + original_command]
+    ret
+win_inherit_duplicate:
+    lea rax, [rdi + 100]
+    ret
+SetConsoleCtrlHandler:
+    lea rax, [rip + win_managed_control]
+    cmp rcx, rax
+    jne bad_test
+    inc dword ptr [rip + controls]
+    mov eax, 1
+    ret
+InitializeProcThreadAttributeList:
+    mov eax, 1
+    ret
+UpdateProcThreadAttribute:
+    cmp r8d, 0x20002
+    jne bad_test
+    cmp qword ptr [r9], 110
+    jne bad_test
+    cmp qword ptr [r9 + 8], 111
+    jne bad_test
+    cmp qword ptr [r9 + 16], 112
+    jne bad_test
+    cmp qword ptr [rsp + 40], 24
+    jne bad_test
+    mov eax, 1
+    ret
+DeleteProcThreadAttributeList:
+    ret
+CreateProcessW:
+    cmp qword ptr [rsp + 40], 1
+    jne bad_test
+    cmp qword ptr [rsp + 48], 0x80004
+    jne bad_test
+    cmp qword ptr [rsp + 56], 0
+    jne bad_test
+    cmp qword ptr [rsp + 64], 0
+    jne bad_test
+    xor ecx, ecx
+    lea r8, [rip + original_command]
+1:  mov ax, [r8 + rcx*2]
+    cmp ax, [rdx + rcx*2]
+    jne bad_test
+    inc ecx
+    test ax, ax
+    jnz 1b
+    mov rax, [rsp + 72]
+    cmp dword ptr [rax + 60], 0x100
+    jne bad_test
+    cmp qword ptr [rax + 80], 110
+    jne bad_test
+    cmp qword ptr [rax + 88], 111
+    jne bad_test
+    cmp qword ptr [rax + 96], 112
+    jne bad_test
+    cmp dword ptr [rip + fail_mode], 2
+    je 2f
+    mov rax, [rsp + 80]
+    mov qword ptr [rax], 800
+    mov qword ptr [rax + 8], 801
+    mov eax, 1
+    ret
+2:  xor eax, eax
+    ret
+win_handle:
+    cmp rdi, 3
+    jne bad_test
+    mov eax, 77
+    ret
+win_child_image_matches:
+    cmp rdi, 800
+    jne bad_test
+    cmp rsi, 77
+    jne bad_test
+    xor eax, eax
+    cmp dword ptr [rip + fail_mode], 1
+    jne 1f
+    mov rax, -116
+1:  ret
+ResumeThread:
+    cmp rcx, 801
+    jne bad_test
+    inc dword ptr [rip + resumes]
+    mov eax, 1
+    ret
+WaitForSingleObject:
+    cmp rcx, 800
+    jne bad_test
+    cmp edx, -1
+    jne bad_test
+    inc dword ptr [rip + waits]
+    xor eax, eax
+    ret
+GetExitCodeProcess:
+    cmp rcx, 800
+    jne bad_test
+    mov eax, [rip + exit_code]
+    mov [rdx], eax
+    mov eax, 1
+    ret
+TerminateProcess:
+    cmp rcx, 800
+    jne bad_test
+    inc dword ptr [rip + terminates]
+    mov eax, 1
+    ret
+CloseHandle:
+    inc dword ptr [rip + closes]
+    mov eax, 1
+    ret
+win_managed_error:
+    mov eax, -1
+    WLEAVE
+.data
+exit_code: .long 0
+fail_mode: .long 0
+closes: .long 0
+waits: .long 0
+resumes: .long 0
+terminates: .long 0
+controls: .long 0
+original_command: .short 97,115,109,32,34,97,32,98,34,32,34,120,92,92,34,0
+wm_launch_path: .asciz "/C:/payload.exe"
+.p2align 3
+wm_payload_fd: .quad 3
+win_handles: .quad 10,11,12
+win_process_handle: .quad 0
+win_thread_handle: .quad 0
+win_child_stdin: .quad 0
+win_child_stdout: .quad 0
+win_child_stderr: .quad 0
+win_pipe_write: .quad 0
+win_startup: .space 112
+win_inherited_handles: .space 24
+win_attribute_list: .space 1024
+win_attribute_size: .quad 1024
+win_process_info: .space 24
+win_executable_wide: .space 8192
+win_command_wide: .space 65534
+'''
+        cls.build('launcher', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern unsigned check_launch(unsigned,int);\nint main(int n,char**a){printf("%u\\n",check_launch(strtoul(a[1],0,0),atoi(a[2])));}\n', ['check_launch'])
+
+    @classmethod
+    def build_borrowed_hash(cls, macros, source):
+        assembly = macros + '\n.text\n' + block(source, 'win_hash_fd', 'win_decompress')
+        assembly += f'''
+.text
+.global check_hash
+check_hash:
+    jmp win_hash_fd
+win_syscall:
+    WFRAME
+    mov rcx, rdx
+    mov rdx, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call {cls.prefix}io
+    WLEAVE
+'''
+        assembly += r'''
+BCryptOpenAlgorithmProvider:
+    mov qword ptr [rcx], 123
+    xor eax, eax
+    ret
+BCryptGetProperty:
+    mov dword ptr [r8], 128
+    xor eax, eax
+    ret
+BCryptCreateHash:
+    mov qword ptr [rdx], 456
+    xor eax, eax
+    ret
+BCryptHashData:
+    xor eax, eax
+    ret
+BCryptFinishHash:
+    xor ecx, ecx
+1:  mov byte ptr [rdx + rcx], 0x5a
+    inc ecx
+    cmp ecx, 32
+    jb 1b
+    xor eax, eax
+    ret
+BCryptDestroyHash:
+BCryptCloseAlgorithmProvider:
+    xor eax, eax
+    ret
+.data
+win_hash_provider: .quad 0
+win_hash_handle: .quad 0
+win_hash_stat: .space 144
+win_hash_object: .space 4096
+win_hash_digest: .space 32
+win_hash_buffer: .space 65536
+win_sha256_name: .short 'S','H','A','2','5','6',0
+win_object_length: .short 'O',0
+registry_hex_digits: .ascii "0123456789abcdef"
+'''
+        driver = r'''
+#include <stdint.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern long check_hash(long,uint64_t,void*);
+static int opens,closes,reads,fail;
+long io(long n,long a,long b,long c){struct stat st;long r=-38;
+if(n==2){opens++;return -1;}if(n==3){closes++;return close(a);}
+if(n==0){reads++;if(fail&&reads==2)return -5;r=read(a,(void*)b,c>3?3:c);}if(n==8)r=lseek(a,b,c);
+if(n==5){r=fstat(a,&st);if(!r){memset((void*)b,0,144);*(uint32_t*)(b+24)=0100000;*(uint64_t*)(b+48)=st.st_size;}}
+return r;}
+int main(int n,char**a){char out[65]={0};int fd=open(a[1],O_RDONLY);fail=atoi(a[3]);lseek(fd,7,0);long r=check_hash(fd,strtoll(a[2],0,0),out);printf("%ld %d %d %d %s\n",r,opens,closes,fcntl(fd,F_GETFD)>=0,r?"failed":out);close(fd);return 0;}
+'''
+        cls.build('hash', assembly, driver, ['check_hash'])
+
+    @classmethod
+    def build_cleanup(cls, macros, source):
+        assembly = macros + '\n.text\n' + block(source, 'win_managed_cleanup', 'win_managed_home_error')
+        assembly += r'''
+.text
+.global check_cleanup
+check_cleanup:
+    WFRAME
+    call win_managed_cleanup
+    call win_managed_cleanup
+    mov eax, [rip + close_count]
+    WLEAVE
+win_syscall:
+    cmp eax, 3
+    jne 1f
+    cmp rdi, 3
+    jb 1f
+    cmp rdi, 8
+    ja 1f
+    inc dword ptr [rip + close_count]
+    xor eax, eax
+    ret
+1:  ud2
+.data
+wm_fds: .quad 3,-1,4,-1,5,6,-1,7,8
+close_count: .long 0
+'''
+        cls.build('cleanup', assembly, '#include <stdio.h>\nextern int check_cleanup(void);\nint main(void){printf("%d\\n",check_cleanup());}\n', ['check_cleanup'])
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def record(self, value):
+        path = self.directory / 'current.tsv'
+        path.write_bytes(value)
+        result = self.run_fixture('record', str(path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def test_record_exact_contract(self):
+        record = b'# asm-cli-current-v1\n0.6.1\tx86_64-windows\t4096\t' + b'a'*64 + b'\t1\t0.6.0\n'
+        self.assertEqual(self.record(record), '0')
+        invalid = [record[:-1], record+b'\n', record.replace(b'4096',b'04096'), record.replace(b'4096',b'0'), record.replace(b'4096',b'67108865'), record.replace(b'0.6.1',b'00.6.1'), record.replace(b'a'*64,b'A'*64), record.replace(b'\t1\t',b'\t2\t'), record.replace(b'x86_64',b'aarch64'), record.replace(b'\n',b'\r\n'), record+b'\0', b'x'*257, b'']
+        for candidate in invalid:
+            with self.subTest(candidate=candidate):
+                self.assertNotEqual(self.record(candidate), '0')
+
+    def test_roles_use_the_executing_path(self):
+        cases = [('/C:/elsewhere/asm.exe', 0), ('/C:/Users/Person/.local/bin/asm.exe', 1), ('/C:/Users/Person/.LOCAL/BIN/ASM.EXE', 1), ('/C:/Users/Person/.local/bin/.asm-cli/versions/'+'a'*64+'/asm.exe', 2), ('/C:/checkout/bin/asm.exe', 0)]
+        for path, expected in cases:
+            result = self.run_fixture('role', path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(expected))
+
+    def test_metadata_is_unique_bounded_readonly_and_borrows_fd(self):
+        data = fixture_pe(sections=((1, 0x1000, 512, 512), (64, 0x2000, 512, 1024)))
+        data[368:376] = b'.asmmeta'
+        data[1024:1088] = prep._layout.metadata_bytes('0.6.0')
+        path = self.directory / 'metadata.exe'
+        path.write_bytes(data)
+        self.assertEqual(self.run_fixture('metadata', str(path)).stdout.strip(), '0 0 0 1')
+        changes = [(368, b'.nothing'), (376, struct.pack('<I', 63)), (404, struct.pack('<I', 0xc0000040)), (1024, b'BADCLI1\0'), (1032, struct.pack('<I', 2)), (1087, b'\1'), (328, b'.asmmeta')]
+        for offset, value in changes:
+            changed = bytearray(data)
+            changed[offset:offset+len(value)] = value
+            path.write_bytes(changed)
+            result = self.run_fixture('metadata', str(path))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), '-22 0 0 1')
+
+    def test_remote_mapping_uses_exact_process_file_and_status(self):
+        for status, expected in [(0,0), (0xc0000001,-116), (0x103,-95), (0x80000002,-95), (0xc000000d,-95)]:
+            result = self.run_fixture('remote', str(status))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(expected))
+
+    def test_hash_rewinds_the_borrowed_fd_and_never_reopens_or_closes(self):
+        path = self.directory / 'hash.bin'
+        path.write_bytes(b'123456789')
+        for size, fail, expected in [('9', '0', '0 0 0 1 '+'5a'*32), ('-1', '0', '0 0 0 1 '+'5a'*32), ('8', '0', '1 0 0 1 failed'), ('9', '1', '1 0 0 1 failed')]:
+            result = self.run_fixture('hash', str(path), size, fail)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), expected)
+
+    def test_cleanup_closes_each_owned_descriptor_once(self):
+        result = self.run_fixture('cleanup')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '6')
+
+    def test_launcher_preserves_complete_status_argv_and_owned_handles(self):
+        for status in [0, 17, 256, 259, 0xc000013a, 0xffffffff]:
+            result = self.run_fixture('launcher', str(status), '0')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(status))
+        for failure in ['1', '2']:
+            result = self.run_fixture('launcher', '0', failure)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(0xffffffff))
+
+    def test_activation_uses_borrowed_source_and_target_handles(self):
+        for status, expected in [(0,0), (0xc0000022,-13)]:
+            for mode in [0,1]:
+                result = self.run_fixture('held-rename', str(status), str(mode))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected))
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

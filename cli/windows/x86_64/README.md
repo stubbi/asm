@@ -2,11 +2,12 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Seven native Windows runs executed the CLI and retained failed runtime results.
+Seven earlier native Windows runs executed the CLI and retained failed runtime results.
 The sixth and seventh runs each passed 44 of 45 runtime methods.
 Archive lifecycle, inventory, device aliases, and image displacement now pass their native cases.
-Successful updater replacement remains the one failing method.
+Direct executable replacement was the one failing method in those runs.
 Keep the failed and missing results in the qualification record.
+The managed layout below changes activation and requires new native qualification.
 
 The user outcome is the existing assembly project and package workflow on Windows.
 The relevant brand principles are dependable reuse, explicit target qualification, preserved files, and evidence with stated limits.
@@ -97,7 +98,51 @@ Its intended outputs are `build/app.exe` and `build/test.exe`.
 The intended starter output is `Hello from asm!` followed by a line feed.
 These results require native qualification before they become supported instructions.
 
-## Evidence for this snapshot
+## Managed installation candidate
+
+The approved layout keeps the root command at `HOME/.local/bin/asm.exe`.
+That command launches the payload selected by `.asm-cli/current.tsv`.
+Payloads occupy `.asm-cli/versions/<sha256>/asm.exe` below the same bin directory.
+The exact layout marker and selection record follow the [Windows layout contract](../../../docs/superpowers/specs/2026-11-05-windows-versioned-updates-design.md).
+
+`managed.s`, `launcher.s`, and `versioned_update.s` implement this lifecycle in assembly.
+The build emits the current CLI version into a read-only `.asmmeta` PE section.
+Generic package PE checks do not require this CLI metadata.
+Source builds outside the managed paths keep their own implementation.
+They cannot update a managed installation.
+
+The launcher checks its executing image, the held selection record, and the selected payload.
+It checks the suspended child's image against that same payload handle before resuming it.
+It preserves the original native command line and explicitly inherits the three standard streams.
+Its dedicated wait has no tool deadline and preserves the complete Windows exit status.
+Its own Ctrl+C and Ctrl+Break handler does not install an inherited ignore state.
+Actual console delivery still requires native tests.
+
+The updater retains the bin directory's `.asm.lock` handle.
+It preserves the shared download policy and all three exact provenance bindings.
+It publishes checked payloads without replacement and retains prior payloads.
+It flushes a new record and verifies its held file identity and exact bytes.
+One held-source rename over `current.tsv` activates the update.
+The candidate is never executed during this process.
+
+Record readers permit read and delete sharing, but deny write sharing.
+A launcher with an old snapshot can start that old payload after activation.
+A retained payload can run ordinary commands, but only the active payload can update the installation.
+Compatibility comes from the actual held root command's PE metadata.
+No parent process identifier or inherited environment claim supplies that authority.
+
+Package destinations and inventory records reject the CLI store, including existing short-name directory aliases.
+Ancestor handles, canonical names, file identities, ownership, and access checks support those refusals.
+These checks retain the documented same-account interference and power-loss limits.
+Launcher repair remains a separate installer operation.
+Retained payload cleanup remains manual.
+
+Host shims execute extracted assembly for record parsing, metadata, borrowed hashing, role selection, child binding, launch results, and cleanup.
+The hashing shim checks descriptor control flow with a fake BCrypt result; it does not qualify Windows cryptography.
+Cross-linking uses temporary import libraries and does not establish native SDK or runtime success.
+The integration report records exact source and artifact digests and retains failed checks.
+
+## Retained earlier evidence
 
 On 2026-11-05, Apple clang 17.0.0 cross-assembled the sixth candidate with exit status zero:
 
@@ -316,8 +361,8 @@ It does not establish every internal kernel condition behind that denial.
 The retained comparison is under `build/windows-seventh-native`.
 
 
-Atomic replacement of the running CLI remains blocked by the observed native denial.
-A different completion mechanism requires separate review and native evidence.
+Direct replacement of the running CLI remains blocked by the observed native denial.
+The approved managed layout replaces the selection record and requires separate native evidence.
 Do not report a completed update until the replacement and its recovery behavior are observed.
 
 ## Native adapter diagnostics
@@ -375,3 +420,10 @@ They document API behavior; they do not qualify this implementation.
 
 - [DACL update handle access](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setsecurityinfo)
 - [Reserved Windows names](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)
+
+New managed-lifecycle API contracts were checked on 2026-11-05:
+
+- [Ordinal case-insensitive comparison](https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-comparestringordinal)
+- [Console Ctrl+C and Ctrl+Break handling](https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals)
+- [Process exit status](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess)
+- [File sharing modes](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile)

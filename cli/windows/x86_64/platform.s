@@ -375,7 +375,7 @@ win_nt_open:
 11: test r14d, 0x20000000
     jz 9f
     or edx, 0x40002
-9:  test r14d, 0x40000000 /* internal image-only FILE_EXECUTE access */
+9:  test r14d, 0x42000000 /* own image or managed executable FILE_EXECUTE */
     jz 10f
     or edx, 0x20
 10: lea r8, [rbp - 192]
@@ -383,7 +383,10 @@ win_nt_open:
     mov qword ptr [rsp + 32], 0
     mov qword ptr [rsp + 40], 128
     mov qword ptr [rsp + 48], 7
-    mov eax, 1 /* FILE_OPEN */
+    test r14d, 0x08000000 /* managed immutable snapshot: deny write sharing */
+    jz 12f
+    mov qword ptr [rsp + 48], 5 /* read + delete */
+12: mov eax, 1 /* FILE_OPEN */
     test r14d, 64
     jz 5f
     mov eax, 3 /* FILE_OPEN_IF */
@@ -2529,18 +2532,46 @@ win_hash_file:
     WFRAME
     mov r12, rsi
     mov r13, rdx
-    mov qword ptr [rip + win_hash_provider], 0
-    mov qword ptr [rip + win_hash_handle], 0
-    mov qword ptr [rbp - 128], -1
     mov rsi, rdi
     mov rdi, -100
     xor edx, edx
     xor r10d, r10d
     call win_open
     test rax, rax
-    js .Lwhf_bad
-    mov [rbp - 128], rax
+    js .Lwhp_bad
+    mov r14, rax
     mov rdi, rax
+    mov rsi, r12
+    mov rdx, r13
+    call win_hash_fd
+    mov r15, rax
+    mov rdi, r14
+    mov eax, 3
+    call win_syscall
+    test rax, rax
+    js .Lwhp_bad
+    mov rax, r15
+    WLEAVE
+.Lwhp_bad:
+    mov eax, 1
+    WLEAVE
+/* RDI=borrowed FD, RSI=exact size or -1, RDX=hex65. RAX=0/1.
+ * Rewinds and hashes this same descriptor. Never opens a path or closes FD.
+ * Owns BCrypt provider/hash only; scratch and bounds match win_hash_file. */
+win_hash_fd:
+    WFRAME
+    mov r12, rsi
+    mov r13, rdx
+    mov qword ptr [rip + win_hash_provider], 0
+    mov qword ptr [rip + win_hash_handle], 0
+    mov [rbp - 128], rdi
+    xor esi, esi
+    xor edx, edx
+    mov eax, 8
+    call win_syscall
+    test rax, rax
+    js .Lwhf_bad
+    mov rdi, [rbp - 128]
     lea rsi, [rip + win_hash_stat]
     mov eax, 5
     call win_syscall
@@ -2647,12 +2678,7 @@ win_hash_file:
     jz 3f
     xor edx, edx
     call BCryptCloseAlgorithmProvider
-3:  mov rdi, [rbp - 128]
-    test rdi, rdi
-    js 4f
-    mov eax, 3
-    call win_syscall
-4:  mov eax, ebx
+3:  mov eax, ebx
     WLEAVE
 
 /* Native process capture adapts gzip's stream output to the existing bounded
@@ -3275,7 +3301,17 @@ win_valid_source:
  */
 win_image_matches:
     WFRAME
-    mov r12, rdi
+    mov rsi, rdi
+    mov rdi, -1
+    call win_child_image_matches
+    WLEAVE
+/* RDI=process HANDLE, RSI=held file HANDLE. RAX=0/-116/-95.
+ * Borrows both handles; never closes or resumes. Exact class44 success only.
+ * WFRAME preserves adapter inputs; caller must terminate rejected children. */
+win_child_image_matches:
+    WFRAME
+    mov r12, rsi
+    mov r13, rdi
     lea rcx, [rip + win_ntdll_name]
     call GetModuleHandleW
     test rax, rax
@@ -3287,7 +3323,7 @@ win_image_matches:
     jz .Lwim_unsupported
     mov r11, rax
     mov [rbp - 128], r12
-    mov rcx, -1
+    mov rcx, r13
     mov edx, 44 /* ProcessImageFileMapping */
     lea r8, [rbp - 128]
     mov r9d, 8
