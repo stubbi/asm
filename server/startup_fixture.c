@@ -432,7 +432,7 @@ void *PQconnectStartParams(const char *const *keys, const char *const *values, i
             if (!strcmp(keys[index], "dbname")) url = values[index];
         const char *address = url ? strstr(url, "&hostaddr=") : NULL;
         int pinned = url && strstr(url, "@localhost:") && address &&
-            !strcmp(address, "&hostaddr=127.0.0.1") && !strstr(address + 1, "hostaddr=");
+            !strcmp(address, "&hostaddr=127.0.0.1") && !strstr(address + sizeof("&hostaddr=") - 1, "hostaddr=");
         event(pinned ? "pinned-address-valid" : "pinned-address-invalid");
     }
     event("database-connect");

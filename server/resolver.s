@@ -39,7 +39,8 @@ dns_numeric: .zero 16
 .globl resolve_database_address
 .type resolve_database_address,@function
 /* RDI=persistent validated hostname[1..253] plus NUL; db_config[4098] owned.
- * EAX=1 on success; any failure terminates every process thread with 78.
+ * EAX=1 on success; refusals terminate every process thread with 78.
+ * A DNS deadline can instead terminate through the owned SIGKILL timer.
  * Preserves callee-saved registers, uses 24 saved stack bytes, caller-saved
  * scratch. One gaicb, one IPv4 stream/TCP result; no requests after startup.
  * libc signal layouts are checked by abi-check.c, never used as raw layouts.

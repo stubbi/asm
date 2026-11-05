@@ -103,14 +103,68 @@ libpq performs TLS negotiation, CA validation, hostname validation, and client a
 The runtime also requires an active TLS connection.
 
 `host` identifies the certificate hostname.
-`hostaddr` supplies the numeric IPv4 connection address.
+`hostaddr` optionally supplies the numeric IPv4 connection address.
 This explicit address avoids a synchronous DNS lookup inside libpq's nonblocking connection API.
 It is an operator-supplied address, not an embedded service address.
 Do not hardcode a Kubernetes service IP in this source.
 
-**The existing private DNS-only ConfigMap is incompatible with this checkpoint.**
-A bounded resolver and its configuration contract remain required before that deployment can use this process.
-The private ConfigMap's projected file permissions also need qualification against this file policy.
+When `hostaddr` is absent, startup resolves the certificate hostname once through glibc.
+It selects the first IPv4 stream/TCP result and appends its numeric address to the owned URL.
+The hostname remains unchanged for TLS verification.
+The selected address remains fixed until process restart; requests perform no further DNS lookup.
+An explicit valid `hostaddr` bypasses resolution and its timer.
+
+Resolution uses one absolute two-second monotonic budget.
+One kernel-owned POSIX timer sends SIGKILL at that deadline, including when a library blocks ordinary signals.
+This contract assumes a responsive Linux kernel and fair scheduling; it is not a hard real-time guarantee.
+The process deletes its timer before database work and checks the deadline again.
+DNS deadlines can terminate with status 78 or SIGKILL; other configuration refusals return 78.
+The inherited SIGALRM action, interval timer, and signal mask remain unchanged on success.
+Startup refuses any nonzero inherited interval-timer field or pending SIGALRM.
+
+An early timer or signal refusal can exit without a diagnostic, before a bounded diagnostic path exists.
+Check inherited timer state and permission for POSIX timer creation, arming, and deletion.
+The private cluster's kernel and syscall policy remain separate qualification requirements.
+
+### Prepare a projected key
+
+`asm-hub prepare-config SOURCE_DIR DEST_DIR` makes a private snapshot without starting the service or reading serving environment variables.
+The input key is always `SOURCE_DIR/database.url`; the output is always `DEST_DIR/private/database.url`.
+Use absolute directory paths of at most 1024 bytes.
+Except for `/`, omit trailing slashes and final `.` or `..` components.
+Final directory components must not be symlinks; their ancestors remain trusted operator inputs.
+
+Run this command with the server's nonzero real UID and GID, with matching effective identities.
+Both roots require root/current ownership, the selected GID, and no other-write permission.
+A group-writable input root must be on a read-only mount.
+The output root may be group-writable because its child is private.
+
+The source can use Kubernetes projection symlinks inside the pinned root and mount.
+Linux `openat2` confines the fixed key; unsupported or blocked calls fail closed without a filesystem fallback.
+The source must be a single-link regular file, owned by root/current UID and the selected GID.
+Only owner read/write and group read permission bits are permitted; at least one read bit is required.
+The file must contain 1–4096 bytes of printable ASCII, with one optional final LF.
+Preparation preserves that LF and does not interpret the URL.
+Serving still performs the URL and TLS checks above.
+
+The private child must be owned by the current UID with exact mode `0700`.
+The completed file has the current UID, selected GID, exact mode `0600`, and one link.
+An identical valid destination is a quiet no-op; a different destination is refused without replacement.
+Temporary-file writes handle short I/O and bounded interruptions, then sync before atomic no-replace publication.
+An ordinary failure removes only the invocation's temporary file; an empty private child can remain.
+This does not promise whole-path race freedom, isolation from same-UID writers, or power-loss directory durability.
+
+After building, prepare the snapshot:
+
+```sh
+build/server/asm-hub prepare-config /projected /prepared
+```
+
+Success returns status 0 without output.
+Use `/prepared/private/database.url` as `ASM_DATABASE_URL_FILE` in the serving process.
+Mount that prepared volume read-only in the serving container.
+URL changes require a new Pod; certificate and key projections remain separate for per-connection rotation.
+No cluster configuration or rollout is activated by these source changes.
 
 Certificate files are opened by libpq for each new connection.
 No connection or certificate is cached by this process.
@@ -119,7 +173,7 @@ Projected-volume rotation must still pass against the actual private deployment.
 ## Build and test
 
 Use a matching Linux x86-64, ARMv8-A AArch64, or RV64GC/LP64D host.
-Install GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15 for that host.
+Install glibc 2.34 or later, GNU libmicrohttpd 1.0.3, and libpq/PostgreSQL 16.15 for that host.
 The Makefile selects the assembly port from the host architecture.
 If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
 This build does not cross-compile.
@@ -151,8 +205,10 @@ ASM_SERVER_STARTUP_OWNERSHIP="$ownership_parent/ownership" make -C server test M
 sudo python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' "$ownership_parent"
 ```
 
-The new startup tests are a test-first contract; native execution is pending.
-This checkpoint does not implement DNS-only startup or `prepare-config` yet.
+The startup suite runs 38 hosted runtime methods through the real executable.
+It covers projected snapshots, file preservation, timer denial, masked resolver stalls, and post-deadline survival after successful timer deletion.
+The separate `make -C server test-kernel-timer` target probes five kernel/API cases without application linkage.
+Native application qualification remains pending until its recorded run succeeds.
 
 Replace `FULL_COMMIT_ID` with the exact 40-character source commit.
 The status source offer points to that commit.
@@ -233,7 +289,8 @@ These requirements remain open:
 - Runtime qualification of canonical HTTP serving on ARM64 and RISC-V64.
 - Runtime and image qualification of the integrated four-export catalog contract.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
-- Bounded hostname resolution compatible with private service discovery.
+- Integrated native and full-guest qualification of the startup resolver and projected-key preparer.
+- Private-cluster ownership, `openat2`, timer/seccomp policy, and configuration-rollout qualification.
 - Database connection reuse and measured admission behavior under saturation.
 - Absolute HTTP header deadlines and qualified shutdown draining.
 - Required fixed-label metrics and observed alert delivery.
@@ -247,6 +304,8 @@ No cluster resource, credential, DNS record, public route, or release artifact w
 - PostgreSQL 16 [connection control](https://www.postgresql.org/docs/16/libpq-connect.html): nonblocking restrictions, `PQconninfoParse`, and the encrypted-key callback.
 - PostgreSQL 16 [command execution](https://www.postgresql.org/docs/16/libpq-exec.html) and [asynchronous processing](https://www.postgresql.org/docs/16/libpq-async.html): result ownership, parameters, and command draining.
 - GNU [libmicrohttpd manual](https://www.gnu.org/software/libmicrohttpd/manual/libmicrohttpd.html): daemon lifecycle and response ownership.
+- Linux man-pages 6.19 [POSIX timer creation](https://man7.org/linux/man-pages/man2/timer_create.2.html) and [absolute timer arming](https://man7.org/linux/man-pages/man2/timer_settime.2.html).
+- glibc 2.41 [SIGEV_SIGNAL timer implementation](https://github.com/bminor/glibc/blob/glibc-2.41/sysdeps/unix/sysv/linux/timer_create.c).
 - [Hosted registry acceptance](../docs/hosted-registry.md).
 
 The external API documentation was checked on 5 November 2026.
