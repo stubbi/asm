@@ -52,8 +52,10 @@
     "status": "pass"
   },
   "native_intel": {
-    "status": "not-run",
-    "qualification_workflow": ".github/workflows/intel-macos.yml"
+    "status": "pass",
+    "record": "intel-macos-native-evidence.json",
+    "source_commit": "cea61bdfc8f87555f93d2e00bde15063f3df680b",
+    "qualification_run": "https://github.com/stubbi/asm/actions/runs/41940484143"
   },
   "publisher_provenance": "not-run; unpublished port artifact",
   "developer_id": "not-run; identity unavailable",
@@ -101,5 +103,11 @@
     "result": "fail",
     "case": "test_compiler_ignores_ambient_tool_and_include_configuration",
     "cause": "Xcode clang startup received the poisoned SDKROOT during assembly; compiler environment isolation must include as_path and ld_path."
-  }
+  },
+  "validation_errata": [
+    {
+      "commit": "cea61bdfc8f87555f93d2e00bde15063f3df680b",
+      "correction": "The commit message incorrectly says the isolated Rosetta retry passed. It timed out at the same 20-second limit. Native Intel qualification subsequently passed all 175 cases."
+    }
+  ]
 }

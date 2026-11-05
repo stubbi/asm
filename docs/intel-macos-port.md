@@ -1,6 +1,6 @@
 # Intel macOS CLI port
 
-Status: implementation and qualification in progress. No Intel release is declared.
+Status: native Intel CLI qualification passed. No Intel release is declared.
 
 The user outcome is the current CLI workflow on an Intel Mac, including package management and native library linking.
 The foundation requires dependable reuse and independent evidence for each target.
@@ -89,4 +89,28 @@ A Clang `./` prefix alone was insufficient because cc1 also receives the source 
 The regressions retain separate unprefixed response files so they exercise the original failure.
 
 Native Intel CI, final installer integration, release provenance, Developer ID, and notarization have distinct gates.
-The local record keeps them unrun until their actual results exist.
+The records retain each result and its exact source; distribution gates remain unrun.
+
+
+## Native Intel result
+
+[Native Intel qualification](https://github.com/stubbi/asm/actions/runs/41940484143) passed on 5 November 2026.
+The [native record](intel-macos-native-evidence.json) binds the result to source `cea61bdfc8f87555f93d2e00bde15063f3df680b`.
+The runner used x86-64 macOS 15.7.9 without Rosetta, Apple clang 17, and SDK 15.5.
+All 175 cases passed without skips or expected failures.
+Two clean builds produced identical bytes, and final-byte code-signature and identity checks passed.
+
+The qualified file has 157712 bytes.
+Its SHA-256 is `919aedbead9a56e78dfdfe06198408e7fbf9bc5262f3545d8d4bea24d4acaea2`.
+The downloaded CI artifact retained that digest and passed the local strict signature check.
+It remains an unpublished port artifact, with an ad-hoc signature.
+
+The first native run passed 174 of 175 cases and retained its failure record.
+The failed case exposed assembler startup inheriting an invalid `SDKROOT`.
+All fixed assembler, linker, and compiler children now receive only the fixed PATH and locale.
+Executed user applications continue to inherit their environment.
+The same unchanged hostile-environment test passed in the final native run.
+
+One follow-up commit message incorrectly described a Rosetta retry as passing.
+The retry also timed out; the local evidence record contains the correction.
+Native execution and translated execution remain distinct records.
