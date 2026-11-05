@@ -407,6 +407,31 @@ win_nt_component:
     /* '.' is needed for local cwd and dependency root; '..' is never accepted. */
     cmp x1, #2
     b.ne .Lwn_bad
+    /* A terminal read-only directory '.' refers to our already-held parent.
+     * Raw NtCreateFile does not perform Win32 dot normalization. Duplicate
+     * the checked directory so the caller owns an independent handle. */
+    cbz x19, .Lwn_bad
+    ldr x10, [sp, #56]
+    cbz x10, .Lwn_bad
+    tst x20, #O_DIRECTORY
+    b.eq .Lwn_bad
+    ARM_IMM x10, 64 + 128 + 512 + 3
+    tst x20, x10
+    b.ne .Lwn_bad
+    mov x0, #-1
+    mov x1, x19
+    mov x2, #-1
+    add x3, sp, #128
+    mov x4, #0
+    mov x5, #0
+    mov x6, #2
+    bl DuplicateHandle
+    cbz w0, .Lwn_dot_error
+    ldr x9, [sp, #128]
+    b .Lwn_return
+.Lwn_dot_error:
+    ARM_CALL win_error
+    b .Lwn_return
 .Lwn_setup:
     cbz x19, 9f
     ARM_CALL win_component_name

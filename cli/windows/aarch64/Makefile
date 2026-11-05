@@ -8,7 +8,7 @@ OBJECT := $(ROOT)/build/windows/aarch64/asm.obj
 BINARY := $(ROOT)/build/asm-aarch64-windows.exe
 INPUTS := $(wildcard $(ROOT)/cli/aarch64/*.s $(ROOT)/cli/aarch64/*.inc *.s) $(ROOT)/tools/windows_arm64.py
 
-.PHONY: all test abi-test clean
+.PHONY: all test abi-test security-test clean
 all: $(BINARY)
 
 $(SOURCE): $(INPUTS)
@@ -26,6 +26,10 @@ test: $(BINARY)
 # Apple Silicon host shim; this does not qualify the Windows runtime.
 abi-test:
 	$(PYTHON) abi_test.py --output $(ROOT)/build/windows/aarch64/abi-shim-evidence.json
+
+security-test:
+	$(PYTHON) security_test.py --output $(ROOT)/build/windows/aarch64/security-evidence.json
+	$(PYTHON) environment_test.py --output $(ROOT)/build/windows/aarch64/environment-evidence.json
 
 clean:
 	$(PYTHON) -c "from pathlib import Path; [Path(p).unlink(missing_ok=True) for p in ['$(SOURCE)', '$(OBJECT)', '$(BINARY)']]"

@@ -72,9 +72,12 @@ That step is not a descriptor-only confinement guarantee.
 
 File metadata records the volume serial, file index, size, link count, owner class, and observed DACL grants.
 The current user, SYSTEM, Administrators, and TrustedInstaller are recognized security principals.
-Protected administrative ancestors can have add-only child grants.
+Protected administrative ancestors can grant directory creation without granting writes to existing children.
 Managed user directories still require current-user ownership and reject untrusted mutable grants.
-New private objects receive a protected DACL for the current user, SYSTEM, and Administrators.
+New private objects receive explicit current-user ownership and a protected DACL for that user, SYSTEM, and Administrators.
+Only a verified elevated token can accept Administrators ownership of an ordinary regular file.
+Administrators-owned directories remain administrative ancestors; they cannot qualify as private user directories.
+OWNER_RIGHTS grants are accepted only when the actual owner already qualifies.
 Exclusive identity probes grant the current user metadata and cleanup rights without data read, write, or execute rights.
 Probe stat adapters populate only the observed volume and file identity.
 They cannot establish ownership, permissions, or executable validity.
@@ -84,6 +87,7 @@ Child creation supplies the executable path separately from the quoted argument 
 A handle allowlist passes only three duplicated standard streams.
 Compiler children receive bounded SDK-related environment values and a fixed PATH.
 Verifier and decompression children receive explicit environments.
+Verifier HOME, XDG paths, USERPROFILE, and LOCALAPPDATA refer to the same new private verifier directory.
 The parent drains captured output and terminates an overflowing or expired child.
 Downloads enter a bounded memory buffer before exclusive file creation.
 SHA-256 uses the native BCrypt provider.
@@ -115,17 +119,39 @@ The checked deletion paths also reject a directory passed to unlink and a regula
 Probe tests inspect actual shim-supplied identities, reject permission claims, use metadata-only access, and close failed lookups.
 The directory test supplies an extended drive path from the native path API.
 The current-directory setter receives its ordinary drive form.
+A terminal read-only directory dot opens an independent duplicate of the held directory.
+It does not request a raw NT child named dot.
 The capture check includes an empty peek, child completion, one pending byte, and EOF.
 The shim uses test APIs and a controlled clock.
 It does not establish Windows API, filesystem, or runtime behavior.
 
-The native Windows runtime suite has not run in this subtask.
+The second native Windows candidate ran 40 test methods at commit `74221fc69af0b19444dede9eb71c400effdd1855`.
+Its evidence records 12 passing methods and 41 failure records, including subtests.
+Project creation and protected-path checks failed.
+Those results do not qualify this target.
+The current corrections still require a fresh native run.
 Cross-assembly does not establish command behavior, DACL compatibility, filesystem race behavior, SDK discovery, or active-image replacement.
 No supported-host or release claim follows from this result.
 
 The remaining checks include the first project, C-ABI linking, package lifecycle, hostile paths, network errors, and authenticated self-update.
 The native Windows runner must also check failure cleanup and the exact tested executable digest.
 The full release gates remain separate from runtime qualification.
+Native table declarations use the shared selected-target parser and version 2 dependency locks.
+Foreign builds fail before output mutation because this candidate has no qualified foreign toolchain contract.
+
+Run the additional controlled host checks:
+
+```sh
+python3 cli/windows/aarch64/security_test.py --output build/windows/aarch64/security-evidence.json
+python3 cli/windows/aarch64/environment_test.py --output build/windows/aarch64/environment-evidence.json
+```
+
+The security shim executes the production owner and DACL routines with eleven controlled cases.
+It covers elevated file owners, administrative directories, foreign grants, OWNER_RIGHTS, and directory-add grants.
+The environment shim checks native private paths and rejection of an ambiguous root.
+These shims do not establish Windows authorization, process creation, or NTFS behavior.
+The running-image binding currently remains a release-blocking review concern.
+A pathname from GetModuleFileNameW does not independently establish the original mapped image's file identity.
 
 ## Primary references
 
@@ -138,3 +164,8 @@ The implementation review consulted these Microsoft references on 5 November 202
 - [Process handle inheritance](https://learn.microsoft.com/en-us/windows/win32/procthread/inheritance)
 - [File rename information](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information)
 - [FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+
+The ownership review also consulted these Microsoft references on 5 November 2026:
+
+- [TOKEN_ELEVATION](https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-token_elevation)
+- [SetSecurityDescriptorOwner](https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-setsecuritydescriptorowner)

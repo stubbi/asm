@@ -62,6 +62,11 @@ def prepare(source: Path) -> str:
         for old, new in [('build/app"','build/app.exe"'), ('build/test"','build/test.exe"'), ('/app"','/app.exe"')]:
             text = text.replace(old, new)
         text += '\n.section .rdata,"dr"\nwin_compile_target: .asciz "--target=aarch64-pc-windows-msvc"\nwin_link_kernel: .asciz "kernel32.lib"\nwin_link_lld: .asciz "--ld-path=C:/Program Files/LLVM/bin/lld-link.exe"\n'
+    if source.name == 'cross_build.s':
+        # Native table selection uses the existing build path. No foreign
+        # Windows toolchain/sysroot contract has been qualified here.
+        text = routine(text, 'cross_tools', 'cross_build_project',
+            'cross_tools:\n.Lct_unsupported:\n.Lct_missing:\n.Lct_sysroot:\n    ARM_ADDR x0, cross_unsupported_error\n    mov w1, #2\n    b die\n')
     if source.name == 'programs.s':
         text = replace_once(text, '    ldrb w10, [x19]\n    cmp w10, #47\n    b.eq .Lp_absolute_copy',
             '    mov x0, x19\n    ARM_CALL win_is_absolute\n    cbnz w9, .Lp_absolute_copy')
@@ -99,7 +104,9 @@ def prepare(source: Path) -> str:
         text = text.replace('/usr/bin/sha256sum', 'Windows BCrypt SHA-256')
         text = text.replace('index.tsv', 'index-windows-arm64.tsv')
         # Preserve Linux artifact rows while adding the Windows host identity.
-        text = replace_once(text, 'registry_valid_target:\n', 'registry_valid_target:\n    ARM_SAVE x0\n    ARM_ADDR x1, registry_host\n    ARM_CALL streq\n    ARM_RESTORE x0\n    cbnz w9, registry_valid\n')
+        for target in ['registry_host', 'target_macos_x86', 'target_windows_x86']:
+            text = replace_once(text, 'registry_valid_target:\n',
+                f'registry_valid_target:\n    ARM_SAVE x0\n    ARM_ADDR x1, {target}\n    ARM_CALL streq\n    ARM_RESTORE x0\n    cbnz w9, registry_valid\n')
         text = text.replace('registry_aarch64: .asciz "aarch64-windows"', 'registry_aarch64: .asciz "aarch64-linux"')
         begin = text.index('.Linstall_home:')
         end = text.index('    ARM_SAVE x0', begin)
@@ -119,6 +126,13 @@ def prepare(source: Path) -> str:
         text = routine(text, 'pub_hash_payload', 'pub_append', 'pub_hash_payload:\n    ARM_ADDR x0, registry_temp_payload\n    ARM_ADDR x1, pub_hash_buffer\n    b win_hash_file\n')
         text = text.replace('ARM_CALL pub_validate_elf', 'ARM_CALL win_pub_validate_pe')
     if source.name == 'self_update_verify.s':
+        text = replace_once(text,
+            '    mov x0, x9\n    mov x1, x21\n    ARM_CALL copy_string\n.ifdef ASM_TRUSTED_DISTRIBUTION',
+            '    mov x0, x9\n    mov x1, x21\n    ARM_CALL copy_string\n    ARM_CALL win_prepare_verifier_environment\n    tbnz x9, #63, self_io_error\n.ifdef ASM_TRUSTED_DISTRIBUTION')
+        text = replace_once(text, '    ARM_ADDR x16, self_gh_environment + 10*8',
+                            '    ARM_ADDR x16, self_gh_environment + 12*8')
+        text = replace_once(text, '    .quad self_locale_environment, self_lang_environment',
+            '    .quad self_locale_environment, self_lang_environment\n    .quad win_profile_environment, win_localappdata_environment')
         text = routine(text, 'self_capture', 'self_verifier_missing', (LOCAL / 'capture.s').read_text())
         text = text.replace('/usr/bin/gh', 'C:/Program Files/GitHub CLI/gh.exe').replace('/dev/null', 'NUL')
     if source.name == 'self_update.s':

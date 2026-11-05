@@ -44,6 +44,15 @@ _main:
     mov x26, #0x2626
     mov x27, #0x2727
     mov x28, #0x2828
+    /* The current directory is the held directory, not an NT child named '.'. */
+    ARM_IMM x19, 0x4400
+    ARM_IMM x20, O_DIRECTORY + O_CLOEXEC
+    ARM_ADDR x0, abi_dot_component
+    mov x1, #2
+    mov x2, #1
+    ARM_CALL win_nt_component
+    ARM_IMM x10, 0x7004
+    REQUIRE_EQ x9, x10
     mov x0, #0
     ARM_ADDR x1, abi_io_buffer
     mov x2, #7
@@ -711,3 +720,5 @@ abi_probe_name: .asciz "entry"
 win_cwd_w: .space 8192
 abi_extended_cwd: .hword 92,92,63,92,67,58,92,119,111,114,107,0
 abi_ordinary_cwd: .hword 67,58,92,119,111,114,107,0
+
+abi_dot_component: .hword 46,0

@@ -23,6 +23,15 @@ win_security_init:
     bl GetTokenInformation
     str w0, [sp, #32]
     ldr x0, [sp, #16]
+    mov w1, #20                  /* TokenElevation, never ambient TokenOwner */
+    ARM_ADDR x2, win_token_elevation
+    mov w3, #4
+    add x4, sp, #24
+    bl GetTokenInformation
+    ldr w10, [sp, #32]
+    and w0, w0, w10
+    str w0, [sp, #32]
+    ldr x0, [sp, #16]
     bl CloseHandle
     ldr w10, [sp, #32]
     cbz w10, .Lwsi_bad
@@ -44,6 +53,12 @@ win_security_init:
     ARM_ADDR x0, win_private_sd
     mov w1, #1
     bl InitializeSecurityDescriptor
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_private_sd
+    ARM_ADDR x16, win_token_user
+    ldr x1, [x16]
+    mov w2, #0
+    bl SetSecurityDescriptorOwner
     cbz w0, .Lwsi_bad
     ARM_ADDR x0, win_private_sd
     mov w1, #1
@@ -91,6 +106,12 @@ win_security_init:
     bl InitializeSecurityDescriptor
     cbz w0, .Lwsi_bad
     ARM_ADDR x0, win_probe_sd
+    ARM_ADDR x16, win_token_user
+    ldr x1, [x16]
+    mov w2, #0
+    bl SetSecurityDescriptorOwner
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_sd
     mov w1, #1
     ARM_ADDR x2, win_probe_acl
     mov w3, #0
@@ -116,12 +137,16 @@ win_acl_add:
     ARM_IMM w3, 0x1f01ff
     b AddAccessAllowedAceEx
 /* x0=SID. x9=1 current user, 0 trusted administrator, 2 other.
- * Pure SID comparison; does not infer identities from display names. */
+ * Administrators is current only with verified token elevation. The fixed
+ * TrustedInstaller service SID is an ancestor principal, not a file owner. */
 win_sid_class:
     stp x29, x30, [sp, #-32]!
     mov x29, sp
     str x19, [sp, #16]
     mov x19, x0
+    bl IsValidSid
+    cbz w0, .Lwsc_foreign
+    mov x0, x19
     ARM_ADDR x16, win_token_user
     ldr x1, [x16]
     bl EqualSid
@@ -133,11 +158,17 @@ win_sid_class:
     mov x0, x19
     ARM_ADDR x1, win_sid_admin
     bl EqualSid
-    cbnz w0, 2f
+    cbz w0, .Lwsc_installer
+    ARM_ADDR x16, win_token_elevation
+    ldr w10, [x16]
+    cbnz w10, 1f
+    b 2f
+.Lwsc_installer:
     mov x0, x19
     ARM_ADDR x1, win_sid_installer
     bl EqualSid
     cbnz w0, 2f
+.Lwsc_foreign:
     mov x9, #2
     b 3f
 1:  mov x9, #1
@@ -172,6 +203,19 @@ win_security_stat:
     ldr x0, [sp, #64]
     cbz x0, .Lwss_bad
     ARM_CALL win_sid_class
+    cmp x9, #1
+    b.ne .Lwss_owner_done
+    ldr w10, [x19, #ARM_STAT_MODE]
+    tst w10, #0x4000
+    b.eq .Lwss_owner_done
+    /* Elevation permits BA ownership for ordinary files only. A BA-owned
+     * directory is an administrative ancestor, never a private user root. */
+    ldr x0, [sp, #64]
+    ARM_ADDR x1, win_sid_admin
+    bl EqualSid
+    cmp w0, #0
+    cset w9, eq
+.Lwss_owner_done:
     str w9, [x19, #ARM_STAT_UID]
     str w9, [x19, #ARM_STAT_GID]
     ldr x20, [sp, #72]
@@ -211,13 +255,32 @@ win_security_stat:
     cbnz w13, 4f
     /* On a protected administrative ancestor, add-only rights cannot replace
      * an existing held child. HOME descendants still require current owner. */
-    bic w12, w12, #6
+    bic w12, w12, #4
 4:  tst w11, w12
     b.eq .Lwss_next
+    /* The simple ACE must contain its whole SID before an API reads it. */
+    ldrh w11, [x10, #2]
+    cmp w11, #16
+    b.lo .Lwss_bad
+    ldrb w12, [x10, #9]
+    lsl w12, w12, #2
+    add w12, w12, #16
+    cmp w12, w11
+    b.hi .Lwss_bad
     add x0, x10, #8
     ARM_CALL win_sid_class
     cmp x9, #2
     b.ne .Lwss_next
+    /* OWNER_RIGHTS names this object's owner, never an arbitrary account. */
+    ldr w10, [x19, #ARM_STAT_UID]
+    cmp w10, #2
+    b.eq .Lwss_unsafe
+    ldr x0, [sp, #88]
+    add x0, x0, #8
+    ARM_ADDR x1, win_sid_owner_rights
+    bl EqualSid
+    cbnz w0, .Lwss_next
+.Lwss_unsafe:
     ldr w10, [x19, #ARM_STAT_MODE]
     mov w11, #18
     orr w10, w10, w11
@@ -274,6 +337,8 @@ win_set_mode:
     ret
 .section .rdata,"dr"
 .p2align 2
+win_sid_owner_rights: .byte 1,1,0,0,0,0,0,3
+    .long 4
 win_sid_system: .byte 1,1,0,0,0,0,0,5
     .long 18
 win_sid_admin: .byte 1,2,0,0,0,0,0,5
@@ -283,6 +348,8 @@ win_sid_installer: .byte 1,6,0,0,0,0,0,5
 .section .bss
 .p2align 3
 win_token_user: .skip 1024
+win_token_elevation: .skip 4
+.p2align 3
 win_private_sd: .skip 40
 win_probe_sd: .skip 40
 win_probe_acl: .skip 2048

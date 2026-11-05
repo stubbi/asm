@@ -97,3 +97,67 @@ win_require_ntfs:
 win_running_w: .skip 8192
 win_fs_name: .skip 64
 win_volume_path: .skip 8192
+
+.text
+/* Convert the private verifier environment to bounded native drive paths.
+ * Inputs: four owned self_*_environment[8192] strings built by shared code.
+ * x9=0/-22. Preserves x19-x22; stack48. New profile variables point only to
+ * the same newly created verifier directory; no ambient profile is copied. */
+win_prepare_verifier_environment:
+    stp x29, x30, [sp, #-48]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    ARM_ADDR x19, win_verifier_path_values
+    mov x20, #4
+.Lwvpe_value:
+    ldr x21, [x19], #8
+    mov x0, x21
+    ARM_CALL win_is_absolute
+    cbz w9, .Lwvpe_bad
+    mov x22, #0
+.Lwvpe_bound:
+    ARM_IMM x10, 8170
+    cmp x22, x10
+    b.hs .Lwvpe_bad
+    ldrb w10, [x21, x22]
+    cbz w10, .Lwvpe_next
+    add x22, x22, #1
+    b .Lwvpe_bound
+.Lwvpe_next:
+    mov x0, x21
+    ARM_CALL win_slashes
+    subs x20, x20, #1
+    b.ne .Lwvpe_value
+    ARM_ADDR x0, win_profile_environment
+    ARM_ADDR x1, win_profile_prefix
+    ARM_CALL copy_string
+    mov x0, x9
+    ARM_ADDR x1, self_home_environment + 5
+    ARM_CALL copy_string
+    ARM_ADDR x0, win_localappdata_environment
+    ARM_ADDR x1, win_localappdata_prefix
+    ARM_CALL copy_string
+    mov x0, x9
+    ARM_ADDR x1, self_home_environment + 5
+    ARM_CALL copy_string
+    mov x9, #0
+    b .Lwvpe_done
+.Lwvpe_bad:
+    mov x9, #-22
+.Lwvpe_done:
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    ret
+.section .rdata,"dr"
+.p2align 3
+win_verifier_path_values:
+    .quad self_home_environment + 5, self_config_environment + 14
+    .quad self_cache_environment + 15, self_xdg_environment + 16
+win_profile_prefix: .asciz "USERPROFILE="
+win_localappdata_prefix: .asciz "LOCALAPPDATA="
+.section .bss
+.p2align 3
+win_profile_environment: .skip 8192
+win_localappdata_environment: .skip 8192
