@@ -38,7 +38,7 @@ Run these commands from the repository root in the ARM64 developer environment:
 
 ```text
 python tools/windows_arm64.py --output build/windows/aarch64/asm.s
-"C:/Program Files/LLVM/bin/clang.exe" --target=aarch64-pc-windows-msvc -c build/windows/aarch64/asm.s -o build/windows/aarch64/asm.obj
+"C:/Program Files/LLVM/bin/clang.exe" --no-default-config --target=aarch64-pc-windows-msvc -c build/windows/aarch64/asm.s -o build/windows/aarch64/asm.obj
 "C:/Program Files/LLVM/bin/lld-link.exe" /machine:arm64 /entry:_start /subsystem:console /nodefaultlib /nxcompat /dynamicbase /Brepro /out:build/asm-aarch64-windows.exe build/windows/aarch64/asm.obj kernel32.lib ntdll.lib advapi32.lib bcrypt.lib shell32.lib
 python tools/windows_test.py --asm build/asm-aarch64-windows.exe --target aarch64-windows --evidence build/windows/aarch64/runtime-evidence.json
 ```
@@ -86,6 +86,8 @@ The internal mode fields summarize that Windows policy; they do not claim POSIX 
 Child creation supplies the executable path separately from the quoted argument string.
 A handle allowlist passes only three duplicated standard streams.
 Compiler children receive bounded SDK-related environment values and a fixed PATH.
+Every Clang invocation disables default configuration.
+Link invocations select LLVM lld and forward SDK import libraries as linker arguments.
 Verifier and decompression children receive explicit environments.
 Verifier HOME, XDG paths, USERPROFILE, and LOCALAPPDATA refer to the same new private verifier directory.
 The parent drains captured output and terminates an overflowing or expired child.
@@ -125,9 +127,10 @@ The capture check includes an empty peek, child completion, one pending byte, an
 The shim uses test APIs and a controlled clock.
 It does not establish Windows API, filesystem, or runtime behavior.
 
-The second native Windows candidate ran 40 test methods at commit `74221fc69af0b19444dede9eb71c400effdd1855`.
-Its evidence records 12 passing methods and 41 failure records, including subtests.
-Project creation and protected-path checks failed.
+The third native Windows candidate ran 45 test methods at commit `df155c30858f41e4e5cbd2089bcc1442dccb669c`.
+Its evidence records 17 passing methods and 41 failure records, including subtests.
+Project creation passed.
+Linker arguments, lock creation, source fixtures, and dependent workflows failed.
 Those results do not qualify this target.
 The current corrections still require a fresh native run.
 Cross-assembly does not establish command behavior, DACL compatibility, filesystem race behavior, SDK discovery, or active-image replacement.
@@ -144,11 +147,16 @@ Run the additional controlled host checks:
 ```sh
 python3 cli/windows/aarch64/security_test.py --output build/windows/aarch64/security-evidence.json
 python3 cli/windows/aarch64/environment_test.py --output build/windows/aarch64/environment-evidence.json
+python3 cli/windows/aarch64/contracts_test.py --output build/windows/aarch64/contracts-evidence.json
 ```
 
 The security shim executes the production owner and DACL routines with eleven controlled cases.
 It covers elevated file owners, administrative directories, foreign grants, OWNER_RIGHTS, and directory-add grants.
 The environment shim checks native private paths and rejection of an ambiguous root.
+The contract shim checks twelve source-path cases and eight publication target cases.
+Two restored boundary defects fail during actual shim execution.
+Cross-object inspection verifies even addresses for native UTF-16 literals.
+Removing the lock-name alignment produces an odd address in the retained regression object.
 These shims do not establish Windows authorization, process creation, or NTFS behavior.
 The running-image binding currently remains a release-blocking review concern.
 A pathname from GetModuleFileNameW does not independently establish the original mapped image's file identity.
@@ -169,3 +177,8 @@ The ownership review also consulted these Microsoft references on 5 November 202
 
 - [TOKEN_ELEVATION](https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-token_elevation)
 - [SetSecurityDescriptorOwner](https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-setsecuritydescriptorowner)
+
+The compiler review consulted these LLVM references on 5 November 2026:
+
+- [Clang configuration files](https://clang.llvm.org/docs/UsersManual.html#configuration-files)
+- [Clang linker selection](https://clang.llvm.org/docs/Toolchain.html#linker)

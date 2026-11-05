@@ -468,7 +468,9 @@ win_spawn_wait:
     ret
 
 .section .rdata,"dr"
+.p2align 1
 win_home_name: .hword 72,79,77,69,0
+.p2align 1
 win_profile_name: .hword 85,83,69,82,80,82,79,70,73,76,69,0
 win_home_prefix: .asciz "HOME="
 .section .bss
@@ -562,10 +564,17 @@ win_build_environment:
 .section .rdata,"dr"
 .p2align 3
 win_build_env_names: .quad win_env_systemroot_w, win_env_windir_w, win_env_temp_w, win_env_tmp_w, win_env_lib_w, win_env_include_w, 0
+.p2align 1
 win_env_systemroot_w: .hword 83,121,115,116,101,109,82,111,111,116,0
+.p2align 1
 win_env_windir_w: .hword 87,73,78,68,73,82,0
+.p2align 1
 win_env_temp_w: .hword 84,69,77,80,0
+.p2align 1
 win_env_tmp_w: .hword 84,77,80,0
+.p2align 1
 win_env_lib_w: .hword 76,73,66,0
+.p2align 1
 win_env_include_w: .hword 73,78,67,76,85,68,69,0
+.p2align 1
 win_fixed_path_w: .hword 80,65,84,72,61,67,58,47,80,114,111,103,114,97,109,32,70,105,108,101,115,47,76,76,86,77,47,98,105,110,59,67,58,47,87,105,110,100,111,119,115,47,83,121,115,116,101,109,51,50,0

@@ -185,6 +185,7 @@ win_pump_capture:
     ldp x29, x30, [sp], #96
     ret
 .section .rdata,"dr"
+.p2align 1
 win_null_w: .hword 78,85,76,0
 win_dash: .asciz "-"
 .section .bss

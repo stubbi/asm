@@ -912,6 +912,7 @@ arm_umask:
 
 .section .data
 .p2align 3
+.p2align 1
 win_nt_root: .hword 92,63,63,92,67,58,92,0
 .section .bss
 .p2align 3

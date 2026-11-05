@@ -56,12 +56,18 @@ def prepare(source: Path) -> str:
         # Compiler argv has 16 entries. Explicit target is mandatory even on a
         # Windows host whose clang defaults to the emulated x64 environment.
         text = replace_once(text, 'ARM_ADDR x16, child_argv + 56\n    str x10, [x16]',
-            'ARM_ADDR x16, child_argv + 56\n    ARM_ADDR x10, win_compile_target\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 64\n    str xzr, [x16]')
+            'ARM_ADDR x16, child_argv + 56\n    ARM_ADDR x10, win_compile_target\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 64\n    ARM_ADDR x10, win_no_default_config\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 72\n    str xzr, [x16]')
         text = replace_once(text, 'ARM_ADDR x16, child_argv + 48\n    str x10, [x16]',
-            'ARM_ADDR x16, child_argv + 48\n    ARM_ADDR x10, win_compile_target\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 56\n    ARM_ADDR x10, win_link_kernel\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 64\n    ARM_ADDR x10, win_link_lld\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 72\n    str xzr, [x16]')
+            'ARM_ADDR x16, child_argv + 48\n    ARM_ADDR x10, win_compile_target\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 56\n    ARM_ADDR x10, win_link_kernel\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 64\n    ARM_ADDR x10, win_link_lld\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 72\n    ARM_ADDR x10, win_no_default_config\n    str x10, [x16]\n    ARM_ADDR x16, child_argv + 80\n    str xzr, [x16]')
         for old, new in [('build/app"','build/app.exe"'), ('build/test"','build/test.exe"'), ('/app"','/app.exe"')]:
             text = text.replace(old, new)
-        text += '\n.section .rdata,"dr"\nwin_compile_target: .asciz "--target=aarch64-pc-windows-msvc"\nwin_link_kernel: .asciz "kernel32.lib"\nwin_link_lld: .asciz "--ld-path=C:/Program Files/LLVM/bin/lld-link.exe"\n'
+        text += '\n.section .rdata,"dr"\nwin_no_default_config: .asciz "--no-default-config"\nwin_compile_target: .asciz "--target=aarch64-pc-windows-msvc"\nwin_link_kernel: .asciz "-Wl,kernel32.lib"\nwin_link_lld: .asciz "-fuse-ld=lld"\n'
+        text = replace_once(text, 'valid_source:\n',
+            'valid_source:\n    b win_valid_source\nwin_shared_valid_source:\n')
+        text = re.sub(r'^targets_text:.*$', lambda _: 'targets_text: .asciz "aarch64-windows (host; LLVM clang + Windows SDK)\\n"', text, flags=re.M)
+        text = re.sub(r'^targets_json:.*$', lambda _: 'targets_json: .asciz "{\\"host\\":\\"aarch64-windows\\",\\"targets\\":[\\"aarch64-windows\\"]}\\n"', text, flags=re.M)
+        text = replace_once(text, r'\"targets\":[\"x86_64-linux\",\"aarch64-windows\",\"riscv64-linux\"]',
+                            r'\"targets\":[\"aarch64-windows\"]')
     if source.name == 'cross_build.s':
         # Native table selection uses the existing build path. No foreign
         # Windows toolchain/sysroot contract has been qualified here.
@@ -102,7 +108,7 @@ def prepare(source: Path) -> str:
         text = routine(text, 'registry_verify_payload', 'registry_copy_local', (LOCAL / 'verify.s').read_text())
         text = text.replace('/usr/bin/curl', 'C:/Windows/System32/curl.exe')
         text = text.replace('/usr/bin/sha256sum', 'Windows BCrypt SHA-256')
-        text = text.replace('index.tsv', 'index-windows-arm64.tsv')
+        text = text.replace('index.tsv', 'index-all.tsv')
         # Preserve Linux artifact rows while adding the Windows host identity.
         for target in ['registry_host', 'target_macos_x86', 'target_windows_x86']:
             text = replace_once(text, 'registry_valid_target:\n',
@@ -165,6 +171,10 @@ def prepare(source: Path) -> str:
         text = text.replace('PATH=/usr/bin:/bin', 'PATH=C:/Program Files/LLVM/bin;C:/Windows/System32')
         text = text.replace('LC_ALL=C', 'SystemRoot=C:/Windows')
         text = replace_once(text, '    NATIVE_ARG native_cc_path\n    NATIVE_ARG native_syntax_only', '    NATIVE_ARG native_cc_path\n    NATIVE_ARG win_compile_target\n    NATIVE_ARG native_syntax_only')
+        if text.count('    NATIVE_ARG native_cc_path\n') != 2:
+            raise ValueError('expected checker and linker compiler argv anchors')
+        text = text.replace('    NATIVE_ARG native_cc_path\n',
+                            '    NATIVE_ARG native_cc_path\n    NATIVE_ARG win_no_default_config\n')
         text = text.replace('/usr/bin/cc', 'C:/Program Files/LLVM/bin/clang.exe')
         text = text.replace('NATIVE_ARG native_linux_pie\n    NATIVE_ARG native_linux_hardening', 'NATIVE_ARG win_compile_target\n    NATIVE_ARG win_native_hardening\n    NATIVE_ARG win_link_lld')
         text = text.replace('native_runtime_prefix: .asciz "-Wl,-rpath,"', 'native_runtime_prefix: .asciz "-L"')

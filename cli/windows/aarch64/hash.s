@@ -115,6 +115,7 @@ win_hash_file:
     ldp x29, x30, [sp], #128
     ret
 .section .rdata,"dr"
+.p2align 1
 win_sha256_w: .hword 83,72,65,50,53,54,0
 win_hex_digits: .ascii "0123456789abcdef"
 .section .bss

@@ -289,9 +289,33 @@ win_pub_validate_pe:
     ARM_CALL streq
     ARM_RESTORE x1
     ARM_RESTORE x0
-    cbz w9, pub_validate_elf
+    cbz w9, .Lwin_pub_foreign
     ARM_ADDR x0, registry_temp_payload
     b validate_host_elf
+.Lwin_pub_foreign:
+    /* Only three explicit Linux target IDs may enter the ELF container gate.
+     * Foreign Windows and macOS declarations never authorize an ELF file. */
+    ARM_SAVE x0
+    ARM_SAVE x1
+    ARM_ADDR x1, registry_x86_64
+    ARM_CALL streq
+    cbnz w9, .Lwin_pub_linux
+    ldr x0, [sp, #16]
+    ARM_ADDR x1, registry_aarch64
+    ARM_CALL streq
+    cbnz w9, .Lwin_pub_linux
+    ldr x0, [sp, #16]
+    ARM_ADDR x1, registry_riscv64
+    ARM_CALL streq
+    cbnz w9, .Lwin_pub_linux
+    ARM_RESTORE x1
+    ARM_RESTORE x0
+    mov w9, #1
+    ret
+.Lwin_pub_linux:
+    ARM_RESTORE x1
+    ARM_RESTORE x0
+    b pub_validate_elf
 .section .bss
 .p2align 3
 elf_stat: .skip 128

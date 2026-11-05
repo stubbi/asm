@@ -8,14 +8,14 @@ OBJECT := $(ROOT)/build/windows/aarch64/asm.obj
 BINARY := $(ROOT)/build/asm-aarch64-windows.exe
 INPUTS := $(wildcard $(ROOT)/cli/aarch64/*.s $(ROOT)/cli/aarch64/*.inc *.s) $(ROOT)/tools/windows_arm64.py
 
-.PHONY: all test abi-test security-test clean
+.PHONY: all test abi-test security-test contracts-test clean
 all: $(BINARY)
 
 $(SOURCE): $(INPUTS)
 	$(PYTHON) $(ROOT)/tools/windows_arm64.py --output $@
 
 $(OBJECT): $(SOURCE)
-	"$(CLANG)" --target=aarch64-pc-windows-msvc -c $< -o $@
+	"$(CLANG)" --no-default-config --target=aarch64-pc-windows-msvc -c $< -o $@
 
 $(BINARY): $(OBJECT)
 	"$(LLD_LINK)" /machine:arm64 /entry:_start /subsystem:console /nodefaultlib /nxcompat /dynamicbase /Brepro /out:$@ $< kernel32.lib ntdll.lib advapi32.lib bcrypt.lib shell32.lib
@@ -30,6 +30,9 @@ abi-test:
 security-test:
 	$(PYTHON) security_test.py --output $(ROOT)/build/windows/aarch64/security-evidence.json
 	$(PYTHON) environment_test.py --output $(ROOT)/build/windows/aarch64/environment-evidence.json
+
+contracts-test:
+	$(PYTHON) contracts_test.py --output $(ROOT)/build/windows/aarch64/contracts-evidence.json
 
 clean:
 	$(PYTHON) -c "from pathlib import Path; [Path(p).unlink(missing_ok=True) for p in ['$(SOURCE)', '$(OBJECT)', '$(BINARY)']]"

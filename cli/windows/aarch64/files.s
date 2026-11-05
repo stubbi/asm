@@ -458,6 +458,7 @@ win_unlock_close:
     ldp x29, x30, [sp], #32
     ret
 .section .rdata,"dr"
+.p2align 1
 win_lock_name: .hword 46,97,115,109,45,108,111,99,107,0
 .section .bss
 .p2align 3
@@ -624,3 +625,76 @@ win_archive_names:
 .section .bss
 .p2align 3
 win_archive_component: .skip 512
+
+.text
+/* x0=borrowed source/test/check path, parser-bounded to255 UTF8 bytes.
+ * w9=1 valid/0 invalid. Preserve x19-x21; stack48. Shared syntax rejects
+ * traversal, option and response-file components. Then reject Windows drive,
+ * device, stream and trailing aliases before any compiler/output mutation.
+ * Strict UTF8 conversion borrows single-threaded win_path_w[4096 WCHARs]. */
+win_valid_source:
+    stp x29, x30, [sp, #-48]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    str x21, [sp, #32]
+    mov x19, x0
+    ARM_CALL win_shared_valid_source
+    cbz w9, .Lwvs_bad
+    mov x0, x19
+    ARM_ADDR x1, win_path_w
+    mov x2, #4096
+    ARM_CALL win_utf16
+    tbnz x9, #63, .Lwvs_bad
+    ARM_ADDR x19, win_path_w
+    mov x20, x19
+.Lwvs_scan:
+    ldrh w10, [x20]
+    cbz w10, .Lwvs_component
+    cmp w10, #47
+    b.eq .Lwvs_component
+    cmp w10, #32
+    b.lo .Lwvs_bad
+    cmp w10, #92
+    b.eq .Lwvs_bad
+    cmp w10, #58
+    b.eq .Lwvs_bad
+    cmp w10, #34
+    b.eq .Lwvs_bad
+    cmp w10, #42
+    b.eq .Lwvs_bad
+    cmp w10, #63
+    b.eq .Lwvs_bad
+    cmp w10, #60
+    b.eq .Lwvs_bad
+    cmp w10, #62
+    b.eq .Lwvs_bad
+    cmp w10, #124
+    b.eq .Lwvs_bad
+    add x20, x20, #2
+    b .Lwvs_scan
+.Lwvs_component:
+    sub x1, x20, x19
+    cbz x1, .Lwvs_bad
+    ldrh w10, [x20, #-2]
+    cmp w10, #46
+    b.eq .Lwvs_bad
+    cmp w10, #32
+    b.eq .Lwvs_bad
+    mov x0, x19
+    ARM_CALL win_component_name
+    cbz w9, .Lwvs_bad
+    ldrh w10, [x20]
+    cbz w10, .Lwvs_good
+    add x19, x20, #2
+    mov x20, x19
+    b .Lwvs_scan
+.Lwvs_good:
+    mov w9, #1
+    b .Lwvs_done
+.Lwvs_bad:
+    mov w9, #0
+.Lwvs_done:
+    ldr x21, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #48
+    ret
