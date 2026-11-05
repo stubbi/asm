@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
+import signal
 import stat
 import struct
 import subprocess
@@ -57,6 +59,7 @@ REQUIRED_METRICS_UNIT_CHECKS = (
 METRICS_TOOLS = ("test-metrics", "metrics-faults.so")
 METRICS_TOOL_LIMIT = 1024 * 1024
 METRICS_OUTPUT_LIMIT = 65536
+METRICS_UNIT_TIMEOUT = 35
 TEST_LOG_LIMIT = 2 * 1024 * 1024
 
 
@@ -167,18 +170,82 @@ def parse_metrics_unit_output(data):
     return value
 
 
-def run_metrics_unit(path):
+class MetricsUnitFailure(ValueError):
+    def __init__(self, message, stdout, stderr):
+        super().__init__(message)
+        self.stdout, self.stderr = bytes(stdout), bytes(stderr)
+
+
+def _metrics_unit_result(arguments, *, timeout):
+    """Use the reviewed selector pattern; bound each stream before appending."""
+    output, errors = bytearray(), bytearray()
+    selector = selectors.DefaultSelector()
+    process, completed = None, False
+    deadline = time.monotonic() + timeout
     try:
-        result = subprocess.run([str(path)], capture_output=True, timeout=35)
+        process = subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, start_new_session=True)
+        for stream, buffer in ((process.stdout, output), (process.stderr, errors)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, buffer)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors)
+            events = selector.select(remaining)
+            if not events:
+                raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors)
+            for key, _ in events:
+                buffer = key.data
+                room = METRICS_OUTPUT_LIMIT - len(buffer)
+                chunk = os.read(key.fd, min(65536, room + 1))
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                buffer.extend(chunk[:room])
+                if len(chunk) > room:
+                    raise MetricsUnitFailure("Metrics unit output exceeded its byte limit.", output, errors)
+        try:
+            returncode = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            raise MetricsUnitFailure("The metrics unit deadline expired.", output, errors) from None
+        completed = True
+        return subprocess.CompletedProcess(arguments, returncode, bytes(output), bytes(errors))
+    finally:
+        selector.close()
+        if process is not None:
+            if not completed or process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait(timeout=3)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+
+def run_metrics_unit(path):
+    failure = None
+    try:
+        result = _metrics_unit_result([str(path)], timeout=METRICS_UNIT_TIMEOUT)
         stdout, stderr = result.stdout, result.stderr
-    except subprocess.TimeoutExpired as error:
-        stdout, stderr = error.stdout or b"", error.stderr or b""
+    except MetricsUnitFailure as error:
+        stdout, stderr, failure = error.stdout, error.stderr, error
         result = None
     # Retain bounded failure diagnostics before rejecting a missing/failed record.
-    sys.stdout.write(stdout[:METRICS_OUTPUT_LIMIT].decode("utf-8", "replace"))
-    sys.stderr.write(stderr[:METRICS_OUTPUT_LIMIT].decode("utf-8", "replace"))
+    for stream, data in ((sys.stdout, stdout), (sys.stderr, stderr)):
+        data = data[:METRICS_OUTPUT_LIMIT]
+        if hasattr(stream, "buffer"):
+            stream.buffer.write(data)
+        else:
+            stream.write(data.decode("utf-8", "replace"))
+    if failure is not None:
+        raise failure
     if result is None or result.returncode or len(stdout) > METRICS_OUTPUT_LIMIT or len(stderr) > METRICS_OUTPUT_LIMIT:
-        raise ValueError("The precompiled metrics unit checks failed, timed out, or exceeded their output bound.")
+        raise MetricsUnitFailure("The precompiled metrics unit checks failed or exceeded their output bound.",
+                                 stdout[:METRICS_OUTPUT_LIMIT], stderr[:METRICS_OUTPUT_LIMIT])
     return parse_metrics_unit_output(stdout)
 
 
@@ -472,6 +539,100 @@ def publish_index(args):
 
 
 class ContractTests(unittest.TestCase):
+    def metrics_real_child(self, script, timeout=35):
+        """Replace only the executable boundary; exercise real pipes and processes."""
+        original = subprocess.Popen
+        processes, groups = [], []
+        def launch(_arguments, **keywords):
+            groups.append(keywords.get("start_new_session", False))
+            # Keep the RED fixture isolated even when the unfixed runner omits it.
+            keywords["start_new_session"] = True
+            process = original([sys.executable, "-c", script], **keywords)
+            processes.append(process)
+            return process
+        stdout, stderr = io.StringIO(), io.StringIO()
+        started = time.monotonic()
+        with patch.object(subprocess, "Popen", side_effect=launch), patch.object(sys, "stdout", stdout), \
+                patch.object(sys, "stderr", stderr), \
+                patch.object(sys.modules[__name__], "METRICS_UNIT_TIMEOUT", timeout, create=True):
+            with self.assertRaises(ValueError) as failure:
+                run_metrics_unit(Path("/qualification/server/test-metrics"))
+        return processes, groups, time.monotonic() - started, stdout.getvalue(), stderr.getvalue(), failure.exception
+
+    def metrics_child_stopped(self, process, descendant):
+        self.assertIsNotNone(process.returncode, "The owned leader was not reaped.")
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(process.pid, os.WNOHANG)
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(descendant)], capture_output=True,
+                               text=True, timeout=2).stdout.strip()
+        self.assertTrue(not state or state.startswith("Z"), "The owned descendant remains alive.")
+
+    def test_metrics_unit_overflow_stops_owned_group_before_completion(self):
+        for stream in (1, 2):
+            with self.subTest(stream=stream), tempfile.TemporaryDirectory(prefix="asm-metrics-bound-") as temporary:
+                directory = Path(temporary)
+                pidfile, marker = directory / "child.pid", directory / "completed"
+                script = ("import os,time,pathlib\n"
+                    "child=os.fork()\n"
+                    "if child == 0:\n"
+                    f" pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid()))\n"
+                    " time.sleep(2)\n"
+                    f" pathlib.Path({str(marker)!r}).write_text('descendant completed')\n"
+                    " os._exit(0)\n"
+                    f"while not pathlib.Path({str(pidfile)!r}).exists(): time.sleep(0.001)\n"
+                    "os.write(1,b'partial stdout\\n');os.write(2,b'partial stderr\\n')\n"
+                    f"for _ in range(256): os.write({stream}, b'x'*4096)\n"
+                    f"pathlib.Path({str(marker)!r}).write_text('producer completed')\n"
+                    "os.waitpid(child,0)\n")
+                processes = []
+                try:
+                    processes, groups, elapsed, stdout, stderr, failure = self.metrics_real_child(script)
+                    self.assertLess(elapsed, 1.5, "Overflow was checked only after the child completed.")
+                    self.assertFalse(marker.exists(), "The producer reached its post-limit completion marker.")
+                    self.assertEqual(groups, [True])
+                    self.assertLessEqual(len(failure.stdout), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(failure.stderr), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(stdout), METRICS_OUTPUT_LIMIT)
+                    self.assertLessEqual(len(stderr), METRICS_OUTPUT_LIMIT)
+                    self.assertTrue(stdout.startswith("partial stdout\n"))
+                    self.assertTrue(stderr.startswith("partial stderr\n"))
+                    self.metrics_child_stopped(processes[0], int(pidfile.read_text()))
+                finally:
+                    for process in processes:
+                        if process.poll() is None:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=3)
+
+    def test_metrics_unit_deadline_stops_owned_group_and_keeps_partial_output(self):
+        with tempfile.TemporaryDirectory(prefix="asm-metrics-time-") as temporary:
+            directory = Path(temporary)
+            pidfile, marker = directory / "child.pid", directory / "completed"
+            script = ("import os,time,pathlib\nchild=os.fork()\n"
+                "if child == 0:\n"
+                f" pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid()))\n"
+                " time.sleep(2)\n"
+                f" pathlib.Path({str(marker)!r}).write_text('descendant completed')\n"
+                " os._exit(0)\n"
+                f"while not pathlib.Path({str(pidfile)!r}).exists(): time.sleep(0.001)\n"
+                "os.write(1,b'partial stdout\\n');os.write(2,b'partial stderr\\n')\n"
+                "os.waitpid(child,0)\n")
+            processes = []
+            try:
+                processes, groups, elapsed, stdout, stderr, failure = self.metrics_real_child(script, timeout=0.2)
+                self.assertLess(elapsed, 1.5, "The declared child deadline was not enforced.")
+                self.assertFalse(marker.exists())
+                self.assertEqual(groups, [True])
+                self.assertEqual(failure.stdout, b"partial stdout\n")
+                self.assertEqual(failure.stderr, b"partial stderr\n")
+                self.assertEqual(stdout, "partial stdout\n")
+                self.assertEqual(stderr, "partial stderr\n")
+                self.metrics_child_stopped(processes[0], int(pidfile.read_text()))
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=3)
+
     def metrics(self):
         return {"schema": 1, "timing": "handler-entry-to-accepted-queue", "samples": 79,
                 "max_response_bytes": 16384, "http_tests": list(REQUIRED_METRICS_HTTP_TESTS),
@@ -592,7 +753,7 @@ class ContractTests(unittest.TestCase):
     def test_failed_metrics_unit_output_is_retained_and_never_a_pass(self):
         result = subprocess.CompletedProcess(["test-metrics"], 1, b"fixture output\n", b"fixture failure\n")
         stdout, stderr = io.StringIO(), io.StringIO()
-        with patch.object(subprocess, "run", return_value=result), patch.object(sys, "stdout", stdout), \
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", return_value=result), patch.object(sys, "stdout", stdout), \
                 patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
             run_metrics_unit(Path("/qualification/server/test-metrics"))
         self.assertEqual(stdout.getvalue(), "fixture output\n")
@@ -605,16 +766,16 @@ class ContractTests(unittest.TestCase):
                 parse_metrics_unit_output(data)
 
     def test_metrics_unit_timeout_and_output_overflow_keep_bounded_diagnostics(self):
-        timeout = subprocess.TimeoutExpired("test-metrics", 35, output=b"partial stdout\n", stderr=b"partial stderr\n")
+        timeout = MetricsUnitFailure("The metrics unit deadline expired.", b"partial stdout\n", b"partial stderr\n")
         stdout, stderr = io.StringIO(), io.StringIO()
-        with patch.object(subprocess, "run", side_effect=timeout), patch.object(sys, "stdout", stdout), \
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", side_effect=timeout), patch.object(sys, "stdout", stdout), \
                 patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
             run_metrics_unit(Path("/qualification/server/test-metrics"))
         self.assertEqual(stdout.getvalue(), "partial stdout\n")
         self.assertEqual(stderr.getvalue(), "partial stderr\n")
         result = subprocess.CompletedProcess(["test-metrics"], 0, b"x" * 65537, b"y" * 65537)
         stdout, stderr = io.StringIO(), io.StringIO()
-        with patch.object(subprocess, "run", return_value=result), patch.object(sys, "stdout", stdout), \
+        with patch.object(sys.modules[__name__], "_metrics_unit_result", return_value=result), patch.object(sys, "stdout", stdout), \
                 patch.object(sys, "stderr", stderr), self.assertRaises(ValueError):
             run_metrics_unit(Path("/qualification/server/test-metrics"))
         self.assertEqual(len(stdout.getvalue()), 65536)

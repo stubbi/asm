@@ -217,6 +217,8 @@ The existing image gate still binds executable, libraries, RootFS prefix, source
 
 The isolated branch contains the main baseline, not the active admission or startup work.
 Integrate their reviewed sources before qualification; preserve their tests and avoid duplicate ownership.
+Retain admission's reviewed shared child-publication validator and the metrics descriptor checks at that source join.
+This isolated base's earlier inline publication check does not establish typed metrics validation for that consumer.
 After admission integration, extend its existing ninth-request and contention assertions with `index/5xx` metrics deltas.
 Do not replace its bounds, introduce a pool, or count refusal as a client quota error.
 Startup remains a separate prerequisite for deployment; metrics cannot fix credential projection or database-address preparation.

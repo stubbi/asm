@@ -314,6 +314,11 @@ The downstream catalog-publication and build-failure-preservation steps skipped 
 Those skipped steps are not passes.
 The result establishes the missing route before implementation, not successful metrics behavior in the later candidate.
 
+The isolated metrics branch still contains the earlier inline child-publication check.
+It does not close that publication consumer's typed-metrics gap.
+The source join must retain the reviewed shared child validator and the metrics descriptor checks.
+Image publication remains held until that integration and its qualification pass.
+
 These requirements remain open:
 
 - Complete RISC-V64 canonical HTTP qualification after the retained concurrent-response failure.
