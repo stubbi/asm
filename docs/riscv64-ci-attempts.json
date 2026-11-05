@@ -635,9 +635,486 @@
       "run_url": "https://github.com/stubbi/asm/actions/runs/42009884385",
       "scope": "CLI qualification not run",
       "setup_failure": "Guest boot and cloud-init passed. Native tool provisioning exited100 because Noble RISC-V archives lack the requested x86-64 and AArch64 cross-binutils packages."
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "checkout_commit": "8ef04128353517310b13773ffd59f8007e2e2190",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "016abeb19f187d2ee0881738c43a210acf8fd5e8e8f246f24691929bcc388f1a",
+          "outcome": "pass",
+          "seconds": 0.565,
+          "skipped_checks": false,
+          "tests_run": 21,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "5dd1072e3e025940ba37860e820a361c1a99cdd11cc0891aa10793a45523b449",
+          "outcome": "fail",
+          "seconds": 66.797,
+          "skipped_checks": true,
+          "tests_run": 358,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.004,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-qr9vermv/probe"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "failure_test_ids": [
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=97)",
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=160)",
+        "test_signal_mask_syscall_failure_stops_before_verifier_exec (test_self_update.SelfUpdateTests.test_signal_mask_syscall_failure_stops_before_verifier_exec)"
+      ],
+      "head_commit": "afb07943bd8e332c13499baad6c12de74748a627",
+      "host": {
+        "machine": "x86_64",
+        "python": "3.12.3",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux"
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 3,
+        "incomplete": false,
+        "skipped": 28,
+        "tests": 358
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 21
+      },
+      "outcome": "fail",
+      "qualification_schema": 1,
+      "qualification_scope": "earlier combined discovery",
+      "raw_evidence": {
+        "path": "build/riscv64/root-review/42009507416/riscv64-emulated-8ef04128353517310b13773ffd59f8007e2e2190/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "ddc3cec71f66abaacf03ae4255ea7c739bd885b7f868149d2211661c53db3102"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42009507416/full.log",
+        "sha256": "91e31405196aa23eeb4847deaf2752105903ad4a9bf025744e14210efcb75217"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        "The getrlimit and setrlimit denial subcases use host syscall filters; QEMU maps guest operations to host prlimit64.",
+        "QEMU user-mode signal-mask handling does not propagate the intended host filter error.",
+        "The earlier recursive Make discovery also skipped 28 foreign reference cases. Those skips remain failed qualification evidence."
+      ],
+      "run_id": 42009507416,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42009507416"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "binding_result": "Guest artifact and source bindings passed. The host correctly rejected the failed guest suites.",
+      "checkout_commit": "c6c1c3de927198668bced04276d30532817711da",
+      "checks": {
+        "binding": {
+          "error": "Guest report does not declare successful full-system emulation",
+          "outcome": "fail"
+        },
+        "boot": {
+          "outcome": "pass"
+        },
+        "guest_tool_inputs": {
+          "outcome": "pass"
+        },
+        "images": {
+          "outcome": "pass"
+        },
+        "provision": {
+          "outcome": "pass"
+        },
+        "qualification": {
+          "exit_code": 1,
+          "outcome": "fail"
+        },
+        "source": {
+          "outcome": "pass"
+        }
+      },
+      "emulation_kind": "system",
+      "execution_mode": "emulated",
+      "follow_up": "A complete corrected full-system rerun remains pending. Fixture corrections do not change this failed outcome.",
+      "guest_binutils_manifest": {
+        "path": "build/riscv64/ci/42013564640/artifacts/riscv64-system-emulated-c6c1c3de927198668bced04276d30532817711da-1/riscv64-system/guest-binutils-manifest.json",
+        "sha256": "8d38d559aed0ef456f31799d44fd152b4cdb082f9802c00de48a4678ffa2853d"
+      },
+      "guest_checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 1,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "173110ca88ce23a81781bbea1593bafb2d2a582a879ac326b879244d9da6ebe1",
+          "outcome": "fail",
+          "seconds": 26.529,
+          "skipped_checks": false,
+          "tests_run": 35,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "8add0a2f0e929d265a1127a57bc3579cf44e4d93557f539fdcb9f166e387bd95",
+          "outcome": "fail",
+          "seconds": 868.954,
+          "skipped_checks": false,
+          "tests_run": 341,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.016,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-kq_7z3bn/probe"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.007,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "head_commit": "290d7226bf6889b7c876d25fe7a1d35013140c8f",
+      "host": {
+        "machine": "riscv64",
+        "python": "3.12.3",
+        "release": "7.0.0-38-generic",
+        "system": "Linux"
+      },
+      "kernel_denial_checks": {
+        "getrlimit": {
+          "linux_riscv64_syscall": 163,
+          "outcome": "pass",
+          "test": "test_download_limit_setup_errors_stop_before_curl_exec"
+        },
+        "rt_sigprocmask": {
+          "linux_riscv64_syscall": 135,
+          "outcome": "pass",
+          "test": "test_signal_mask_syscall_failure_stops_before_verifier_exec"
+        },
+        "setrlimit": {
+          "linux_riscv64_syscall": 164,
+          "outcome": "pass",
+          "test": "test_download_limit_setup_errors_stop_before_curl_exec"
+        }
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 1,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 341
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 1,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 35
+      },
+      "outcome": "fail",
+      "qualification_schema": 2,
+      "qualification_scope": "native-cli-behavior",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42013564640/artifacts/riscv64-system-emulated-c6c1c3de927198668bced04276d30532817711da-1/riscv64-system/report.json",
+        "sha256": "17899b7d15512e2c3c6c3a98cceda98f001e3ea47fc8ae57b62f6c80bb00ffc1"
+      },
+      "raw_guest_evidence": {
+        "path": "build/riscv64/ci/42013564640/artifacts/riscv64-system-emulated-c6c1c3de927198668bced04276d30532817711da-1/riscv64-system/guest-qualification.json",
+        "sha256": "170234dbd3224555ec72aaa1199f2f5bd28325eeb528bad7d6196a5ce1bf80b9"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42013564640/full.log",
+        "sha256": "6ed9ac4cf22f8ceaecec0f4f0cea0d29a186276117054b980eae0339756ea782"
+      },
+      "raw_provenance": {
+        "path": "build/riscv64/ci/42013564640/artifacts/riscv64-system-emulated-c6c1c3de927198668bced04276d30532817711da-1/riscv64-system/provenance.json",
+        "sha256": "64c55baa8efb067388561a0c4ddbc78eab0b10958fc51dd90649a858de4ab16b"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        {
+          "assertion": "update did not reach the held download",
+          "fixture_wait_seconds": 5,
+          "phase": "The live update did not reach the held verifier marker within the five-second fixture wait. Displacement assertions had not run.",
+          "test": "test_self_update.SelfUpdateTests.test_displaced_home_is_refused_before_final_commit"
+        },
+        {
+          "assertion": "b'descendant holds stdout' not found in b''",
+          "fixture_deadline_seconds": 0.2,
+          "phase": "The 200 ms deadline expired before the Python descendant startup marker was captured.",
+          "test": "test_combined.CombinedResourceBoundsTests.test_deadline_kills_pipe_descendant_after_leader_exits"
+        }
+      ],
+      "run_id": 42013564640,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42013564640"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "83801012af27603203a954877009b5c84472aec0a0e965f7fea258ba271d0cb0"
+      },
+      "checkout_commit": "c6c1c3de927198668bced04276d30532817711da",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "5bd184dd856fda44ed32621e8c3ce8944a75a9a5efa536aca309be2e4b785a5f",
+          "outcome": "pass",
+          "seconds": 7.783,
+          "skipped_checks": false,
+          "tests_run": 35,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "fdf9e4d4a38a8951358ad327ae166604355f59162ed9c465a77a60e0e8d9dec2",
+          "outcome": "fail",
+          "seconds": 76.03,
+          "skipped_checks": false,
+          "tests_run": 341,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.004,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-otk11vm4/probe"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "failure_test_ids": [
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=97)",
+        "test_download_limit_setup_errors_stop_before_curl_exec (test_self_update.SelfUpdateTests.test_download_limit_setup_errors_stop_before_curl_exec) (syscall=160)",
+        "test_signal_mask_syscall_failure_stops_before_verifier_exec (test_self_update.SelfUpdateTests.test_signal_mask_syscall_failure_stops_before_verifier_exec)"
+      ],
+      "head_commit": "290d7226bf6889b7c876d25fe7a1d35013140c8f",
+      "host": {
+        "machine": "x86_64",
+        "python": "3.12.3",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux"
+      },
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 3,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 341
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 35
+      },
+      "outcome": "fail",
+      "qualification_schema": 2,
+      "qualification_scope": "native-cli-behavior",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42013564914/riscv64-emulated-c6c1c3de927198668bced04276d30532817711da/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "7b20b9ff37908dae5b955994c78abcfc920d98babe7929fe3ba6f9f909f1e105"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42013564914/full.log",
+        "sha256": "43eeda07324275f2338d5725202a22fd7beb2972e12db2e0bcf853687b1c3c8c"
+      },
+      "release_qualified": false,
+      "remaining_failures": [
+        "The getrlimit and setrlimit denial subcases use host syscall filters; QEMU maps guest operations to host prlimit64.",
+        "QEMU user-mode signal-mask handling does not propagate the intended host filter error."
+      ],
+      "run_id": 42013564914,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42013564914"
     }
   ],
   "execution_mode": "emulated",
+  "full_system_qualification_status": "pending",
+  "latest_completed_full_system_run": 42013564640,
   "native_qualified": false,
   "release_qualified": false,
   "schema": 1,

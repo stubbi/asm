@@ -159,13 +159,12 @@ class CombinedResourceBoundsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "descendant-survived"
             log = Path(temporary) / "descendant.log"
-            child = ("import os, time\nfrom pathlib import Path\n"
-                     "if os.fork(): os._exit(0)\n"
-                     "print('descendant holds stdout', flush=True)\n"
-                     "time.sleep(0.8)\n"
-                     f"Path({str(marker)!r}).write_text('survived')\n"
-                     "time.sleep(30)\n")
-            result = self.runner.bounded_process([sys.executable, "-c", child], log,
+            # A fresh Python interpreter can consume the entire 0.2-second
+            # deadline under CPU emulation before this scenario even starts.
+            # Shell builtins establish the fork/pipe state without Python startup.
+            child = ('(printf "descendant holds stdout\\n"; sleep 0.8; '
+                     'printf survived > "$1"; sleep 30) & exit 0')
+            result = self.runner.bounded_process(["/bin/sh", "-c", child, "asm-deadline-test", str(marker)], log,
                                                  timeout=0.2, max_bytes=8192)
             self.assertEqual(result["failure"], "deadline")
             self.assertLess(result["seconds"], 2)

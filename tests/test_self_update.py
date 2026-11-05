@@ -28,6 +28,7 @@ from host import SYS_RENAMEAT, SYS_SIGPROCMASK, SYS_GETRLIMIT, SYS_SETRLIMIT, pr
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT = json.loads((ROOT / "cli/commands.json").read_text())["version"]
 NEXT = f"{int(CURRENT.split('.')[0]) + 1}.10.0"
+HELD_FIXTURE_READY_SECONDS = 30
 OLDER = "0.0.0"
 COMMIT = "a" * 40
 INDEX = "https://asm.build/registry/v1/index-macos.tsv" if IS_MACOS else "https://asm.build/registry/v1/index.tsv"
@@ -755,7 +756,10 @@ class SelfUpdateTests(unittest.TestCase):
         process = subprocess.Popen([str(self.installed), "self", "update"], cwd=self.work, env=self.env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(lambda: process.kill() if process.poll() is None else None)
-        deadline = time.monotonic() + 5
+        # Wait for the explicit marker after the fixture tools start. A full
+        # system guest can take several seconds to start their interpreters.
+        # This bounds only setup; the displacement assertions stay unchanged.
+        deadline = time.monotonic() + HELD_FIXTURE_READY_SECONDS
         marker = self.fixture / ("entered-verifier" if at_verifier else "entered")
         while not marker.exists():
             if process.poll() is not None:
