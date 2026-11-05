@@ -144,6 +144,26 @@ class SourceBundleTests(unittest.TestCase):
         with self.subTest(outcome="unrelated object excluded"):
             self.assertNotEqual(found.returncode, 0)
 
+    def test_matching_manifest_and_head_header_cannot_hide_unrelated_packed_objects(self):
+        self.assertEqual(self.create().returncode, 0)
+        manifest_path = self.output / "source.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        orphan = self.git("commit-tree", self.git("rev-parse", "HEAD^{tree}").decode().strip(),
+                          "-m", "Hidden unrelated packed object").decode().strip()
+        self.git("update-ref", "refs/heads/unrelated", orphan)
+        all_objects = self.git("bundle", "create", "--version=2", "-", "--all")
+        _, pack = all_objects.split(b"\n\n", 1)
+        hidden = b"# v2 git bundle\n" + self.commit.encode() + b" HEAD\n\n" + pack
+        (self.output / "source.bundle").write_bytes(hidden)
+        manifest["bundle_sha256"] = hashlib.sha256(hidden).hexdigest()
+        manifest["bundle_bytes"] = len(hidden)
+        manifest_path.write_text(json.dumps(manifest))
+        destination = self.base / "accepted.git"
+        refused = self.restore(destination)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(refused.stdout, b"")
+        self.assertFalse(destination.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

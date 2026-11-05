@@ -18,6 +18,7 @@ import registry
 from registry_admin import AdminError, clean_environment, open_checked, require, run_bounded
 
 MAX_BUNDLE = 64 * 1024 * 1024
+MAX_OBJECTS = 131072
 FILES = ("LICENSE", "LICENSING.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
          "tools/prepare_operator.py", "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
          "server/catalog/read-exports.sql")
@@ -67,6 +68,15 @@ def write_new(path, body):
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def object_ids(repository, *arguments):
+    raw = git(repository, *arguments, maximum=41 * MAX_OBJECTS)
+    lines = raw.splitlines()
+    require(1 <= len(lines) <= MAX_OBJECTS and len(set(lines)) == len(lines)
+            and all(re.fullmatch(rb"[0-9a-f]{40}", line) for line in lines),
+            "The source object enumeration is malformed or exceeds its count bound.")
+    return set(lines)
 
 
 def create(repository, commit, output):
@@ -125,6 +135,9 @@ def restore(bundle_path, manifest_path, commit, destination):
         require(git(destination, "for-each-ref", "--format=%(refname) %(objectname)") ==
                 ("refs/heads/accepted " + commit + "\n").encode(), "The restored source has unexpected refs.")
         git(destination, "fsck", "--strict", "--no-reflogs", "--no-dangling", "--no-progress", commit)
+        reachable = object_ids(destination, "rev-list", "--objects", "--no-object-names", commit)
+        stored = object_ids(destination, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+        require(stored == reachable, "The source bundle contains objects outside the accepted commit graph.")
         require(inventory(destination, commit) == manifest["files"], "The restored runtime source bytes differ.")
         require(not (destination / "objects/info/alternates").exists(), "Source alternates are not permitted.")
         verified.unlink()
