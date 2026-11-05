@@ -92,6 +92,81 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def header_observation(file_dos, file_pe, mapped_dos, mapped_pe, pe_offset, target, base):
+    """Corroborate a class44-bound image; retain all bytes and differences.
+
+    Inputs contain exactly DOS64 and PE32+264 bytes from the file and image.
+    No address comes from these untrusted bytes. The caller bounds pe_offset
+    before reading the owned child. This helper makes no system calls.
+    Raw equality is an observation: the PE file format does not guarantee that
+    loaded headers remain byte-identical. It is not the image identity proof.
+    """
+    require(len(file_dos) == len(mapped_dos) == 64 and len(file_pe) == len(mapped_pe) == 264,
+            'The bounded DOS or PE header snapshot is incomplete.')
+    # Offsets include the four-byte PE signature. The PE32+ optional header
+    # starts at 24. Microsoft PE/COFF specification, read 5 November 2026:
+    # https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+    fields = [('Signature', 0, 'I'), ('Machine', 4, 'H'), ('NumberOfSections', 6, 'H'),
+              ('TimeDateStamp', 8, 'I'), ('PointerToSymbolTable', 12, 'I'),
+              ('NumberOfSymbols', 16, 'I'), ('SizeOfOptionalHeader', 20, 'H'),
+              ('Characteristics', 22, 'H'), ('Magic', 24, 'H'),
+              ('MajorLinkerVersion', 26, 'B'), ('MinorLinkerVersion', 27, 'B'),
+              ('SizeOfCode', 28, 'I'), ('SizeOfInitializedData', 32, 'I'),
+              ('SizeOfUninitializedData', 36, 'I'), ('AddressOfEntryPoint', 40, 'I'),
+              ('BaseOfCode', 44, 'I'), ('ImageBase', 48, 'Q'),
+              ('SectionAlignment', 56, 'I'), ('FileAlignment', 60, 'I'),
+              ('OperatingSystemVersion', 64, 'I'), ('ImageVersion', 68, 'I'),
+              ('SubsystemVersion', 72, 'I'), ('Win32VersionValue', 76, 'I'),
+              ('SizeOfImage', 80, 'I'), ('SizeOfHeaders', 84, 'I'), ('CheckSum', 88, 'I'),
+              ('Subsystem', 92, 'H'), ('DllCharacteristics', 94, 'H'),
+              ('SizeOfStackReserve', 96, 'Q'), ('SizeOfStackCommit', 104, 'Q'),
+              ('SizeOfHeapReserve', 112, 'Q'), ('SizeOfHeapCommit', 120, 'Q'),
+              ('LoaderFlags', 128, 'I'), ('NumberOfRvaAndSizes', 132, 'I')]
+    values = {name: {'file': struct.unpack_from('<' + fmt, file_pe, offset)[0],
+                     'mapped': struct.unpack_from('<' + fmt, mapped_pe, offset)[0]}
+              for name, offset, fmt in fields}
+    def field_at(offset):
+        for name, start, fmt in fields:
+            if start <= offset < start + struct.calcsize(fmt):
+                return name
+        return f'DataDirectory[{(offset - 136) // 8}]'
+    def snapshot(left, right, offset, pe=False):
+        return {'file_hex': left.hex(), 'mapped_hex': right.hex(), 'bytes': len(left),
+                'file_offset': offset, 'differences':
+                [{'file_offset': offset + i, 'image_rva': offset + i,
+                  'snapshot_offset': i, 'file_byte': a, 'mapped_byte': b,
+                  'field': field_at(i) if pe else ('e_magic' if i < 2 else 'e_lfanew' if i >= 60 else 'DOS header')}
+                 for i, (a, b) in enumerate(zip(left, right)) if a != b]}
+    # This corroborates the expected image layout, independently of the
+    # class44 file identity proof. Keep the preferred file address distinct
+    # from the actual allocation address selected for this suspended child.
+    immutable = ['Signature', 'Machine', 'NumberOfSections', 'SizeOfOptionalHeader',
+                 'Characteristics', 'Magic', 'AddressOfEntryPoint', 'SectionAlignment',
+                 'FileAlignment', 'SizeOfImage', 'SizeOfHeaders', 'Subsystem',
+                 'DllCharacteristics', 'NumberOfRvaAndSizes']
+    checks = {name: values[name]['file'] == values[name]['mapped'] for name in immutable}
+    checks.update(DOS_signature=file_dos[:2] == mapped_dos[:2] == b'MZ',
+                  DOS_PE_offset=struct.unpack_from('<I', file_dos, 60)[0] ==
+                  struct.unpack_from('<I', mapped_dos, 60)[0] == pe_offset,
+                  PE_signature=values['Signature']['file'] == 0x4550,
+                  native_machine=values['Machine']['file'] ==
+                  {'aarch64-windows': 0xAA64, 'x86_64-windows': 0x8664}[target],
+                  PE32_plus=values['Magic']['file'] == 0x20B,
+                  bounded_sections=0 < values['NumberOfSections']['file'] <= 96,
+                  bounded_optional_header=values['SizeOfOptionalHeader']['file'] == 240,
+                  entry_in_image=0 < values['AddressOfEntryPoint']['file'] < values['SizeOfImage']['file'],
+                  headers_in_image=pe_offset + 264 <= values['SizeOfHeaders']['file'] <= values['SizeOfImage']['file'])
+    mapped_base, preferred = values['ImageBase']['mapped'], values['ImageBase']['file']
+    return {'dos': snapshot(file_dos, mapped_dos, 0),
+            'pe': snapshot(file_pe, mapped_pe, pe_offset, pe=True),
+            'fields': values, 'corroboration_checks': checks, 'corroborated': all(checks.values()),
+            'raw_equal': file_dos == mapped_dos and file_pe == mapped_pe,
+            'raw_equality_required': False, 'loader_mutation_cause': 'not-established',
+            'image_base_relation': 'preferred-file-base' if mapped_base == preferred else
+            'actual-allocation-base' if mapped_base == base else 'other-observed-value',
+            'identity_proof': 'class44 success for held original file; PEB allocation corroborated by MEM_IMAGE and structural PE fields'}
+
+
 class Windows:
     def __init__(self):
         from ctypes import wintypes as W
@@ -273,10 +348,16 @@ def experiment(api, work, image, target, mode, owner, report, checkpoint):
         case['memory_before'] = api.memory_info(process, base)
         require(case['memory_before']['allocation_base'] == base and case['memory_before']['type'] == 0x1000000,
                 'The PEB address does not identify an image allocation base.')
+        case['stage'] = 'corroborate-primary-image-headers'
         pe_offset = struct.unpack_from('<I', image, 60)[0]
-        require(api.remote_bytes(process, base, 64) == image[:64] and
-                api.remote_bytes(process, base + pe_offset, 264) == image[pe_offset:pe_offset + 264],
-                'The primary image headers do not match the copied CLI bytes.')
+        require(64 <= pe_offset <= 4096 - 264 and pe_offset + 264 <= len(image),
+                'The copied PE header offset exceeds the bounded fixture contract.')
+        case['headers'] = header_observation(image[:64], image[pe_offset:pe_offset + 264],
+            api.remote_bytes(process, base, 64), api.remote_bytes(process, base + pe_offset, 264),
+            pe_offset, target, base)
+        checkpoint()
+        require(case['headers']['corroborated'],
+                'The primary image signature, machine, entry, size, or header layout differs from the copied CLI.')
         case['stage'] = 'prepare-control-state'
         checkpoint()
         if mode == 'primary_unmapped':
