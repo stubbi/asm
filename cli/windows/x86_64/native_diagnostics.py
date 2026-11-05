@@ -10,6 +10,9 @@ import argparse
 import ctypes
 from ctypes import wintypes
 import hashlib
+import gzip
+import io
+import tarfile
 import importlib.util
 import json
 import os
@@ -56,7 +59,21 @@ def diagnostic_source(module):
         process = process.replace('    call ' + name + '\n',
             '    mov dword ptr [rip + win_diag_process_stage], ' + str(number) + '\n' +
             '    call ' + name + '\n    call win_diag_process_log\n')
+    anchor = '    mov ebx, [rbp - 152]\n'
+    assert process.count(anchor) == 1
+    process = process.replace(anchor, anchor + '    mov eax, ebx\n    mov dword ptr [rip + win_diag_process_stage], 16\n    call win_diag_process_log\n')
     source = source[:begin] + process + source[end:]
+    begin = source.index('win_decompress:\n')
+    end = source.index('win_download:\n', begin)
+    body = source[begin:end]
+    anchor = '    call win_process\n'
+    assert body.count(anchor) == 1
+    body = body.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], 12\n    call win_diag_process_log\n    push rax\n    mov eax, [rip + win_capture_length]\n    mov dword ptr [rip + win_diag_process_stage], 13\n    call win_diag_process_log\n    pop rax\n')
+    source = source[:begin] + body + source[end:]
+    for function, stage in [('arc_validate', 14), ('pub_check_project', 15)]:
+        anchor = '    call ' + function + '\n'
+        assert source.count(anchor) >= 1
+        source = source.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], ' + str(stage) + '\n    call win_diag_process_log\n')
     return source + '\n' + (LOCAL / 'diagnostic.s').read_text()
 
 
@@ -169,14 +186,14 @@ def captured_text(value):
     return value[:LIMIT]
 
 
-def run_recorded(report, argv, **options):
+def run_recorded(report, argv, *, binary=False, **options):
     """Retain completed and failed process observations with bounded output."""
     started = time.monotonic()
     argv = list(map(str, argv))
     row = {'argv': argv}
     try:
-        result = subprocess.run(argv, capture_output=True, text=True,
-            encoding='utf-8', errors='replace', timeout=30, **options)
+        mode = {} if binary else {'text': True, 'encoding': 'utf-8', 'errors': 'replace'}
+        result = subprocess.run(argv, capture_output=True, timeout=30, **mode, **options)
         stdout, stderr = result.stdout, result.stderr
         row['exit_code'] = result.returncode
     except subprocess.TimeoutExpired as error:
@@ -194,6 +211,9 @@ def run_recorded(report, argv, **options):
     row.update(stdout=captured_text(stdout), stderr=captured_text(stderr),
         output_truncated=len(stdout or '') > LIMIT or len(stderr or '') > LIMIT,
         seconds=round(time.monotonic()-started, 6))
+    if binary:
+        data = stdout if isinstance(stdout, bytes) else (stdout or '').encode('utf-8')
+        row.update(binary_output=True, stdout='', stdout_bytes=len(data), stdout_sha256=hashlib.sha256(data).hexdigest())
     report['commands'].append(row)
     return result
 
@@ -213,6 +233,28 @@ def collect_evidence(destination, report, operation):
     return 1 if report.get('build_failed') or report.get('collection_failed') else 0
 
 
+def source_fixture(work, project):
+    """Create one bounded, owned USTAR/Gzip fixture for the assembly validator."""
+    contents = {'asm.toml': (project / 'asm.toml').read_bytes(),
+                'src/main.s': (project / 'src/main.s').read_bytes(),
+                'README.md': b'Diagnostic source fixture.\n',
+                'LICENSE': b'SPDX-License-Identifier: MIT\n'}
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode='w', format=tarfile.USTAR_FORMAT) as archive:
+        for name, data in contents.items():
+            entry = tarfile.TarInfo(name)
+            entry.size, entry.mode, entry.mtime = len(data), 0o644, 0
+            archive.addfile(entry, io.BytesIO(data))
+    payload = gzip.compress(stream.getvalue(), mtime=0)
+    artifact, index = work / 'source.tar.gz', work / 'source-index.tsv'
+    artifact.write_bytes(payload)
+    fields = ['fixture/hello','0.1.0','x86_64-windows','source',
+              hashlib.sha256(payload).hexdigest(),'https://fixture.invalid/source.tar.gz',
+              str(len(payload)),'Diagnostic source fixture']
+    index.write_text('# asm-registry-v1\n' + '\t'.join(fields) + '\n')
+    return artifact, index, stream.getvalue()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--toolchain-bin', type=Path, default=Path('C:/Program Files/LLVM/bin'))
@@ -223,6 +265,8 @@ def main():
     if args.evidence.exists():
         parser.error('The evidence destination must not already exist')
     report = {'process_stages': {str(i+1): name for i,name in enumerate(['win_wide','win_wide_command','win_build_environment','win_explicit_environment','CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW','InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW'])}, 'kind': 'windows-x64-adapter-diagnostics', 'native_qualification': False, 'commands': []}
+
+    report['process_stages'].update({'12': 'gzip-capture-status', '13': 'gzip-capture-bytes', '14': 'tar-validation', '15': 'source-project-validation', '16': 'raw-child-exit-code'})
 
     def run(argv, **options):
         return run_recorded(report, argv, **options)
@@ -258,6 +302,16 @@ def main():
                     new_project = work / 'hello'
                     run([binary, 'new', new_project], cwd=work, env=environment)
                     run([binary, 'run'], cwd=new_project, env=environment)
+                    artifact, index, raw = source_fixture(work, new_project)
+                    report['source_fixture'] = {'compressed_bytes': artifact.stat().st_size,
+                        'raw_bytes': len(raw), 'raw_sha256': hashlib.sha256(raw).hexdigest()}
+                    for name, probe_environment in [('empty', {}), ('system-root-only',
+                            {key: os.environ[key] for key in ['SystemRoot', 'WINDIR'] if key in os.environ})]:
+                        run_recorded(report, ['C:/Program Files/Git/usr/bin/gzip.exe','-d','-c'],
+                            binary=True, input=artifact.read_bytes(), env=probe_environment, cwd=work)
+                        report['commands'][-1]['gzip_probe_environment'] = name
+                    run([binary, 'add', 'fixture/hello@0.1.0', '--index', index,
+                         '--artifact', artifact, '--json'], cwd=new_project, env=environment)
                     run([binary, 'installed', '--json'], cwd=work, env=environment)
                     version = json.loads(run([binary, 'version', '--json'], cwd=work, env=environment).stdout)['version']
                     installation = home / '.local/bin/asm.exe'

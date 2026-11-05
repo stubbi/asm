@@ -2,8 +2,9 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Three native Windows runs executed the CLI and retained failed runtime results.
-The third run passed project creation and C ABI execution, but retained linker, lock, and updater failures.
+Four native Windows runs executed the CLI and retained failed runtime results.
+The fourth run passed basic standalone and locking workflows.
+It retained archive, updater, PE validation, and path-output failures.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -104,11 +105,11 @@ python3 tools/windows_x64.py --output build/windows/x86_64/asm.s
 clang --no-default-config -target x86_64-pc-windows-msvc -c build/windows/x86_64/asm.s -o build/windows/x86_64/asm.obj
 ```
 
-The generated assembly SHA-256 was `ff7017ebdfa3186de855d76af32483e39d034bcd7ac091b6ca362ee94c573507`.
-The object SHA-256 was `10b49399273e9b94d253908bf09cd042a474ed2cf21b923c3ce378cd58860d72`.
+The generated assembly SHA-256 was `f8915b82ef1d1bd01e27467855d64959003faf171d993df777592d3ab97e667f`.
+The object SHA-256 was `9c67e682b2b470072a1fa1da863992552c5456d560aacddacfaba29ada5a7b67`.
 These digests identify source and object bytes, not a qualified executable.
-The temporary-import cross-link produced 97,792 bytes with SHA-256 `e00705341c5547ecd9119672bc177b1748ce4a6a873b9b1fcaec138fbe01045b`.
-`build/windows/x86_64/cross-build-third-fixes.json` records exact compile and link arguments.
+The temporary-import cross-link produced 99,328 bytes with SHA-256 `0faf8ddadf57dcccee909417e42683399ee0f51fd341d9739eca75a60685e64a`.
+`build/windows/x86_64/cross-build-fourth-fixes.json` records exact compile and link arguments.
 The first link attempt failed because its temporary import library lacked `NtSetInformationFile`.
 Adding that existing SDK export to the local import definition permitted the cross-link.
 This does not establish native SDK linking or execution.
@@ -117,11 +118,15 @@ The required `make test` run retained two macOS bootstrap timing failures among 
 One exact rerun exceeded its 20-second process deadline.
 A stalled-verifier case took 13.98 seconds against its 10-second assertion.
 `build/x64-third-required-make-test.log` retains the full result.
-The aggregate integration gate must resolve these failures; they are not counted as passes.
+A later required `make test` run passed 270 tests.
+`build/x64-fourth-required-make-test.log` retains that result separately.
+The earlier failures remain recorded; they are not converted into passes.
 
 `pe.s` checks a bounded AMD64 PE32+ console executable container.
 It checks header and section ranges, alignment, an executable file-backed entry, NX compatibility, and writable executable sections.
 Mapped section ranges must follow the aligned headers and remain ordered and disjoint.
+Raw file ranges must also be disjoint.
+A bounded pairwise check permits disjoint raw ranges in either file order.
 It does not establish program behavior or publisher identity.
 The publication adapter retains the existing target-specific Linux ELF checks for cross-target records.
 
@@ -132,7 +137,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, twenty focused checks passed on macOS.
+On 2026-11-05, twenty-six focused checks passed on macOS.
 The assembly fixtures execute through Rosetta with deterministic API shims.
 Other checks inspect produced COFF layouts, Clang behavior, and diagnostic failures.
 They do not establish Windows API behavior or native filesystem effects.
@@ -179,6 +184,13 @@ Native locking and updater confirmation remain required.
 Manifest cases preserve all seven canonical target identities and reject Windows stream, device, and path aliases.
 Publication metadata keeps its Linux table entry separate from the Windows host.
 Foreign Windows and Mach-O executable publication remains unsupported on this candidate.
+A raw-pointer overlap fixture reproduced acceptance before the new file-range check.
+The metadata parser rejected a valid Windows asset because its expected filename omitted `.exe`.
+The corrected parser accepts the exact Windows name and rejects modified names, sizes, and digests.
+Native path display removes only the internal drive marker; receipt storage remains unchanged.
+Image checks cover exact API input, missing APIs, warning statuses, and mismatch handling.
+The actual open routine checks the final held file before descriptor allocation and closes it after mismatch.
+Only image opens request additional execute access.
 
 The first PE test harness placed its wrapper in a data section and failed with SIGBUS.
 That harness defect was corrected before the PE rejection checks were evaluated.
@@ -206,10 +218,31 @@ HOME, GH_CONFIG_DIR, XDG_CACHE_HOME, XDG_CONFIG_HOME, USERPROFILE, and LOCALAPPD
 These values have host-shim coverage; real Windows verifier and cache behavior still need qualification.
 Manual self-update remains incomplete.
 
-The running-image preflight currently opens the path reported by `GetModuleFileNameW`.
-Its held file identity detects subsequent entry replacement.
-That path lookup does not independently identify the kernel image section's original file after an earlier displacement.
-This difference from Linux `/proc/self/exe` requires a reviewed Windows contract or a stronger mechanism.
+The running-image preflight opens the module path and retains its final file handle.
+It requests `FILE_EXECUTE | SYNCHRONIZE` for that image check.
+The runtime resolves `NtQueryInformationProcess` from the already loaded `ntdll.dll` module.
+`ProcessImageFileMapping` class 44 receives the held handle through an eight-byte input pointer.
+Only `STATUS_SUCCESS` qualifies that file as the process image.
+The same descriptor supplies later owner, file identity, and replacement checks.
+An observed mismatch reports that the running executable differs from the installed file.
+An unavailable or unsupported identity mechanism requires manual installation of the verified release.
+There is no path-equality fallback.
+
+Class 44 is an undocumented Windows interface and remains a target-specific assumption.
+Microsoft warns that this native API can change or become unavailable.
+The fourth native fixture observed original-file status zero before and after displacement.
+A byte-identical replacement with a different file identity returned `C0000001`.
+That fixture later failed during its preservation check; the full scenario was not qualified.
+The earlier CLI returned success after displacement, and that negative result remains retained.
+The new production check needs the corrected native scenario before qualification.
+
+The [fourth native run](https://github.com/stubbi/asm/actions/runs/42015009621) still rejected the positive source archive.
+Supplying raw tar bytes passes the prepared archive and source-manifest parsers in the ARM host checks.
+That isolation does not establish correct Windows gzip input or capture behavior.
+The next native diagnostic records raw child status, captured length, tar validation, and source-project validation.
+It also compares empty and minimal Windows environments with a fixed gzip executable.
+Binary probe output retains only byte counts and digests.
+Source archive success remains unproven until those native observations resolve the failure.
 
 NTFS POSIX rename replacement of the running CLI still needs a native test.
 If Windows refuses that operation, a separately reviewed completion helper is required.
@@ -224,7 +257,7 @@ It also records child-process setup stages, API results, and Windows error codes
 An error code is meaningful only when its API result indicates failure.
 The fixture runs the generated project and retains the actual exit status.
 It records ambient HOME ownership before setting the positive fixture owner.
-The diagnostic source cross-linked to 99,840 bytes with SHA-256 `74749491a0c70683f00787313140892604d60f99dde681a8f072b0045baec95a`.
+The diagnostic source cross-linked to 101,376 bytes with SHA-256 `7a6b016a156cb75f101011d8649e154dc842b5417ef0d8982d3dcdca4e40b304`.
 The equal-version updater check makes no network request.
 The release generator never includes the diagnostic assembly.
 
@@ -263,3 +296,7 @@ They document API behavior; they do not qualify this implementation.
 
 - [Clang configuration files](https://clang.llvm.org/docs/UsersManual.html#configuration-files)
 - [Clang linker arguments](https://clang.llvm.org/docs/ClangCommandLineReference.html#linker-options)
+
+- [Native process-query availability](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntqueryinformationprocess)
+- [Pinned process-class declaration](https://github.com/winsiderss/systeminformer/blob/0a4975a4763ad202747397ef5daf5893849b5b00/phnt/include/ntpsapi.h#L208)
+- [Pinned class 44 research notes](https://github.com/m417z/ntdoc/blob/43061ffc1205edd6b49a146b03ebd243f36f3565/descriptions/processinfoclass.md#processimagefilemapping-44)

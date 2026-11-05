@@ -75,6 +75,9 @@ class HostShims(unittest.TestCase):
         cls.build_manifest_paths()
         cls.build_targets()
         cls.build_clang_arguments()
+        cls.build_image_identity()
+        cls.build_release_metadata()
+        cls.build_display_path()
 
     @classmethod
     def tearDownClass(cls):
@@ -86,7 +89,7 @@ class HostShims(unittest.TestCase):
             assembly = assembly.replace('.global ' + symbol + '\n', '.global ' + cls.prefix + symbol + '\n')
             assembly = assembly.replace('\n' + symbol + ':\n', '\n' + cls.prefix + symbol + ':\n')
         if cls.prefix:
-            assembly = assembly.replace('.section .bss', '.data').replace('.section .rodata', '.data').replace('.section .data', '.data')
+            assembly = assembly.replace('.section .text', '.text').replace('.section .bss', '.data').replace('.section .rodata', '.data').replace('.section .data', '.data')
             assembly = assembly.replace('.section .rdata,"dr"', '.data')
         else:
             assembly += '\n.section .note.GNU-stack,"",@progbits\n'
@@ -463,6 +466,11 @@ win_error:
     ret
 .data
 self_proc_exe: .asciz "/proc/self/exe"
+.text
+win_image_matches:
+    xor eax, eax
+    ret
+.data
 test_relative_file: .asciz "asm.toml"
 test_extended: .long 0
 test_current_directory: .short 92,92,63,92,67,58,92,112,114,111,106,101,99,116,0
@@ -474,6 +482,49 @@ win_full_wide: .space 8192
 '''
         driver = '#include <stdio.h>\nextern long open_from_cwd(int);\nint main(){printf("%ld %ld %ld %ld\\n",open_from_cwd(0),open_from_cwd(1),open_from_cwd(2),open_from_cwd(3));}\n'
         cls.build('extended-cwd', assembly, driver, ['open_from_cwd'])
+        image = assembly.replace('test_relative_file: .asciz "asm.toml"',
+                                 'test_relative_file: .asciz "/proc/self/exe"')
+        start, end = image.index('win_nt_open:\n'), image.index('win_handle:\n')
+        image = image[:start] + 'win_nt_open:\n    mov eax, 8\n    ret\n' + image[end:]
+        anchor = 'GetModuleFileNameW:\nGetWindowsDirectoryW:\n'
+        assert image.count(anchor) == 1
+        image = image.replace(anchor, '''GetModuleFileNameW:
+    lea r11, [rip + test_module_name]
+    xor eax, eax
+.Lhost_image_copy:
+    mov cx, [r11 + rax*2]
+    mov [rdx + rax*2], cx
+    test cx, cx
+    jz .Lhost_image_return
+    inc eax
+    jmp .Lhost_image_copy
+.Lhost_image_return:
+    ret
+GetWindowsDirectoryW:
+''')
+        image = image.replace('win_descriptor:\n    mov eax, 3',
+                              'win_descriptor:\n    inc dword ptr [rip + test_image_counts + 4]\n    mov eax, 3')
+        image = image.replace('CloseHandle:\n    mov eax, 1',
+                              'CloseHandle:\n    inc dword ptr [rip + test_image_counts + 8]\n    mov eax, 1')
+        image = image.replace('win_image_matches:\n    xor eax, eax\n    ret', '''win_image_matches:
+    inc dword ptr [rip + test_image_counts]
+    cmp rdi, 8
+    jne .Lhost_image_bad_handle
+    cmp dword ptr [rip + test_extended], 0
+    jne .Lhost_image_stale
+    xor eax, eax
+    ret
+.Lhost_image_stale:
+    mov rax, -116
+    ret
+.Lhost_image_bad_handle:
+    mov rax, -13
+    ret
+''')
+        image += '\n.text\n.global image_counts\nimage_counts:\n    lea rax, [rip + test_image_counts]\n    ret\n.data\n.p2align 2\ntest_image_counts: .long 0,0,0\n.p2align 1\ntest_module_name: .short ' + ','.join(str(ord(c)) for c in 'C:\\project\\asm.exe') + ',0\n'
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long open_from_cwd(int);\nextern const unsigned* image_counts(void);\nint main(int n,char**a){long r=open_from_cwd(atoi(a[1]));const unsigned*c=image_counts();printf("%ld %u %u %u\\n",r,c[0],c[1],c[2]);}\n'
+        cls.build('image-open',image,driver,['open_from_cwd','image_counts'])
+
 
     @classmethod
     def build_verifier_environment(cls):
@@ -514,7 +565,7 @@ test_environment: .quad self_home_environment,self_config_environment,self_cache
     def build_manifest_paths(cls):
         assembly = cls.macros + block(cls.prepared,'win_shared_valid_source','cmd_build')
         assembly += '\n.text\n' + block(cls.platform_source,'win_component_safe','win_prepare_verifier_environment')
-        assembly += '\n.text\n' + cls.platform_source[cls.platform_source.index('win_valid_source:\n'):]
+        assembly += '\n.text\n' + block(cls.platform_source,'win_valid_source','win_image_matches')
         assembly += r"""
 .text
 .global source_case
@@ -574,6 +625,149 @@ win_path_wide: .space 8192
         for target in ['made-up','x86_64-pc-windows-msvc']:
             self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'0')
 
+
+    @classmethod
+    def build_release_metadata(cls):
+        assembly = '.intel_syntax noprefix\n' + prep.prepare(ROOT / 'cli/self_update_metadata.s')
+        assembly = assembly.replace('.global self_parse_release, self_source_commit','')
+        assembly += '\n.global self_parse_release\n'
+        driver = r"""
+#include <stdio.h>
+#include <stdlib.h>
+extern int self_parse_release(const char*,unsigned long,const char**);
+int main(int n,char**a){FILE*f=fopen(a[1],"rb");if(!f)return 2;char*b=malloc(1048576);size_t z=fread(b,1,1048576,f);fclose(f);
+const char*row[]={"stubbi/asm","0.6.1","x86_64-windows","executable","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","https://github.com/stubbi/asm/releases/download/v0.6.1/asm-0.6.1-x86_64-windows.exe","1234","fixture"};
+printf("%d\n",self_parse_release(b,z,row));free(b);}
+"""
+        cls.build('release-metadata',assembly,driver,['self_parse_release'])
+
+    @classmethod
+    def build_image_identity(cls):
+        assembly = cls.macros + block(cls.platform_source,'win_image_matches','win_display_path')
+        assembly += r"""
+.text
+.global image_identity
+image_identity:
+    WFRAME
+    mov [rip + test_query_status], edi
+    mov [rip + test_resolution], esi
+    mov edi, 77
+    call win_image_matches
+    WLEAVE
+GetModuleHandleW:
+    cmp dword ptr [rip + test_resolution], 1
+    je .Lmodule_missing
+    mov eax, 9
+    ret
+.Lmodule_missing:
+    xor eax, eax
+    ret
+GetProcAddress:
+    cmp dword ptr [rip + test_resolution], 2
+    je .Lmodule_missing
+    lea rax, [rip + test_image_query]
+    ret
+test_image_query:
+    cmp rcx, -1
+    jne .Lquery_bad
+    cmp edx, 44
+    jne .Lquery_bad
+    cmp r9d, 8
+    jne .Lquery_bad
+    cmp qword ptr [r8], 77
+    jne .Lquery_bad
+    cmp qword ptr [rsp + 40], 0
+    jne .Lquery_bad
+    mov eax, [rip + test_query_status]
+    ret
+.Lquery_bad:
+    mov eax, 0xc000000d
+    ret
+.data
+test_query_status: .long 0
+test_resolution: .long 0
+"""
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long image_identity(long,int);\nint main(int n,char**a){printf("%ld\\n",image_identity(strtoul(a[1],0,0),atoi(a[2])));}\n'
+        cls.build('image-identity',assembly,driver,['image_identity'])
+        assembly = cls.macros + block(cls.platform_source,'win_nt_open','win_drive_path')
+        assembly += r"""
+.text
+.global image_access
+image_access:
+    WFRAME
+    xor r10d, r10d
+    test edi, edi
+    jz 1f
+    mov r10d, 0x40000000
+1:  xor edi, edi
+    lea rsi, [rip + test_image_name]
+    mov edx, 2
+    xor r8d, r8d
+    call win_nt_open
+    mov eax, [rip + test_access]
+    WLEAVE
+NtCreateFile:
+    mov [rip + test_access], edx
+    mov qword ptr [rcx], 77
+    xor eax, eax
+    ret
+GetFileInformationByHandleEx:
+    mov qword ptr [r8], 0
+    mov eax, 1
+    ret
+CloseHandle:
+    ret
+win_nt_error:
+    mov rax, -13
+    ret
+.data
+test_access: .long 0
+test_image_name: .short 'a',0
+win_private_sd: .space 64
+"""
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long image_access(int);\nint main(int n,char**a){printf("%ld\\n",image_access(atoi(a[1])));}\n'
+        cls.build('image-access',assembly,driver,['image_access'])
+
+
+    @classmethod
+    def build_display_path(cls):
+        assembly = cls.macros + block(cls.platform_source,'win_display_path','win_json_path')
+        assembly += '\n.global display_path\ndisplay_path:\n    jmp win_display_path\n'
+        driver = '#include <stdio.h>\nextern const char* display_path(const char*);\nint main(int n,char**a){puts(display_path(a[1]));}\n'
+        cls.build('display-path',assembly,driver,['display_path'])
+
+    def test_release_metadata_binds_the_exact_windows_executable_name(self):
+        manifest = {'schema':1,'project':'asm','version':'0.6.1','tag':'v0.6.1',
+                    'repository':'https://github.com/stubbi/asm','source_commit':'a'*40,
+                    'assets':[{'file':'asm-0.6.1-x86_64-windows.exe','bytes':1234,'sha256':'a'*64}]}
+        path = self.directory / 'release.json'
+        path.write_text(json.dumps(manifest))
+        self.assertEqual(self.run_fixture('release-metadata',str(path)).stdout.strip(),'0')
+        for change in [{'file':'asm-0.6.1-x86_64-windows'}, {'bytes':1235}, {'sha256':'b'*64}]:
+            original = dict(manifest['assets'][0]);manifest['assets'][0].update(change)
+            path.write_text(json.dumps(manifest))
+            self.assertEqual(self.run_fixture('release-metadata',str(path)).stdout.strip(),'1')
+            manifest['assets'][0] = original
+
+    def test_execute_access_is_requested_only_for_the_image_open(self):
+        ordinary = int(self.run_fixture('image-access','0').stdout.strip())
+        image = int(self.run_fixture('image-access','1').stdout.strip())
+        self.assertEqual(ordinary & 32,0)
+        self.assertEqual(image,ordinary | 32)
+
+    def test_image_open_checks_the_held_file_before_descriptor_allocation(self):
+        self.assertEqual(self.run_fixture('image-open','0').stdout.strip(),'3 1 1 2')
+        self.assertEqual(self.run_fixture('image-open','1').stdout.strip(),'-116 1 0 3')
+
+    def test_image_identity_accepts_only_exact_success_and_available_api(self):
+        for status,resolution,expected in [(0,0,0),(0xc0000001,0,-116),(0x103,0,-95),(0x80000002,0,-95),(0,1,-95),(0,2,-95)]:
+            r = self.run_fixture('image-identity',str(status),str(resolution))
+            self.assertEqual(r.returncode,0,r.stderr)
+            self.assertEqual(r.stdout.strip(),str(expected))
+
+    def test_windows_output_paths_use_native_drive_syntax(self):
+        for value,expected in [('/C:/Users/test/app.exe','C:/Users/test/app.exe'),('C:/app.exe','C:/app.exe'),('relative.exe','relative.exe'),('/tmp/item','/tmp/item')]:
+            self.assertEqual(self.run_fixture('display-path',value).stdout.strip(),expected)
 
     @classmethod
     def build_clang_arguments(cls):
@@ -872,7 +1066,7 @@ test_stat: .space 144
                 name = name.rstrip(b'\0')
             symbols[name.decode(errors='replace')] = struct.unpack_from('<I',data,location+8)[0]
         wide = ['win_nt_root','win_lock_name','win_installer_name','win_home_name',
-                'win_profile_name','win_null_wide','win_sha256_name','win_object_length']
+                'win_profile_name','win_null_wide','win_sha256_name','win_object_length','win_ntdll_name']
         for name in wide:
             with self.subTest(symbol=name):
                 self.assertEqual(symbols[name] % 2,0)
@@ -898,7 +1092,8 @@ test_stat: .space 144
     def test_valid_pe_is_accepted(self):
         cases = [((1,0x1000,512,512),(1,0x2000,512,1024)),
                  ((4096,0x1000,512,512),(1,0x2000,512,1024)),
-                 ((1,0x1000,4096,512),(1,0x2000,512,4608))]
+                 ((1,0x1000,4096,512),(1,0x2000,512,4608)),
+                 ((1,0x1000,512,1024),(1,0x2000,512,512))]
         for i, sections in enumerate(cases):
             with self.subTest(case=i):
                 path = self.directory / ('valid-' + str(i) + '.exe')
@@ -911,6 +1106,7 @@ test_stat: .space 144
             'header': ((1,0x1000,512,512),(1,0,512,1024)),
             'first_header': ((1,0,512,512),(1,0x2000,512,1024)),
             'raw_extent': ((1,0x1000,8192,512),(1,0x2000,512,8704)),
+            'raw_pointer_overlap': ((1,0x1000,512,512),(1,0x2000,512,512)),
             'virtual_extent': ((4097,0x1000,512,512),(1,0x2000,512,1024)),
             'overflow': ((1,0x1000,512,512),(0xffffffff,0xfffff000,512,1024)),
         }
@@ -979,6 +1175,17 @@ class DiagnosticEvidence(unittest.TestCase):
         self.assertEqual(len(saved['commands'][0]['stdout']),65536)
         self.assertEqual(saved['commands'][0]['stderr'],'partial error')
         self.assertTrue(saved['commands'][0]['output_truncated'])
+
+    def test_binary_probe_retains_digest_and_size_without_file_contents(self):
+        report = {'commands': []}
+        data = b'owned binary fixture\0'
+        result = subprocess.CompletedProcess(['fixture'],0,data,b'')
+        with mock.patch.object(self.module.subprocess,'run',return_value=result):
+            self.module.run_recorded(report,['fixture'],binary=True,input=b'input')
+        row = report['commands'][0]
+        self.assertEqual(row['stdout'],'')
+        self.assertEqual(row['stdout_bytes'],len(data))
+        self.assertEqual(row['stdout_sha256'],self.module.hashlib.sha256(data).hexdigest())
 
     def test_os_error_and_later_exception_preserve_collected_rows(self):
         report = {'commands': []}

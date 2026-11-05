@@ -372,7 +372,10 @@ win_nt_open:
 8:  test r14d, 0x20000000
     jz 9f
     or edx, 0x40002
-9:  lea r8, [rbp - 192]
+9:  test r14d, 0x40000000 /* internal image-only FILE_EXECUTE access */
+    jz 10f
+    or edx, 0x20
+10: lea r8, [rbp - 192]
     lea r9, [rbp - 224]
     mov qword ptr [rsp + 32], 0
     mov qword ptr [rsp + 40], 128
@@ -474,6 +477,7 @@ win_open:
     jz .Lwo_invalid
     cmp eax, 4096
     jae .Lwo_invalid
+    or r13d, 0x40000000 /* held running-image binding; final component only */
     jmp .Lwo_absolute_wide
 1:  mov rdi, [rbp - 56]
     cmp byte ptr [rdi], '/'
@@ -659,6 +663,18 @@ win_open:
     lea r15, [rbx + 2]
     jmp .Lwo_component
 .Lwo_finish:
+    test r13d, 0x40000000
+    jz .Lwo_descriptor
+    mov rdi, r12
+    call win_image_matches
+    test rax, rax
+    jns .Lwo_descriptor
+    mov rbx, rax
+    mov rcx, r12
+    call CloseHandle
+    mov rax, rbx
+    jmp .Lwo_return
+.Lwo_descriptor:
     mov rdi, r12
     call win_descriptor
     jmp .Lwo_return
@@ -3236,3 +3252,91 @@ win_valid_source:
 .Lwvs_good:
     mov eax, 1
     WLEAVE
+
+.text
+/* RDI=held image file HANDLE opened with FILE_EXECUTE|SYNCHRONIZE.
+ * RAX=0 exact image, -ESTALE mismatch, -EOPNOTSUPP unsupported. WFRAME preserves inputs.
+ * Runtime-resolved internal Windows class 44 accepts an INPUT HANDLE pointer
+ * of 8 bytes, not an output filename. Only STATUS_SUCCESS(0) qualifies.
+ * Missing/unsupported APIs, warning statuses and mismatches fail closed.
+ * Qualified assumption: native Windows Server 2025 observed original 0 and
+ * byte-identical replacement C0000001. This is not a portable Win32 promise.
+ */
+win_image_matches:
+    WFRAME
+    mov r12, rdi
+    lea rcx, [rip + win_ntdll_name]
+    call GetModuleHandleW
+    test rax, rax
+    jz .Lwim_unsupported
+    mov rcx, rax
+    lea rdx, [rip + win_image_query_name]
+    call GetProcAddress
+    test rax, rax
+    jz .Lwim_unsupported
+    mov r11, rax
+    mov [rbp - 128], r12
+    mov rcx, -1
+    mov edx, 44 /* ProcessImageFileMapping */
+    lea r8, [rbp - 128]
+    mov r9d, 8
+    mov qword ptr [rsp + 32], 0
+    call r11
+    test eax, eax
+    jz .Lwim_match
+    cmp eax, 0xc0000001 /* observed image-file mismatch */
+    jne .Lwim_unsupported
+    mov rax, -116 /* internal ESTALE identity marker */
+    WLEAVE
+.Lwim_match:
+    xor eax, eax
+    WLEAVE
+.Lwim_unsupported:
+    mov rax, -95
+    WLEAVE
+.section .rdata,"dr"
+.p2align 1
+win_ntdll_name: .short 'n','t','d','l','l','.','d','l','l',0
+win_image_query_name: .asciz "NtQueryInformationProcess"
+.text
+/* RDI=terminated path. RAX=borrowed native display pointer. Strip only the
+ * internal /C:/ drive marker, leaving all other bytes and receipt storage
+ * untouched. No calls, writes or stack. Scratch:RAX/RCX. */
+win_display_path:
+    mov rax, rdi
+    cmp byte ptr [rdi], '/'
+    jne .Lwdisplay_done
+    movzx ecx, byte ptr [rdi + 1]
+    or ecx, 32
+    cmp ecx, 'a'
+    jb .Lwdisplay_done
+    cmp ecx, 'z'
+    ja .Lwdisplay_done
+    cmp byte ptr [rdi + 2], ':'
+    jne .Lwdisplay_done
+    cmp byte ptr [rdi + 3], '/'
+    jne .Lwdisplay_done
+    inc rax
+.Lwdisplay_done:
+    ret
+win_json_path:
+    call win_display_path
+    mov rdi, rax
+    jmp registry_json_string
+win_out_path:
+    call win_display_path
+    mov rdi, rax
+    jmp out
+
+.text
+win_self_image_changed:
+    lea rdi, [rip + win_error_image_changed]
+    mov esi, 1
+    jmp self_fail
+win_self_identity_unsupported:
+    lea rdi, [rip + win_error_identity_unsupported]
+    mov esi, 1
+    jmp self_fail
+.section .rdata,"dr"
+win_error_image_changed: .asciz "the running executable differs from the installed file; no replacement was made; start the installed command again"
+win_error_identity_unsupported: .asciz "this Windows host cannot verify the running image identity; no replacement was made; install the verified release manually"

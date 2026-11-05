@@ -10,7 +10,8 @@
  * entry; zero for every failure. Requires PE32+, NX_COMPAT, executable image,
  * 1..96 sections, file/section alignment, bounded raw/virtual section ranges,
  * no writable executable section, and an entry in file-backed executable data.
- * Each raw section must fit the artifact and follow SizeOfHeaders. Mapped
+ * Each raw section must fit the artifact, follow SizeOfHeaders, and be
+ * disjoint from other raw ranges. Raw range order is unrestricted. Mapped
  * sections follow the aligned header range and previous aligned mapped end.
  * Mapped extents cover max(VirtualSize,SizeOfRawData), including zero padding.
  * All sums use 64 bits before the 32-bit SizeOfImage bound is applied.
@@ -187,6 +188,27 @@ validate_host_elf:
     add rax, rdx
     cmp rax, rbx
     ja .Lpe_fail
+    /* Compare this file range with every preceding nonempty raw range.
+     * At most96 sections means at most4560 comparisons. Raw file order may
+     * differ from virtual order; only actual intersections are rejected. */
+    mov r8, rax /* current exclusive raw end */
+    mov r9d, [r13 + 20] /* current raw start */
+    lea rcx, [rip + pe_sections]
+.Lpe_raw_prior:
+    cmp rcx, r13
+    jae .Lpe_section_flags
+    mov edx, [rcx + 16]
+    test edx, edx
+    jz .Lpe_raw_next
+    mov eax, [rcx + 20]
+    add rdx, rax /* prior exclusive raw end, overflow-safe64bits */
+    cmp r9, rdx
+    jae .Lpe_raw_next
+    cmp rax, r8
+    jb .Lpe_fail
+.Lpe_raw_next:
+    add rcx, 40
+    jmp .Lpe_raw_prior
 .Lpe_section_flags:
     mov eax, [r13 + 36]
     and eax, 0xa0000000

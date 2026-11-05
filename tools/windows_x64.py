@@ -68,6 +68,10 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     jmp die
 ''')
     if source.name == 'registry.s':
+        for output in ['registry_json_string', 'out']:
+            anchor = '    mov rdi, [rip + registry_output]\n    call ' + output + '\n'
+            assert text.count(anchor) == 1
+            text = text.replace(anchor, anchor.replace('call ' + output, 'call win_json_path' if output == 'registry_json_string' else 'call win_out_path'))
         text = replace_routine(text, 'registry_download', 'registry_read_index', '''registry_download:
     jmp win_download
 ''')
@@ -105,6 +109,10 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
 ''')
         text += '\n.section .rodata\nwin_registry_linux: .asciz "x86_64-linux"\n'
     if source.name == 'programs.s':
+        for output in ['registry_json_string', 'out']:
+            anchor = '    mov rdi, qword ptr [rbx + 40]\n    call ' + output + '\n'
+            assert text.count(anchor) == 1
+            text = text.replace(anchor, anchor.replace('call ' + output, 'call win_json_path' if output == 'registry_json_string' else 'call win_out_path'))
         text = replace_routine(text, 'program_absolute_path', 'program_open_state', '''program_absolute_path:
     jmp win_program_absolute_path
 ''')
@@ -139,7 +147,14 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     cmp byte ptr [rdi + 7], 0
     jne .Lp_cli_destination_safe
 ''')
+    if source.name == 'self_update_metadata.s':
+        anchor = 'smp_host_suffix: .asciz "-x86_64-linux"'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, 'smp_host_suffix: .asciz "-x86_64-windows.exe"')
     if source.name == 'self_update.s':
+        anchor = '    mov eax, 2\n    lea rdi, [rip + self_proc_exe]\n    mov esi, O_CLOEXEC + O_NONBLOCK\n    xor edx, edx\n    syscall\n    test rax, rax\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor + '    cmp rax, -116\n    je win_self_image_changed\n    cmp rax, -95\n    je win_self_identity_unsupported\n    test rax, rax\n')
         text = text.replace('self_install_suffix: .asciz "/.local/bin/asm"',
                             'self_install_suffix: .asciz "/.local/bin/asm.exe"')
         text = text.replace('self_binary_name: .asciz "asm"', 'self_binary_name: .asciz "asm.exe"')
