@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import operator_source
 
 REVISION = "1" * 40
-POLICY = ROOT / "containers/operator-publication.jq"
+CHECK = ROOT / "tools/operator_publication.py"
 WORKFLOW = ROOT / ".github/workflows/operator-images.yml"
 MAC_CASE = "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation"
 
@@ -29,7 +29,7 @@ def evidence():
         "architecture": "amd64", "execution": "native", "source_revision": REVISION,
         "runtime_image_id": "sha256:" + "2" * 64, "qualification_image_id": "sha256:" + "3" * 64,
         "tests_run": 100, "applicable_tests_run": 99, "applicable_tests_skipped": 0,
-        "not_applicable": [{"id": MAC_CASE, "reason": "macOS extended ACL interface"}],
+        "not_applicable": [{"id": MAC_CASE, "reason": "macOS extended ACL interface"}], "seconds": 0.125,
         "database_fixture_version": "16.15", "loaded_libraries": {"libpq": "16.15", "OpenSSL": "Synthetic OpenSSL fixture"},
         "security": {"uid": 65532, "gid": 65532, "projected_reader_gid": 65532, "read_only_root": True,
                      "effective_capabilities": 0, "no_new_privileges": True, "cluster_token": False},
@@ -66,23 +66,86 @@ MISSING = object()
 
 
 class PublicationGateTests(unittest.TestCase):
-    def gate(self, report, image, *, extra_document=False):
+    def gate(self, report, image, *, extra_document=False, raw_report=None, raw_image=None):
         with tempfile.TemporaryDirectory(prefix="asm-publication-gate-") as name:
             base = Path(name)
-            (base / "image.json").write_text(json.dumps(image))
-            body = json.dumps(report) + ("\n" + json.dumps(report) if extra_document else "")
-            (base / "qualification.json").write_text(body)
-            return subprocess.run(["jq", "--slurp", "--exit-status", "--arg", "revision", REVISION,
-                "--slurpfile", "image", str(base / "image.json"), "--from-file", str(POLICY),
-                str(base / "qualification.json")], capture_output=True, timeout=5)
+            image_body = raw_image if raw_image is not None else json.dumps(image).encode()
+            (base / "image.json").write_bytes(image_body)
+            body = raw_report if raw_report is not None else (json.dumps(report) + ("\n" + json.dumps(report) if extra_document else "")).encode()
+            (base / "qualification.json").write_bytes(body)
+            result = subprocess.run([sys.executable, "-I", str(CHECK), "--revision", REVISION,
+                "--qualification", str(base / "qualification.json"), "--image", str(base / "image.json")],
+                capture_output=True, timeout=10)
+            self.assertEqual((base / "qualification.json").read_bytes(), body)
+            self.assertEqual((base / "image.json").read_bytes(), image_body)
+            return result
+
+    def test_loaded_metadata_is_checked_even_when_fabricated_evidence_has_its_image_id(self):
+        report, approved = evidence()
+        actual = copy.deepcopy(approved)
+        actual["Config"].update(User="0:0", Entrypoint=["/bin/sh"])
+        self.assertEqual(self.gate(report, approved).returncode, 0)
+        self.assertEqual(actual["Id"], report["runtime_image_id"])
+        self.assertNotEqual(self.gate(report, actual).returncode, 0)
+        publisher = WORKFLOW.read_text().split("  publish:", 1)[1]
+        loaded = publisher.index("docker load --input runtime.tar")
+        self.assertIn("--image loaded-image.json", publisher[loaded:])
+        inspected = publisher.index(
+            "docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > loaded-image.json", loaded)
+        checked = publisher.index("--image loaded-image.json", inspected)
+        self.assertLess(checked, publisher.index("docker tag "))
+        self.assertLess(checked, publisher.index("docker login "))
+        self.assertNotIn("docker run ", publisher)
+
+    def test_conflicting_duplicate_fields_in_both_raw_inputs_are_refused(self):
+        report, image = evidence()
+        body = json.dumps(report).encode()
+        for original, replacement in ((b'"status": "pass"', b'"status": "fail", "status": "pass"'),
+                (b'"schema": 1', b'"schema": 999, "schema": 1'),
+                (b'"read_only_root": true', b'"read_only_root": false, "read_only_root": true')):
+            with self.subTest(field=original):
+                self.assertNotEqual(self.gate(report, image, raw_report=body.replace(original, replacement, 1)).returncode, 0)
+        image_body = json.dumps(image).encode().replace(b'"User": "65532:65532"', b'"User": "0:0", "User": "65532:65532"')
+        self.assertNotEqual(self.gate(report, image, raw_image=image_body).returncode, 0)
+
+    def test_nonfinite_lossy_and_noninteger_representations_are_refused(self):
+        report, image = evidence()
+        body = json.dumps(report).encode()
+        for token in (b'NaN', b'Infinity', b'-Infinity', b'1e999'):
+            with self.subTest(token=token):
+                raw = body.replace(b'"seconds": 0.125', b'"seconds": ' + token)
+                self.assertNotEqual(self.gate(report, image, raw_report=raw).returncode, 0)
+                raw_image = json.dumps(image).encode()[:-1] + b', "Size": ' + token + b'}'
+                self.assertNotEqual(self.gate(report, image, raw_image=raw_image).returncode, 0)
+        for original, replacement in ((b'"tests_run": 100', b'"tests_run": 100.0'),
+                (b'"uid": 65532', b'"uid": 65532e0'),
+                (b'"schema": 1', b'"schema": 1.0')):
+            with self.subTest(field=original):
+                self.assertNotEqual(self.gate(report, image, raw_report=body.replace(original, replacement, 1)).returncode, 0)
+        raw_image = json.dumps(image).encode()[:-1] + b', "Size": 9007199254740993}'
+        self.assertNotEqual(self.gate(report, image, raw_image=raw_image).returncode, 0)
+
+    def test_bounded_single_utf8_documents_preserve_the_raw_evidence(self):
+        report, image = evidence()
+        body = json.dumps(report).encode()
+        invalid = (body[:-1] + b', "unused": "' + b'x' * 1048576 + b'"}',
+                   body.decode().encode("utf-16"), b'\xef\xbb\xbf' + body,
+                   body[:-1] + b', "unused": "\\ud800"}',
+                   body[:-1] + b', "unused": ' + b'[' * 65 + b'0' + b']' * 65 + b'}')
+        for raw in invalid:
+            with self.subTest(size=len(raw), prefix=raw[:3]):
+                self.assertNotEqual(self.gate(report, image, raw_report=raw).returncode, 0)
+        for raw in (json.dumps(image).encode() + b'\n{}', json.dumps(image).encode("utf-16")):
+            self.assertNotEqual(self.gate(report, image, raw_image=raw).returncode, 0)
 
     def test_valid_evidence_and_workflow_use_one_gate_before_loading(self):
         report, image = evidence()
         result = self.gate(report, image)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         text = WORKFLOW.read_text()
-        self.assertIn("--slurpfile image image.json", text)
-        self.assertLess(text.index("--from-file containers/operator-publication.jq"), text.index("docker load --input runtime.tar"))
+        self.assertEqual(text.count("python3 -I tools/operator_publication.py --revision"), 3)
+        self.assertLess(text.index("--image image.json"), text.index("docker load --input runtime.tar"))
+        self.assertEqual(result.stdout, b"")
 
     def test_malformed_schema_counts_exclusions_and_isolation_are_refused(self):
         report, image = evidence()

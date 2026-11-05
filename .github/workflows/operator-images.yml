@@ -76,8 +76,8 @@ jobs:
           set -euo pipefail
           ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
           docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > "$ASM_EVIDENCE/image.json"
-          jq --slurp --exit-status --arg revision "$GITHUB_SHA" \
-            --slurpfile image "$ASM_EVIDENCE/image.json" --from-file containers/operator-publication.jq "$ASM_EVIDENCE/qualification.json"
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification "$ASM_EVIDENCE/qualification.json" --image "$ASM_EVIDENCE/image.json"
           docker save --output "$ASM_EVIDENCE/runtime.tar" asm-operator:runtime-amd64
           (cd "$ASM_EVIDENCE" && sha256sum runtime.tar > runtime.sha256)
       - name: Retain successful and failed evidence
@@ -112,12 +112,12 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum --check runtime.sha256
-          jq --slurp --exit-status --arg revision "$GITHUB_SHA" \
-            --slurpfile image image.json --from-file containers/operator-publication.jq qualification.json
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image image.json
           docker load --input runtime.tar
-          test "$(docker image inspect asm-operator:runtime-amd64 --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
-          test "$(docker image inspect asm-operator:runtime-amd64 --format '{{.Architecture}}')" = amd64
-          test "$(docker image inspect asm-operator:runtime-amd64 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > loaded-image.json
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image loaded-image.json
           ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-amd64"
           docker tag asm-operator:runtime-amd64 "ghcr.io/stubbi/asm-operator:$ASM_TAG"
       - name: Publish that qualified image and record its immutable registry digest
@@ -141,10 +141,13 @@ jobs:
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
         with:
           name: operator-image-digest-amd64-${{ github.sha }}
           path: |
             registry-digest.txt
             qualification.json
+            image.json
+            loaded-image.json
           if-no-files-found: error
           retention-days: 30

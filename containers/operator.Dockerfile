@@ -70,7 +70,7 @@ COPY --from=build /opt/asm/postgres /opt/asm/postgres
 COPY --from=build /usr/bin/openssl /usr/bin/openssl
 COPY --from=build /usr/share/doc/openssl/copyright /usr/share/licenses/asm-operator/qualification-openssl/COPYRIGHT
 COPY --from=build /build/projected /qualification/projected
-COPY tools/test_operator_image.py tools/operator_source.py /qualification/tools/
+COPY tools/test_operator_image.py tools/operator_source.py tools/operator_publication.py /qualification/tools/
 COPY server/test_runtime.py /qualification/server/test_runtime.py
 COPY experiments/assembly-server/local_postgres.py experiments/assembly-server/guard.sql /qualification/experiments/assembly-server/
 COPY experiments/assembly-server/fixtures/0001_registry.sql /qualification/experiments/assembly-server/fixtures/0001_registry.sql

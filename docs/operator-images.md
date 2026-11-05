@@ -170,12 +170,23 @@ Only a main push can load this run's exact qualified artifact and publish it.
 One typed contract checks the report and inspected image before loading the artifact.
 That contract comes from the trusted exact-main checkout.
 It requires Linux AMD64, source and plan bindings, resolved dependencies, integer test counts, and exact isolation settings.
-Publication also checks the loaded image ID against that report.
-It records the immutable registry digest and source provenance.
+After loading, publication inspects the loaded image and applies that same contract before tagging or registry login.
+The publisher does not execute image code.
+Both inspections remain in the evidence, including failed publication checks.
+
+The trusted release helper uses `registry.strict_json` before jq parses either input.
+Each input must be one protected UTF-8 document within one MiB and 64 nesting levels.
+It rejects duplicate decoded keys, nonfinite numbers, unpaired surrogates, and integers outside jq's exact range.
+Only the report's `seconds` field permits a finite fractional value.
+The helper supplies private canonical copies to the policy.
+It preserves original evidence bytes; canonical copies do not replace raw-byte hashes.
+Publication records the immutable registry digest and source provenance.
 It does not rebuild the image with publication credentials.
 
 Source review failures are retained as regressions: sticky ancestors, interrupted publication, cleanup faults, mutable bundle replacement, and hidden unrelated objects.
 Packaging review failures also retain regressions for executable temporary fixtures and malformed publication evidence.
+Candidate `751b3f2` failed packaging review for missing loaded-image validation and duplicate JSON fields.
+Regressions retain those cases and number-representation failures.
 Local source tests do not substitute for the pending native image gate.
 
 Git object-enumeration references checked on 5 November 2026:

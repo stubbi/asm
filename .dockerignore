@@ -13,6 +13,7 @@
 !tools/test_server_image.py
 !tools/operator_source.py
 !tools/operator_entrypoint.py
+!tools/operator_publication.py
 !tools/prepare_operator.py
 !tools/test_operator_image.py
 !.operator-source/

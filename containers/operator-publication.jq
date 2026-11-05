@@ -20,8 +20,8 @@ length == 1 and ($image | length == 1) and
   ($report.scope == "explicit-registry-operator") and
   ($report.os == "linux") and ($report.architecture == "amd64") and
   ($report.execution == "native") and ($report.source_revision == $revision) and
-  ($report.tests_run | integer) and ($report.tests_run >= 52) and
-  ($report.applicable_tests_run | integer) and ($report.applicable_tests_run >= 51) and
+  ($report.tests_run | integer) and ($report.tests_run >= 56) and
+  ($report.applicable_tests_run | integer) and ($report.applicable_tests_run >= 55) and
   ($report.applicable_tests_skipped == 0) and
   ($report.not_applicable | type == "array") and
   ($report.not_applicable | length <= 1) and

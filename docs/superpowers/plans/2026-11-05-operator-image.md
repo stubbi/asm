@@ -27,6 +27,8 @@ The governing principles are dependable reuse, human control, and evidence with 
   Only a main push can publish the exact qualified artifact and provenance.
 - `containers/operator-publication.jq` checks typed evidence and inspected image bindings before artifact loading.
   The trusted exact-main checkout supplies that policy; its regressions also run in the derived image.
+- `tools/operator_publication.py` strictly parses bounded inputs with the existing registry parser before invoking that policy.
+  Qualification, pre-load checks, and fresh post-load inspection share the policy without executing image code in the publisher.
 - `tests/operator_image/` retains source, preparation, and image-contract regressions.
 - `docs/operator-images.md` states commands, evidence, assumptions, and remaining limits.
 
