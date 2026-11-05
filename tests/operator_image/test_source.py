@@ -10,9 +10,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/operator_source.py"
+sys.path.insert(0, str(ROOT / "tools"))
+import operator_source
 FILES = ("LICENSE", "LICENSING.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
          "tools/prepare_operator.py", "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
          "server/catalog/read-exports.sql")
@@ -109,6 +112,37 @@ class SourceBundleTests(unittest.TestCase):
         marker.write_bytes(b"preserve")
         self.assertNotEqual(self.restore(destination).returncode, 0)
         self.assertEqual(marker.read_bytes(), b"preserve")
+
+    def test_replacing_the_verified_input_path_cannot_change_consumed_bytes_or_objects(self):
+        self.assertEqual(self.create().returncode, 0)
+        manifest = json.loads((self.output / "source.json").read_bytes())
+        orphan = self.git("commit-tree", self.git("rev-parse", "HEAD^{tree}").decode().strip(),
+                          "-m", "Unrelated replacement object").decode().strip()
+        self.git("update-ref", "refs/heads/unrelated", orphan)
+        replacement = self.git("bundle", "create", "--version=2", "-", "--all")
+        bundle = self.output / "source.bundle"
+        original_git = operator_source.git
+        swapped = False
+        consumed = []
+        def swapping(repository, *arguments, **kwargs):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                other = self.output / "replacement"
+                other.write_bytes(replacement)
+                other.chmod(0o600)
+                other.replace(bundle)
+            if arguments[:2] == ("bundle", "verify"):
+                consumed.append(hashlib.sha256(Path(arguments[2]).read_bytes()).hexdigest())
+            return original_git(repository, *arguments, **kwargs)
+        destination = self.base / "accepted.git"
+        with patch.object(operator_source, "git", side_effect=swapping):
+            operator_source.restore(bundle, self.output / "source.json", self.commit, destination)
+        with self.subTest(outcome="consumed verified bytes"):
+            self.assertEqual(consumed, [manifest["bundle_sha256"]])
+        found = subprocess.run(["git", "-C", str(destination), "cat-file", "-e", orphan], capture_output=True, timeout=10)
+        with self.subTest(outcome="unrelated object excluded"):
+            self.assertNotEqual(found.returncode, 0)
 
 
 if __name__ == "__main__":

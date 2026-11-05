@@ -196,6 +196,32 @@ def write_private(directory_fd, name, body):
         os.close(fd)
 
 
+def discard_owned_staging(parent_fd, staging_name, private_fd):
+    """Remove only a still-owned staging name; publication or uncertain identity preserves all files."""
+    if private_fd is None:
+        return
+    try:
+        current = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        owned = os.fstat(private_fd)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (owned.st_dev, owned.st_ino):
+            return
+    except OSError:
+        return
+    for name in (*TLS_FILES.values(), ".check.url", "database.url"):
+        try:
+            os.unlink(name, dir_fd=private_fd)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return
+    try:
+        current = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+            os.rmdir(staging_name, dir_fd=parent_fd)
+    except OSError:
+        pass
+
+
 def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, resolve_dns=False):
     require(all(path.is_absolute() for path in (config_directory, tls_directory, destination)),
             "Use absolute projected and private volume paths.")
@@ -207,11 +233,11 @@ def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, re
     parent = open_protected_directory(destination.parent)
     private = None
     staging_name = ".asm-operator-" + secrets.token_hex(12)
-    created = False
     try:
         os.mkdir(staging_name, 0o700, dir_fd=parent)
-        created = True
         private = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        require(os.fstat(private).st_uid == os.geteuid(), "Use an owned private staging directory.")
+        os.fchmod(private, 0o700)  # Clear inherited setgid without granting group or other access.
         require(os.fstat(private).st_uid == os.geteuid() and stat.S_IMODE(os.fstat(private).st_mode) == 0o700,
                 "Use an owner-only private snapshot directory.")
         for name, content in files.items():
@@ -238,17 +264,9 @@ def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, re
         # Last state-changing operation: no partial snapshot is visible at the final name.
         publish_snapshot(parent, staging_name, destination.name)
     except BaseException:
-        if private is not None:
-            for name in (*TLS_FILES.values(), ".check.url", "database.url"):
-                try:
-                    os.unlink(name, dir_fd=private)
-                except FileNotFoundError:
-                    pass
-            current = os.stat(staging_name, dir_fd=parent, follow_symlinks=False)
-            if current.st_ino == os.fstat(private).st_ino and current.st_dev == os.fstat(private).st_dev:
-                os.rmdir(staging_name, dir_fd=parent)
-        elif created:
-            os.rmdir(staging_name, dir_fd=parent)
+        # A post-publication signal leaves the descriptor attached to the final directory.
+        # Establish staging-name/inode ownership before any destructive cleanup.
+        discard_owned_staging(parent, staging_name, private)
         raise
     finally:
         if private is not None:

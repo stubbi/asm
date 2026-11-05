@@ -55,6 +55,20 @@ def inventory(repository, commit):
     return entries
 
 
+def write_new(path, body):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        remaining = memoryview(body)
+        while remaining:
+            amount = os.write(fd, remaining)
+            require(amount > 0, "The source snapshot write stopped.")
+            remaining = remaining[amount:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def create(repository, commit, output):
     revision(commit)
     require(git(repository, "rev-parse", "HEAD", maximum=64).decode().strip() == commit,
@@ -71,11 +85,7 @@ def create(repository, commit, output):
     output.mkdir(mode=0o700)
     try:
         for name, body in (("source.bundle", bundle), ("source.json", registry.json_bytes(manifest))):
-            fd = os.open(output / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(body)
-                stream.flush()
-                os.fsync(stream.fileno())
+            write_new(output / name, body)
     except BaseException:
         shutil.rmtree(output)
         raise
@@ -105,15 +115,19 @@ def restore(bundle_path, manifest_path, commit, destination):
     require(bundle.startswith(header), "Use a complete bundle with exactly one accepted HEAD and no prerequisites.")
     destination.mkdir(mode=0o700)
     try:
+        # Git must consume these verified bytes, never reopen the mutable input pathname.
+        verified = destination / ".verified-source.bundle"
+        write_new(verified, bundle)
         git(destination, "init", "--bare", "--template=", "--initial-branch=accepted", ".")
-        git(destination, "bundle", "verify", str(bundle_path.resolve()))
+        git(destination, "bundle", "verify", str(verified.resolve()))
         git(destination, "fetch", "--no-tags", "--no-write-fetch-head", "--no-auto-maintenance",
-            str(bundle_path.resolve()), "HEAD:refs/heads/accepted", protocols="file")
+            str(verified.resolve()), "HEAD:refs/heads/accepted", protocols="file")
         require(git(destination, "for-each-ref", "--format=%(refname) %(objectname)") ==
                 ("refs/heads/accepted " + commit + "\n").encode(), "The restored source has unexpected refs.")
         git(destination, "fsck", "--strict", "--no-reflogs", "--no-dangling", "--no-progress", commit)
         require(inventory(destination, commit) == manifest["files"], "The restored runtime source bytes differ.")
         require(not (destination / "objects/info/alternates").exists(), "Source alternates are not permitted.")
+        verified.unlink()
     except BaseException:
         shutil.rmtree(destination)
         raise

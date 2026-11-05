@@ -3,6 +3,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import ipaddress
+import errno
 import json
 import os
 from pathlib import Path
@@ -225,6 +226,65 @@ class PreparationTests(unittest.TestCase):
             # A shared root-owned sticky ancestor is permitted; a final shared parent is refused.
             with self.assertRaises(AdminError):
                 prepare.open_protected_directory(system_tmp)
+
+    def test_fsgroup_parent_does_not_leave_setgid_on_the_private_snapshot(self):
+        parent = self.base / "fsgroup-output"
+        parent.mkdir()
+        os.chown(parent, -1, os.getegid())
+        parent.chmod(0o2770)
+        real_mkdir = os.mkdir
+        def inherit_setgid(path, mode=0o777, *, dir_fd=None):
+            real_mkdir(path, mode, dir_fd=dir_fd)
+            # Reproduce Linux's setgid-directory inheritance on hosts with different defaults.
+            fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dir_fd)
+            try:
+                os.fchmod(fd, (os.fstat(fd).st_mode & 0o7777) | 0o2000)
+            finally:
+                os.close(fd)
+        with patch.object(prepare.os, "mkdir", side_effect=inherit_setgid):
+            self.snapshot(parent / "private", resolve=True)
+        self.assertEqual((parent / "private").stat().st_mode & 0o7777, 0o700)
+
+    def test_interruption_after_publication_preserves_the_complete_final_snapshot(self):
+        real_publish = prepare.publish_snapshot
+        def interrupted(parent, staging, destination):
+            real_publish(parent, staging, destination)
+            signal.raise_signal(signal.SIGINT)
+        caught = None
+        try:
+            with patch.object(prepare, "publish_snapshot", side_effect=interrupted):
+                self.snapshot(resolve=True)
+        except BaseException as error:
+            caught = error
+        destination = self.base / "private"
+        with self.subTest(outcome="original interruption"):
+            self.assertIsInstance(caught, KeyboardInterrupt)
+        with self.subTest(outcome="complete final files"):
+            self.assertEqual({p.name for p in destination.iterdir()}, {"database.url", "ca.crt", "tls.crt", "tls.key"})
+        if (destination / "tls.key").exists():
+            self.assertEqual((destination / "tls.key").read_bytes(), (self.tls / "..generation_one/tls.key").read_bytes())
+
+    def test_cleanup_fault_does_not_unlink_without_staging_inode_ownership(self):
+        real_fsync, real_stat = os.fsync, os.stat
+        failed = False
+        def fail_directory_sync(fd):
+            nonlocal failed
+            if os.fstat(fd).st_mode & 0o170000 == 0o040000:
+                failed = True
+                raise OSError(errno.EIO, "synthetic directory sync failure")
+            return real_fsync(fd)
+        def unavailable_identity(path, *args, **kwargs):
+            if failed and str(path).startswith(".asm-operator-"):
+                raise OSError(errno.EIO, "synthetic cleanup identity failure")
+            return real_stat(path, *args, **kwargs)
+        with patch.object(prepare.os, "fsync", side_effect=fail_directory_sync), patch.object(prepare.os, "stat", side_effect=unavailable_identity):
+            with self.assertRaisesRegex(OSError, "synthetic directory sync failure"):
+                self.snapshot(resolve=True)
+        self.assertFalse((self.base / "private").exists())
+        staged = list(self.base.glob(".asm-operator-*"))
+        self.assertEqual(len(staged), 1)
+        self.assertEqual({p.name for p in staged[0].iterdir()}, {"database.url", "ca.crt", "tls.crt", "tls.key"})
+        self.assertEqual(staged[0].stat().st_mode & 0o7777, 0o700)
 
 
 class RootProjectedImageTests(unittest.TestCase):
