@@ -2769,9 +2769,6 @@ spawn_wait:
 .Lspawn_selected_environment:
     mv a2, t0
     mv a0, s2
-    RV_CALL native_link_child_environment
-    mv a2, t0
-    mv a0, s2
     mv a1, s3
     RV_CALL rv_execve
     RV_IMM t1, 127, 32
@@ -2794,9 +2791,9 @@ cmd_clean:
     RV_CALL validate_target
     mv s8, t0
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_asm1881
+    bnez s8, .Lrv_cb_skip_asm1878
     RV_JUMP cross_clean
-.Lrv_cb_skip_asm1881:
+.Lrv_cb_skip_asm1878:
     RV_ADDR s6, build_dir
     mv a0, s6
     RV_ADDR s6, stat_buffer

@@ -2,6 +2,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -25,8 +26,9 @@ class CrossBuildTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def cli(self, *args, code=0, cwd=None):
-        result = subprocess.run([str(ASM), *args], cwd=cwd or self.project, capture_output=True, text=True, timeout=20)
+    def cli(self, *args, code=0, cwd=None, env=None):
+        result = subprocess.run([str(ASM), *args], cwd=cwd or self.project, env=env,
+                                capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, code, (result.args, result.stdout, result.stderr))
         return result
 
@@ -81,6 +83,71 @@ class CrossBuildTests(unittest.TestCase):
                 self.cli('clean', '--target', target)
                 self.assertFalse((self.project / relative).exists())
                 self.assertEqual((self.project / 'build/app').read_bytes(), native)
+
+    def test_cross_build_ignores_effective_ambient_tool_configuration(self):
+        available = [target for target in LINUX if target != TARGET and self.tool_available(target)]
+        if not available:
+            self.skipTest('Fixed cross assembler and linker are unavailable')
+        clean = {**os.environ}
+        clean.pop('CCC_OVERRIDE_OPTIONS', None)
+        clean.pop('GNUTARGET', None)
+        tool_environment = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}
+        self.cli('build', env=clean)
+        native = (self.project / 'build/app').read_bytes()
+        declarations = tomllib.loads((self.project / 'asm.toml').read_text())['target']
+        for target in available:
+            with self.subTest(target=target):
+                source = self.project / declarations[target]['source']
+                object_path = self.work / (target + '.o')
+                if IS_MACOS:
+                    prefix = '/opt/homebrew' if MAC_ARCH == 'arm64' else '/usr/local'
+                    assembler = prefix + '/opt/llvm/bin/clang'
+                    assemble = [assembler, '--target=' + target, '-c', str(source)]
+                    poison = {'CCC_OVERRIDE_OPTIONS': '+-###'}
+                else:
+                    triple = target.replace('-linux', '-linux-gnu')
+                    assembler = '/usr/bin/' + triple + '-as'
+                    assemble = [assembler, str(source)]
+                    poison = {'GNUTARGET': 'asm-invalid-bfd-target'}
+                control = subprocess.run([*assemble, '-o', str(object_path)], env=tool_environment,
+                                         capture_output=True, text=True, timeout=20)
+                self.assertEqual(control.returncode, 0, (control.stdout, control.stderr))
+                self.assertTrue(object_path.is_file())
+                rejected = self.work / (target + '.poisoned')
+                if IS_MACOS:
+                    # The clang override requests a dry run, so it creates no object.
+                    probe = subprocess.run([*assemble, '-o', str(rejected)],
+                                           env={**tool_environment, **poison},
+                                           capture_output=True, text=True, timeout=20)
+                    self.assertEqual(probe.returncode, 0, (probe.stdout, probe.stderr))
+                    self.assertIn('CCC_OVERRIDE_OPTIONS', probe.stderr)
+                    self.assertFalse(rejected.exists(), 'The clang override did not prevent assembly')
+                else:
+                    linker = '/usr/bin/' + triple + '-ld'
+                    linked = self.work / (target + '.clean')
+                    link = [linker, '-z', 'noexecstack', str(object_path)]
+                    control = subprocess.run([*link, '-o', str(linked)], env=tool_environment,
+                                             capture_output=True, text=True, timeout=20)
+                    self.assertEqual(control.returncode, 0, (control.stdout, control.stderr))
+                    self.assertTrue(linked.is_file())
+                    # Reuse the same object to prove that GNUTARGET changes linker behavior.
+                    probe = subprocess.run([*link, '-o', str(rejected)],
+                                           env={**tool_environment, **poison},
+                                           capture_output=True, text=True, timeout=20)
+                    self.assertNotEqual(probe.returncode, 0, 'GNUTARGET did not affect the fixed linker')
+                environment = {**clean, **poison}
+                relative = f'build/{target}/app'
+                report = json.loads(self.cli('build', '--target', target, '--json', env=environment).stdout)
+                self.assertEqual(report, {'ok': True, 'artifact': relative})
+                data = (self.project / relative).read_bytes()
+                self.assertEqual(data[:5], b'\x7fELF\x02')
+                self.assertEqual(struct.unpack_from('<H', data, 18)[0], LINUX[target])
+                self.assertEqual((self.project / 'build/app').read_bytes(), native)
+                source.write_text('this is invalid assembly\n')
+                self.cli('build', '--target', target, code=1, env=environment)
+                self.assertEqual((self.project / relative).read_bytes(), data)
+                self.assertEqual((self.project / 'build/app').read_bytes(), native)
+                self.assertFalse(list((self.project / f'build/{target}').glob('.asm-stage-*')))
 
     def test_missing_selected_target_is_not_replaced_by_host(self):
         foreign = next(target for target in LINUX if target != TARGET)

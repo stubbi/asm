@@ -1896,9 +1896,6 @@ spawn_wait:
 .Lspawn_selected_environment:
     mov x2, x9
     mov x0, x21
-    ARM_CALL native_link_child_environment
-    mov x2, x9
-    mov x0, x21
     mov x1, x22
     ARM_CALL arm_execve
     ARM_IMM w10, 127

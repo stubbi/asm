@@ -581,9 +581,9 @@ native_link_build:
     RV_RESTORE s0
     ret
 /* Input: a0=the fixed executable pointer selected by a CLI call. Output:
- * t0=borrowed environment pointer array. C compiler children receive only
- * PATH and LC_ALL. On macOS the assembler's clang driver also uses that
- * environment for native builds. Application execution retains user settings.
+ * t0=borrowed environment pointer array. Every fixed compiler, assembler,
+ * and linker child receives only PATH and LC_ALL, including tool startup.
+ * Application execution retains user settings.
  * Scratch: t0-t2/s6; stack: none; preserves callee-saved registers. */
 native_link_child_environment:
     RV_ADDR s6, native_cc_path
@@ -591,21 +591,16 @@ native_link_child_environment:
     mv s10, s6
     RV_FLAGS sub, 64
     RV_BCOND eq, .Lnative_fixed_environment
-.if NATIVE_LINK_MACOS
     RV_ADDR s6, as_path
     mv s8, a0
     mv s10, s6
     RV_FLAGS sub, 64
-    RV_BCOND ne, .Lnative_inherited_environment
-    RV_ADDR s6, package_link
-    mv s8, s6
-    RV_LOAD t1, 1
-    mv s8, t1
-    RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_native_link361
-    RV_JUMP .Lnative_fixed_environment
-.Lrv_cb_skip_native_link361:
-.endif
+    RV_BCOND eq, .Lnative_fixed_environment
+    RV_ADDR s6, ld_path
+    mv s8, a0
+    mv s10, s6
+    RV_FLAGS sub, 64
+    RV_BCOND eq, .Lnative_fixed_environment
 .Lnative_inherited_environment:
     RV_ADDR s6, envp
     mv s8, s6
