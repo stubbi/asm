@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Python runs tests only. It is not a registry application backend.
 """
 import http.client
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -22,7 +23,7 @@ from urllib.parse import quote
 HERE = Path(__file__).resolve().parent
 REFERENCE = HERE.parent / "experiments/assembly-server"
 sys.path.insert(0, str(REFERENCE))
-from local_postgres import Database, LocalPostgres, create_catalog
+from local_postgres import Database, LocalPostgres
 sys.path.insert(0, str(HERE.parent / "tools"))
 import registry
 import registry_admin
@@ -86,24 +87,12 @@ class RuntimeTests(unittest.TestCase):
         cls.cluster.start()
         cls.prefix = "asm_proto_" + secrets.token_hex(6)
         cls.dbname = cls.prefix
-        cls.roles = {name: cls.prefix + suffix for name, suffix in
-                     (("migrator", "_m"), ("reader", "_r"), ("operator", "_o"))}
-        password = secrets.token_hex(24)
+        cls.roles = {name: "asm_" + name for name in ("migrator", "reader", "operator")}
         for role in cls.roles.values():
-            cls.cluster.admin.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD \'{password}\'')
+            cls.cluster.admin.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
         cls.cluster.admin.execute(f'CREATE DATABASE "{cls.dbname}" OWNER "{cls.roles["migrator"]}"')
         cls.admin = Database(cls.cluster.url(database=cls.dbname))
         cls.addClassCleanup(cls.admin.close)
-        migrator = Database(cls.cluster.url(database=cls.dbname, role=cls.roles["migrator"], password=password))
-        operator = Database(cls.cluster.url(database=cls.dbname, role=cls.roles["operator"], password=password))
-        try:
-            create_catalog(migrator, operator, cls.roles["reader"], cls.roles["operator"])
-        finally:
-            migrator.close()
-            operator.close()
-        for label, role in tuple(cls.roles.items()):
-            cls.roles[label] = "asm_" + label
-            cls.cluster.admin.execute(f'ALTER ROLE "{role}" RENAME TO "{cls.roles[label]}"')
         cls.configs = {}
         for label, role in cls.roles.items():
             cls.cluster.certificate(label, role)
@@ -232,6 +221,73 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.request("/health/live", method="POST")[0], 405)
         self.assertEqual(self.request("/health/live", body=b"x")[0], 400)
         self.assertEqual(self.request("/health/live?unknown=x")[0], 400)
+        for path in self.exports:
+            with self.subTest(path=path):
+                self.assertEqual(self.request(path, method="POST")[0], 405)
+                self.assertEqual(self.request(path, body=b"x")[0], 400)
+                self.assertEqual(self.request(path + "?route=untrusted")[0], 400)
+
+    @contextmanager
+    def export_view(self, select):
+        """Use trusted fixture administration to probe malformed database results."""
+        original = self.admin.execute(
+            "SELECT pg_catalog.pg_get_viewdef('asm_catalog.current_exports'::regclass,true)")[0][0]
+        source = "(" + original.rstrip().removesuffix(";") + ") AS retained"
+        self.admin.execute("CREATE OR REPLACE VIEW asm_catalog.current_exports AS " + select.format(source=source))
+        try:
+            yield
+        finally:
+            self.admin.execute("CREATE OR REPLACE VIEW asm_catalog.current_exports AS " + original)
+        self.assertEqual(self.request("/health/ready")[0], 200)
+
+    def test_exports_reject_missing_null_duplicate_and_unready_results(self):
+        columns = "route,body,sha256,media_type,revision,acceptance_commit"
+        variants = (
+            "SELECT " + columns + " FROM {source} WHERE route <> '/registry/v1/index.json'",
+            "SELECT route,CASE WHEN route='/registry/v1/index.json' THEN NULL::text ELSE body END AS body,"
+                "sha256,media_type,revision,acceptance_commit FROM {source}",
+            "SELECT " + columns + " FROM {source} UNION ALL SELECT " + columns + " FROM {source}",
+            "SELECT " + columns + " FROM {source} WHERE false",
+        )
+        for select in variants:
+            with self.subTest(select=select), self.export_view(select):
+                code, _, body = self.request("/registry/v1/index.json")
+                self.assertEqual(code, 503)
+                self.assertEqual(body["error"]["code"], "temporarily_unavailable")
+                self.assertEqual(self.request("/health/live")[0], 200)
+        original = self.admin.execute("SELECT sha384 FROM asm_catalog.schema_version")[0][0]
+        self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=repeat('0',96)")
+        try:
+            self.assertEqual(self.request("/health/ready")[0], 503)
+            for path in self.exports:
+                self.assertEqual(self.request(path)[0], 503)
+            self.assertEqual(self.request("/health/live")[0], 200)
+        finally:
+            self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=$1", [original])
+        self.assertEqual(self.request("/health/ready")[0], 200)
+
+    def test_export_body_byte_limits_preserve_boundary_bytes(self):
+        for path in self.exports:
+            maximum = 4194304 if path.endswith(".json") else 1048576
+            select = ("SELECT route,CASE WHEN route='" + path + "' THEN repeat('x'," + str(maximum) +
+                      ") ELSE body END AS body,sha256,media_type,revision,acceptance_commit FROM {source}")
+            with self.subTest(path=path), self.export_view(select):
+                code, _, body = self.raw_request(path)
+                self.assertEqual(code, 200)
+                self.assertEqual(body, b"x" * maximum)
+            with self.subTest(path=path, oversize=True), self.export_view(
+                    select.replace(str(maximum), str(maximum + 1))):
+                self.assertEqual(self.request(path)[0], 503)
+                self.assertEqual(self.request("/health/live")[0], 200)
+
+    def test_export_database_work_obeys_the_request_deadline(self):
+        select = ("SELECT route,body,sha256,media_type,revision,acceptance_commit FROM {source} "
+                  "CROSS JOIN (SELECT pg_catalog.pg_sleep(3)) AS stalled")
+        with self.export_view(select):
+            started = time.monotonic()
+            self.assertEqual(self.request("/registry/v1/index.json")[0], 503)
+            self.assertLess(time.monotonic() - started, 2.8)
+            self.assertEqual(self.request("/health/live")[0], 200)
 
     def test_cli_and_bind_configuration_fail_closed(self):
         self.reject(arguments=(), expected=64)
@@ -271,14 +327,26 @@ class RuntimeTests(unittest.TestCase):
 
     def test_readiness_checks_actual_permissions_after_start(self):
         role = self.roles["reader"]
-        self.admin.execute(f'REVOKE SELECT ON asm.artifacts FROM "{role}"')
+        self.admin.execute(f'REVOKE SELECT ON asm_catalog.current_exports FROM "{role}"')
         try:
             code, _, _ = self.request("/health/ready")
             self.assertEqual(code, 503)
             self.assertEqual(self.request("/health/live")[0], 200)
+            for path in self.exports:
+                self.assertEqual(self.request(path)[0], 503)
         finally:
-            self.admin.execute(f'GRANT SELECT ON asm.artifacts TO "{role}"')
+            self.admin.execute(f'GRANT SELECT ON asm_catalog.current_exports TO "{role}"')
         self.assertEqual(self.request("/health/ready")[0], 200)
+        for schema in ("pgxtemp_", "pgxtempx", "pgxtoast_temp_", "pgxtoastxtempx"):
+            with self.subTest(schema=schema):
+                self.admin.execute(f'CREATE SCHEMA "{schema}"; GRANT CREATE ON SCHEMA "{schema}" TO "{role}"')
+                try:
+                    self.assertEqual(self.request("/health/ready")[0], 503)
+                    self.assertEqual(self.request("/registry/v1/index.json")[0], 503)
+                    self.assertEqual(self.request("/health/live")[0], 200)
+                finally:
+                    self.admin.execute(f'DROP SCHEMA "{schema}"')
+                self.assertEqual(self.request("/health/ready")[0], 200)
 
     def test_new_connections_load_replaced_certificate_files(self):
         cert = self.cluster.base / "reader.crt"
@@ -294,6 +362,8 @@ class RuntimeTests(unittest.TestCase):
             key.write_bytes((self.cluster.base / "operator.key").read_bytes())
             self.assertEqual(self.request("/health/ready")[0], 503)
             self.assertEqual(self.request("/health/live")[0], 200)
+            for path in self.exports:
+                self.assertEqual(self.request(path)[0], 503)
         finally:
             cert.write_bytes(old_cert)
             key.write_bytes(old_key)
