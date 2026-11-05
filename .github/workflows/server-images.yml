@@ -26,16 +26,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -m 700 diagnostic-evidence
+          git rev-parse HEAD > diagnostic-evidence/diagnostic-checkout.txt
+          printf '%s\n' "$ASM_APPLICATION_SOURCE" > diagnostic-evidence/application-source.txt
           git fetch --no-tags origin "$ASM_APPLICATION_SOURCE"
           git diff --exit-code "$ASM_APPLICATION_SOURCE" -- server containers/server.Dockerfile \
             tools/test_server_image.py tools/registry.py tools/registry_admin.py registry/packages \
             experiments/assembly-server
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes libpq-dev
-          python3 tools/diagnostics/test_probe.py
-          mkdir -m 700 diagnostic-evidence
-          git rev-parse HEAD > diagnostic-evidence/diagnostic-checkout.txt
-          printf '%s\n' "$ASM_APPLICATION_SOURCE" > diagnostic-evidence/application-source.txt
+          python3 tools/diagnostics/test_probe.py 2>&1 | tee diagnostic-evidence/native-checks.log
           git ls-tree "$ASM_APPLICATION_SOURCE" -- server registry/packages containers/server.Dockerfile \
             tools/test_server_image.py tools/registry.py tools/registry_admin.py \
             experiments/assembly-server > diagnostic-evidence/frozen-input-objects.txt
