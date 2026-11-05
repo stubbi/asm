@@ -40,13 +40,17 @@ class PreparationTests(unittest.TestCase):
                 "tls.key": b"-----BEGIN PRIVATE KEY-----\nsynthetic test bytes\n"}),
                 (self.config, {"database.url": source_url(self.tls)})):
             directory.mkdir(mode=0o750)
+            os.chown(directory, -1, os.getegid())
             generation = directory / "..generation_one"
             generation.mkdir(mode=0o750)
+            os.chown(generation, -1, os.getegid())
             for name, body in files.items():
                 path = generation / name
                 path.write_bytes(body)
+                os.chown(path, -1, os.getegid())
                 path.chmod(0o440)
             (directory / "..data").symlink_to(generation.name)
+            os.lchown(directory / "..data", -1, os.getegid())
         self.psql = self.base / "psql"
         self.psql.write_text("#!" + sys.executable + "\nprint('psql (PostgreSQL) 16.15')\n")
         self.psql.chmod(0o700)
@@ -210,6 +214,18 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
 
+    def test_system_tmp_ancestor_does_not_depend_on_ambient_tmpdir(self):
+        system_tmp = Path("/tmp").resolve()
+        with tempfile.TemporaryDirectory(prefix="asm-system-tmp-", dir=system_tmp) as name:
+            private = Path(name).resolve()
+            fd = prepare.open_protected_directory(private)
+            os.close(fd)
+        info = system_tmp.stat()
+        if info.st_uid == 0 and info.st_mode & 0o1000 and not os.statvfs(system_tmp).f_flag & os.ST_RDONLY:
+            # A shared root-owned sticky ancestor is permitted; a final shared parent is refused.
+            with self.assertRaises(AdminError):
+                prepare.open_protected_directory(system_tmp)
+
 
 class RootProjectedImageTests(unittest.TestCase):
     def test_real_root_gid65532_projection_and_policy_failures(self):
@@ -221,8 +237,12 @@ class RootProjectedImageTests(unittest.TestCase):
         base = Path(path)
         with tempfile.TemporaryDirectory(prefix="asm-root-projection-") as temp:
             private = Path(temp) / "private"
-            prepare.prepare(base / "valid/config", base / "valid/tls", private, "asm_operator",
-                            Path("/opt/asm/postgres/bin/psql"), resolve_dns=True)
+            result = subprocess.run(["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py", "prepare-operator",
+                "--config-directory", str(base / "valid/config"), "--tls-directory", str(base / "valid/tls"),
+                "--destination-directory", str(private), "--role", "asm_operator", "--resolve-dns"],
+                capture_output=True, timeout=15, env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"})
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertEqual(json.loads(result.stdout)["status"], "prepared")
             self.assertEqual((private / "tls.key").read_bytes(), (base / "valid/tls/..generation_one/tls.key").read_bytes())
             for case in ("wrong-owner", "wrong-gid", "bad-mode", "symlink-key", "missing-key", "escaping-generation"):
                 destination = Path(temp) / case

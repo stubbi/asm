@@ -101,9 +101,9 @@ def open_protected_directory(path):
             info = os.fstat(fd)
             readonly = bool(os.fstatvfs(fd).f_flag & os.ST_RDONLY)
             require(info.st_uid in {0, os.geteuid()}, "Use protected directory ancestors.")
-            require(readonly or not info.st_mode & 0o020 or info.st_gid == os.getegid(),
-                    "An untrusted group can change a directory ancestor.")
             public_temporary_ancestor = (info.st_uid == 0 and info.st_mode & stat.S_ISVTX and index < len(parts) - 1)
+            require(readonly or public_temporary_ancestor or not info.st_mode & 0o020 or info.st_gid == os.getegid(),
+                    "An untrusted group can change a directory ancestor.")
             require(readonly or not info.st_mode & 0o002 or public_temporary_ancestor,
                     "Use a protected final directory beneath trusted ancestors.")
             reject_extended_acl(fd)
