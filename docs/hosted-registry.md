@@ -17,11 +17,10 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
-| Assembly registry runtime foundation | Linux x86-64; 11 TLS/PostgreSQL runtime tests passed in CI | Catalog exports, operator commands, and deployment qualification remain incomplete. |
+| Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | Canonical HTTP exports and deployment qualification remain incomplete. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
-| Package catalog | Four declared target profiles | A profile does not qualify a package artifact or a server port. |
-| Other server targets | ARM64 and RISC-V64 need separate assembly ports | MCP portability supplies no evidence for these registry implementations. |
+| Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |
 
 The [README](../README.md#status) states the released CLI host support.
 Intel macOS and Windows remain separate host-port requirements.
@@ -29,6 +28,13 @@ Intel macOS and Windows remain separate host-port requirements.
 [Runtime run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) and [image run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed on 5 November 2026.
 They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
 These checks do not qualify live deployment, full registry behavior, or recovery.
+
+[Image run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) later passed all 11 runtime cases per architecture, without skips.
+AMD64 and ARM64 used native instruction execution; RISC-V64 used QEMU user emulation.
+The tested PR merge revision was `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
+These results apply to that source, not head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later changes.
+Current-head qualification, canonical HTTP integration, and deployment retain separate gates.
+See the [image evidence](server-images.md#completed-prior-image-checks) for executable digests and execution limits.
 
 ## Public implementation
 
@@ -51,7 +57,7 @@ Its read-only tool annotations do not replace enforced access boundaries.
 | Database TLS | Hostname and CA verification; new connections use projected certificate rotation |
 | Readiness | Actual schema, catalog, and least-privilege checks within two seconds |
 | Identity | Exact public source revision and source offer |
-| Compatibility | Exact v1 Linux TSV, macOS TSV, and schema-1 JSON exports |
+| Compatibility | Exact Linux and macOS compatibility feeds, full-target TSV, and schema-1 JSON exports |
 | MCP | Explicit public Host/Origin policy, bounded HTTP, health probes, real SDK clients through HTTPS |
 | Discovery | Canonical hosted data; errors remain distinct from no matches; no unnoticed static fallback |
 | Operations | Separate reviewed migration and idempotent import; immutable versions and exact artifact records |

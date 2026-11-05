@@ -1,0 +1,11 @@
+# Use a source-built Asm CLI with native library build support.
+[package]
+name = "asm-server"
+version = "0.1.0"
+
+[build]
+source = "server.s"
+target = "x86_64-linux"
+link = "c"
+libraries = "microhttpd pq pthread"
+check = "abi-check.c"

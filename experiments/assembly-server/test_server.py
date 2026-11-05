@@ -26,7 +26,7 @@ import uuid
 from local_postgres import Database, LocalPostgres, MIGRATION_SHA384, create_catalog
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BUILD = Path(os.environ.get("ASM_PROTO_BUILD_DIR", Path(__file__).resolve().parent / "build"))
 BINARY = Path(os.environ["ASM_PROTO_BINARY"])
 
 
@@ -90,7 +90,7 @@ class GateProxy:
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix="asm-server-test-", dir=ROOT / "build")
+        cls.temp = tempfile.TemporaryDirectory(prefix="asm-server-test-", dir=BUILD)
         cls.addClassCleanup(cls.temp.cleanup)
         cls.base = Path(cls.temp.name)
         cls.cluster = LocalPostgres(cls.base)
@@ -180,9 +180,9 @@ class ServerTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.stop_server()
         cls.log.flush()
-        evidence = ROOT / "build/assembly-server/evidence.json"
+        evidence = BUILD / "evidence.json"
         evidence.write_text(json.dumps(cls.evidence, indent=2) + "\n")
-        saved_log = ROOT / "build/assembly-server/server-test.log"
+        saved_log = BUILD / "server-test.log"
         saved_log.write_bytes((cls.base / "server.log").read_bytes())
 
     def request(self, path, *, method="GET", body=None, headers=None, timeout=4):

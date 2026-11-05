@@ -20,6 +20,7 @@ test = "targets/aarch64-macos/tests/main.s"
 
 [target.x86_64-macos]
 source = "targets/x86_64-macos/src/main.s"
+test = "targets/x86_64-macos/tests/main.s"
 
 [target.x86_64-windows]
 source = "targets/x86_64-windows/src/main.s"
