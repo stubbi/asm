@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import IS_MACOS
+from host import IS_MACOS, TARGET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,14 +72,18 @@ class NativePublishTests(unittest.TestCase):
         candidate = self.work / "candidate"
         url = "https://github.com/owner/math/releases/download/v0.1.0/native"
         candidate.write_bytes(elf(183))
-        arguments = self.arguments(artifacts=[("aarch64-macos", "executable", candidate, url)])
+        arguments = self.arguments(artifacts=[(TARGET if IS_MACOS else "aarch64-macos", "executable", candidate, url)])
         self.cli(arguments, code=1)
         self.assertFalse(self.output.exists())
         if IS_MACOS:
             candidate.write_bytes(ASM.read_bytes())
             self.cli(arguments)
-            record = registry.validate_manifest(json.loads(self.output.read_bytes()))
-            registry.validate_artifact(candidate.read_bytes(), record, record["artifacts"][0])
+            record = json.loads(self.output.read_bytes())
+            self.assertEqual(record["artifacts"][0]["target"], TARGET)
+            self.assertEqual(record["artifacts"][0]["sha256"], hashlib.sha256(candidate.read_bytes()).hexdigest())
+            if TARGET in registry.TARGETS:
+                record = registry.validate_manifest(record)
+                registry.validate_artifact(candidate.read_bytes(), record, record["artifacts"][0])
 
     def test_prepares_real_record_with_actual_digest_and_no_upload_claim(self):
         result = self.cli(self.arguments() + ["--json"])

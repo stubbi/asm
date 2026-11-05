@@ -470,10 +470,29 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
         project = tomllib.loads(files["asm.toml"].decode("utf-8"))
         require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
         require(project["package"]["version"] == version, "project version does not match release")
-        require(project["build"]["target"] == target, "project target does not match artifact")
-        source = portable_path(project["build"]["source"])
+        build = exact_keys(project["build"], {"source", "target", "link", "libraries", "check"},
+                           {"source", "target"}, "project build")
+        require(build["target"] == target, "project target does not match artifact")
+        source = portable_path(build["source"])
+        require(not any(part.startswith("@") for part in source.split("/")), "build source cannot be a response file")
         require(source in files, "declared assembly source is missing")
         require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
+        for field in ("link", "libraries", "check"):
+            if field in build:
+                plain_text(build[field], 255, f"build {field}")
+        if "link" in build:
+            require(build["link"] == "c", "build link must be c")
+        require(not ({"libraries", "check"} & build.keys()) or build.get("link") == "c",
+                "build libraries and check require link c")
+        if "libraries" in build:
+            names = build["libraries"].split(" ")
+            require(len(names) <= 8 and all(re.fullmatch(r"[a-z][a-z0-9_-]{0,30}", item) for item in names),
+                    "build libraries must contain up to eight names separated by one space")
+        if "check" in build:
+            checker = portable_path(build["check"])
+            require(not any(part.startswith("@") for part in checker.split("/")), "build check cannot be a response file")
+            require(checker.endswith(".c"), "build check must be a C file")
+            require(checker in files, "declared compile checker is missing")
     except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RegistryError("invalid source asm.toml") from error
 
