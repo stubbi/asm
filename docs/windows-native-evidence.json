@@ -1,0 +1,822 @@
+{
+  "schema": 1,
+  "scope": "Unpublished Windows CLI implementation and native functional checks; no released host declaration.",
+  "recorded_date": "2026-11-05",
+  "foundation_principles": [
+    "Earn trust with evidence",
+    "Make reuse dependable",
+    "Keep people in control"
+  ],
+  "native_runs": [
+    {
+      "iteration": 1,
+      "run_id": 41942208419,
+      "url": "https://github.com/stubbi/asm/actions/runs/41942208419",
+      "outcome": "fail"
+    },
+    {
+      "iteration": 2,
+      "run_id": 41947783095,
+      "url": "https://github.com/stubbi/asm/actions/runs/41947783095",
+      "outcome": "fail"
+    },
+    {
+      "iteration": 3,
+      "run_id": 42010274631,
+      "url": "https://github.com/stubbi/asm/actions/runs/42010274631",
+      "outcome": "fail"
+    },
+    {
+      "iteration": 4,
+      "run_id": 42015009621,
+      "url": "https://github.com/stubbi/asm/actions/runs/42015009621",
+      "outcome": "fail"
+    },
+    {
+      "iteration": 5,
+      "run_id": 42019241381,
+      "url": "https://github.com/stubbi/asm/actions/runs/42019241381",
+      "outcome": "fail"
+    },
+    {
+      "iteration": 6,
+      "run_id": 42033134716,
+      "url": "https://github.com/stubbi/asm/actions/runs/42033134716",
+      "outcome": "fail"
+    }
+  ],
+  "results": [
+    {
+      "iteration": 1,
+      "source_commit": "0bf5b1d9c695fa520243757b991aa1e01f450eaa",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 40,
+      "record_counts": {
+        "fail": 40,
+        "pass": 12
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 91648,
+        "sha256": "a2b85896a7d9b9bae843ef4f13a58b9d529c696589f9c2ecd923238ab9cfe249",
+        "pe_machine": 34404,
+        "sha256_after_tests": "a2b85896a7d9b9bae843ef4f13a58b9d529c696589f9c2ecd923238ab9cfe249"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_archive_corrupt_gzip_and_tar_headers_fail",
+        "test_runtime.WindowsRuntimeTests.test_archive_hostile_members_are_rejected_before_cache_or_lock_commit",
+        "test_runtime.WindowsRuntimeTests.test_arguments_unsupported_target_and_missing_manifest_fail",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_clean_preserves_an_empty_directory_at_the_application_path",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_existing_project_and_partial_init_preserve_files",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='78b3fcc6ed80f81d7b8ff2541f01dae311932707e80b6770f040f2dd4c1e43fe')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9ced27ef1d278a0a67f5d9b06482d8d17f17ddc965ab6b42881a7615d7b2e33e')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='6e3f876dfead22668ae8455b738566c097136a05ef894778c7193eab7cd74f76')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_manifest_parser_rejects_duplicates_ambiguity_and_bounds",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='source')",
+        "test_runtime.WindowsRuntimeTests.test_reparse_project_paths_fail_without_outside_changes",
+        "test_runtime.WindowsRuntimeTests.test_starter_preserves_the_mit_grant",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='AsM.ExE')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe.')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe ')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='CON')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='NUL.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='hello.exe:stream')",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "windows_sdk": "10.0.26100.0",
+        "runner_architecture": "X64",
+        "msvc_runtime": "14.51.36231",
+        "source_commit": "0bf5b1d9c695fa520243757b991aa1e01f450eaa"
+      }
+    },
+    {
+      "iteration": 2,
+      "source_commit": "74221fc69af0b19444dede9eb71c400effdd1855",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 40,
+      "record_counts": {
+        "fail": 41,
+        "pass": 12
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 125952,
+        "sha256": "6c62f756fefc0d5d1fbe8a19a3b6403f191aab427f8ae3d5c694d3cd6ae282a9",
+        "pe_machine": 43620,
+        "sha256_after_tests": "6c62f756fefc0d5d1fbe8a19a3b6403f191aab427f8ae3d5c694d3cd6ae282a9"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261026.197.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_archive_corrupt_gzip_and_tar_headers_fail",
+        "test_runtime.WindowsRuntimeTests.test_archive_hostile_members_are_rejected_before_cache_or_lock_commit",
+        "test_runtime.WindowsRuntimeTests.test_arguments_unsupported_target_and_missing_manifest_fail",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_clean_preserves_an_empty_directory_at_the_application_path",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_existing_project_and_partial_init_preserve_files",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='78b3fcc6ed80f81d7b8ff2541f01dae311932707e80b6770f040f2dd4c1e43fe')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='77a814cf6f766b3119d1ee7cbed3bc77d94deaab8345935e5d38442f9ef29c1e')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='1e3833766c30f401846ff40ab571761895b3fb01c3611f0e928cc8f9dd532619')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_manifest_parser_rejects_duplicates_ambiguity_and_bounds",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='source')",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='executable')",
+        "test_runtime.WindowsRuntimeTests.test_reparse_project_paths_fail_without_outside_changes",
+        "test_runtime.WindowsRuntimeTests.test_starter_preserves_the_mit_grant",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='AsM.ExE')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe.')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe ')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='CON')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='NUL.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='hello.exe:stream')",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "source_commit": "74221fc69af0b19444dede9eb71c400effdd1855",
+        "msvc_runtime": "14.51.36231",
+        "image_os": "win11-vs2026-arm64",
+        "windows_sdk": "10.0.26100.0",
+        "image_version": "20261026.197.1",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "runner_architecture": "ARM64"
+      }
+    },
+    {
+      "iteration": 2,
+      "source_commit": "74221fc69af0b19444dede9eb71c400effdd1855",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 40,
+      "record_counts": {
+        "fail": 33,
+        "pass": 19
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 92160,
+        "sha256": "0338527b5359ecdad91180e537bd4067cf5b9c293beea6173ffdba964313a960",
+        "pe_machine": 34404,
+        "sha256_after_tests": "0338527b5359ecdad91180e537bd4067cf5b9c293beea6173ffdba964313a960"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261103.298.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='78b3fcc6ed80f81d7b8ff2541f01dae311932707e80b6770f040f2dd4c1e43fe')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='33dc7ceaed52ece00865cbb21a941b5f6beb7baeb424c9f66f1155bdb884fbf4')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='ad9fd8ebd251592843ffc94e2234c54a2a1678f47c0c51e4bd958df18cd398b3')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_manifest_parser_rejects_duplicates_ambiguity_and_bounds (data='[package]\\nname = \"app\"\\nversion = \"0.1.0\"\\n\\n[build]\\nsource = \"src/main.s:stream\"\\ntarget = \"x86_64-wind')",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='source')",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='AsM.ExE')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe.')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe ')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='CON')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='NUL.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='hello.exe:stream')",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "msvc_runtime": "14.51.36231",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "image_version": "20261103.298.1",
+        "windows_sdk": "10.0.26100.0",
+        "source_commit": "74221fc69af0b19444dede9eb71c400effdd1855",
+        "image_os": "win25-vs2026",
+        "runner_architecture": "X64"
+      }
+    },
+    {
+      "iteration": 3,
+      "source_commit": "df155c30858f41e4e5cbd2089bcc1442dccb669c",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "fail": 41,
+        "pass": 17
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 134144,
+        "sha256": "fc9335abe8dee27bfd21806034adea1dfe74789c40c602ddc9e47c6f260aaa14",
+        "pe_machine": 43620,
+        "sha256_after_tests": "fc9335abe8dee27bfd21806034adea1dfe74789c40c602ddc9e47c6f260aaa14"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261101.203.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_arguments_unsupported_target_and_missing_manifest_fail (args=('build', '--target', 'x86_64-windows'))",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='78b3fcc6ed80f81d7b8ff2541f01dae311932707e80b6770f040f2dd4c1e43fe')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='60265813147e18e444664b8d3508633370717d9e964b81e189c56cb92e175f2c')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='6b110f95da5fd143584f58a3fdbfa48625db6fa9dd9ad47175f3493f3c9ea0c9')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_invalid_inactive_target_preserves_the_native_output",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_named_native_target_uses_its_source_and_test_paths",
+        "test_runtime.WindowsRuntimeTests.test_native_no_run_builds_the_test_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='source')",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='executable')",
+        "test_runtime.WindowsRuntimeTests.test_reparse_install_parent_and_state_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache",
+        "test_runtime.WindowsRuntimeTests.test_version_help_license_doctor_and_target",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='AsM.ExE')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe.')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe ')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='CON')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='NUL.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='hello.exe:stream')",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "image_os": "win11-vs2026-arm64",
+        "source_commit": "df155c30858f41e4e5cbd2089bcc1442dccb669c",
+        "runner_architecture": "ARM64",
+        "windows_sdk": "10.0.26100.0",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "msvc_runtime": "14.51.36231",
+        "image_version": "20261101.203.1"
+      }
+    },
+    {
+      "iteration": 3,
+      "source_commit": "df155c30858f41e4e5cbd2089bcc1442dccb669c",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "fail": 40,
+        "pass": 20
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 97792,
+        "sha256": "c90e4a1f8409b0afe23752d898e77360138a2ebe5ce2453df207e1cd509808ae",
+        "pe_machine": 34404,
+        "sha256_after_tests": "c90e4a1f8409b0afe23752d898e77360138a2ebe5ce2453df207e1cd509808ae"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_arguments_unsupported_target_and_missing_manifest_fail (args=('build', '--target', 'aarch64-windows'))",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution (fields='link = \"c\"\\nlibraries = \"asmdoesnotexist\"\\n')",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution (fields='link = \"c\"\\nlibraries = \"kernel32  ucrt\"\\n')",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution (fields='link = \"c\"\\ncheck = \"../abi-check.c\"\\n')",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='78b3fcc6ed80f81d7b8ff2541f01dae311932707e80b6770f040f2dd4c1e43fe')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='e0d984d75c1a8af8165b68b9148736334bc5788ed5764c989dc9bbda804f4199')",
+        "test_runtime.WindowsRuntimeTests.test_install_refuses_corrupt_or_wrong_machine_pe_and_preserves_existing_destination (digest='69c8170005c8dbc3d3ac501a7f6609950722cd8a7e72340c4f80d8a6dfbd8fec')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_invalid_inactive_target_preserves_the_native_output",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_named_native_target_uses_its_source_and_test_paths",
+        "test_runtime.WindowsRuntimeTests.test_native_no_run_builds_the_test_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_reparse_install_parent_and_state_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='AsM.ExE')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe.')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='asm.exe ')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='CON')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='NUL.exe')",
+        "test_runtime.WindowsRuntimeTests.test_windows_path_aliases_cannot_overwrite_reserved_or_other_files (basename='hello.exe:stream')",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "image_version": "20261030.294.1",
+        "image_os": "win25-vs2026",
+        "source_commit": "df155c30858f41e4e5cbd2089bcc1442dccb669c",
+        "msvc_runtime": "14.51.36231",
+        "runner_architecture": "X64",
+        "windows_sdk": "10.0.26100.0",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n"
+      }
+    },
+    {
+      "iteration": 4,
+      "source_commit": "e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "fail": 24,
+        "pass": 22
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 134144,
+        "sha256": "099b37a5f45f56660f7cf21dec1e25718909f1c2ed02842d82f912cae3a91a97",
+        "pe_machine": 43620,
+        "sha256_after_tests": "099b37a5f45f56660f7cf21dec1e25718909f1c2ed02842d82f912cae3a91a97"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261026.197.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_failures_preserve_output_and_compile_checker_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_child_exit_and_failed_build_preserve_previous_output",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_fetch_bytes_corruption_existing_destination_and_no_execution",
+        "test_runtime.WindowsRuntimeTests.test_fixed_tools_work_with_an_empty_path",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_invalid_inactive_target_preserves_the_native_output",
+        "test_runtime.WindowsRuntimeTests.test_inventory_parser_rejects_duplicate_changed_origin_and_oversized_records",
+        "test_runtime.WindowsRuntimeTests.test_management_preserves_modified_and_hardlinked_destinations",
+        "test_runtime.WindowsRuntimeTests.test_named_native_target_uses_its_source_and_test_paths",
+        "test_runtime.WindowsRuntimeTests.test_native_no_run_builds_the_test_without_execution",
+        "test_runtime.WindowsRuntimeTests.test_new_init_build_run_test_clean",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='source')",
+        "test_runtime.WindowsRuntimeTests.test_publish_prepares_source_and_executable_records_with_exact_digests (kind='executable')",
+        "test_runtime.WindowsRuntimeTests.test_publish_rejects_wrong_target_missing_source_or_bad_abi_check",
+        "test_runtime.WindowsRuntimeTests.test_unicode_spaces_and_shell_metacharacters_are_literal",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache",
+        "test_runtime.WindowsRuntimeTests.test_writable_dacl_state_and_destination_parent_are_rejected"
+      ],
+      "toolchain": {
+        "msvc_runtime": "14.51.36231",
+        "source_commit": "e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "image_version": "20261026.197.1",
+        "image_os": "win11-vs2026-arm64",
+        "windows_sdk": "10.0.26100.0",
+        "runner_architecture": "ARM64"
+      }
+    },
+    {
+      "iteration": 4,
+      "source_commit": "e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "fail": 11,
+        "pass": 35,
+        "error": 1
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 97792,
+        "sha256": "191480c18de73c4569a743b511f7fcb355a0fe488be5a232f13e9f50ea298163",
+        "pe_machine": 34404,
+        "sha256_after_tests": "191480c18de73c4569a743b511f7fcb355a0fe488be5a232f13e9f50ea298163"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 25 Model 17 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-section-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='virtual-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_install_rejects_overlapping_pe_sections_and_headers_without_file_effects (name='raw-header-overlap')",
+        "test_runtime.WindowsRuntimeTests.test_named_native_target_uses_its_source_and_test_paths",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache"
+      ],
+      "toolchain": {
+        "msvc_runtime": "14.51.36231",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "windows_sdk": "10.0.26100.0",
+        "image_version": "20261030.294.1",
+        "image_os": "win25-vs2026",
+        "runner_architecture": "X64",
+        "source_commit": "e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3"
+      }
+    },
+    {
+      "iteration": 5,
+      "source_commit": "54625e990e81b603d8ea83c6f1554752c0052ed1",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 38,
+        "fail": 7
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 135168,
+        "sha256": "5312dfe6fc66bcc8e6e129e3de785b0263311e54d7ce8fc9b9d4fb079fc0cdc0",
+        "pe_machine": 43620,
+        "sha256_after_tests": "5312dfe6fc66bcc8e6e129e3de785b0263311e54d7ce8fc9b9d4fb079fc0cdc0"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261101.203.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_drive_absolute_install_output_is_literal_and_ambiguous_roots_are_rejected",
+        "test_runtime.WindowsRuntimeTests.test_install_inventory_upgrade_uninstall_and_no_implicit_execution",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache"
+      ],
+      "toolchain": {
+        "windows_sdk": "10.0.26100.0",
+        "msvc_runtime": "14.51.36231",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "runner_architecture": "ARM64",
+        "image_version": "20261101.203.1",
+        "image_os": "win11-vs2026-arm64",
+        "source_commit": "54625e990e81b603d8ea83c6f1554752c0052ed1"
+      }
+    },
+    {
+      "iteration": 5,
+      "source_commit": "54625e990e81b603d8ea83c6f1554752c0052ed1",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 40,
+        "fail": 5
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 99328,
+        "sha256": "7f211e5db33ff6b65d2070a8cc9f2a4dfc2e9c4957babfe2d6746536e9996d9e",
+        "pe_machine": 34404,
+        "sha256_after_tests": "7f211e5db33ff6b65d2070a8cc9f2a4dfc2e9c4957babfe2d6746536e9996d9e"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_preexisting_running_image_displacement_is_rejected",
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+        "test_runtime.WindowsRuntimeTests.test_dependency_add_lock_build_update_remove_and_sync",
+        "test_runtime.WindowsRuntimeTests.test_dependency_cache_edits_and_corrupt_update_preserve_lock_and_output",
+        "test_runtime.WindowsRuntimeTests.test_v2_lock_preserves_an_inactive_target_without_its_cache"
+      ],
+      "toolchain": {
+        "source_commit": "54625e990e81b603d8ea83c6f1554752c0052ed1",
+        "windows_sdk": "10.0.26100.0",
+        "image_version": "20261030.294.1",
+        "image_os": "win25-vs2026",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "msvc_runtime": "14.51.36231",
+        "runner_architecture": "X64"
+      }
+    },
+    {
+      "iteration": 6,
+      "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 44,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 135168,
+        "sha256": "fde7442871c926463df23cf3fe5b6bc2a65d546dcc6f2c41001e93946b467b67",
+        "pe_machine": 43620,
+        "sha256_after_tests": "fde7442871c926463df23cf3fe5b6bc2a65d546dcc6f2c41001e93946b467b67"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261026.197.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1",
+        "image_version": "20261026.197.1",
+        "image_os": "win11-vs2026-arm64",
+        "runner_architecture": "ARM64",
+        "msvc_runtime": "14.51.36231",
+        "windows_sdk": "10.0.26100.0",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n"
+      }
+    },
+    {
+      "iteration": 6,
+      "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 44,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 99328,
+        "sha256": "670ad4a9cc769a4b4a619b71d06f56d56720d329105ca4f8a1428b7b8bcb0e7c",
+        "pe_machine": 34404,
+        "sha256_after_tests": "670ad4a9cc769a4b4a619b71d06f56d56720d329105ca4f8a1428b7b8bcb0e7c"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 25 Model 17 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "windows_sdk": "10.0.26100.0",
+        "runner_architecture": "X64",
+        "image_os": "win25-vs2026",
+        "msvc_runtime": "14.51.36231",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "image_version": "20261030.294.1",
+        "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1"
+      }
+    }
+  ],
+  "current": {
+    "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1",
+    "methods_per_target": 45,
+    "passing_methods_per_target": 44,
+    "failed_method": "test_update_replaces_exact_bytes_after_three_provenance_bindings",
+    "native_image_binding": "Both corrected suspended-image fixtures completed, rejected the distinct replacement and preserved both path identities and exact bytes.",
+    "archive_lifecycle": "Both native dependency lifecycle and corruption-preservation cases passed.",
+    "remaining_failure": "The final native rename returns STATUS_ACCESS_DENIED after source open, DACL protection, flush and close succeed.",
+    "updater_contract": "The existing one-final-rename and precommit failure-preservation requirements remain in force.",
+    "separate_package_jobs": "Both Windows native package scopes and the GNU/QEMU Linux references passed in the sixth run."
+  },
+  "limits": [
+    "Failed runs remain evidence; later passes do not erase their results.",
+    "Subtests can add failure records beyond the number of methods.",
+    "Some first-run records are incomplete because SDK linkage failed before runtime.",
+    "Windows minimum OS and additional CPU feature requirements are not qualified. The recorded native host configurations define the observed scope.",
+    "Local host shims and temporary-import cross-builds are not native Windows qualification.",
+    "The updater test uses controlled transport and provenance tools. Production trust activation and release artifact admission remain separate.",
+    "Published 0.6.0 bytes and release target support are unchanged."
+  ]
+}

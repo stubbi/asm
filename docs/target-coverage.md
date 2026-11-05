@@ -129,19 +129,20 @@ They do not change published host support.
 | Linux x86-64 and ARM64 servers | Both native targets passed the integrated package and runtime suites. [Run](https://github.com/stubbi/asm/actions/runs/42019255387). | Recheck the merge queue's combined source. Deployment has separate gates. |
 | RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
 | RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
-| Windows x86-64 CLI | The fifth native run passed 40 methods; five failed. | Pass all 45 methods, archive workflows, and updater identity and recovery checks. |
-| Windows ARM64 CLI | The fifth native run passed 38 methods; seven failed. | Correct inventory round trips, archive workflows, and updater checks. Pass all 45 methods. |
+| Windows x86-64 CLI | The sixth native run passed 44 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 45 methods. |
+| Windows ARM64 CLI | The sixth native run passed 44 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 45 methods. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
-The fifth Windows result used source `54625e990e81b603d8ea83c6f1554752c0052ed1` in [run 42019241381](https://github.com/stubbi/asm/actions/runs/42019241381).
+The sixth Windows result used source `540620a9c8ed14fc5904d07c16dda0430cf9fcb1` in [run 42033134716](https://github.com/stubbi/asm/actions/runs/42033134716).
 Subtests can produce multiple failure records for one method.
-The first four failed runs remain part of the evidence.
+The [Windows record](windows-native-evidence.json) retains all six failed runs and their exact artifact boundaries.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
 
-The fourth candidate passed 270 native Apple Silicon CLI tests.
-The integrated catalog source passed 86 registry tests; the server-evidence parser passed seven tests.
+The sixth candidate passed 270 native Apple Silicon CLI tests, 97 registry tests, and 20 site tests.
+The release suite ran 78 cases with 12 platform-specific skips.
+Both local Go race-test packages passed through valid cached results.
 Earlier local bootstrap timeouts remain recorded in the coordination ledger.
 These local checks do not replace a clean release build or another target's runtime qualification.
 
