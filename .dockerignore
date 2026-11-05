@@ -10,6 +10,9 @@
 !tools/registry.py
 !tools/registry_admin.py
 !tools/test_server_image.py
+!tools/diagnostics/
+!tools/diagnostics/libpq_trace.c
+!tools/diagnostics/riscv_probe.py
 !registry/
 !registry/packages/
 !registry/packages/**
