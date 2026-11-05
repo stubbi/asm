@@ -3,8 +3,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 sys.path.insert(0, str(ROOT / "tools"))
 import build_site
+from site_fixtures import reference_repo
 
 
 class SiteParser(HTMLParser):
@@ -73,6 +72,14 @@ class SiteTests(unittest.TestCase):
         self.assertTrue(set(self.page.references).issubset(set(self.page.ids)))
         self.assertEqual(len(self.page.headings), 1)
 
+    def test_github_example_source_links_exist_in_the_checkout(self):
+        html = (SITE / "index.html").read_text()
+        links = re.findall(r'https://github\.com/stubbi/asm/(?:tree|blob)/main/(examples/[^"#?]+)', html)
+        self.assertTrue(links)
+        for relative in links:
+            with self.subTest(source=relative):
+                self.assertTrue((ROOT / relative).exists(), f"The source link is missing: {relative}")
+
     def test_search_controls_have_visible_labels(self):
         self.assertTrue(self.page.input_ids)
         self.assertTrue(set(self.page.input_ids).issubset(set(self.page.labels)))
@@ -94,25 +101,23 @@ class SearchDiscoveryTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(prefix="asm-search-tests-")
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.output = Path(cls.temporary.name) / "site"
-        repo = Path(cls.temporary.name) / "repo"
-        repo.mkdir()
-        shutil.copytree(SITE, repo / "site")
-        shutil.copytree(ROOT / "skills/asm-build", repo / "skills/asm-build")
-        shutil.copytree(ROOT / "cli", repo / "cli")
-        # Source archives have no Git metadata. Record an isolated fixture so
-        # the generated reference uses the same exact-commit path in either form.
-        for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
-                          ("commit", "-qm", "Record source reference fixture")):
-            subprocess.run(["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null",
-                            "-c", "commit.gpgSign=false", "-c", "user.name=asm site test fixture",
-                            "-c", "user.email=fixture@example.invalid", *arguments],
-                           check=True, capture_output=True, timeout=10)
+        repo = reference_repo(ROOT, Path(cls.temporary.name) / "repo")
 
         def forbidden(*args, **kwargs):
             raise AssertionError("Search discovery checks must not use the network")
 
         build_site.build_site(repo, ROOT / "registry", cls.output,
                               artifact_reader=forbidden, metrics_fetcher=forbidden)
+
+    def test_site_build_writes_full_and_compatible_native_feeds(self):
+        registry = build_site.registry
+        full, _ = registry.make_indexes(registry.read_records(ROOT / "registry"))
+        feeds = self.output / "registry/v1"
+        self.assertTrue((feeds / "index-all.tsv").is_file(), "The full native feed is missing")
+        self.assertEqual((feeds / "index-all.tsv").read_bytes(), full.encode("ascii"))
+        self.assertEqual((feeds / "index.tsv").read_bytes(), registry.legacy_tsv(full).encode("ascii"))
+        self.assertEqual((feeds / "index-macos.tsv").read_bytes(),
+                         registry.macos_compat_tsv(full).encode("ascii"))
 
     def test_sitemap_urls_have_html_metadata_and_allow_crawling(self):
         sitemap = ElementTree.parse(self.output / "sitemap.xml")

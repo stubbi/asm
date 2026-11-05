@@ -1,0 +1,727 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "status": "Unreleased source-checkout validation; no package release or registry publication",
+  "source": {
+    "base_commit": "ebc13d313c84086e6ca074d19181ab676c9efb37",
+    "final3_archive_sha256": "9c8cf9022b22952bb7b863c78bddf28c32867fdaeec977a578e75a047d04b26f",
+    "full_cli_gate_archive_sha256": "2b09a9a6d0efa3eeeeacf1cf3e3f07b4b834b64504f74a69022d6e7e27b64fc7",
+    "binding": "All 38 compiled CLI/Makefile/macOS-generator inputs match the full-gate snapshot. Final release gates use final3. Evidence and editorial notes were added afterward.",
+    "source_files_sha256": {
+      ".github/workflows/ci.yml": "ca087b0fbd5a82ec93dd15c8782286c24551628590d2064e29820330d90c048e",
+      "Makefile": "fc53db59fe3771b0ee3d2b81f51c4e0ec044dbc4a20d58cec9124d7b92e5f2e7",
+      "cli/aarch64/README.md": "02a0e35c44e2efc7ccced9797f956fa186dd8b648ea044fbe931a16214638acb",
+      "cli/aarch64/archive.s": "05100384675a472c1468339916ce17ae33d4766448c241c99080987c08fd3efa",
+      "cli/aarch64/asm.s": "5d58a0b5fbb4d0c9acc37c69682e579475cae24a5141b9268673e88ab69e005f",
+      "cli/aarch64/cross_build.s": "0220cff49e60305b0e6d7535e5d50c7406e73c6953bf0d52864728f13db41817",
+      "cli/aarch64/dependencies.s": "373ce0fd8ccc09cb58cc2909d0ff14f7fc9631165d9f3dcd7f4d747eaafbe315",
+      "cli/aarch64/elf.s": "72032fd8f7c811d664091ccbcbf1f0055121eceaf4821dc6224527388d55b320",
+      "cli/aarch64/native_link.s": "97e61169a0c9969671aa36037738187d7bac3ce566cf836233d4cf39acb0cb24",
+      "cli/aarch64/platform.inc": "845d2f3e229337d9549cda58ad583c4da6b142920583866fb1f65c20912f686b",
+      "cli/aarch64/platform.s": "9fe367b1fa7706c446ac26e8c4c7c9adaa792cd40060af731bf037c33945a4ae",
+      "cli/aarch64/programs.s": "45e6c4dbdf79de97064ad4fd48299512033750d9592c3600a8d099d65b670b7e",
+      "cli/aarch64/publish.s": "aed0732df580b701ff2cb80b006c8b3e3265af304a08ddf318ddc6ebdab4bd01",
+      "cli/aarch64/registry.s": "f9a6bd115e378816a467e682d8bfcaa17cc95fc550e8da233a211062c39a6414",
+      "cli/aarch64/self_update.s": "a9294a2f864a277905189e8a40dae4e857459cc3719e813744d0006ad24039a6",
+      "cli/aarch64/self_update_metadata.s": "4b15a4a933ceaac0888e72c22d0465b5395fe88e497dfbdecba18ef3952149b5",
+      "cli/aarch64/self_update_trust.s": "1e5638bbb6419b1c45ada17f30716416a17042c754f5cd1fbfde27afd5950009",
+      "cli/aarch64/self_update_verify.s": "10eb1b3f5e38c5d04b95d87c88ab80e4f2ade7071874ebab73304e6386bab693",
+      "cli/aarch64/templates.s": "8b82cd47b7b9a1909560da84b2b4f91077ab18fefd97b7ba447a75bcba7987ab",
+      "cli/archive.s": "2b84d0b2c3bc23b48dd2a629ce47ba6705a08aaa530070e0bd375c713ba1eab6",
+      "cli/asm.s": "0ace4e20b95f9d5da5d8e8f50d81783fe4b4e8ea363ccbcd2c193e89db9b05ed",
+      "cli/commands.json": "ca9f7cd89de9c66f51609828928df9f9a3b4ec2cbda670bc07d26a88446cce11",
+      "cli/cross_build.s": "7dd8baa9ad66b9ad2a56ee36230d15492d9d9ea710bb3d6e60fc36fd57db112d",
+      "cli/dependencies.s": "d616fec86f7ef0c531a0ceb3bdb31690531bd4a35da992c86347e07504013268",
+      "cli/elf.s": "52312e6f405c8c1abee9678a86b9bec880dfb43957131ab19a9779de9fab2e72",
+      "cli/install.sh": "cfe2b703043eefcefb04ffd426378112d4a32224d60daab72dfe842b5bd85a4c",
+      "cli/macos/macho.s": "eaf9c99f7fc1c6f3a84a1b901e10bacc95525cc9db2cca7995d0022dae98e3af",
+      "cli/macos/platform.s": "c8756ff71eada432c6aae1ec6ede40ad268c131d33d123151500c3d1be6576c0",
+      "cli/macos/publish.s": "31cd31b066a7023738baa5377c85c8740d22ace9f2c2a90129aed0d2ae43e704",
+      "cli/native_link.s": "288853479b030a9c95029b3fbd3eea75385ebd4bd889a983d9565f7d343997b9",
+      "cli/programs.s": "1c2ffb1df1455e1f8f18bd765e4a361c6e965a4822c646f0b7c16c992d3ab9b2",
+      "cli/publish.s": "35c9111bd17eeb86d944e72974baa8f5dea3143ec6c865e871ec56c900dc800a",
+      "cli/registry.s": "e690faa0d923848782062d23aae97f5009370746cae61ab634d99f2dcfaf5c37",
+      "cli/self_update.s": "4b1dd43bc4c179b7d982360ebc358080c97d3acb3e6f58cb4f1d2fca95a99958",
+      "cli/self_update_metadata.s": "c4f80ff5fbf2d718cf4661f14e25d5650abf58e2c4f8becab35356e2a283d1b9",
+      "cli/self_update_trust.s": "82bb93315d2fd8a21be1c6aaf421ae9928f1a86041ef9cb55c4631aed3a97281",
+      "cli/self_update_verify.s": "dbf07d7739389adba34f72495e7e426a54bb2c40f5ed06ad75664da8054e8442",
+      "cli/templates.s": "d418e9b35373c462d4bd663d5caa583236d8fd4b62a61d698a45ebbe31bca4f2",
+      "examples/hello/LICENSE": "91d5d85f1cee47d47ce45ca577d1dda31123c4200713f622794370744a8e4e0d",
+      "examples/hello/README.md": "db3280a3af38f338529c2e48336043bac88db21d0a9f997493f6cdafffcf67e8",
+      "examples/hello/asm.toml": "7c4d769ff0fbcbb7db056769502686dd1e57d52f57232b8bfcef072edd6e59a2",
+      "examples/hello/targets/aarch64-linux/README.md": "1a18973afdafc7507bc46432bf91f6eb9eaeebcb6f96614e3ad369f8cc142d64",
+      "examples/hello/targets/aarch64-linux/src/main.s": "4866d1ba1e08c0e043c314164ea4b22c8634bd179c4b55c14d8a49e2223cfc34",
+      "examples/hello/targets/aarch64-linux/tests/main.s": "0467b54bcf60c84af2be8c20c983fc65e125c0f082356b66ef9d06211d7fa642",
+      "examples/hello/targets/aarch64-macos/README.md": "7a97b4eb0c140c9ae5c0a0407939034a21e00f85c3084480e6e302de9a477877",
+      "examples/hello/targets/aarch64-macos/src/main.s": "c3888ae6c74285b7956d0d65eddcc46e22c675ed9fdf87ed1d2e122a2db5a178",
+      "examples/hello/targets/aarch64-macos/tests/main.s": "6ed9e10bb661a37654519e240e9f0e999c9bdba522db84fc85260fb63897eb6f",
+      "examples/hello/targets/aarch64-windows/README.md": "63e7f454c904c5e8b4179d5719bcedc234038ca1e9d86b85f7055c3ad1602f50",
+      "examples/hello/targets/aarch64-windows/kernel32.def": "7303c16189b794b188ea32f72279c8c63750e267391939ec5448b78b283d433d",
+      "examples/hello/targets/aarch64-windows/src/main.s": "be6e0a88fc06ca9e5909a7ebc6f12d2448a20c394c0dfa7dcce514e7cee661a3",
+      "examples/hello/targets/aarch64-windows/tests/main.s": "fbb2950fdf783d69157068d20821f2cecea91959450f79e0c1e0b38465a0dc58",
+      "examples/hello/targets/riscv64-linux/README.md": "3d7c4ab127103163eb80a3c5344e92eba923eb9eb4c49095935aa43cdd2b391b",
+      "examples/hello/targets/riscv64-linux/src/main.s": "960f7bff33c9651a10ba5cad1ec75ceb3a2d793277da5d0f78b2de616ed4b366",
+      "examples/hello/targets/riscv64-linux/tests/main.s": "06bb09d94f9780eca8f1fa68d373ce191d66449cafaad1cfe745f1569aeda8b4",
+      "examples/hello/targets/x86_64-linux/README.md": "5cbe1b20199f4086acaabec15851bc69fd9ac97de8818d07506a9a16103f6974",
+      "examples/hello/targets/x86_64-linux/src/main.s": "588e49c374bbee9cb7d37c189f289e0ba6cb95b96826f772d349b34463d43280",
+      "examples/hello/targets/x86_64-linux/tests/main.s": "62092a14f8cf6fc61cffe92ddb93848e631a895533201b683e3b472777ee4fe3",
+      "examples/hello/targets/x86_64-macos/README.md": "c9902f9060048ea5c0c425d743e2d021333eeb17534b40a71f92e14f5556c995",
+      "examples/hello/targets/x86_64-macos/src/main.s": "066399b3222c5bfbe5545e1e175c70d663bf8044b5963894e74ad998c1bc05d0",
+      "examples/hello/targets/x86_64-windows/README.md": "bf0aa3597b5a5f23e87d81fae54eab8c4c56305f9a4f68141df8b9a1a47a585d",
+      "examples/hello/targets/x86_64-windows/kernel32.def": "7303c16189b794b188ea32f72279c8c63750e267391939ec5448b78b283d433d",
+      "examples/hello/targets/x86_64-windows/src/main.s": "7c0a8a78ec79239cfa62b120eb53062ab53a80b63f7db5e337372807a511b991",
+      "examples/hello/targets/x86_64-windows/tests/main.s": "115ca165b267be2f0fa5ae0ed3d352756cd998c2f7984dbfc8f8c4215dfa6a91",
+      "examples/math/LICENSE": "91d5d85f1cee47d47ce45ca577d1dda31123c4200713f622794370744a8e4e0d",
+      "examples/math/README.md": "731883687bc3466cac16b6d68055a1b70ea54683cfef07e54cd3f7fa061fcd44",
+      "examples/math/asm.toml": "75332d8da23f8c93ce4a88d429935710457882b1c0c69ad42f40bee645284501",
+      "examples/math/targets/aarch64-linux/README.md": "b5f4b3e71c94d5c55c7f63ba0845a4dc14b8984f39bfc70ac9bce36b04080755",
+      "examples/math/targets/aarch64-linux/src/main.s": "60c1b8fd194da94eedb0565c010995222bf8bb6af9a5535688ee5cedc2ed303a",
+      "examples/math/targets/aarch64-linux/src/min.s": "2d7dd7945b294608788cb8bdd3b09cc29e75846a0992bbbb743793d2bef96e38",
+      "examples/math/targets/aarch64-linux/tests/main.s": "b56ce2ab328439ed7c573c9ffcab6a629e05c9b934e455bfde3c698af3950858",
+      "examples/math/targets/aarch64-macos/README.md": "7f401ede01ae96d2b42f1372c8d1c8f08105a6097ec867b17a9354999ba091bb",
+      "examples/math/targets/aarch64-macos/src/main.s": "7de35f4092c6ffdeff373fbad64a97f7aff543e2151bfc90be2b963a6f4d28bf",
+      "examples/math/targets/aarch64-macos/src/min.s": "1541ff579a78b164d066be8d69a2e454c0c015c43f8f42e68aad5325f5a5b187",
+      "examples/math/targets/aarch64-macos/tests/main.s": "c6b89e4c1d0f05ddaae4f5c658ff70e00a7a55aea644acb4256432da9523c024",
+      "examples/math/targets/aarch64-windows/README.md": "275d85312b7440762fbc92fdd0c8e3e3b6b5a865ecc0de1cb8efc674474bb82d",
+      "examples/math/targets/aarch64-windows/kernel32.def": "7303c16189b794b188ea32f72279c8c63750e267391939ec5448b78b283d433d",
+      "examples/math/targets/aarch64-windows/src/main.s": "912fa6b4c14889d43d04f044c1bbd02715aa4b6aeb4a81fdffdedee6e2992be8",
+      "examples/math/targets/aarch64-windows/src/min.s": "28fce09e16c12572ab6a95e4aebc48964bbd1905d6f13c8eb6d7f8ec9519c1d3",
+      "examples/math/targets/aarch64-windows/tests/io.s": "242da6ef8bb8b72bf725c1a7570f65da66466b6dc7bec367a7b7cb2ef93b7236",
+      "examples/math/targets/aarch64-windows/tests/main.s": "e7c0da22ddc3863c0a1c17cf3e04fa7fba1c7f208035eb127f280b900b78ccf4",
+      "examples/math/targets/riscv64-linux/README.md": "7a1a8be32fc68230d7aeb93033b9172dfc92a6177ac3119e4d4c654c2e9a4ed6",
+      "examples/math/targets/riscv64-linux/src/main.s": "e3f2f0c8be8cefac313a363932c4c363d379a30038de2a1dd9855bbe14c21da3",
+      "examples/math/targets/riscv64-linux/src/min.s": "d6a1abd0b89f61ec84ab8151935e8143faa2d1e538ec27a0818cf0a318642360",
+      "examples/math/targets/riscv64-linux/tests/main.s": "e873eeca82357d7a6db26a29a824680cd86acae76fa1588407c07427a67da2fa",
+      "examples/math/targets/x86_64-linux/README.md": "cb51383319328c4e13429a9d2730b03590faaed54b1fe33c8735800f3dfdceda",
+      "examples/math/targets/x86_64-linux/src/main.s": "f1f29abe73fb8ab5ed0e9105489ff568e26dfd4b063ae7c2c31a5c8546961b37",
+      "examples/math/targets/x86_64-linux/src/min.s": "02726f5b7f3b788eb59a189cfdbea85c4add5b87ae87e29a75f971b3654f8933",
+      "examples/math/targets/x86_64-linux/tests/main.s": "728e63b4d5e1f3fa4b22d3edacaab1cacf6357f599211b98fa290c8aaeb57c97",
+      "examples/math/targets/x86_64-macos/README.md": "a93eb4486c7ed0a6cbfd10157b6b89f01656873d3ece5e3cc6f3e555eb5fd27a",
+      "examples/math/targets/x86_64-macos/src/main.s": "689de0fdee97df37f4e35e1346bd8abcbef705f75a436804edba943cb6076389",
+      "examples/math/targets/x86_64-macos/src/min.s": "df515dfd2b3ef6be85ba78c729190cf676f7c84b6cfab185516659d85d0e94de",
+      "examples/math/targets/x86_64-macos/tests/main.s": "57313db00aa8ea98a04c2e61cc5855e1eca926abbd4d1448093a6d5548188049",
+      "examples/math/targets/x86_64-windows/README.md": "8e7a2273073ff714f6fd88dfed2da0317fb7342c363116282bfeea6065e49104",
+      "examples/math/targets/x86_64-windows/kernel32.def": "7303c16189b794b188ea32f72279c8c63750e267391939ec5448b78b283d433d",
+      "examples/math/targets/x86_64-windows/src/main.s": "e4269c2930f4a76041d8e442fbc3d805e1375efbacfeb90618ba0d8b3744f900",
+      "examples/math/targets/x86_64-windows/src/min.s": "687f372c575efd8965caa6d0e069c7bc935e38a23d3fbff28a1d021bb99ef1e6",
+      "examples/math/targets/x86_64-windows/tests/io.s": "93198da6d22f7f26bcf5a8e37f7c4579e7ff882f3669df02a7aa1369faa3d59f",
+      "examples/math/targets/x86_64-windows/tests/main.s": "80bf7099cd5611afcd1f9b145dd5ab4b688cfe96772ac4e1017b82c283e3ce1e",
+      "tests/aarch64/archive_harness.s": "4a2ccdb5bedc70eb4d38f89cced53634f56c594aa810f395c865a6b528e0ca31",
+      "tests/aarch64/self_update_metadata_harness.s": "f5a5487074703fd4a1e725a0a4e78e8d3af6229bd565461fa0705fc48b7a6b1c",
+      "tests/agents/test_agent_site.py": "7203d784377570edc26e20665fd89b80a9b8e053d781794332703bbddf8f531c",
+      "tests/agents/test_catalog.py": "c45792880cc04a932e320d6cfb59af2a33072431a8bf297b86c8044e3e6cea37",
+      "tests/agents/test_catalog_hosted.py": "fd04c1dd42517f818ac6a9891b52cc77cac98243f951be5cd5820789cc4f17f2",
+      "tests/agents/test_mcp_hosted.py": "28198c990b38dd04a1484d4721b940658acc9fb8e6fa14e9a17a394f49729574",
+      "tests/agents/test_mcp_server.py": "ce512d5aa7c72b02abaaf31b61365e98478f00078dca98e6b3f78472f924ca3b",
+      "tests/agents/test_packaging.py": "8de81f6f7030548f8f5f84099034d3bb8f9d6f45abdef1ce1899af0aff1b1284",
+      "tests/agents/test_workflow.py": "edea16750798168d16a9e270a0004197772335f7e91d82d5da867c0682b1d1f5",
+      "tests/host.py": "1ab5b5413134273c8716ba9234901ed4e001cc501419807e0bc1fead24bb06f4",
+      "tests/hosted_registry/test_database.py": "a59b1191cd87cb5f7b31906c78b9d3dd0d6f4c061e2801a0cd9c77f094c3aa67",
+      "tests/hosted_registry/test_operator.py": "9faf67500d2411d4b8cfd6db97644d33a85b80db753529d80c67a03f5420b3d4",
+      "tests/macos/test_abi.py": "a94a24c41345a4d6357cdd5c7999a1cbfbcc41586c5689c1191d727878b330a0",
+      "tests/macos/test_bootstrap_macos.py": "8ee8c022b72d13c1c81b7226261cb0ab5fc5b57473ef2a5da571dfaf072badbf",
+      "tests/macos/test_common.py": "41abd9694e984cda79ea5db4d4b7a978759d036a1f718cc42aeddfa8eb6df6c9",
+      "tests/macos/test_cross_builds.py": "f818a6148a5e151bd80329441147458f7eed4887eb8e57a737bd3e1db46bf7ef",
+      "tests/macos/test_linked_projects.py": "21dd75d87942beeb1e7d1bad01b5fcfd2150cfbdc431903b128c53714606c5a7",
+      "tests/macos/test_macho.py": "309ba3a5fcaa6aee4d2aa1aa8aeadea77c391af5db92f02e4f57f11d39676a2b",
+      "tests/macos/test_native.py": "1ddf9f859c0ab90efcb8f93b776a411dfaa0f3c3a1115f04f8ae6f836d010424",
+      "tests/macos/test_reference_packages.py": "920da55855e7f3a5ffc3749bdbff2bd62f29e6a790635be319822f77ea658bf1",
+      "tests/macos/test_self_update_macos.py": "8689a555e8bbfaf65810645a5fe09edd581a7fc62dd9a57ca4bcb7a17d40be37",
+      "tests/macos/test_trusted_bootstrap_macos.py": "86b4fe80e6b67d6d35b7be82fc99257a4989aaedef71fedd6fdbed476908b795",
+      "tests/macos/test_trusted_self_update_macos.py": "d897e33d50b95859cd40b1bda920a3d4d4c64e477ffa6498d97b706a7f58ddd7",
+      "tests/packages/__init__.py": "4a6783bd15e9565a17c666e9952e82853ee2cfd4957638250802d9e78889397a",
+      "tests/packages/macos_host.py": "0b3bac924b9d0866611671c09930bac385d6d74d30ddcaeedf8817a06f642852",
+      "tests/packages/test_hello_macos.py": "2f5239af009026cb26d8c17a40027587b785c0724e04dc28fc8063f8df9670eb",
+      "tests/packages/test_hello_windows.py": "c2a20392b8418d0c65134a0985c3c1a21a0e67564b862db9c696298fcbeac8ff",
+      "tests/packages/test_macos_reference_io.py": "0555b04f51531f33d194eec0fe6eb6dfc45cc9268f7a3fe0ab905d8be9c32845",
+      "tests/packages/test_math_aarch64.py": "bb1630f05972163987165862ecf07842160a84e299ea1825bec7237f1178a9b3",
+      "tests/packages/test_math_riscv64.py": "16643d07202bede313de60ce2a763ccc0460aafdd9189413799e63c4a7a7574c",
+      "tests/packages/test_math_windows.py": "25bcd71be01a164a68cf0f529c288da9da1de1ade21c606d2622551c0ac1bc76",
+      "tests/packages/test_math_x86_64_macos.py": "44583afdd73cd862fbec2e682624be0f78ee9a9960e7edf92ac275f1560a5367",
+      "tests/registry/test_native_link.py": "61dc70dc25f8c781d09c4f64ce0e273e54c8a6109a529646a672360427ad0970",
+      "tests/registry/test_project_targets.py": "c7a413e672d6c98f8888111a9ffcc6f6525bcddadd2e0f74c99212ea43ea89b3",
+      "tests/registry/test_registry.py": "5bda718ed40a446e7b13688a3fd60e3cee47d0be1897f6c9cc116c3a0855b56c",
+      "tests/release/test_build_targets.py": "3927c2b5cf85177f02b39c78a5ae5d3b8d236439eede9943e4a5cfc30d9fe847",
+      "tests/release/test_macos_release.py": "26b3edc6683b199efec6718c2303ccf51e7b3fb8a4fead74a6709f0a1b077a6a",
+      "tests/release/test_release.py": "dbc0118c6b0019b548a482b5b9145b551b195433b27714292fec559a9e68ad66",
+      "tests/site.test.cjs": "87bb1ee7ea9757f0a9555aa361217fd55625fe25c55cee4bf7b6541c7a1eac55",
+      "tests/test_archive_cli.py": "7426b5388b627078c57b96dbc07c819dcb9e0731dab5737b5556a2e260c84b8a",
+      "tests/test_bootstrap.py": "811f975a1b82a52a17715f06e4f62e12ae9d8453d2d6eea7970f6991295dd97e",
+      "tests/test_cli.py": "f93701b20e0ce81607a41a8b2a97e9d1f1204ac8792ec521b37c19a9cfcfa7b8",
+      "tests/test_cross_build_cli.py": "54107f9a0c001b8b6d382a4587269500306a7d70e0f93803493a34c653b5cbdc",
+      "tests/test_dependencies_cli.py": "2839e286637986ef5bbc6d9d896c974006dccb952e8f420f490f7552546a2fd1",
+      "tests/test_install.py": "445db500e26c7763947d5943a2f9cec6ae0ea8e66502846d9489eefe9037fbff",
+      "tests/test_native_link.py": "a98d62ccf66f40e19cd766c390af93faab18dec01416ec4063d0398d06541aba",
+      "tests/test_programs_cli.py": "0462e9f74714ce326c7154fbc4809784c11fc2b10df45ea4dbc20a3bbad4a102",
+      "tests/test_publish_cli.py": "2ded72e5f025a6bc27444d8ca087352dc8bd87ffa989d849824b0e08fb13eeee",
+      "tests/test_registry_cli.py": "d688981f625b9c03dba104dc67483cd1f47e911bc1e06ea75d32a842892e5d4a",
+      "tests/test_registry_identity.py": "3d61583c8e1cf67530aec399cbe5c3bac426aec1a3cd5f8dc97ef2a334c642ac",
+      "tests/test_self_update.py": "39fa483635c45551ff1dc40eaea2a600a7e61ab8d2ab923f11d58d07c724472b",
+      "tests/test_self_update_metadata.py": "c561639c2220ee18d7b92856f0631b17f7f5f852b4f3b3c9a74fd475db7c8df9",
+      "tests/test_site.py": "10341aca8fc42b9d58b3aee503d5b5c4065c8399c46e0694732fa25b6dcc3ee1",
+      "tests/test_site_dependencies.py": "52ec7289ff6fc17875f02f14d08415dbb54827d8af35547b984c48e598d1219e",
+      "tests/test_target_indexes.py": "7e3d6add1357916e72ee75924584a30f289c28470379bdcebbb18b2ddc1e7c9a",
+      "tests/test_trusted_bootstrap.py": "649014ae0e888545b5aaa1197c44b543ac1505a5fcb14dca57e4ce27f87bd031",
+      "tests/test_trusted_self_update.py": "aa2e20a81a0c546c3231add9b7ef28f8659d736461cb4c39aa2db272b7af5997",
+      "tests/test_trusted_site.py": "f66ac4e11568f1eb34719e5b0d4a65227a6a5e2b9b6b8eca0a336316e1d7d852",
+      "tools/macos.py": "16d48eba05ee156a64858fba00ac988ce503b5f3bee635c83af61dc4390731b9",
+      "tools/registry.py": "893c928b021533766ace6e0fee25e82571bdd63e76ac6da90ac621ece7e92e60",
+      "tools/release.py": "b69e383b834ad8eb73061277f78b39bc20f6c2251c392234171194af036bfe88"
+    }
+  },
+  "native_macos": {
+    "runtime": "Native Apple Silicon macOS 15.6.1",
+    "cli": {
+      "bytes": 282400,
+      "sha256": "579b329cea7ac9ec107d9f0d7d94f56992bc8fa1f1a8875bf646c6d936f05cca",
+      "generated_assembly_sha256": "f59d5f80cb79cfa7a86153d18a9ae054e65400e569961fca172ba535b56adae6"
+    },
+    "cli_gate": {
+      "command": "make test",
+      "exit_code": 0,
+      "test_methods_run": 259,
+      "unittest_skip_records": 0,
+      "seconds": 145.128,
+      "log_sha256": "a9b7a4fadc443392c2eafa490b48e1711095f9c2c030e4f82627439d48646272"
+    },
+    "release_gate": {
+      "command": "python3 -m unittest discover -s tests/release -p 'test_*.py' -v",
+      "exit_code": 0,
+      "test_methods_run": 31,
+      "unittest_skip_records": 12,
+      "seconds": 138.03,
+      "log_sha256": "53a8be3907da873adaa173412e3e4968630144b6721cc14f69b9cccd099d86bd"
+    },
+    "example_flows": [
+      {
+        "project": "hello",
+        "command": [
+          "asm",
+          "run"
+        ],
+        "exit_code": 0,
+        "stdout": "Hello from asm!\n",
+        "stderr": "",
+        "artifact_sha256": "24e62b4ec5b62c4a834e205305068233b857879fe4654e7bd21db3f248219519"
+      },
+      {
+        "project": "hello",
+        "command": [
+          "asm",
+          "test"
+        ],
+        "exit_code": 0,
+        "stdout": "Passed targets/aarch64-macos/tests/main.s\n",
+        "stderr": "",
+        "artifact_sha256": "722695ea177228c2388e93ebaec3b5038df68ce51fb68002b59012367ada68dc"
+      },
+      {
+        "project": "math",
+        "command": [
+          "asm",
+          "run"
+        ],
+        "exit_code": 0,
+        "stdout": "min(12, 37) = 12\n",
+        "stderr": "",
+        "artifact_sha256": "ab07fe08afa25ce14e0462deb92813a87ab9a180fc420bbabbbdeda40b7d85f9"
+      },
+      {
+        "project": "math",
+        "command": [
+          "asm",
+          "test"
+        ],
+        "exit_code": 0,
+        "stdout": "Passed targets/aarch64-macos/tests/main.s\n",
+        "stderr": "",
+        "artifact_sha256": "df85eab6ecf4a3ec7902cfed434a7941808c1d2684b9f4652edfbb34ac15b382"
+      }
+    ],
+    "clang": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+    "cross_clang": "Homebrew clang version 23.1.4",
+    "cross_linker": "Homebrew LLD 23.1.4 (compatible with GNU linkers)"
+  },
+  "linux": {
+    "aarch64": {
+      "runtime": "native ARM execution in a Linux VM on Apple Silicon; no physical Linux qualification",
+      "image": "sha256:e8e65382b51832d9aeb97400f2f6f884e6b647ac61ef725373f26e4576b8499a",
+      "full_gates": [
+        {
+          "label": "make-check",
+          "command": [
+            "make",
+            "check"
+          ],
+          "timeout_seconds": 1200,
+          "exit_code": 0,
+          "seconds": 37.781,
+          "log_sha256": "fb13a5cddb8b42af942071c4edbfcba3fe130438af3c005c97712b5a1cb74da9",
+          "suite_summaries": [
+            "Ran 308 tests in 36.931s",
+            "\nOK (skipped=21)",
+            "Ran 68 tests in 0.294s",
+            "\nOK",
+            "Ran 30 tests in 0.011s",
+            "\nOK (skipped=13)",
+            "# tests 19",
+            "# pass 19",
+            "# fail 0",
+            "# skipped 0"
+          ]
+        },
+        {
+          "label": "packages",
+          "command": [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/packages",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "timeout_seconds": 600,
+          "exit_code": 0,
+          "seconds": 0.269,
+          "log_sha256": "70cc03fb6f9978a3c9f464f3e5d1cb0b8b85103db8eb084c19a25dc30c13b6cf",
+          "suite_summaries": [
+            "Ran 24 tests in 0.167s",
+            "\nOK (skipped=21)"
+          ]
+        },
+        {
+          "label": "flows",
+          "command": [
+            "python3",
+            "/tmp/flow.py"
+          ],
+          "timeout_seconds": 600,
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log_sha256": "f3789d85c035c32bd1a2f6a34e6d6ebd5d64ee0f5c30e15224b4491bca06cb52",
+          "suite_summaries": []
+        }
+      ],
+      "artifact": {
+        "build/asm-aarch64-linux": {
+          "sha256": "e995afb8d9d30abc6a9060b0f15cc33f9a7dbf4b617540046695f8ce1c9b12d4",
+          "bytes": 168872
+        },
+        "build/asm": {
+          "sha256": "e995afb8d9d30abc6a9060b0f15cc33f9a7dbf4b617540046695f8ce1c9b12d4",
+          "bytes": 168872
+        }
+      },
+      "example_flow_checks": 34,
+      "flow_artifacts": [
+        {
+          "package": "hello",
+          "target": "x86_64-linux",
+          "path": "build/x86_64-linux/app",
+          "bytes": 8880,
+          "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440"
+        },
+        {
+          "package": "hello",
+          "target": "x86_64-linux",
+          "path": "build/x86_64-linux/test",
+          "bytes": 4616,
+          "sha256": "59f8777e22d57f53a1c4ce9093eae9646427aca399af72070c6cdd324283d822"
+        },
+        {
+          "package": "hello",
+          "target": "aarch64-linux",
+          "path": "build/app",
+          "bytes": 1064,
+          "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9"
+        },
+        {
+          "package": "hello",
+          "target": "aarch64-linux",
+          "path": "build/test",
+          "bytes": 904,
+          "sha256": "df789c2fc13772bc2b7ecff1c408eef9e310b75dce01b875b5306aa39ec2dd1e"
+        },
+        {
+          "package": "hello",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/app",
+          "bytes": 1296,
+          "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92"
+        },
+        {
+          "package": "hello",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/test",
+          "bytes": 1128,
+          "sha256": "3ced697b6b63db9dfc230845fc148f2502ef9997f7b449fd1efd19161b6fdcaf"
+        },
+        {
+          "package": "math",
+          "target": "x86_64-linux",
+          "path": "build/x86_64-linux/app",
+          "bytes": 8920,
+          "sha256": "bf059599c738bb53d624284ebf918e9d5c043f9b8ea5a12f356e70c0d0230ebb"
+        },
+        {
+          "package": "math",
+          "target": "x86_64-linux",
+          "path": "build/x86_64-linux/test",
+          "bytes": 9056,
+          "sha256": "cb3e104fd915ca30e03baf8214bd266a3b4b95a3b18f65e9ebb7b0ccf3cbcb81"
+        },
+        {
+          "package": "math",
+          "target": "aarch64-linux",
+          "path": "build/app",
+          "bytes": 1328,
+          "sha256": "a2135a61d7ab3ceb2eac8cfbec81290b6121619b1e844e305c5176561c5a4d44"
+        },
+        {
+          "package": "math",
+          "target": "aarch64-linux",
+          "path": "build/test",
+          "bytes": 2448,
+          "sha256": "37cd792bb3894205931be6b26200bbb4291a90e04e95e50c3eda4e0129568390"
+        },
+        {
+          "package": "math",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/app",
+          "bytes": 1904,
+          "sha256": "6fd204c827e556188bbe98894323f94742f32019dbf00b2b260bf669a04d03fd"
+        },
+        {
+          "package": "math",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/test",
+          "bytes": 13744,
+          "sha256": "54a97a08ef912470195d43d7a64f0ad0974c93e37bd14a7df756f2237ca69c90"
+        }
+      ],
+      "versions": "Linux efb85309a276 6.8.0-50-generic #51-Ubuntu SMP PREEMPT_DYNAMIC Sat Nov  9 18:03:35 UTC 2024 aarch64 GNU/Linux\n12.15\nPython 3.11.2\nGNU Make 4.3\nGNU assembler (GNU Binutils for Debian) 2.40\nGNU ld (GNU Binutils for Debian) 2.40\nGNU assembler (GNU Binutils for Debian) 2.40\nGNU assembler (GNU Binutils for Debian) 2.40\nqemu-x86_64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nqemu-aarch64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nqemu-riscv64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nQEMU emulator version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nv18.20.4\ncc (Debian 12.2.0-14+deb12u1) 12.2.0\ngit version 2.39.5\ncurl 7.88.1 (aarch64-unknown-linux-gnu) libcurl/7.88.1 OpenSSL/3.0.22 zlib/1.2.13 brotli/1.0.9 zstd/1.5.4 libidn2/2.3.3 libpsl/0.21.2 (+libidn2/2.3.3) libssh2/1.10.0 nghttp2/1.52.0 librtmp/2.3 OpenLDAP/2.5.13\n",
+      "final_release_gate": {
+        "status": "unreleased working-tree release-tool validation; no publication",
+        "snapshot": "final3",
+        "architecture": "aarch64",
+        "context": "colima-asm-targets",
+        "image": "sha256:e8e65382b51832d9aeb97400f2f6f884e6b647ac61ef725373f26e4576b8499a",
+        "source_archive_sha256": "9c8cf9022b22952bb7b863c78bddf28c32867fdaeec977a578e75a047d04b26f",
+        "base_commit": "ebc13d313c84086e6ca074d19181ab676c9efb37",
+        "command": [
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests/release",
+          "-p",
+          "test_*.py",
+          "-v"
+        ],
+        "exit_code": 0,
+        "seconds": 0.11,
+        "timeout_seconds": 1200,
+        "log": "/tmp/asm-multitarget-followup-final3-aarch64-release.log",
+        "log_sha256": "5a7251202d988c784e8409e431dbe6c7d412edf0f93d634bbb837f91fd884d21",
+        "suite_summaries": [
+          "Ran 31 tests in 0.009s",
+          "\nOK (skipped=13)"
+        ],
+        "skips": [
+          "test_final_bytes_come_from_exact_commit_and_pass_native_tests (test_macos_release.NativeBuilderTests.test_final_bytes_come_from_exact_commit_and_pass_native_tests) ... skipped 'exact native build checks require Apple Silicon macOS'",
+          "test_artifact_evidence_requires_all_exact_bytes (test_release.ReleaseTests.test_artifact_evidence_requires_all_exact_bytes) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_destination_created_after_initial_check_is_not_replaced (test_release.ReleaseTests.test_destination_created_after_initial_check_is_not_replaced) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_existing_output_is_preserved (test_release.ReleaseTests.test_existing_output_is_preserved) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_mac_fan_in_preserves_exact_native_bytes_and_requires_declaration (test_release.ReleaseTests.test_mac_fan_in_preserves_exact_native_bytes_and_requires_declaration) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_metrics_failure_does_not_become_success_or_zero (test_release.ReleaseTests.test_metrics_failure_does_not_become_success_or_zero) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_missing_release_bundle_preserves_the_unpublished_site (test_release.ReleaseTests.test_missing_release_bundle_preserves_the_unpublished_site) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_release_checksums_and_runtime_results_are_real (test_release.ReleaseTests.test_release_checksums_and_runtime_results_are_real) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_release_preserves_core_and_example_license_scopes (test_release.ReleaseTests.test_release_preserves_core_and_example_license_scopes) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_requested_cross_targets_are_built_and_run (test_release.ReleaseTests.test_requested_cross_targets_are_built_and_run) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_site_without_network_keeps_evidence_and_counts_unknown (test_release.ReleaseTests.test_site_without_network_keeps_evidence_and_counts_unknown) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_two_releases_match_and_ignore_uncommitted_source (test_release.ReleaseTests.test_two_releases_match_and_ignore_uncommitted_source) ... skipped 'native release checks require Linux x86_64 and GNU build tools'",
+          "test_version_mismatch_leaves_no_output (test_release.ReleaseTests.test_version_mismatch_leaves_no_output) ... skipped 'native release checks require Linux x86_64 and GNU build tools'"
+        ]
+      }
+    },
+    "x86_64": {
+      "runtime": "QEMU system emulation of an x86_64 Linux kernel on Apple Silicon; no physical x86 Linux qualification",
+      "image": "sha256:c0e70c54fa8114831e49fe7039d9e48dd365e9abca0f01548744b65100843c90",
+      "full_gates": [
+        {
+          "label": "make-check",
+          "command": [
+            "make",
+            "check"
+          ],
+          "timeout_seconds": 1800,
+          "exit_code": 0,
+          "seconds": 273.325,
+          "log_sha256": "46de2863b4df450dbe775749a1e57a37a88dcd287acbecdadb63627ecb0f181e",
+          "suite_summaries": [
+            "Ran 308 tests in 190.017s",
+            "\nOK (skipped=28)",
+            "Ran 68 tests in 4.168s",
+            "\nOK",
+            "Ran 30 tests in 71.552s",
+            "\nOK (skipped=1)",
+            "# tests 19",
+            "# pass 19",
+            "# fail 0",
+            "# skipped 0"
+          ]
+        },
+        {
+          "label": "packages",
+          "command": [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/packages",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "timeout_seconds": 600,
+          "exit_code": 0,
+          "seconds": 1.552,
+          "log_sha256": "3a34f86453a96dc1e64da7c460d2ba4a333723ba767ad1d95bf5bb0d14a81596",
+          "suite_summaries": [
+            "Ran 24 tests in 0.657s",
+            "\nOK (skipped=28)"
+          ]
+        },
+        {
+          "label": "flows",
+          "command": [
+            "python3",
+            "/tmp/flow.py"
+          ],
+          "timeout_seconds": 600,
+          "exit_code": 0,
+          "seconds": 1.994,
+          "log_sha256": "48ba3aae5e90c1824e99a6417c3101daa59cc59aacd5ebdce948cc9ef002df80",
+          "suite_summaries": []
+        }
+      ],
+      "artifact": {
+        "build/asm-x86_64-linux": {
+          "sha256": "365eecdb28485962a2d42a30061a10ee2f3a86e00ccb073fba23ad0b31e2098e",
+          "bytes": 127480
+        },
+        "build/asm": {
+          "sha256": "365eecdb28485962a2d42a30061a10ee2f3a86e00ccb073fba23ad0b31e2098e",
+          "bytes": 127480
+        }
+      },
+      "example_flow_checks": 34,
+      "flow_artifacts": [
+        {
+          "package": "hello",
+          "target": "x86_64-linux",
+          "path": "build/app",
+          "bytes": 8880,
+          "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440"
+        },
+        {
+          "package": "hello",
+          "target": "x86_64-linux",
+          "path": "build/test",
+          "bytes": 4616,
+          "sha256": "59f8777e22d57f53a1c4ce9093eae9646427aca399af72070c6cdd324283d822"
+        },
+        {
+          "package": "hello",
+          "target": "aarch64-linux",
+          "path": "build/aarch64-linux/app",
+          "bytes": 1064,
+          "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9"
+        },
+        {
+          "package": "hello",
+          "target": "aarch64-linux",
+          "path": "build/aarch64-linux/test",
+          "bytes": 904,
+          "sha256": "df789c2fc13772bc2b7ecff1c408eef9e310b75dce01b875b5306aa39ec2dd1e"
+        },
+        {
+          "package": "hello",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/app",
+          "bytes": 1296,
+          "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92"
+        },
+        {
+          "package": "hello",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/test",
+          "bytes": 1128,
+          "sha256": "3ced697b6b63db9dfc230845fc148f2502ef9997f7b449fd1efd19161b6fdcaf"
+        },
+        {
+          "package": "math",
+          "target": "x86_64-linux",
+          "path": "build/app",
+          "bytes": 8920,
+          "sha256": "bf059599c738bb53d624284ebf918e9d5c043f9b8ea5a12f356e70c0d0230ebb"
+        },
+        {
+          "package": "math",
+          "target": "x86_64-linux",
+          "path": "build/test",
+          "bytes": 9056,
+          "sha256": "cb3e104fd915ca30e03baf8214bd266a3b4b95a3b18f65e9ebb7b0ccf3cbcb81"
+        },
+        {
+          "package": "math",
+          "target": "aarch64-linux",
+          "path": "build/aarch64-linux/app",
+          "bytes": 1328,
+          "sha256": "a2135a61d7ab3ceb2eac8cfbec81290b6121619b1e844e305c5176561c5a4d44"
+        },
+        {
+          "package": "math",
+          "target": "aarch64-linux",
+          "path": "build/aarch64-linux/test",
+          "bytes": 2448,
+          "sha256": "37cd792bb3894205931be6b26200bbb4291a90e04e95e50c3eda4e0129568390"
+        },
+        {
+          "package": "math",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/app",
+          "bytes": 1904,
+          "sha256": "6fd204c827e556188bbe98894323f94742f32019dbf00b2b260bf669a04d03fd"
+        },
+        {
+          "package": "math",
+          "target": "riscv64-linux",
+          "path": "build/riscv64-linux/test",
+          "bytes": 13744,
+          "sha256": "54a97a08ef912470195d43d7a64f0ad0974c93e37bd14a7df756f2237ca69c90"
+        }
+      ],
+      "versions": "Linux 6043fc119208 6.8.0-50-generic #51-Ubuntu SMP PREEMPT_DYNAMIC Sat Nov  9 17:58:29 UTC 2024 x86_64 GNU/Linux\n12.15\nPython 3.11.2\nGNU Make 4.3\nGNU assembler (GNU Binutils for Debian) 2.40\nGNU ld (GNU Binutils for Debian) 2.40\nGNU assembler (GNU Binutils for Debian) 2.40\nGNU assembler (GNU Binutils for Debian) 2.40\nqemu-x86_64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nqemu-aarch64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nqemu-riscv64 version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3)\nv18.20.4\ncc (Debian 12.2.0-14+deb12u1) 12.2.0\ngit version 2.39.5\ncurl 7.88.1 (x86_64-pc-linux-gnu) libcurl/7.88.1 OpenSSL/3.0.22 zlib/1.2.13 brotli/1.0.9 zstd/1.5.4 libidn2/2.3.3 libpsl/0.21.2 (+libidn2/2.3.3) libssh2/1.10.0 nghttp2/1.52.0 librtmp/2.3 OpenLDAP/2.5.13\n",
+      "final_release_gate": {
+        "status": "unreleased working-tree release-tool validation; no publication",
+        "snapshot": "final3",
+        "architecture": "x86_64",
+        "context": "colima-asm-targets-x86",
+        "image": "sha256:c0e70c54fa8114831e49fe7039d9e48dd365e9abca0f01548744b65100843c90",
+        "source_archive_sha256": "9c8cf9022b22952bb7b863c78bddf28c32867fdaeec977a578e75a047d04b26f",
+        "base_commit": "ebc13d313c84086e6ca074d19181ab676c9efb37",
+        "command": [
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests/release",
+          "-p",
+          "test_*.py",
+          "-v"
+        ],
+        "exit_code": 0,
+        "seconds": 67.872,
+        "timeout_seconds": 1200,
+        "log": "/tmp/asm-multitarget-followup-final3-x86_64-release.log",
+        "log_sha256": "d25efb48f265d27cea9bdf877c354ad62ff55b4117b24193bada647aac12eb09",
+        "suite_summaries": [
+          "Ran 31 tests in 66.852s",
+          "\nOK (skipped=1)"
+        ],
+        "skips": [
+          "test_final_bytes_come_from_exact_commit_and_pass_native_tests (test_macos_release.NativeBuilderTests.test_final_bytes_come_from_exact_commit_and_pass_native_tests) ... skipped 'exact native build checks require Apple Silicon macOS'"
+        ]
+      }
+    }
+  },
+  "agent_guidance_gate": {
+    "command": "make agent-test PYTHON=<private pinned-dependency environment>/bin/python",
+    "exit_code": 0,
+    "test_methods_run": 66,
+    "unittest_skip_records": 0,
+    "seconds": 17.738,
+    "log_sha256": "7668e9e5c8315a6cd2b23ea6fd9a58858fd938b44608d00ae408c6045d4cf712"
+  },
+  "site_python_gate": {
+    "command": "PYTHONPATH=tests python3 -m unittest test_site -v",
+    "exit_code": 0,
+    "test_methods_run": 7,
+    "unittest_skip_records": 0,
+    "seconds": 1.272,
+    "log_sha256": "cef6d99567fc9fb5ef01ded688463c8ce348482b5d1a52b1841707f3ac1c4d70"
+  },
+  "site_node_gate": {
+    "command": "node --test tests/site.test.cjs",
+    "exit_code": 0,
+    "tests": 19,
+    "failed": 0,
+    "skipped": 0,
+    "log_sha256": "a612d44e3d76203a9154043cb05d958c5580db842a89d42a989354cb7d5f68da"
+  },
+  "history_review": {
+    "kind": "advisory complete available Git history review",
+    "commits_all_refs": 174,
+    "commits_upstream_main": 59,
+    "root": "93487e3",
+    "base": "ebc13d313c84086e6ca074d19181ab676c9efb37",
+    "shallow": false,
+    "record_sha256": "6b784a19c8f97592f99c536385d66eec72df608c2f4268f96114701e050fd3bb",
+    "archive_limit_concern": "Fixed: legacy archives retain 16384 bytes; named target manifests remain bounded to 8190 bytes."
+  },
+  "review_fixes": [
+    {
+      "finding": "A legacy foreign-target first add wrote a v1 lock that the next command rejected.",
+      "fix": "Select v2 for foreign targets as well as named-target projects.",
+      "regression": "test_legacy_cross_target_first_add_writes_a_reusable_v2_lock",
+      "red_log_sha256": "6366adb28330d8f991688c61e1c2a2b46531ccc551c83c625fafe7a42731e6d2"
+    },
+    {
+      "finding": "Deleted sibling projects retained live website and agent-guide links.",
+      "fix": "Use canonical target subdirectories and distinguish published behavior from source-checkout builds.",
+      "regression": "test_github_example_source_links_exist_in_the_checkout",
+      "red_log_sha256": "ca637b445c77585b48296c25a5e37cf6ce47db7bc02f3addd41ea695dd63e607"
+    },
+    {
+      "finding": "A global archive size reduction broke the earlier 16 KiB legacy boundary.",
+      "fix": "Preserve the legacy bound and enforce the named-target bound separately.",
+      "regressions": [
+        "test_legacy_source_manifest_preserves_the_archive_byte_bound",
+        "test_named_target_source_manifest_uses_the_native_build_byte_bound"
+      ]
+    },
+    {
+      "finding": "Release admission expected an earlier native-only target report.",
+      "fix": "Use native evidence schema 2 for the selected-target report and bind admission to recorded source command metadata. Schema 1 retains its exact legacy contract.",
+      "regression": "test_selected_target_evidence_has_a_distinct_exact_schema",
+      "red_log_sha256": "1549c2fe5956b078d5b76a291d148768b5242c4ad95099a4cbfc072454702a21"
+    }
+  ],
+  "retained_negative_results": [
+    "Initial regression checks rejected multi-target declarations, foreign dependency selection, and no-run tests before implementation.",
+    "Earlier Docker storage failure prevented Linux execution. Later isolated task machines supplied successful gates.",
+    "A source snapshot without real Git history caused six site errors. Runners restored real base history and reran unchanged assertions.",
+    "Rosetta returned EINVAL for Linux seccomp filters, causing four preexec errors. A full x86 Linux kernel VM passed the probe and unchanged fault tests.",
+    "Apple clang lacked RISC-V support. Homebrew LLVM and its separate LLD formula supplied the cross toolchain. A stale linker availability check initially skipped one test before correction.",
+    "Initial Mac identity and native release assertions still described host-only reports; the exact selected-target contracts now pass.",
+    "Initial agent tests lacked SDK dependencies. The existing pinned hash-checked lock was installed in a private environment; all 66 tests passed.",
+    "Two named unittest selectors used outdated class or method names. Corrected discovery and complete suites ran afterward."
+  ],
+  "limits": [
+    "Linux checks use virtual machines or emulation; physical Linux hardware and performance remain unqualified.",
+    "Windows execution remains unrun. Existing Windows source, PE cross-build checks, and ABI harnesses are retained.",
+    "This CLI does not build Windows or Intel macOS targets. Their source declarations retain manual tool instructions.",
+    "Cross-target native-library linking requires a separate sysroot contract. Native-library builds currently require the native target.",
+    "Schema-1 dependency metadata validation remains unchanged. Combining that schema with named target recipes remains unsupported.",
+    "Registry artifact targets and the six-artifact limit remain unchanged. Seven source declarations do not qualify seven registry artifact targets.",
+    "Published package versions, archives, licenses, registry records, and release executables were not replaced."
+  ],
+  "cleanup": "Task containers were removed and only task-specific VMs were stopped. Existing profiles were unchanged. LLVM and LLD remain installed for the documented cross-build workflow."
+}

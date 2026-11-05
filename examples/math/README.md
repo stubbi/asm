@@ -1,41 +1,135 @@
 # Unsigned integer helpers
 
-This package supplies `asm_u64_min` for Linux x86-64 with the System V ABI.
-It returns the smaller of two unsigned 64-bit integers.
-The input values use `rdi` and `rsi`.
-The result uses `rax`.
-The function changes `rax` and the arithmetic flags.
-It does not access data memory or allocate stack storage.
-The caller must supply a valid call frame.
+This project supplies `asm_u64_min` for seven targets.
+The function returns the smaller of two unsigned 64-bit integers.
+Every 64-bit input value is permitted.
+One manifest declares the implementations under `targets/<target>/`.
 
-## Run the example
+```text
+asm.toml
+LICENSE
+targets/
+  x86_64-linux/
+  aarch64-linux/
+  riscv64-linux/
+  aarch64-macos/
+  x86_64-macos/
+  x86_64-windows/
+  aarch64-windows/
+```
 
-From this directory, run:
+Each target contains `src/min.s`, `src/main.s`, assembly tests, and its interface instructions.
+The root manifest selects the example and primary test for each target.
+An ABI defines register, stack, call, and data-layout rules.
+The target instructions specify the applicable ABI and preserved registers.
+
+## Run with Asm
+
+Use Asm 0.6.0 or later.
+Earlier binaries do not support this manifest extension.
+
+Native execution requires Linux x86-64, Linux AArch64, or Apple Silicon with macOS 15 or later.
+Linux builds require GNU Binutils.
+macOS builds require Apple's Command Line Tools.
+The following commands require an installed Asm CLI.
+
+1. Open this project directory.
+2. Run the native example.
 
 ```sh
 asm run
+```
+
+Expected output:
+
+```text
+min(12, 37) = 12
+```
+
+3. Run the native assembly tests.
+
+```sh
 asm test
 ```
 
-The example prints `min(12, 37) = 12`.
-The test covers equal values, zero, the largest value, reversed inputs, and the signed boundary.
+The test exits with status zero.
+Asm reports `Passed targets/<native-target>/tests/main.s`.
 These tests are not a formal proof.
-This package makes no performance claim.
+This project makes no performance claim.
 
-## Use the function
+## Build another Linux target
 
-From a consuming project, add the exact version:
+Cross builds produce files without executing them.
+Linux hosts require the matching GNU cross assembler and linker in `/usr/bin`.
+macOS requires Homebrew LLVM and LLD for Linux cross builds.
+Asm uses `/opt/homebrew/opt/llvm/bin/clang` and `/opt/homebrew/opt/lld/bin/ld.lld`.
+
+1. Check the targets available from this CLI.
 
 ```sh
-asm add stubbi/math@0.2.0 --target x86_64-linux
+asm targets
 ```
 
-Include the source in your GNU assembler file:
+2. Build the RISC-V64 Linux example.
 
-```asm
-.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
+```sh
+asm build --target riscv64-linux
 ```
 
-Asm adds `.asm/packages` to the assembler's include path.
-Call `asm_u64_min` with the interface described above.
-Include the file once in each linked program.
+Asm reports `Built build/riscv64-linux/app`.
+
+3. Build its assembly test without execution.
+
+```sh
+asm test --target riscv64-linux --no-run
+```
+
+Native run and test commands execute only the host target.
+Use the target instructions for deliberate execution through QEMU or a matching machine.
+Windows and Intel macOS implementations use direct build commands.
+
+## Callable interfaces
+
+Include the selected `targets/<target>/src/min.s` once in each linked program.
+Assembly include paths resolve from the project root.
+Independent consumers must retain the MIT license when they copy source.
+Historical published versions retain their original source paths.
+
+| Target | Inputs | Result | Instructions |
+| --- | --- | --- | --- |
+| Linux x86-64, System V AMD64 | `rdi`, `rsi` | `rax` | [x86_64-linux](targets/x86_64-linux/README.md) |
+| Linux AArch64, AAPCS64 | `x0`, `x1` | `x0` | [aarch64-linux](targets/aarch64-linux/README.md) |
+| Linux RISC-V64, RV64I/LP64 | `a0`, `a1` | `a0` | [riscv64-linux](targets/riscv64-linux/README.md) |
+| Apple Silicon macOS, Apple arm64 | `x0`, `x1` | `x0` | [aarch64-macos](targets/aarch64-macos/README.md) |
+| Intel macOS, System V AMD64 | `rdi`, `rsi` | `rax` | [x86_64-macos](targets/x86_64-macos/README.md) |
+| Windows x86-64, Microsoft x64 | `rcx`, `rdx` | `rax` | [x86_64-windows](targets/x86_64-windows/README.md) |
+| Windows AArch64, Microsoft ARM64 | `x0`, `x1` | `x0` | [aarch64-windows](targets/aarch64-windows/README.md) |
+
+macOS assembly uses `_asm_u64_min` as its symbol name.
+The other targets use `asm_u64_min`.
+An object for one target is not interchangeable with another target's object.
+
+## Qualification and license
+
+From the repository root, run the package checks:
+
+```sh
+python3 -m unittest discover -s tests/packages -p 'test_math_*.py' -v
+python3 -m unittest discover -s tests/packages -p test_macos_reference_io.py -v
+```
+
+The tests preserve unsigned-boundary, register, stack, and output-failure checks for each applicable target.
+Missing tools or runtimes produce explicit skips.
+Cross-assembly, emulated execution, and native execution establish separate results.
+Detailed target instructions retain the earlier evidence and its limits.
+The retained RISC-V digests describe the source before this relocation.
+
+The implementations come from repository commit `48bc44d5490b332dfa87fa60ffa91296d9423cbe`.
+Only project-relative assembly include paths changed.
+The root manifest declares version `0.6.0`.
+Its source archive contains all seven implementations.
+The registry artifact remains declared for Linux x86-64 only.
+Earlier published versions, records, and qualification digests remain unchanged.
+
+The project license is MIT.
+See [LICENSE](LICENSE).

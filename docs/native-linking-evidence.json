@@ -1,0 +1,214 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "source": {
+    "base_commit": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+    "state": "uncommitted working tree; not a release",
+    "selected_input_sha256": {
+      "cli/asm.s": "f65a60b64ad9f3dedd51ce49cb06433137584e25038b2b43b7714130ea37c792",
+      "cli/native_link.s": "288853479b030a9c95029b3fbd3eea75385ebd4bd889a983d9565f7d343997b9",
+      "cli/publish.s": "1b102893f0e3057303074c2244c3e34deda2d1a223cb62d7332384dd729b59cd",
+      "cli/aarch64/asm.s": "72497f27e8d2b353182931f0dbb63cbd4e13be1efa9e4965a610963ec6c5d5ab",
+      "cli/aarch64/native_link.s": "97e61169a0c9969671aa36037738187d7bac3ce566cf836233d4cf39acb0cb24",
+      "cli/aarch64/publish.s": "ed621985082dad9201fe8437ac4a47e0b81213880987679a19eabc1698cbbb89",
+      "tools/macos.py": "538b0ab9e3245955139cf0ab1ea22c3020c06bad3f9bdeedab116faa86bebc80",
+      "tools/registry.py": "b9138b25e05df6d62478ef9ec10015637f77f6805388db7c9330bc8cb1403ee3",
+      "experiments/assembly-server/server.s": "2f7f39705fb40828e51b0a45313420d9cccd5ac267203da1cb6cd65e556fe674",
+      "experiments/assembly-server/asm.toml": "5c013f700892f3819d8b3a332c642687606adfac4c518daca80bdf92e8f16854",
+      "experiments/assembly-server/abi-check.c": "47487c2e2b3359616d633285aebe96d6c5e2371290c529bbaf1b45f5008f8aa1",
+      "experiments/assembly-server/Makefile": "0edd844dbd383e9ed05d3ef1ceb565abdf69c326a8cf0b1920b67d1126e9ecea",
+      "experiments/assembly-server/test_runtime_versions.py": "7808e323b58996515aae7854243be3b956c87b256ce97277a811427971ef2c6d"
+    }
+  },
+  "environment": {
+    "host": "Darwin 24.6.0 arm64",
+    "python": "3.14.6",
+    "compiler": "Apple clang 17.0.0 (clang-1700.0.13.5)"
+  },
+  "artifacts": {
+    "native_cli": {
+      "target": "aarch64-macos",
+      "sha256": "f1982585f1b240f5889643a18d4ae5b2b0016381edb983c7956ebba890615532"
+    },
+    "server_source_archive": {
+      "target": "x86_64-linux",
+      "sha256": "92f1cd81899c18c986fbfdd1bc73dc5a75d394948ee49c6a0df66bb7cd273b77",
+      "bytes": 49866
+    },
+    "server_source_archive_portability_notes": {
+      "target": "x86_64-linux",
+      "sha256": "34a232c9f62089a4c5db975d7ed9454f82949ce3b21d38e26d116609549a4b6f",
+      "bytes": 49966,
+      "scope": "same experimental implementation with explicit server port limits; not published"
+    }
+  },
+  "checks": [
+    {
+      "command": "make test",
+      "outcome": "pass",
+      "tests": 215,
+      "seconds": 116.298,
+      "scope": "native Apple Silicon CLI; includes six native-library build tests",
+      "note": "This full run preceded the portability audit artifact assertions. Production inputs did not change during that audit."
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/registry -p 'test_*.py' -v",
+      "outcome": "pass",
+      "tests": 42,
+      "seconds": 2.257
+    },
+    {
+      "command": "PYTHONPATH=tests python3 -m unittest test_publish_cli -v",
+      "outcome": "pass",
+      "tests": 19
+    },
+    {
+      "command": "/usr/bin/clang -target x86_64-linux-gnu -c cli/asm.s",
+      "outcome": "pass",
+      "scope": "crossassembly only; no Linux execution"
+    },
+    {
+      "command": "/usr/bin/clang -target aarch64-linux-gnu -c cli/aarch64/asm.s",
+      "outcome": "pass",
+      "scope": "crossassembly only; no Linux execution"
+    },
+    {
+      "command": "/usr/bin/clang -target x86_64-linux-gnu -c server.s",
+      "outcome": "pass",
+      "scope": "crossassembly only; no server linkage or execution"
+    },
+    {
+      "command": "native asm publish and Python validate_artifact on the server archive",
+      "outcome": "pass",
+      "scope": "local test commit and record only; no upload or registry publication"
+    },
+    {
+      "command": "native macOS asm build on the Linux server package",
+      "outcome": "pass",
+      "scope": "unsupported target rejected before build output creation"
+    },
+    {
+      "command": "git diff --check on affected paths",
+      "outcome": "pass"
+    }
+  ],
+  "failed_attempts": [
+    {
+      "phase": "pre-change baseline",
+      "command": "make test",
+      "outcome": "error",
+      "tests": 207,
+      "test": "test_destination_created_after_validation_is_not_overwritten",
+      "detail": "FileNotFoundError for the temporary installed asm destination. This predates native-link implementation. Root cause was not established; this task does not claim a fix. The final full suite passed."
+    },
+    {
+      "phase": "first full native-link suite attempt",
+      "outcome": "error",
+      "detail": "unittest discovery imported the shared test_native_link module instead of the same-named macOS wrapper.",
+      "correction": "Renamed the wrapper to tests/macos/test_linked_projects.py. The subsequent full suite passed."
+    },
+    {
+      "phase": "portability audit focused macOS test attempt",
+      "outcome": "setup error",
+      "detail": "Errno 28: no space left on device before the six cases could set up. No runtime result followed from this attempt.",
+      "subsequent_check": "After available host space increased, the focused macOS wrapper passed six tests. Docker and Linux server tests were not retried."
+    }
+  ],
+  "unrun": [
+    {
+      "gate": "Linux extracted-package make test through asm build, including HTTP/PostgreSQL and runtime-version regressions",
+      "reason": "Local disk exhaustion caused Docker overlay I/O errors and a read-only filesystem during prior dependency setup. No Docker build retry was made.",
+      "ci": ".github/workflows/assembly-server.yml retains pinned dependency hashes and exercises this exact build path."
+    }
+  ],
+  "limits": [
+    "C runtime and protocol libraries remain external dependencies.",
+    "No hosted server, published package release, throughput result, or pure assembly protocol replacement is established."
+  ],
+  "portability_audit": {
+    "date": "2026-11-05",
+    "coverage_source": "docs/target-coverage.md",
+    "status": "source-build audit; target qualification gaps remain",
+    "toolchain": {
+      "assembler": "Apple clang 17.0.0 (clang-1700.0.13.5)",
+      "linker": "LLD 22.1.6, rust-lang/llvm-project commit dcc3606807c989700e0ac1cac18c31741bcd40d9",
+      "canonical_gnu_release_build": false
+    },
+    "cli_elf_artifacts": [
+      {
+        "target": "x86_64-linux",
+        "isa": "x86-64",
+        "os": "Linux",
+        "linked_project_abi": "System V AMD64 LP64",
+        "additional_cpu_extensions_introduced": [],
+        "file": "/tmp/asm-native-link-x86_64-linux",
+        "sha256": "41cfc3f9ba7f171145a090f01c88a9b3799a1870f8dd397a073bd67064dddaf7",
+        "bytes": 110688,
+        "input_object_sha256": "e1bf2710187bbc7428925b5e8f3a8598841638d8858ab16a91c6baf503d78cc2",
+        "source": "cli/asm.s and included modules"
+      },
+      {
+        "target": "aarch64-linux",
+        "isa": "AArch64",
+        "os": "Linux",
+        "linked_project_abi": "AAPCS64 LP64",
+        "cpu_baseline": "ARMv8-A",
+        "file": "/tmp/asm-native-link-aarch64-linux",
+        "sha256": "4c0d95a2f79db933d6cee17f31ff1c67bfd418aef3686aa2fe4bf4c057d538cc",
+        "bytes": 154960,
+        "input_object_sha256": "55c5d94fe8d008d9517a8a9e24ec4cfd66c998d8945f87bca5f4604250716adc",
+        "source": "cli/aarch64/asm.s and included modules"
+      }
+    ],
+    "elf_build_command": "ld.lld -z noexecstack -z relro -z now --build-id=none -o OUTPUT CROSS_ASSEMBLED_CLI_OBJECT",
+    "elf_checks": [
+      "Python registry.validate_elf for the exact target",
+      "no ELF interpreter",
+      "explicit non-executable PT_GNU_STACK"
+    ],
+    "elf_runtime": "unrun; these static CLI artifacts do not exercise C ABI project linking on Linux",
+    "hardening_test_source": {
+      "path": "tests/test_native_link.py",
+      "sha256": "a98d62ccf66f40e19cd766c390af93faab18dec01416ec4063d0398d06541aba"
+    },
+    "checks": [
+      {
+        "command": "python3 -m unittest discover -s tests/macos -p test_linked_projects.py -v",
+        "outcome": "pass",
+        "tests": 6,
+        "seconds": 1.419,
+        "scope": "native Mac C ABI builds, including actual Mach-O PIE/non-executable-stack assertions"
+      },
+      {
+        "command": "python3 -m unittest discover -s tests/registry -p 'test_*.py' -v",
+        "outcome": "pass",
+        "tests": 42,
+        "seconds": 2.34
+      },
+      {
+        "command": "in-memory hardening mutations on existing Mach-O artifact",
+        "outcome": "pass",
+        "scope": "cleared PIE and executable-stack permission both rejected; no artifact bytes changed"
+      },
+      {
+        "command": "make -n HOST_OS=Linux ARCH=riscv64",
+        "outcome": "expected rejection",
+        "exit_code": 2
+      },
+      {
+        "command": "asm build --target riscv64-linux in temporary directory",
+        "outcome": "expected rejection",
+        "exit_code": 2,
+        "scope": "existing output retained; no stage created"
+      }
+    ],
+    "remaining": [
+      "Execute native C ABI builds and the hardening assertions on Linux x86-64 and Linux ARM64.",
+      "Build and run the current x86-64 server from the extracted archive with pinned dependencies and all 17 tests.",
+      "Implement and qualify the ARM64 server port described in docs/native-linking.md.",
+      "Choose the RISC-V ISA, C ABI, runtime, PIC and relaxation policies before a full CLI/server port.",
+      "Keep release/installer and desktop operating-system expansion under their separate workstreams."
+    ],
+    "release_status": "none of the new native-link functionality or server ports is released or deployed"
+  }
+}

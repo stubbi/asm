@@ -1,15 +1,16 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "implementation": "native assembly",
   "hosts": [
     "x86_64-linux",
     "aarch64-linux",
     "aarch64-macos"
   ],
-  "build_mode": "native host",
+  "build_mode": "selected target; native libraries require the native host",
   "targets": [
     "x86_64-linux",
     "aarch64-linux",
+    "riscv64-linux",
     "aarch64-macos"
   ],
   "implemented": [
@@ -46,5 +47,14 @@
     "yank"
   ],
   "license": "AGPL-3.0-or-later",
-  "template_license": "MIT"
+  "template_license": "MIT",
+  "project_targets": [
+    "x86_64-linux",
+    "aarch64-linux",
+    "riscv64-linux",
+    "aarch64-macos",
+    "x86_64-macos",
+    "x86_64-windows",
+    "aarch64-windows"
+  ]
 }

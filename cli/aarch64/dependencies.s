@@ -38,6 +38,10 @@ dependency_prepare_selection:
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
+    ARM_ADDR x16, registry_target
+    ldr x9, [x16]
+    ARM_ADDR x16, project_requested_target
+    str x9, [x16]
     ARM_CALL read_manifest
     ARM_ADDR x16, dependency_new_record
     mov x0, x16
@@ -117,6 +121,10 @@ dependency_prepare_selection:
     ARM_CALL streq
     tst w9, w9
     b.eq .Ldep_previous_next
+    ldr x0, [x21, #16]
+    ldr x1, [x19, #16]
+    ARM_CALL streq
+    cbz w9, .Ldep_previous_next
     ARM_ADDR x16, dependency_replace_row
     str x21, [x16]
     ARM_ADDR x16, registry_mode
@@ -440,8 +448,8 @@ release_dependency_lock:
 /* Input: cwd. Reads a regular asm.lock into its own <=1MiB buffer. Output:
  * w9=0 loaded, w9=1 absent; registry_rows/count and dependency_origin updated.
  * The selected remote record must be saved before this routine is called.
- * Rejects duplicate package identities, non-source kinds, non-host targets and
- * malformed data before use. Stack: 64 saved bytes. Missing does not create a file. */
+ * v1 retains host-only rows. v2 keys each row by package and declared target.
+ * All metadata, kinds, targets and duplicate identities are checked before use. Stack: 64 saved bytes. Missing does not create a file. */
 dependency_load_lock:
     ARM_SAVE x19
     ARM_SAVE x21
@@ -450,6 +458,11 @@ dependency_load_lock:
     ARM_IMM x10, 0
     ARM_ADDR x16, registry_row_count
     str x10, [x16]
+    ARM_ADDR x16, dependency_selected_count
+    str x10, [x16]
+    mov w10, #1
+    ARM_ADDR x16, dependency_lock_version
+    strb w10, [x16]
     ARM_ADDR x16, dependency_lock_path
     mov x0, x16
     ARM_IMM w10, O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
@@ -519,8 +532,15 @@ dependency_load_lock:
     ARM_ADDR x16, dependency_header
     mov x1, x16
     ARM_CALL dependency_prefix
-    tst x9, x9
-    b.eq dependency_lock_error
+    cbnz x9, .Ldep_header_found
+    ARM_ADDR x0, dependency_lock_buffer
+    ARM_ADDR x1, dependency_header_v2
+    ARM_CALL dependency_prefix
+    cbz x9, dependency_lock_error
+    mov w10, #2
+    ARM_ADDR x16, dependency_lock_version
+    strb w10, [x16]
+.Ldep_header_found:
     mov x0, x9
     ARM_ADDR x16, dependency_origin_prefix
     mov x1, x16
@@ -597,15 +617,18 @@ dependency_load_lock:
     ldr x11, [x16]
     cmp x22, x11
     b.hs .Ldep_loaded
-    mov x16, x21
-    add x16, x16, #16
-    ldr x10, [x16]
-    mov x0, x10
-    ARM_ADDR x16, registry_host
-    mov x1, x16
+    ARM_ADDR x16, dependency_lock_version
+    ldrb w10, [x16]
+    cmp w10, #1
+    b.ne .Ldep_declared_target
+    ldr x0, [x21, #16]
+    ARM_ADDR x1, registry_host
     ARM_CALL streq
-    tst w9, w9
-    b.eq dependency_lock_error
+    cbz w9, dependency_lock_error
+.Ldep_declared_target:
+    ldr x0, [x21, #16]
+    ARM_CALL project_declares_target
+    cbz w9, dependency_lock_error
     mov x16, x21
     add x16, x16, #24
     ldr x10, [x16]
@@ -628,11 +651,25 @@ dependency_load_lock:
     mov x1, x10
     ARM_CALL streq
     tst w9, w9
-    b.ne dependency_lock_error
+    b.eq .Ldep_duplicate_next
+    ldr x0, [x19, #16]
+    ldr x1, [x21, #16]
+    ARM_CALL streq
+    cbnz w9, dependency_lock_error
+.Ldep_duplicate_next:
     ARM_IMM x11, 64
     adds x19, x19, x11
     b .Ldep_duplicate_package
 .Ldep_record_next:
+    ldr x0, [x21, #16]
+    ARM_ADDR x1, package_target
+    ARM_CALL streq
+    cbz w9, .Ldep_record_unselected
+    ARM_ADDR x16, dependency_selected_count
+    ldr x10, [x16]
+    add x10, x10, #1
+    str x10, [x16]
+.Ldep_record_unselected:
     ARM_IMM x11, 64
     adds x21, x21, x11
     ARM_IMM x11, 1
@@ -937,8 +974,27 @@ dependency_write_lock:
     ARM_SAVE x24
     /* Bound the serialized file, not just its record count. Otherwise an
      * append could write a lock that the bounded reader cannot reopen. */
-    ARM_ADDR x16, dependency_header
-    mov x0, x16
+    ARM_ADDR x0, dependency_header
+    ARM_ADDR x16, dependency_lock_version
+    ldrb w10, [x16]
+    cmp w10, #2
+    b.eq .Ldep_write_v2
+    ARM_ADDR x16, project_target_mask
+    ldr x10, [x16]
+    cbnz x10, .Ldep_write_v2
+    /* The legacy v1 reader accepts native rows only. Foreign selections
+     * require v2 even when the manifest uses one legacy build table. */
+    ARM_ADDR x0, package_target
+    ARM_ADDR x1, registry_host
+    ARM_CALL streq
+    cbz w9, .Ldep_write_v2
+    ARM_ADDR x0, dependency_header
+    b .Ldep_write_header_ready
+.Ldep_write_v2:
+    ARM_ADDR x0, dependency_header_v2
+.Ldep_write_header_ready:
+    ARM_ADDR x16, dependency_write_header
+    str x0, [x16]
     ARM_CALL strlen
     mov x24, x9
     ARM_ADDR x16, dependency_origin_prefix
@@ -1016,8 +1072,8 @@ dependency_write_lock:
     tst x9, x9
     b.mi dependency_io_error
     mov x19, x9
-    ARM_ADDR x16, dependency_header
-    mov x1, x16
+    ARM_ADDR x16, dependency_write_header
+    ldr x1, [x16]
     ARM_CALL dependency_write_string
     ARM_ADDR x16, dependency_origin_prefix
     mov x1, x16
@@ -1101,7 +1157,7 @@ dependency_write_string:
     ret
 
 /* Core build entry. Input: require_lock selects strict missing-lock behavior.
- * Default builds verify every dependency when asm.lock exists. Every archive
+ * Builds verify selected-target dependencies when asm.lock exists. Each archive
  * is copied into a private stage, checked against its locked size/digest, and
  * compared byte-for-byte to its extracted cache, including unexpected members.
  * Output: returns with a shared project lock held until build completion.
@@ -1146,6 +1202,10 @@ verify_project_dependencies:
     ldr x11, [x16]
     cmp x22, x11
     b.hs .Ldep_verify_done
+    ldr x0, [x21, #16]
+    ARM_ADDR x1, package_target
+    ARM_CALL streq
+    cbz w9, .Ldep_verify_next
     ARM_ADDR x16, registry_selected
     str x21, [x16]
     mov x16, x21
@@ -1196,6 +1256,7 @@ verify_project_dependencies:
     tst w9, w9
     b.ne dependency_cache_changed
     ARM_CALL registry_cleanup
+.Ldep_verify_next:
     ARM_IMM x11, 64
     adds x21, x21, x11
     ARM_IMM x11, 1
@@ -1250,7 +1311,12 @@ cmd_remove:
     mov x1, x10
     ARM_CALL streq
     tst w9, w9
-    b.ne .Ldep_remove_match
+    b.eq .Ldep_remove_keep
+    ldr x0, [x21, #16]
+    ARM_ADDR x1, package_target
+    ARM_CALL streq
+    cbnz w9, .Ldep_remove_match
+.Ldep_remove_keep:
     mov x0, x22
     mov x1, x21
     ARM_IMM w10, 8
@@ -1282,6 +1348,10 @@ cmd_remove:
     subs x12, x10, x24
     ARM_ADDR x16, registry_row_count
     str x12, [x16]
+    ARM_ADDR x16, dependency_selected_count
+    ldr x10, [x16]
+    sub x10, x10, x24
+    str x10, [x16]
     ARM_CALL dependency_write_lock
     ARM_CALL registry_cleanup
     ARM_CALL release_dependency_lock
@@ -1321,7 +1391,7 @@ dependency_parse_name:
     ret
 
 /* Sync downloads locked exact URLs. It never reads a newer registry index.
- * --artifact FILE is an offline input only when the lock has one dependency.
+ * --artifact FILE requires exactly one selected-target dependency.
  * Existing extracted source must match; sync does not discard local edits. */
 cmd_sync:
 .Ldep_sync_args:
@@ -1365,7 +1435,7 @@ cmd_sync:
     ARM_IMM x11, 0
     cmp x10, x11
     b.eq .Ldep_sync_begin
-    ARM_ADDR x16, registry_row_count
+    ARM_ADDR x16, dependency_selected_count
     ldr x10, [x16]
     ARM_IMM x11, 1
     cmp x10, x11
@@ -1380,6 +1450,10 @@ cmd_sync:
     ldr x11, [x16]
     cmp x22, x11
     b.hs .Ldep_sync_done
+    ldr x0, [x21, #16]
+    ARM_ADDR x1, package_target
+    ARM_CALL streq
+    cbz w9, .Ldep_sync_next
     ARM_ADDR x16, registry_selected
     str x21, [x16]
     mov x16, x21
@@ -1420,6 +1494,7 @@ cmd_sync:
     ARM_CALL registry_verify_payload
     ARM_CALL dependency_accept_payload
     ARM_CALL registry_cleanup
+.Ldep_sync_next:
     ARM_IMM x11, 64
     adds x21, x21, x11
     ARM_IMM x11, 1
@@ -1431,7 +1506,7 @@ cmd_sync:
     mov x0, x16
     b dependency_count_report
 
-/* Terminal report. Input: x0=plain success text; row_count is the exact locked
+/* Terminal report. Input: x0=plain success text; selected_count is the locked
  * count. JSON writes a numeric count, not a package-safety claim. */
 dependency_count_report:
     ARM_ADDR x16, json_mode
@@ -1444,7 +1519,7 @@ dependency_count_report:
     ARM_ADDR x16, dependency_count_prefix
     mov x0, x16
     ARM_CALL out
-    ARM_ADDR x16, registry_row_count
+    ARM_ADDR x16, dependency_selected_count
     ldr x10, [x16]
     mov x0, x10
     ARM_ADDR x16, dependency_number + 31
@@ -1533,6 +1608,7 @@ dependency_lock_too_large:
 
 .section .rodata
 dependency_header: .asciz "# asm-lock-v1\n"
+dependency_header_v2: .asciz "# asm-lock-v2\n"
 dependency_origin_prefix: .asciz "# registry "
 dependency_local_origin: .asciz "local"
 dependency_root: .asciz ".asm"
@@ -1546,7 +1622,7 @@ dependency_lock_suffix: .asciz "/asm.lock"
 dependency_added_text: .asciz "Added the exact source dependency. Run asm lock to check the cache.\n"
 dependency_updated_text: .asciz "Updated the exact source dependency. The previous lock was retained until verification succeeded.\n"
 dependency_removed_text: .asciz "Removed the dependency from asm.lock. Cache files were retained.\n"
-dependency_locked_text: .asciz "Verified every locked archive and source file.\n"
+dependency_locked_text: .asciz "Verified the selected target's locked archives and source files.\n"
 dependency_synced_text: .asciz "Synchronized the exact locked source dependencies.\n"
 dependency_result_prefix: .asciz "{\"ok\":true,\"package\":"
 dependency_result_cache: .asciz ",\"cache\":"
@@ -1570,6 +1646,9 @@ dependency_err_large: .asciz "the dependency lock would exceed 1 MiB. Remove an 
 dependency_lock_fd: .quad -1
 .section .bss
 .balign 8
+dependency_lock_version: .skip 8
+dependency_write_header: .skip 8
+dependency_selected_count: .skip 8
 dependency_new_record: .skip 64
 dependency_replace_row: .skip 8
 dependency_origin: .skip 8
