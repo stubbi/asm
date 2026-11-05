@@ -94,6 +94,19 @@ jobs:
           docker build --platform linux/riscv64 --file "$ASM_DIAGNOSTIC_RECIPE" \
             --build-arg ASM_SOURCE_REVISION="$ASM_APPLICATION_SOURCE" --target diagnostic \
             --tag asm-server:diagnostic . 2>&1 | tee diagnostic-evidence/build-diagnostic.log
+      - name: Retain explicitly unqualified rebuilt diagnostic images
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect asm-server:diagnostic-runtime --format '{{.Id}}' \
+            > diagnostic-evidence/UNQUALIFIED-rebuilt-runtime.image-id
+          docker image inspect asm-server:diagnostic --format '{{.Id}}' \
+            > diagnostic-evidence/UNQUALIFIED-rebuilt-diagnostic.image-id
+          docker save --output diagnostic-evidence/UNQUALIFIED-rebuilt-runtime.tar asm-server:diagnostic-runtime
+          docker save --output diagnostic-evidence/UNQUALIFIED-rebuilt-diagnostic.tar asm-server:diagnostic
+          (cd diagnostic-evidence && sha256sum UNQUALIFIED-rebuilt-runtime.tar UNQUALIFIED-rebuilt-diagnostic.tar \
+            > UNQUALIFIED-diagnostic-archives.sha256)
       - name: Observe the original wave twice with fixed limits and assertions
         timeout-minutes: 5
         shell: bash
