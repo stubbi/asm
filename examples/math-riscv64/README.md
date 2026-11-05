@@ -162,7 +162,11 @@ Assembler `.if` checks compare each declared length with its immutable bytes.
 Deliberately incorrect lengths caused assembler failures in temporary source copies.
 The strict GNU flags remain `--fatal-warnings -march=rv64i -mabi=lp64`.
 Local LLVM assembly and machine-mode execution passed after this change.
-GNU assembly and Linux process execution still require a new CI result.
+GNU assembly and Linux process execution then passed in [CI run 41942637379](https://github.com/stubbi/asm/actions/runs/41942637379).
+That run checked source commit `07a6a909814846ea1f6e9cad56659b5c633215ac` on 2026-11-05.
+Ubuntu supplied GNU Binutils `2.42-4ubuntu2.10` and QEMU user mode `8.2.2+ds-0ubuntu1.18`.
+The example, all 457 caller cases, and the unwritable-output check passed under QEMU's Linux process environment.
+These results establish emulated Linux execution; physical RISC-V64 Linux qualification remains unavailable.
 
 The GNU assembler documents [`.equ`](https://sourceware.org/binutils/docs/as/Equ.html) and [`.if`](https://sourceware.org/binutils/docs/as/If.html).
 These directive rules were checked on 2026-11-05.
