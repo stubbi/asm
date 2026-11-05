@@ -93,12 +93,12 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.artifact = self.work / "payload"
         self.inventory = self.home / ".local/state/asm/installed.tsv"
 
-    def cli(self, *args, cwd=None, code=0, env=None, binary=ASM):
+    def cli(self, *args, cwd=None, code=0, env=None, binary=ASM, timeout=30):
         argv = [str(binary), *map(str, args)]
         started = time.monotonic()
         result = subprocess.run(argv, cwd=cwd or self.work, env=env or self.environment,
                                 capture_output=True, text=True, encoding="utf-8",
-                                errors="strict", timeout=30)
+                                errors="strict", timeout=timeout)
         COMMANDS.append({"test": self.id(), "argv": argv, "cwd": str(cwd or self.work),
                          "exit_code": result.returncode, "stdout": result.stdout[:65536],
                          "stderr": result.stderr[:65536],
@@ -356,6 +356,19 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.cli("build", cwd=project, code=1)
         self.assertEqual((project / "build/app.exe").read_bytes(), previous)
         self.assertEqual(list((project / "build").glob(".asm-*")), [])
+
+    def test_deliberate_application_runs_beyond_two_minutes(self):
+        project = self.project("long-running-application")
+        body = ("sub sp, sp, #32\nmov w0, #125\nmov w1, #1000\nmul w0, w0, w1\n"
+                "bl Sleep\nmov w0, #37\nbl ExitProcess\n.extern Sleep" if ARM64 else
+                "sub rsp, 40\nmov ecx, 125000\ncall Sleep\nmov ecx, 37\n"
+                "call ExitProcess\n.extern Sleep")
+        (project / "src/main.s").write_text(program(body), encoding="utf-8")
+        started = time.monotonic()
+        result = self.cli("run", cwd=project, code=37, timeout=160)
+        self.assertGreaterEqual(time.monotonic() - started, 120)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
 
     def test_existing_project_and_partial_init_preserve_files(self):
         project = self.project()
