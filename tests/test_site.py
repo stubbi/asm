@@ -3,8 +3,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 sys.path.insert(0, str(ROOT / "tools"))
 import build_site
+from site_fixtures import reference_repo
 
 
 class SiteParser(HTMLParser):
@@ -94,19 +93,7 @@ class SearchDiscoveryTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(prefix="asm-search-tests-")
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.output = Path(cls.temporary.name) / "site"
-        repo = Path(cls.temporary.name) / "repo"
-        repo.mkdir()
-        shutil.copytree(SITE, repo / "site")
-        shutil.copytree(ROOT / "skills/asm-build", repo / "skills/asm-build")
-        shutil.copytree(ROOT / "cli", repo / "cli")
-        # Source archives have no Git metadata. Record an isolated fixture so
-        # the generated reference uses the same exact-commit path in either form.
-        for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
-                          ("commit", "-qm", "Record source reference fixture")):
-            subprocess.run(["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null",
-                            "-c", "commit.gpgSign=false", "-c", "user.name=asm site test fixture",
-                            "-c", "user.email=fixture@example.invalid", *arguments],
-                           check=True, capture_output=True, timeout=10)
+        repo = reference_repo(ROOT, Path(cls.temporary.name) / "repo")
 
         def forbidden(*args, **kwargs):
             raise AssertionError("Search discovery checks must not use the network")

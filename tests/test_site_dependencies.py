@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import build_site
 import registry
 import agent_catalog
+from site_fixtures import reference_repo
 
 DECLARATIONS = '''[resolution]
 schema = "1"
@@ -33,6 +34,7 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="site-dependencies-")
         self.addCleanup(self.temporary.cleanup)
         self.work = Path(self.temporary.name)
+        self.reference = reference_repo(ROOT, self.work / "repo")
         self.payloads = {}
         self.requests = []
         self.record = {"schema": 1, "name": "owner/hello", "version": "1.0.0",
@@ -63,7 +65,7 @@ class SiteDependencyExportTests(unittest.TestCase):
         record_path.parent.mkdir(parents=True, exist_ok=True)
         record_path.write_bytes(registry.json_bytes(self.record))
         output = self.work / "site"
-        build_site.build_site(ROOT, self.work / "registry", output, verify=verify, artifact_reader=self.read)
+        build_site.build_site(self.reference, self.work / "registry", output, verify=verify, artifact_reader=self.read)
         return output, json.loads((output / "registry/v1/index.json").read_bytes())
 
     def declarations(self, output):
