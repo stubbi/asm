@@ -9,6 +9,7 @@ creates its test records without an external service or reference executable.
 from concurrent.futures import ThreadPoolExecutor
 import base64
 from datetime import datetime
+import errno
 import hashlib
 import http.client
 from itertools import islice
@@ -143,6 +144,13 @@ class RecoveryPending(RuntimeError):
     """Owned application cleanup may use only the remaining recovery budget."""
 
 
+class CensusInconclusive(RuntimeError):
+    """An unaccepted census; it does not revoke an independently valid identity."""
+    def __init__(self, frame):
+        self.frame = frame
+        super().__init__("The optional task census is inconclusive: " + frame["reason"] + ".")
+
+
 class BinfmtFifoAttribution:
     """Owned pre-target barrier, exact host-task identity, and bounded log drain."""
     def __init__(self, config, *, label):
@@ -230,16 +238,163 @@ class BinfmtFifoAttribution:
 
     def _roster(self):
         root = Path(f"/proc/{self.proc.pid}")
-        before = self._task_ids()
-        tasks = [self._stat(root / "task" / str(tid) / "stat", tid) for tid in before]
-        status = self._read(root / "status")
-        counts = [row.split()[1] for row in status.splitlines() if row.startswith("Threads:")]
-        if len(counts) != 1 or not counts[0].isdecimal() or int(counts[0]) != len(tasks) or before != self._task_ids():
-            raise ValueError("The proc task roster changed or differs from the aggregate count.")
-        main = self._stat(root / "stat", self.proc.pid)
-        if not any(task["tid"] == main["tid"] and task["start_ticks"] == main["start_ticks"] for task in tasks):
-            raise ValueError("The main task is missing from the complete roster.")
-        return {"pid": self.proc.pid, "start_ticks": main["start_ticks"], "raw_count": len(tasks), "tasks": tasks}
+        frame = {"reason": "before_ids_error", "before_ids": [], "after_ids": [], "missing_ids": [],
+                 "listed_count": None, "read_count": 0, "status_count": None, "start_monotonic": time.monotonic()}
+        essential = {self.proc.pid}
+        helper = getattr(self, "helper", None)
+        if helper is not None:
+            essential.add(helper["tid"])
+        try:
+            before = self._task_ids()
+            frame.update(before_ids=before, listed_count=len(before), reason="task_rows_error")
+            if len(set(before)) != len(before):
+                frame["reason"] = "duplicate_before_ids"
+                raise ValueError("The proc task census contains duplicate IDs.")
+            tasks, missing = [], []
+            for tid in before:
+                try:
+                    tasks.append(self._stat(root / "task" / str(tid) / "stat", tid))
+                except FileNotFoundError as error:
+                    if error.errno != errno.ENOENT or tid in essential:
+                        raise
+                    missing.append((tid, error))
+                frame["read_count"] = len(tasks)
+            frame.update(missing_ids=[tid for tid, _ in missing], reason="aggregate_read_error")
+            status = self._read(root / "status")
+            counts = [row.split()[1:] for row in status.splitlines() if row.startswith("Threads:")]
+            if len(counts) != 1 or len(counts[0]) != 1 or not counts[0][0].isdecimal():
+                frame["reason"] = "aggregate_malformed"
+                raise ValueError("The proc aggregate task count is malformed.")
+            word = counts[0][0]
+            numeric = int(word) if word.isascii() and len(word) <= 2 else None
+            frame.update(status_count=numeric, status_digit_count=len(word))
+            if numeric is None or not 1 <= numeric <= 64:
+                frame.update(reason="aggregate_out_of_range", status_digit_count=len(word))
+                raise ValueError("The proc aggregate task count exceeds its permitted range.")
+            if word != str(numeric):
+                frame["reason"] = "aggregate_noncanonical"
+                raise ValueError("The proc aggregate task count is noncanonical.")
+            frame.update(status_count=numeric, reason="after_ids_error")
+            after = self._task_ids()
+            frame.update(after_ids=after, reason="main_identity_error")
+            if len(set(after)) != len(after):
+                frame["reason"] = "duplicate_after_ids"
+                raise ValueError("The proc task census contains duplicate IDs.")
+            main = self._stat(root / "stat", self.proc.pid)
+            frame["observed_main_start_ticks"] = main["start_ticks"]
+            frame["observed_helper_start_ticks"] = next((task["start_ticks"] for task in tasks
+                if helper is not None and task["tid"] == helper["tid"]), None)
+            if not essential <= set(before) or not essential <= set(after):
+                frame["reason"] = "essential_membership_changed"
+                raise ValueError("An essential task is absent from the census.")
+            if not any(task["tid"] == main["tid"] and task["start_ticks"] == main["start_ticks"] for task in tasks):
+                raise ValueError("The main task differs from the census identity.")
+            if helper is not None and not any((task["tid"], task["start_ticks"]) ==
+                                             (helper["tid"], helper["start_ticks"]) for task in tasks):
+                frame["reason"] = "helper_identity_changed"
+                raise ValueError("The proved host task differs from the census identity.")
+            if missing:
+                if before != after and all(tid not in after for tid, _ in missing):
+                    frame["reason"] = "nonessential_task_disappeared"
+                    raise CensusInconclusive(frame)
+                frame["reason"] = "unconfirmed_nonessential_enoent"
+                raise missing[0][1]
+            if before != after:
+                frame["reason"] = "membership_changed"
+                raise CensusInconclusive(frame)
+            if frame["status_count"] != len(tasks):
+                frame["reason"] = "aggregate_disagreement"
+                raise CensusInconclusive(frame)
+            return {"pid": self.proc.pid, "start_ticks": main["start_ticks"], "raw_count": len(tasks), "tasks": tasks}
+        except Exception as error:
+            frame["end_monotonic"] = time.monotonic()
+            error.census_frame = frame
+            raise
+
+    def _note_census(self, frame, phase, classification, *, phase_deadline=None):
+        observed = time.monotonic()
+        main = getattr(self, "identity", None) or getattr(self, "_startup_main", None) or {}
+        helper = getattr(self, "helper", None)
+        entry = {"before_ids": [], "after_ids": [], "missing_ids": [], "listed_count": None,
+                 "read_count": None, "status_count": None, "start_monotonic": observed,
+                 "end_monotonic": observed, **frame, "phase": phase, "classification": classification,
+                 "phase_deadline": phase_deadline,
+                 "main_identity": {"tid": self.proc.pid, "start_ticks": main.get("start_ticks")},
+                 "helper_identity": None if helper is None else {"tid": helper["tid"], "start_ticks": helper["start_ticks"]}}
+        census = self.record.setdefault("census", {"frame_limit": 8, "total_rejected": 0, "omitted": 0, "rejected": []})
+        census["total_rejected"] += 1
+        if len(census["rejected"]) < 8:
+            census["rejected"].append(entry)
+        else:
+            census["omitted"] += 1
+
+    def _census_essentials(self):
+        if getattr(self, "identity", None) is not None and getattr(self, "helper", None) is not None:
+            self.check()
+            return
+        self._budget(self.config.runner_deadline, "runner_lifetime")
+        main = self._stat(Path(f"/proc/{self.proc.pid}/stat"), self.proc.pid)
+        executable = os.stat(f"/proc/{self.proc.pid}/exe")
+        expected = self._startup_executable
+        if (self.proc.poll() is not None or main["start_ticks"] != self._startup_main["start_ticks"] or
+                (executable.st_dev, executable.st_ino, executable.st_size) !=
+                (expected["device"], expected["inode"], expected["bytes"])):
+            raise ValueError("The pre-release main or executable identity changed.")
+
+    def _sample_roster(self, *, phase_deadline=None, phase="unphased"):
+        if phase not in ("startup", "baseline", "cap", "recovery", "unphased"):
+            raise ValueError("The census caller is unknown.")
+        if phase_deadline is not None and (type(phase_deadline) not in (int, float) or not math.isfinite(phase_deadline)):
+            raise ValueError("The existing census phase deadline is invalid.")
+        while True:
+            if self.failure is not None:
+                raise self.failure
+            now = time.monotonic()
+            if phase_deadline is not None and now >= phase_deadline:
+                frame = {"reason": "phase_deadline_exhausted", "before_ids": [], "after_ids": [], "missing_ids": [],
+                         "listed_count": None, "read_count": None, "status_count": None,
+                         "start_monotonic": now, "end_monotonic": now}
+                self._note_census(frame, phase, "inconclusive", phase_deadline=phase_deadline)
+                raise CensusInconclusive(frame)
+            self._census_essentials()
+            if phase_deadline is not None and time.monotonic() >= phase_deadline:
+                continue
+            try:
+                roster = self._roster()
+            except CensusInconclusive as error:
+                frame = dict(error.frame)
+                try:
+                    self._census_essentials()
+                except Exception:
+                    frame["end_monotonic"] = time.monotonic()
+                    self._note_census(frame, phase, "essential_validation_failed", phase_deadline=phase_deadline)
+                    raise
+                observed = time.monotonic()
+                frame.update(end_monotonic=observed, phase_deadline=phase_deadline,
+                             outcome="one_shot" if phase_deadline is None else "deadline" if observed >= phase_deadline else "retry")
+                self._note_census(frame, phase, "inconclusive", phase_deadline=phase_deadline)
+                if phase_deadline is None or observed >= phase_deadline:
+                    raise CensusInconclusive(frame) from None
+                remaining = phase_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise CensusInconclusive(frame) from None
+                time.sleep(min(0.01, remaining))
+                continue
+            except Exception as error:
+                frame = dict(getattr(error, "census_frame", {"reason": "census_read_error"}),
+                             error_type=type(error).__name__, errno=getattr(error, "errno", None))
+                self._note_census(frame, phase, "fatal", phase_deadline=phase_deadline)
+                raise
+            self._census_essentials()
+            observed = time.monotonic()
+            if phase_deadline is not None and observed >= phase_deadline:
+                ids = [task["tid"] for task in roster["tasks"]]
+                frame = {"reason": "late_stable_sample", "before_ids": ids, "after_ids": ids, "missing_ids": [],
+                         "listed_count": len(ids), "read_count": len(ids), "status_count": roster["raw_count"],
+                         "start_monotonic": now, "end_monotonic": observed, "phase_deadline": phase_deadline}
+                self._note_census(frame, phase, "inconclusive", phase_deadline=phase_deadline)
+                raise CensusInconclusive(frame)
+            return roster
 
     def _exe_identity(self):
         path = Path(f"/proc/{self.proc.pid}/exe")
@@ -281,10 +436,12 @@ class BinfmtFifoAttribution:
                 raise ValueError("The selected child launch controls changed.")
             exe = self._exe_identity()
             self._budget(deadline, "startup_after_executable_hash")
+            self._startup_executable = exe
+            self._startup_main = self._stat(Path(f"/proc/{proc.pid}/stat"), proc.pid)
             samples = []
             while True:
                 self._budget(deadline, "startup_task_capture")
-                sample = self._roster()
+                sample = self._sample_roster(phase_deadline=deadline, phase="startup")
                 if sample["raw_count"] == 2:
                     samples.append(sample)
                     if len(samples) == 2 and samples[0] == samples[1]:
@@ -315,6 +472,8 @@ class BinfmtFifoAttribution:
             self.thread = threading.Thread(target=self._drain, daemon=True, name="asm-qemu-log-drain")
             self.thread.start()
             self._budget(deadline, "startup_after_release")
+        except CensusInconclusive:
+            raise
         except BaseException as error:
             self._error("capture_or_release", error)
             raise
@@ -374,10 +533,11 @@ class BinfmtFifoAttribution:
         except BaseException as error:
             raise self._error("live_identity_or_drain", error) from error
 
-    def application_tasks(self):
+    def application_tasks(self, *, phase_deadline=None, phase="unphased"):
         self.check()
+        census_started = time.monotonic()
         try:
-            roster = self._roster()
+            roster = self._sample_roster(phase_deadline=phase_deadline, phase=phase)
             if roster["start_ticks"] != self.identity["start_ticks"] or self.helper not in roster["tasks"]:
                 # Task comm/state can change; exclusion uses only the exact identity.
                 matches = [task for task in roster["tasks"] if (task["tid"], task["start_ticks"]) ==
@@ -387,16 +547,26 @@ class BinfmtFifoAttribution:
             application = [task for task in roster["tasks"] if (task["tid"], task["start_ticks"]) !=
                            (self.helper["tid"], self.helper["start_ticks"])]
             self.check()
+            observed = time.monotonic()
+            if phase_deadline is not None and observed >= phase_deadline:
+                ids = [task["tid"] for task in roster["tasks"]]
+                frame = {"reason": "late_stable_sample", "before_ids": ids, "after_ids": ids, "missing_ids": [],
+                         "listed_count": len(ids), "read_count": len(ids), "status_count": roster["raw_count"],
+                         "start_monotonic": census_started, "end_monotonic": observed, "phase_deadline": phase_deadline}
+                self._note_census(frame, phase, "inconclusive", phase_deadline=phase_deadline)
+                raise CensusInconclusive(frame)
             return {**roster, "application_count": len(application), "application_tasks": application,
                     "excluded_identity": {"tid": self.helper["tid"], "start_ticks": self.helper["start_ticks"]}}
+        except CensusInconclusive:
+            raise
         except BaseException as error:
             raise self._error("application_task_roster", error) from error
 
-    def observe_phase(self, phase, snapshot, clients):
+    def observe_phase(self, phase, snapshot, clients, *, phase_deadline=None):
         if phase not in ("baseline", "cap", "recovery"):
             self.check()
             return
-        roster = self.application_tasks()
+        roster = self.application_tasks(phase_deadline=phase_deadline, phase=phase)
         snapshot["application_roster"] = roster
         identities = {(task["tid"], task["start_ticks"]) for task in roster["application_tasks"]}
         if snapshot["errors"] or any(snapshot[key] for key in ("tasks_truncated", "fds_truncated", "retention_truncated")):
@@ -652,7 +822,7 @@ class ReferenceDiagnostic:
             record["exception"] = self.exception(error, event)
         self.data["connection_cap"]["clients"].append(record)
 
-    def snapshot(self, phase, *, retain=True, **observations):
+    def snapshot(self, phase, *, retain=True, phase_deadline=None, **observations):
         """Read only this server's task roster and owned TCP socket rows."""
         errors, root = [], Path(f"/proc/{self.server_pid}")
         snapshot = {"phase": phase, "start_monotonic": time.monotonic(), "observations": observations,
@@ -695,7 +865,11 @@ class ReferenceDiagnostic:
         attribution = getattr(self, "attribution", None)
         if attribution is not None:
             try:
-                attribution.observe_phase(phase, snapshot, self.data["connection_cap"]["clients"])
+                if phase_deadline is None:
+                    attribution.observe_phase(phase, snapshot, self.data["connection_cap"]["clients"])
+                else:
+                    attribution.observe_phase(phase, snapshot, self.data["connection_cap"]["clients"],
+                                              phase_deadline=phase_deadline)
             except BaseException as error:
                 pending = error
                 snapshot["attribution_error"] = self.exception(error, "attribution")
@@ -1258,9 +1432,11 @@ class ServerTests(unittest.TestCase):
                 diagnostic["end_monotonic"] = time.monotonic()
                 diagnostic["elapsed_seconds"] = diagnostic["end_monotonic"] - diagnostic["start_monotonic"]
 
-    def _snapshot_phase(self, phase, **observations):
+    def _snapshot_phase(self, phase, *, phase_deadline=None, **observations):
         primary = sys.exc_info()[1]
         try:
+            if phase_deadline is not None and getattr(self, "attribution", None) is not None:
+                return self.diagnostic.snapshot(phase, phase_deadline=phase_deadline, **observations)
             return self.diagnostic.snapshot(phase, **observations)
         except BaseException as error:
             if primary is None or getattr(self, "attribution", None) is None:
@@ -1278,7 +1454,7 @@ class ServerTests(unittest.TestCase):
         attempts = 0
         while True:
             attempts += 1
-            snapshot, pending = self.diagnostic.snapshot("recovery", retain=False, liveness_status=liveness_status,
+            snapshot, pending = self.diagnostic.snapshot("recovery", retain=False, phase_deadline=deadline, liveness_status=liveness_status,
                 elapsed_seconds=time.monotonic() - recovery_start, settling_attempts=attempts)
             if pending is None:
                 self.diagnostic.retain_snapshot(snapshot)
@@ -1436,10 +1612,11 @@ class ServerTests(unittest.TestCase):
                 self.diagnostic.client(index, "send", client, start)
             def threads():
                 if getattr(self, "attribution", None) is not None:
-                    return self.attribution.application_tasks()["application_count"]
+                    return self.attribution.application_tasks(phase_deadline=census_deadline, phase=census_phase)["application_count"]
                 rows = Path(f"/proc/{self.server.pid}/status").read_text().splitlines()
                 return int(next(row.split()[1] for row in rows if row.startswith("Threads:")))
             deadline = time.monotonic() + 1
+            census_deadline, census_phase = deadline, "cap"
             while threads() < 18 and time.monotonic() < deadline:
                 time.sleep(0.01)
             try:
@@ -1448,7 +1625,7 @@ class ServerTests(unittest.TestCase):
                 if getattr(self, "attribution", None) is not None:
                     self.attribution._budget(deadline, "cap_after_accepted_count")
             finally:
-                self._snapshot_phase("cap", assertion_passed=cap_passed)
+                self._snapshot_phase("cap", phase_deadline=deadline, assertion_passed=cap_passed)
                 if getattr(self, "attribution", None) is not None and cap_passed and sys.exc_info()[1] is None:
                     self.attribution._budget(deadline, "cap_after_observations")
             with socket.create_connection(("127.0.0.1", self.port), timeout=1) as extra:
@@ -1478,6 +1655,7 @@ class ServerTests(unittest.TestCase):
                     self.diagnostic.client(index, "close", None, start)
             finally:
                 deadline = time.monotonic() + 1
+                census_deadline, census_phase = deadline, "recovery"
                 budget = {"seconds": 1, "anchor_monotonic": deadline - 1, "deadline_monotonic": deadline}
                 self.diagnostic.data["connection_cap"]["recovery_budget"] = budget
                 self._snapshot_phase("immediate_post_closure")
@@ -1532,7 +1710,7 @@ class ServerTests(unittest.TestCase):
                     cap["recovery"] = "inconclusive_evidence_publication"
                     raise
             else:
-                self._snapshot_phase("recovery", liveness_status=liveness_status,
+                self._snapshot_phase("recovery", phase_deadline=deadline, liveness_status=liveness_status,
                                      elapsed_seconds=time.monotonic() - recovery_start)
 
     def test_a_stalled_database_does_not_stall_liveness(self):
