@@ -82,18 +82,18 @@ def docker(image, *arguments, entrypoint=None, timeout=20):
     return command([*options, image, *arguments], timeout=timeout)
 
 
-def runtime_files(image):
+def runtime_files(image, *, runner=docker):
     executables = ["/opt/asm/postgres/bin/psql", "/usr/bin/python3", "/usr/bin/git"]
     paths = set(executables)
     for executable in executables:
-        text = docker(image, executable, entrypoint="/usr/bin/ldd").decode()
+        text = runner(image, executable, entrypoint="/usr/bin/ldd").decode()
         need("not found" not in text, "The operator has an unresolved runtime library.")
         paths.update(re.findall(r"(?:=>\s+)?(/[^\s()]+)", text))
     paths.update("/app/" + name for name in operator_source.FILES)
     paths.add("/app/SOURCE.json")
     need(1 <= len(paths) <= 96, "The loaded runtime file inventory exceeds its bound.")
     files = {}
-    for line in docker(image, *sorted(paths), entrypoint="/usr/bin/sha256sum").decode().splitlines():
+    for line in runner(image, *sorted(paths), entrypoint="/usr/bin/sha256sum").decode().splitlines():
         digest, name = line.split("  ", 1)
         need(name in paths and name not in files and re.fullmatch(r"[0-9a-f]{64}", digest), "Invalid runtime file digest.")
         files[name] = digest

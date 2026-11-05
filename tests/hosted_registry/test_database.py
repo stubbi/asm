@@ -24,6 +24,8 @@ import registry_admin
 
 
 class CatalogDatabaseTests(unittest.TestCase):
+    postgres_factory = staticmethod(TlsPostgres)
+
     @classmethod
     def setUpClass(cls):
         if not os.environ.get("ASM_PROTO_PG_BINDIR") or not os.environ.get("ASM_PROTO_LIBPQ"):
@@ -31,7 +33,7 @@ class CatalogDatabaseTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="asm-catalog-owned-")
         cls.addClassCleanup(cls.temp.cleanup)
         cls.base = Path(cls.temp.name)
-        cls.cluster = TlsPostgres(cls.base)
+        cls.cluster = cls.postgres_factory(cls.base)
         cls.addClassCleanup(cls.cluster.close)
         cls.cluster.start()
         for role in ("asm_migrator", "asm_operator", "asm_reader"):

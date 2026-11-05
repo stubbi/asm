@@ -52,7 +52,13 @@ An unavailable port fails the build.
 There is no successful fallback, skipped architecture, or alternate application backend.
 
 The fixture and two-second database deadlines remain unchanged under emulation.
-The complete runtime suite has the same 180-second outer watchdog for every architecture.
+Qualification runs the complete baseline and admission suites in two sequential containers.
+The baseline contains sixteen tests, and admission contains twelve tests.
+Each container keeps the same 180-second outer watchdog for every architecture.
+The combined test watchdog budget is 360 seconds.
+The workflow allows ten minutes for both parts, preflight checks, and cleanup.
+This replaces the earlier five-minute workflow step and one 180-second test container.
+The expanded coverage adds another container startup and owned PostgreSQL fixture.
 Dependency compilation has bounded jobs: 45 minutes natively and 90 minutes for the emulated job.
 A slow or failed RISC-V result remains a failed result.
 It must not be converted into a pass by weakening a runtime assertion.
@@ -74,6 +80,11 @@ HTTP ingress TLS remains a separate deployment requirement.
 
 The qualification stage extends the exact runtime filesystem with Python, OpenSSL tools, PostgreSQL tools, and the owned fixture.
 Only that stage includes canonical migration SQL, registry validators, the operator helper, and accepted manifest records.
+The build stage also compiles the NULL-connection test fixture under its owned build directory.
+The qualification stage receives `/qualification/fixtures/connect-null.so`, owned by root with mode `0444`.
+Each part records that fixed library's digest, byte count, ownership, and permissions.
+The admission suite loads that precompiled library to test failed connection allocation.
+It compiles no code and loads no executable code from temporary data storage.
 Those fixture inputs do not add an application backend or operator credential to the runtime.
 The harness compares the runtime layer prefix and executable hashes.
 It also compares hashes for every shared library reported by the runtime loader.
@@ -87,10 +98,21 @@ The harness observes UID, GID, effective capabilities, privilege state, and the 
 
 The existing runtime suite creates its own PostgreSQL cluster, CA, credentials, and records.
 It accepts no existing database or production credential.
-All current tests must execute, at least sixteen tests must exist, and no test may skip.
+Each part runs every discovered test.
+The baseline must contain at least sixteen tests, and admission must contain at least twelve tests.
+No test may skip or receive an exclusion.
 The result identifies source, image ID, ELF target, executable digest, library digests, execution mode, and test count.
-The report scope is `assembly-canonical-exports`.
-The publication gate rejects foundation reports, other scopes, incomplete test counts, and skipped tests.
+Each part uses scope `assembly-image-runtime-part` and names its suite.
+The aggregate uses scope `assembly-canonical-exports-admission` and requires at least twenty-eight tests.
+It requires exactly one baseline part and one admission part, named `baseline` and `capacity`.
+Both parts must identify the same runtime image, qualification image, source, executable, library inventory, fixture, execution mode, and isolation settings.
+The aggregate count must equal the sum of both part counts.
+Both publishers use the same strict Python evidence contract.
+It rejects duplicate JSON fields, malformed types, missing parts, exclusions, skipped tests, and mismatched identities.
+Evidence input must be a regular file; the reader refuses a final symbolic link and opens without waiting on special files.
+It reads at most two MiB plus one byte and rejects excess content, including growth after the descriptor metadata check.
+The earlier sixteen-case scope `assembly-canonical-exports` cannot qualify admission-bearing images.
+Raw output, exit status, and timeout outcomes remain available for each part when qualification fails.
 These checks do not qualify the complete registry or its deployment.
 
 ## Completed prior-image checks
@@ -130,6 +152,50 @@ It observed both eight-response concurrency waves passing unchanged byte and sta
 The observation used instrumentation and selected methods, so it cannot replace complete qualification.
 CPU throttling accompanied those successful waves; this does not establish the cause of the original failure.
 Fresh checks must qualify the complete integrated source with the existing deadlines, resource limits, and concurrency assertions.
+
+## Native admission source result
+
+[Run 42060225513](https://github.com/stubbi/asm/actions/runs/42060225513) tested source `2881779f1927f660b367d48af08a28a3c09292be` with the original native source workflow.
+AMD64 passed all twenty-eight hosted cases in 84.541 seconds.
+ARM64 passed all twenty-eight hosted cases in 85.486 seconds.
+Both executed the fixed read-only NULL-connection fixture and passed native package, ABI, and build-failure preservation checks.
+The source workflow had no two-CPU or 512 MiB runtime cap.
+It did not retain the compiled fixture digest.
+That result does not qualify these derived images or establish private deployment capacity.
+The image gate records the compiled fixture digest and retains the existing container limits.
+The cause of the earlier RISC-V concurrency failure remains unresolved.
+
+## Admission image preflight
+
+[Run 42073901743](https://github.com/stubbi/asm/actions/runs/42073901743) passed on [source `b1450bd54efb12c0fb047c01117869c63e82197b`](https://github.com/stubbi/asm/commit/b1450bd54efb12c0fb047c01117869c63e82197b), attempt one.
+Each target executed all sixteen baseline and twelve admission cases without skips.
+Both publishers were skipped during that manual preflight.
+
+| Image platform | Execution | Baseline seconds | Admission seconds | Original aggregate receipt |
+| --- | --- | ---: | ---: | --- |
+| [Linux AMD64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408859645) | Native | 6.231 | 73.164 | [AMD64 JSON](server-admission-evidence/42073901743/amd64.json) |
+| [Linux ARM64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408858932) | Native | 6.414 | 75.226 | [ARM64 JSON](server-admission-evidence/42073901743/arm64.json) |
+| [Linux RISC-V64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408860034) | QEMU user emulation | 40.468 | 161.065 | [RISC-V64 JSON](server-admission-evidence/42073901743/riscv64.json) |
+
+The three JSON files retain the original aggregate report bytes.
+Each report binds both parts to the same source, runtime image, qualification image, executable, shared libraries, and fixed fixture digest.
+Both parts used two CPUs, 512 MiB memory, 128 processes, and 256 MiB noexec temporary storage.
+Each part kept its 180-second watchdog and all original deadline, setup, concurrency, and byte assertions.
+These elapsed times describe one qualification run; they are not performance benchmarks.
+
+Raw checkout logs identify the same source, and each runtime step records its twenty-eight-case aggregate success.
+Only small reports and compressed job logs were collected locally; no image payload or layer was downloaded.
+A local watcher encountered full storage while saving its exit receipt.
+The remote jobs continued independently, and collection resumed after storage recovery.
+No CI retry occurred.
+
+The previous six-client RISC-V failure remains retained above.
+This successful full run does not establish its cause or prove that admission corrected it.
+RISC-V emulation does not qualify physical hardware.
+The two-CPU fixture does not qualify the private one-CPU, 256 MiB deployment, PostgreSQL 18, startup integration, or service recovery.
+
+These receipts qualify only the recorded source and image identities.
+This final candidate changes evidence and publication conditions; its later revision and artifacts require their own exact-source gates.
 
 ## Verified inputs
 
@@ -207,13 +273,17 @@ It must also include this harness and the root license.
 Include `tools/registry.py`, `tools/registry_admin.py`, and the accepted records under `registry/packages/`.
 
 The workflow retains build logs and runtime logs after successful or failed checks.
+Each runtime part retains its raw output and a separate outcome record.
+Successful parts also retain their typed qualification report.
 Successful jobs also retain the exact runtime image archive, its checksum, and qualification JSON.
 Evidence retention is three days; release evidence needs durable retention before production use.
 
 ## Publication and limits
 
 Pull requests and manual runs have read-only repository permissions and publish nothing.
-After a main-branch push, publication waits for every architecture qualification job to pass.
+The complete twenty-eight-case image preflight passed for all three targets at the reviewed source recorded above.
+The temporary false conditions are removed after that result.
+A trusted main-branch push still requires every architecture qualification job to pass for its exact source.
 The publication job loads the tested archive and compares its image ID with the qualification report.
 It publishes an architecture-specific source-and-run tag and records the registry digest.
 Each run attempt has a distinct tag, so a later dependency rebuild does not replace an earlier tag.
@@ -231,11 +301,12 @@ The job reads the index again through its immutable digest and records that resu
 The combined index also receives provenance.
 
 These images still contain an incomplete registry implementation.
-Canonical HTTP image checks, operator deployment, service discovery, metrics, capacity, and recovery remain unqualified.
+Canonical HTTP and admission image checks passed only for the recorded source, images, and owned fixture.
+Operator deployment, service discovery, metrics, private capacity, startup integration, PostgreSQL 18, and service recovery remain separate requirements.
 The reviewed four-export catalog contract from PR #29 is integrated.
-Its HTTP and image qualification require fresh results for this source.
+Later source revisions and artifacts require fresh exact-source results.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
-No cluster, DNS, credential, release, or live service changes follow from this image workflow.
+The workflow does not change clusters, DNS, credential consumers, or live deployments.
 
 The separate [operator image contract](operator-images.md) describes migration and import packaging.
 Its qualification remains separate from the reader image's retained results.

@@ -42,6 +42,22 @@ URLs have a 2048-byte limit.
 Headers have a 64-field and 16 KiB limit.
 
 Each readiness or export request owns one fresh PostgreSQL connection.
+The source now reserves one of eight process admission slots before connection creation.
+It releases that slot after connection cleanup on success or failure, including a null connection result.
+Recorded qualification covers only the sources and artifacts in the [image preflight](../docs/server-images.md#admission-image-preflight).
+Later revisions require fresh checks.
+The result and HTTP response do not retain a database admission slot.
+Liveness and source identity do not request a slot.
+
+When all eight slots are owned, the request returns the existing HTTP 503 response.
+Admission uses at most sixteen atomic attempts and has no wait queue.
+Contention can also cause temporary refusal before every slot is occupied.
+This guard retains the canonical export error contract.
+The [architecture proposal](../docs/architecture.md#default-public-interfaces) specifies HTTP 429 and bounded retry guidance for future public admission limits.
+A versioned API change must introduce that response policy.
+This source does not keep a persistent connection pool.
+It does not read `ASM_DATABASE_POOL_SIZE`.
+
 The connection runs `BEGIN READ ONLY`, the canonical reader guard, then the optional fixed export query.
 Each command drains completely before the next command starts.
 Connection, transaction setup, guard, export, and result handling share one two-second monotonic deadline.
@@ -124,6 +140,7 @@ The Makefile selects the assembly port from the host architecture.
 If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
 This build does not cross-compile.
 Use Python 3.11 or later and an OpenSSL command for the integration fixture.
+Use a matching C compiler to build the test-only connection-failure interposer in the owned build directory.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
 Application routing, configuration policy, connection lifecycle, and deadlines are assembly.
@@ -152,6 +169,10 @@ It seeds all current accepted manifest records through the catalog operator func
 Synthetic six-target source metadata distinguishes the Linux, macOS, and full feed vocabularies in the owned fixture.
 It does not download or execute package artifacts.
 Python supplies test orchestration only.
+The capacity suite can inject a null connection result in a separate owned process through a prebuilt read-only library.
+That library is a test fixture and is not part of the served application.
+Set `ASM_SERVER_CONNECT_NULL_FIXTURE` to its fixed absolute path when a qualification image runs the suite directly.
+The test never compiles or loads executable code from its temporary data directory.
 
 Tests cover private-file rejection, malformed configuration, duplicate fields, TLS identity failures, privileged-role rejection, and changed read permissions.
 They also cover certificate replacement, a stalled handshake, encrypted-key prompt refusal, health, source identity, and idle SIGTERM.
@@ -162,6 +183,13 @@ Trusted fixture administration temporarily changes a view for these probes, then
 The maximum-size body probes test transport bounds; their repeated bytes are not canonical package records.
 Rejection tests require the documented status, so a process crash cannot satisfy them.
 Usage failures return 64; configuration and database refusal return 78.
+
+The server test gate also runs `test_capacity.py`.
+Its saturation check holds eight database handshakes and requires the ninth request to return HTTP 503 without another connection.
+It checks liveness, source identity, and complete same-process recovery through two independent waves.
+Additional cases check admission cleanup after repeated database failures and client disconnects.
+A disconnected HTTP client can retain database work until the existing deadline.
+These tests do not establish immediate disconnect cancellation or shutdown draining.
 
 ## Evidence and remaining work
 
@@ -236,13 +264,30 @@ These requirements remain open:
 - Runtime and image qualification of the integrated four-export catalog contract.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
 - Bounded hostname resolution compatible with private service discovery.
-- Database connection reuse and measured admission behavior under saturation.
+- Native qualification of eight-slot admission, all failure paths, and complete capacity recovery.
+- Persistent database connection reuse, if measurements justify it.
 - Absolute HTTP header deadlines and qualified shutdown draining.
 - Required fixed-label metrics and observed alert delivery.
 - Public TLS, projected certificate rotation, network-denial tests, capacity, backups, WAL delivery, and isolated restore.
 - Exact immutable images, artifact digests, provenance, and external HTTPS client checks.
 
 No cluster resource, credential, DNS record, public route, or release artifact was changed by this checkpoint.
+
+The admission test-first [native AMD64 run 42050169482](https://github.com/stubbi/asm/actions/runs/42050169482) tested source `f7987a5f3571f4c7a58f7e731b0127a0e263d3ab`.
+All sixteen existing runtime methods passed in 8.319 seconds.
+The capacity candidate then failed with `9 != 8`: the ninth request opened another database connection.
+Its executable SHA-256 was `716eab55d79b1ef475300c3d22e70d41c5cd64e8a263c06f0fbf9218e2bce4ec`.
+This retained failure establishes the missing admission behavior, not a passing implementation or recovery result.
+The job had no two-CPU or 512 MiB runtime cap.
+`make -j2` limited build parallelism only.
+It was a behavioral diagnostic, not resource-capacity qualification.
+
+Before publishing an admission-bearing image, run both runtime modules against that actual derived image.
+The earlier sixteen-test image receipt cannot establish that the new admission code passed.
+Its qualification stage must supply the new capacity suite and fixed read-only interposer.
+Build that library before qualification starts; the qualifier needs no compiler or writable executable directory.
+That image-gate integration remains required outside this source checkpoint.
+Both image publication jobs have an explicit temporary hold until that gate is complete.
 
 ## Sources
 
