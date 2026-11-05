@@ -68,13 +68,26 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(workflow.digest(spec), workflow.digest(decoded))
 
     def test_wrong_abi_and_unsupported_target_block_the_plan(self):
-        for field, value in [("abi", "Windows x64"), ("target", "x86_64-windows"), ("os", "macos"), ("isa", "made-up")]:
+        for field, value in [("abi", "Windows x64"), ("target", "x86_64-freebsd"), ("os", "macos"), ("isa", "made-up")]:
             with self.subTest(field=field):
                 spec = requirements()
                 setattr(spec.targets[0], field, value)
                 result = workflow.plan_project(spec)
                 self.assertFalse(result["ready"])
                 self.assertTrue(result["conflicts"])
+
+    def test_windows_planning_profiles_do_not_declare_published_cli_support(self):
+        profiles = {item["id"]: item for item in workflow.list_targets()["targets"]}
+        for target, isa, abi in (("x86_64-windows", "x86_64", "Microsoft x64"),
+                                 ("aarch64-windows", "aarch64", "Microsoft ARM64")):
+            with self.subTest(target=target):
+                spec = requirements()
+                spec.targets[0] = workflow.Target(target=target, isa=isa, os="windows", abi=abi,
+                    minimum_os="Not established; qualify the deployment host", cpu_features=[])
+                self.assertTrue(workflow.plan_project(spec)["ready"])
+                self.assertFalse(profiles[target]["native_cli"])
+                spec.targets[0].abi = "System V AMD64"
+                self.assertFalse(workflow.plan_project(spec)["ready"])
 
     def test_optional_cpu_features_require_an_explicit_qualification(self):
         spec = requirements()

@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import registry
 import mcp_server
+from test_catalog import release
 from test_workflow import benchmark, candidate, requirements
 
 TOOLS = {"asm_list_targets", "asm_search_packages", "asm_inspect_package", "asm_plan_project",
@@ -41,7 +42,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(tool.input_schema.get("additionalProperties", True))
         result = await client.call_tool("asm_list_targets", {})
         self.assertFalse(result.is_error)
-        self.assertEqual(len(result.structured_content["targets"]), 4)
+        self.assertEqual({item["id"] for item in result.structured_content["targets"]}, set(registry.TARGETS))
+        self.assertEqual({item["id"] for item in result.structured_content["targets"] if item["native_cli"]},
+                         {"x86_64-linux", "aarch64-linux", "aarch64-macos"})
         result = await client.call_tool("asm_search_packages", {"query": "math", "target": "x86_64-linux"})
         self.assertFalse(result.is_error, result)
         self.assertEqual(result.structured_content["packages"][0]["name"], "stubbi/math")
@@ -64,7 +67,8 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         resources = await client.list_resources()
         self.assertIn("asm://targets", {str(item.uri) for item in resources.resources})
         resource = await client.read_resource("asm://targets")
-        self.assertEqual(len(json.loads(resource.contents[0].text)["targets"]), 4)
+        self.assertEqual({item["id"] for item in json.loads(resource.contents[0].text)["targets"]},
+                         set(registry.TARGETS))
         identity = json.loads((await client.read_resource("asm://service")).contents[0].text)
         self.assertEqual(identity["service"], "asm-mcp")
         self.assertEqual(identity["source_revision"], "unrecorded")
@@ -76,7 +80,10 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         async with Client(mcp_server.create_server(self.catalog)) as client:
             await self.exercise(client)
             for name, arguments in [
-                ("asm_search_packages", {"query": "x", "target": "x86_64-windows"}),
+                ("asm_search_packages", {"query": "x", "target": "x86_64-freebsd"}),
+                ("asm_search_packages", {"query": "x", "target": []}),
+                ("asm_inspect_package", {"name": "stubbi/math", "version": "0.4.0", "target": "x86_64-freebsd"}),
+                ("asm_inspect_package", {"name": "stubbi/math", "version": "0.4.0", "target": []}),
                 ("asm_search_packages", {"query": "x", "registry": "http://localhost/secret"}),
                 ("asm_search_packages", {"query": "x", "limit": True}),
                 ("asm_get_workflow", {"section": "../../.env"}),
@@ -84,6 +91,34 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             ]:
                 result = await client.call_tool(name, arguments)
                 self.assertTrue(result.is_error, result)
+
+    async def test_windows_search_and_inspection_keep_exact_metadata_without_execution(self):
+        # Local metadata fixtures do not represent published packages or runtime evidence.
+        targets = ("x86_64-windows", "aarch64-windows")
+        record = release(target=targets[0])
+        record["artifacts"].append(release(target=targets[1])["artifacts"][0])
+        newer = release(version="2.0.0", target=targets[0], license="Apache-2.0")
+        original = registry.json_bytes(registry.make_indexes([record, newer])[1])
+        self.catalog.write_bytes(original)
+        async with Client(mcp_server.create_server(self.catalog)) as client:
+            for target in targets:
+                with self.subTest(target=target):
+                    found = await client.call_tool("asm_search_packages", {
+                        "query": "hello", "target": target, "license": "MIT"})
+                    self.assertFalse(found.is_error, found)
+                    selected = found.structured_content["packages"][0]
+                    artifact = next(item for item in record["artifacts"] if item["target"] == target)
+                    self.assertEqual(selected["version"], "1.0.0")
+                    self.assertEqual(selected["license"], "MIT")
+                    self.assertEqual(selected["artifacts"], [artifact])
+                    exact = await client.call_tool("asm_inspect_package", {
+                        "name": "test/hello", "version": "1.0.0", "target": target})
+                    self.assertFalse(exact.is_error, exact)
+                    self.assertTrue(exact.structured_content["selection"]["selectable"])
+                    self.assertEqual(exact.structured_content["selection"]["artifacts"], [artifact])
+                    self.assertEqual(exact.structured_content["package"]["evidence"]["formal"], "not-run")
+        self.assertEqual(self.catalog.read_bytes(), original)
+        self.assertEqual(list(self.catalog.parent.iterdir()), [self.catalog])
 
     async def test_real_stdio_client_modern_and_legacy(self):
         for mode in ("auto", "legacy"):

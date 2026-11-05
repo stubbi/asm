@@ -167,7 +167,7 @@ The client can inspect their input and output schemas.
 
 | Tool | Use |
 | --- | --- |
-| `asm_list_targets` | Inspect four catalog targets, three native CLI hosts, explicit dimensions, tools, and limits. |
+| `asm_list_targets` | Inspect six catalog targets, three published CLI hosts, explicit dimensions, tools, and limits. |
 | `asm_search_packages` | Search active releases, with optional target and version-specific SPDX license filters. |
 | `asm_inspect_package` | Inspect an exact `owner/name`, version, artifacts, evidence, and yank status. |
 | `asm_plan_project` | Check behavior, acceptance cases, target dimensions, resource priorities, and optimization budgets. |
@@ -183,6 +183,8 @@ Search matches target and license on the same active release.
 It selects the highest matching numeric version for each package.
 Exact inspection includes retained yanked versions but blocks their artifact selection.
 An absent target does not trigger an implicit host guess.
+The search and inspection schemas accept the same six catalog target labels.
+The target reference includes Windows guidance; it does not declare a published Windows CLI or qualify a package.
 
 Catalog metadata does not establish optional CPU compatibility.
 The target tool lists recognized feature names for planning, not qualified machines or artifacts.

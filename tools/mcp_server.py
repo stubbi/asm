@@ -38,7 +38,8 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 PUBLIC_ORIGINS = ("https://asm.build", "https://api.asm.build")
 INTERNAL_MCP_HOST = "asm-mcp.asm.svc.cluster.local"
 Section = Literal["workflow", "requirements", "optimization", "packages", "targets"]
-TargetId = Literal["x86_64-linux", "aarch64-linux", "aarch64-macos", "riscv64-linux"]
+TargetId = Literal["aarch64-linux", "aarch64-macos", "aarch64-windows",
+                   "riscv64-linux", "x86_64-linux", "x86_64-windows"]
 SECTIONS = {"workflow": "SKILL.md", "requirements": "references/requirements.md",
             "optimization": "references/optimization.md", "packages": "references/packages.md",
             "targets": "references/targets.json"}
