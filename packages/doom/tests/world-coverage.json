@@ -1,0 +1,1190 @@
+{
+  "description": "Bundled line-special dispatch coverage; not a campaign-completion or semantic-conformance claim.",
+  "observed_on": "2026-11-05",
+  "iwad_sha256": "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d",
+  "source_sha256": "0d2dcc2e846f0477e19d42c15fb4ee1f02ed22a535a62bb1f32fc7334171fae9",
+  "map_count": 36,
+  "used_special_count": 79,
+  "specials": [
+    {
+      "special": 1,
+      "dispatch": "door",
+      "line_count": 391,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M5",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M1",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E2M8",
+        "E2M9",
+        "E3M1",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M7",
+        "E3M9",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 2,
+      "dispatch": "door",
+      "line_count": 63,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M7",
+        "E1M9",
+        "E2M1",
+        "E2M4",
+        "E2M5",
+        "E2M7",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M6",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M5",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 3,
+      "dispatch": "door",
+      "line_count": 7,
+      "maps": [
+        "E4M3",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 5,
+      "dispatch": "floor destination family",
+      "line_count": 7,
+      "maps": [
+        "E2M5",
+        "E2M7",
+        "E3M1",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 6,
+      "dispatch": "crusher ceiling cycle",
+      "line_count": 18,
+      "maps": [
+        "E2M9",
+        "E3M6",
+        "E4M5",
+        "E4M8"
+      ]
+    },
+    {
+      "special": 7,
+      "dispatch": "eight-unit stair chain",
+      "line_count": 4,
+      "maps": [
+        "E1M3",
+        "E2M5",
+        "E2M6",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 8,
+      "dispatch": "eight-unit stair chain",
+      "line_count": 3,
+      "maps": [
+        "E2M1",
+        "E4M1"
+      ]
+    },
+    {
+      "special": 11,
+      "dispatch": "normal exit use",
+      "line_count": 23,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M5",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M9",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M7",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M8"
+      ]
+    },
+    {
+      "special": 12,
+      "dispatch": "light action",
+      "line_count": 6,
+      "maps": [
+        "E2M3",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 13,
+      "dispatch": "light action",
+      "line_count": 7,
+      "maps": [
+        "E2M2",
+        "E2M3",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 14,
+      "dispatch": "floor destination family",
+      "line_count": 2,
+      "maps": [
+        "E4M8"
+      ]
+    },
+    {
+      "special": 16,
+      "dispatch": "door",
+      "line_count": 1,
+      "maps": [
+        "E4M5"
+      ]
+    },
+    {
+      "special": 18,
+      "dispatch": "floor destination family",
+      "line_count": 13,
+      "maps": [
+        "E2M1",
+        "E2M2",
+        "E2M9",
+        "E3M3",
+        "E3M4",
+        "E3M6",
+        "E4M2",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 19,
+      "dispatch": "floor lower destination family",
+      "line_count": 69,
+      "maps": [
+        "E1M2",
+        "E1M4",
+        "E1M8",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E3M2",
+        "E3M3",
+        "E4M2",
+        "E4M3",
+        "E4M5",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 20,
+      "dispatch": "floor destination family",
+      "line_count": 9,
+      "maps": [
+        "E1M3",
+        "E1M6",
+        "E3M3",
+        "E4M2",
+        "E4M5",
+        "E4M6",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 22,
+      "dispatch": "floor destination family",
+      "line_count": 4,
+      "maps": [
+        "E1M6",
+        "E2M5",
+        "E3M6",
+        "E4M4"
+      ]
+    },
+    {
+      "special": 23,
+      "dispatch": "floor lower destination family",
+      "line_count": 73,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M7",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E2M8",
+        "E2M9",
+        "E3M3",
+        "E3M4",
+        "E3M6",
+        "E3M7",
+        "E3M8",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 24,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E4M8"
+      ]
+    },
+    {
+      "special": 25,
+      "dispatch": "crusher ceiling cycle",
+      "line_count": 4,
+      "maps": [
+        "E3M3",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 26,
+      "dispatch": "door",
+      "line_count": 39,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M4",
+        "E1M7",
+        "E2M2",
+        "E2M3",
+        "E3M2",
+        "E3M3",
+        "E3M5",
+        "E3M7",
+        "E3M9",
+        "E4M2",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 27,
+      "dispatch": "door",
+      "line_count": 56,
+      "maps": [
+        "E1M2",
+        "E1M4",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M3",
+        "E2M5",
+        "E2M7",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M7",
+        "E3M9",
+        "E4M1",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 28,
+      "dispatch": "door",
+      "line_count": 41,
+      "maps": [
+        "E1M2",
+        "E1M6",
+        "E1M7",
+        "E2M3",
+        "E2M5",
+        "E2M6",
+        "E3M2",
+        "E3M4",
+        "E3M6",
+        "E3M7",
+        "E3M9",
+        "E4M2",
+        "E4M3",
+        "E4M5",
+        "E4M6",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 31,
+      "dispatch": "door",
+      "line_count": 119,
+      "maps": [
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M5",
+        "E1M8",
+        "E1M9",
+        "E2M2",
+        "E2M4",
+        "E2M6",
+        "E2M7",
+        "E2M9",
+        "E3M2",
+        "E3M5",
+        "E3M7",
+        "E3M8",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 32,
+      "dispatch": "door",
+      "line_count": 24,
+      "maps": [
+        "E1M3",
+        "E1M6",
+        "E2M3",
+        "E2M5",
+        "E2M6",
+        "E2M9",
+        "E3M3",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M6",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 33,
+      "dispatch": "door",
+      "line_count": 15,
+      "maps": [
+        "E1M5",
+        "E1M9",
+        "E2M2",
+        "E2M9",
+        "E3M3",
+        "E3M5",
+        "E4M1",
+        "E4M2",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 34,
+      "dispatch": "door",
+      "line_count": 10,
+      "maps": [
+        "E3M2",
+        "E4M2",
+        "E4M6",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 35,
+      "dispatch": "light action",
+      "line_count": 3,
+      "maps": [
+        "E2M3",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 36,
+      "dispatch": "floor lower destination family",
+      "line_count": 54,
+      "maps": [
+        "E1M4",
+        "E1M7",
+        "E2M2",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E3M3",
+        "E3M4",
+        "E4M1"
+      ]
+    },
+    {
+      "special": 37,
+      "dispatch": "floor lower destination family",
+      "line_count": 55,
+      "maps": [
+        "E2M4",
+        "E3M2",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M7",
+        "E4M2",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 38,
+      "dispatch": "floor lower destination family",
+      "line_count": 79,
+      "maps": [
+        "E1M2",
+        "E1M6",
+        "E1M7",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E2M9",
+        "E3M3",
+        "E3M4",
+        "E3M7",
+        "E3M9",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M6",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 40,
+      "dispatch": "simultaneous ceiling raise and floor lower",
+      "line_count": 6,
+      "maps": [
+        "E2M7",
+        "E2M8",
+        "E3M6",
+        "E3M8"
+      ]
+    },
+    {
+      "special": 45,
+      "dispatch": "floor lower destination family",
+      "line_count": 2,
+      "maps": [
+        "E4M6"
+      ]
+    },
+    {
+      "special": 46,
+      "dispatch": "door",
+      "line_count": 9,
+      "maps": [
+        "E1M9",
+        "E2M7",
+        "E2M8",
+        "E3M4"
+      ]
+    },
+    {
+      "special": 47,
+      "dispatch": "floor destination family",
+      "line_count": 3,
+      "maps": [
+        "E3M4"
+      ]
+    },
+    {
+      "special": 48,
+      "dispatch": "horizontal sidedef scroll",
+      "line_count": 327,
+      "maps": [
+        "E1M2",
+        "E1M6",
+        "E2M2",
+        "E2M3",
+        "E2M6",
+        "E2M7",
+        "E2M8",
+        "E3M1",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M7",
+        "E3M8",
+        "E3M9",
+        "E4M1",
+        "E4M2",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 51,
+      "dispatch": "secret exit use",
+      "line_count": 2,
+      "maps": [
+        "E1M3",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 52,
+      "dispatch": "normal exit walk",
+      "line_count": 44,
+      "maps": [
+        "E1M8",
+        "E2M1",
+        "E2M2",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E3M1",
+        "E3M4",
+        "E3M6",
+        "E3M9",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 53,
+      "dispatch": "perpetual platform",
+      "line_count": 3,
+      "maps": [
+        "E1M7",
+        "E2M5",
+        "E3M3"
+      ]
+    },
+    {
+      "special": 56,
+      "dispatch": "floor destination family",
+      "line_count": 5,
+      "maps": [
+        "E4M2",
+        "E4M6",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 58,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E1M2"
+      ]
+    },
+    {
+      "special": 60,
+      "dispatch": "floor lower destination family",
+      "line_count": 9,
+      "maps": [
+        "E4M2",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 61,
+      "dispatch": "door",
+      "line_count": 9,
+      "maps": [
+        "E1M6",
+        "E1M7",
+        "E2M6",
+        "E4M2",
+        "E4M3",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 62,
+      "dispatch": "lift lower/wait/return",
+      "line_count": 240,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M5",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M1",
+        "E2M3",
+        "E2M4",
+        "E2M6",
+        "E2M8",
+        "E2M9",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M7",
+        "E3M9",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 63,
+      "dispatch": "door",
+      "line_count": 72,
+      "maps": [
+        "E1M2",
+        "E1M7",
+        "E2M2",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 68,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E4M2"
+      ]
+    },
+    {
+      "special": 69,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E4M2"
+      ]
+    },
+    {
+      "special": 71,
+      "dispatch": "floor lower destination family",
+      "line_count": 24,
+      "maps": [
+        "E1M2",
+        "E1M7",
+        "E1M9",
+        "E2M4",
+        "E2M6",
+        "E2M7",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E4M1",
+        "E4M3",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 75,
+      "dispatch": "door",
+      "line_count": 1,
+      "maps": [
+        "E1M7"
+      ]
+    },
+    {
+      "special": 77,
+      "dispatch": "crusher ceiling cycle",
+      "line_count": 15,
+      "maps": [
+        "E2M3"
+      ]
+    },
+    {
+      "special": 82,
+      "dispatch": "floor lower destination family",
+      "line_count": 8,
+      "maps": [
+        "E3M9",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 88,
+      "dispatch": "lift lower/wait/return",
+      "line_count": 101,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M5",
+        "E1M7",
+        "E1M9",
+        "E2M3",
+        "E2M4",
+        "E2M6",
+        "E2M9",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M7",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M7",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 97,
+      "dispatch": "teleport with actor/side restrictions",
+      "line_count": 289,
+      "maps": [
+        "E1M2",
+        "E1M4",
+        "E1M6",
+        "E1M7",
+        "E2M1",
+        "E2M2",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M7",
+        "E3M9",
+        "E4M2",
+        "E4M4",
+        "E4M6",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 100,
+      "dispatch": "sixteen-unit stair chain",
+      "line_count": 1,
+      "maps": [
+        "E2M4"
+      ]
+    },
+    {
+      "special": 101,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E2M1"
+      ]
+    },
+    {
+      "special": 102,
+      "dispatch": "floor lower destination family",
+      "line_count": 11,
+      "maps": [
+        "E1M2",
+        "E2M5",
+        "E2M7",
+        "E4M2",
+        "E4M4",
+        "E4M5",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 103,
+      "dispatch": "door",
+      "line_count": 99,
+      "maps": [
+        "E1M2",
+        "E1M3",
+        "E1M4",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M2",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E2M9",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M8",
+        "E4M1",
+        "E4M2",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M7",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 105,
+      "dispatch": "door",
+      "line_count": 6,
+      "maps": [
+        "E1M6",
+        "E2M2",
+        "E3M7"
+      ]
+    },
+    {
+      "special": 106,
+      "dispatch": "door",
+      "line_count": 1,
+      "maps": [
+        "E2M6"
+      ]
+    },
+    {
+      "special": 107,
+      "dispatch": "door",
+      "line_count": 1,
+      "maps": [
+        "E1M6"
+      ]
+    },
+    {
+      "special": 109,
+      "dispatch": "door",
+      "line_count": 60,
+      "maps": [
+        "E1M2",
+        "E2M2",
+        "E2M4",
+        "E2M9",
+        "E3M3",
+        "E3M4",
+        "E3M7",
+        "E4M3",
+        "E4M4",
+        "E4M5",
+        "E4M6",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 110,
+      "dispatch": "door",
+      "line_count": 4,
+      "maps": [
+        "E2M7",
+        "E3M2",
+        "E3M3",
+        "E3M7"
+      ]
+    },
+    {
+      "special": 112,
+      "dispatch": "door",
+      "line_count": 10,
+      "maps": [
+        "E1M9",
+        "E2M2",
+        "E2M4",
+        "E2M5",
+        "E2M7",
+        "E3M4",
+        "E4M4"
+      ]
+    },
+    {
+      "special": 114,
+      "dispatch": "door",
+      "line_count": 4,
+      "maps": [
+        "E1M6",
+        "E2M2",
+        "E3M7"
+      ]
+    },
+    {
+      "special": 117,
+      "dispatch": "door",
+      "line_count": 35,
+      "maps": [
+        "E1M1",
+        "E1M2",
+        "E1M5",
+        "E1M6",
+        "E1M7",
+        "E2M1",
+        "E2M5",
+        "E2M6",
+        "E2M9",
+        "E3M3",
+        "E3M5",
+        "E3M7"
+      ]
+    },
+    {
+      "special": 118,
+      "dispatch": "door",
+      "line_count": 2,
+      "maps": [
+        "E2M9",
+        "E3M2"
+      ]
+    },
+    {
+      "special": 119,
+      "dispatch": "floor destination family",
+      "line_count": 3,
+      "maps": [
+        "E3M4",
+        "E3M6",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 120,
+      "dispatch": "lift lower/wait/return",
+      "line_count": 30,
+      "maps": [
+        "E1M2",
+        "E1M6",
+        "E2M1",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E3M2",
+        "E3M5",
+        "E4M5",
+        "E4M7"
+      ]
+    },
+    {
+      "special": 123,
+      "dispatch": "lift lower/wait/return",
+      "line_count": 88,
+      "maps": [
+        "E1M2",
+        "E1M5",
+        "E1M6",
+        "E1M7",
+        "E1M9",
+        "E2M1",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M7",
+        "E4M4",
+        "E4M6",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 124,
+      "dispatch": "secret exit walk",
+      "line_count": 5,
+      "maps": [
+        "E2M5",
+        "E3M6"
+      ]
+    },
+    {
+      "special": 125,
+      "dispatch": "teleport with actor/side restrictions",
+      "line_count": 18,
+      "maps": [
+        "E1M7",
+        "E2M2",
+        "E2M7",
+        "E3M1",
+        "E3M4",
+        "E4M8"
+      ]
+    },
+    {
+      "special": 126,
+      "dispatch": "teleport with actor/side restrictions",
+      "line_count": 149,
+      "maps": [
+        "E1M4",
+        "E1M5",
+        "E1M6",
+        "E2M1",
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E2M6",
+        "E2M7",
+        "E2M9",
+        "E3M2",
+        "E3M3",
+        "E3M4",
+        "E3M5",
+        "E3M6",
+        "E3M8",
+        "E4M4",
+        "E4M5",
+        "E4M8",
+        "E4M9"
+      ]
+    },
+    {
+      "special": 127,
+      "dispatch": "sixteen-unit stair chain",
+      "line_count": 5,
+      "maps": [
+        "E2M3",
+        "E2M4",
+        "E2M5",
+        "E3M5",
+        "E3M6"
+      ]
+    },
+    {
+      "special": 130,
+      "dispatch": "floor destination family",
+      "line_count": 7,
+      "maps": [
+        "E2M4",
+        "E3M7",
+        "E4M2"
+      ]
+    },
+    {
+      "special": 131,
+      "dispatch": "floor destination family",
+      "line_count": 1,
+      "maps": [
+        "E2M4"
+      ]
+    },
+    {
+      "special": 133,
+      "dispatch": "door",
+      "line_count": 4,
+      "maps": [
+        "E1M7",
+        "E2M7",
+        "E2M9",
+        "E4M3"
+      ]
+    },
+    {
+      "special": 135,
+      "dispatch": "door",
+      "line_count": 6,
+      "maps": [
+        "E2M4",
+        "E2M5",
+        "E2M7",
+        "E2M9"
+      ]
+    },
+    {
+      "special": 137,
+      "dispatch": "door",
+      "line_count": 4,
+      "maps": [
+        "E2M1",
+        "E2M6",
+        "E3M6"
+      ]
+    },
+    {
+      "special": 138,
+      "dispatch": "light action",
+      "line_count": 1,
+      "maps": [
+        "E1M3"
+      ]
+    },
+    {
+      "special": 141,
+      "dispatch": "crusher ceiling cycle",
+      "line_count": 1,
+      "maps": [
+        "E2M5"
+      ]
+    }
+  ],
+  "qualification_limits": [
+    "All36 maps spawned and simulated15ticks; fullcampaign playthrough not completed.",
+    "Original demo compatibility not qualified.",
+    "Synthetic behavior tests establish only their stated cases."
+  ]
+}
