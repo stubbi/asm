@@ -44,13 +44,17 @@ Headers have a 64-field and 16 KiB limit.
 Each readiness or export request owns one fresh PostgreSQL connection.
 The source now reserves one of eight process admission slots before connection creation.
 It releases that slot after connection cleanup on success or failure, including a null connection result.
-Native qualification of this admission change remains pending.
+Recorded qualification covers only the sources and artifacts in the [image preflight](../docs/server-images.md#admission-image-preflight).
+Later revisions require fresh checks.
 The result and HTTP response do not retain a database admission slot.
 Liveness and source identity do not request a slot.
 
 When all eight slots are owned, the request returns the existing HTTP 503 response.
 Admission uses at most sixteen atomic attempts and has no wait queue.
 Contention can also cause temporary refusal before every slot is occupied.
+This guard retains the canonical export error contract.
+The [architecture proposal](../docs/architecture.md#default-public-interfaces) specifies HTTP 429 and bounded retry guidance for future public admission limits.
+A versioned API change must introduce that response policy.
 This source does not keep a persistent connection pool.
 It does not read `ASM_DATABASE_POOL_SIZE`.
 
