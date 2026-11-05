@@ -18,11 +18,13 @@
 .endm
 
 .text
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 # Input: none. Output: ExitProcess(0) when value and ABI checks pass; otherwise 1.
 # Saves all changed nonvolatile GP/XMM registers with Windows unwind metadata.
 # Stack: 64 bytes of GP saves plus 232 bytes including shadow space and locals.
+_start:
 mainCRTStartup:
     push rbx
     .seh_pushreg rbx

@@ -118,6 +118,15 @@ class WindowsHelloTests(unittest.TestCase):
         self.run_tool([linker, f"/machine:{machine}", "/entry:mainCRTStartup", "/subsystem:console",
                        "/nodefaultlib", "/dynamicbase", "/nxcompat", "/timestamp:0", "/WX",
                        f"/out:{exe}", str(obj), str(library)], package)
+        alias = obj.with_suffix(".start.exe")
+        self.run_tool([linker, f"/machine:{machine}", "/entry:_start", "/subsystem:console",
+                       "/nodefaultlib", "/dynamicbase", "/nxcompat", "/timestamp:0", "/WX",
+                       f"/out:{alias}", str(obj), str(library)], package)
+        def entry_rva(path):
+            data = path.read_bytes()
+            pe = struct.unpack_from("<I", data, 60)[0]
+            return struct.unpack_from("<I", data, pe + 24 + 16)[0]
+        self.assertEqual(entry_rva(alias), entry_rva(exe), "The CLI and direct-tool entry labels must select the same code")
         sources = {package / source_path, *(package / target_path / "src").glob("*.s")}
         print(json.dumps({"phase": "build", "package": package_name, "target": target[1], "source": source,
                           "source_sha256": hashlib.sha256((package / source_path).read_bytes()).hexdigest(),

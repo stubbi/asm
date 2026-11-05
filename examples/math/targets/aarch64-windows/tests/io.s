@@ -5,10 +5,12 @@
 .include "targets/aarch64-windows/src/main.s"
 
 .text
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 // Input: none. Output: ExitProcess(0) on pass, ExitProcess(1) on failure.
 // Clobbers volatile registers and flags. Stack: 16 bytes, 16-byte aligned.
+_start:
 mainCRTStartup:
     stp x29, x30, [sp, #-16]!
     .seh_save_fplr_x 16

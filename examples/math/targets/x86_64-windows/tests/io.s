@@ -5,10 +5,12 @@
 .include "targets/x86_64-windows/src/main.s"
 
 .text
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 # Input: none. Output: ExitProcess(0) on pass, ExitProcess(1) on failure.
 # Clobbers volatile registers and flags. Stack: 40 bytes, Win64 shadow space.
+_start:
 mainCRTStartup:
     sub rsp, 40
     .seh_stackalloc 40
