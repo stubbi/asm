@@ -1401,7 +1401,18 @@
       }
     }
   ],
-  "current": {
+  "limits": [
+    "Failed runs remain evidence; later passes do not erase their results.",
+    "Subtests can add failure records beyond the number of methods.",
+    "Some first-run records are incomplete because SDK linkage failed before runtime.",
+    "Windows minimum OS and additional CPU feature requirements are not qualified. The recorded native host configurations define the observed scope.",
+    "Local host shims and temporary-import cross-builds are not native Windows qualification.",
+    "The updater test uses controlled transport and provenance tools. Production trust activation and release artifact admission remain separate.",
+    "Published 0.6.0 bytes and release target support are unchanged.",
+    "The primary-unmap probe qualifies only its native kernel operations and copied child images on the recorded hosts. It does not independently qualify the Python controller as unemulated.",
+    "The completed unmap experiment does not qualify the versioned updater. Managed source requires its own complete native acceptance run."
+  ],
+  "last_direct_layout_runtime": {
     "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
     "methods_per_target": 46,
     "passing_methods_per_target": 45,
@@ -1414,17 +1425,86 @@
     "run_id": 42042014143,
     "long_application": "Both targets passed the deliberate 125-second application case: x86-64 125.157 seconds; ARM64 125.188754 seconds.",
     "primary_unmap_probe": "Both run 8 fixtures completed. Still-mapped and primary-unmapped live children denied replacement with 0xC0000022 and preserved both files. Terminated children allowed replacement with status 0.",
-    "proposed_layout": "The versioned Windows layout is a proposal awaiting user approval. These runs do not implement it."
+    "proposed_layout": "These direct-layout runs predate the approved versioned implementation. They do not qualify the managed layout."
   },
-  "limits": [
-    "Failed runs remain evidence; later passes do not erase their results.",
-    "Subtests can add failure records beyond the number of methods.",
-    "Some first-run records are incomplete because SDK linkage failed before runtime.",
-    "Windows minimum OS and additional CPU feature requirements are not qualified. The recorded native host configurations define the observed scope.",
-    "Local host shims and temporary-import cross-builds are not native Windows qualification.",
-    "The updater test uses controlled transport and provenance tools. Production trust activation and release artifact admission remain separate.",
-    "Published 0.6.0 bytes and release target support are unchanged.",
-    "The primary-unmap probe qualifies only its native kernel operations and copied child images on the recorded hosts. It does not independently qualify the Python controller as unemulated.",
-    "The completed unmap experiment does not fix or qualify the production updater. A proposed versioned Windows layout is not an implemented capability."
-  ]
+  "managed_native_runs": [
+    {
+      "iteration": 1,
+      "run_id": 42089978999,
+      "url": "https://github.com/stubbi/asm/actions/runs/42089978999",
+      "event": "workflow_dispatch",
+      "source_commit": "688ea1dbdf125b75adcd628c09f02170184857ff",
+      "source_tree": "0658244b4fddfe85b8619ab9b530e9bec278347b",
+      "outcome": "fail",
+      "expected_runtime_methods_per_target": 118,
+      "preflight": {
+        "x86_64-windows": {
+          "methods": 26,
+          "passed": 25,
+          "failed": 1,
+          "native_runtime_executed": 0
+        },
+        "aarch64-windows": {
+          "methods": 26,
+          "passed": 25,
+          "failed": 1,
+          "native_runtime_executed": 0
+        }
+      },
+      "failed_preflight_method": "FaultObservationTests.test_fault_marker_function_writes_exact_stage_and_fails_closed",
+      "native_cli_build": "skipped after preflight failure",
+      "native_cli_qualification": false,
+      "measured_failure": {
+        "aarch64-windows": "The unit harness defines five global mock API names that collide with kernel32 import thunks: ExitProcess, WriteFile, CloseHandle, FlushFileBuffers, and CreateFileW.",
+        "x86_64-windows": "The marker build exits with linker error 1169. The old assertion omits linker stdout; named duplicate symbols are not observed in this native log."
+      },
+      "separate_diagnostic_failure": "The x64 adapter collector fails obsolete source-instrumentation anchors before executing compiler commands.",
+      "secondary_probe_failure": "The unmap probes lack the CLI executable after the skipped build. They provide no product result.",
+      "separate_passing_scopes": [
+        {
+          "path": "build/windows-managed-first-native/linux-reference-packages-688ea1dbdf125b75adcd628c09f02170184857ff/results.json",
+          "sha256": "5f38f9639f2a615bf9cf9ef1afbcc5427bde9d4e1135df5756070ece0fcab59d",
+          "scope": "Linux reference packages under QEMU",
+          "outcome": "pass",
+          "tests_run": 24
+        },
+        {
+          "path": "build/windows-managed-first-native/native-windows-packages-x86_64-windows-688ea1dbdf125b75adcd628c09f02170184857ff/windows-evidence/packages.json",
+          "sha256": "dcd548bd0e3a55721fcfc9ce8eaa51eead4d2fa23503312f6ca1fd3b1e1bd5e3",
+          "target": "x86_64-windows",
+          "scope": "packages",
+          "outcome": "pass",
+          "native_qualification": true,
+          "package_tests": 7
+        },
+        {
+          "path": "build/windows-managed-first-native/native-windows-packages-aarch64-windows-688ea1dbdf125b75adcd628c09f02170184857ff/windows-evidence/packages.json",
+          "sha256": "2bc0b2781dbce144182edefcccaddfaa4c96fb803d346443034c801317deabe0",
+          "target": "aarch64-windows",
+          "scope": "packages",
+          "outcome": "pass",
+          "native_qualification": true,
+          "package_tests": 7
+        }
+      ],
+      "raw_log": {
+        "path": "build/integration-evidence/windows-managed-first-failed.log",
+        "sha256": "169067e48b552e98772ffb270cc08d957e79ef1ca9b5aa289f0a28024d9343a3"
+      },
+      "audit": {
+        "file": "build/integration-evidence/windows-managed-first-audit.json",
+        "sha256": "353f1607f73e409732ce32b662cac66b83a776ef859da0acd7dce4bfbb70e32b"
+      }
+    }
+  ],
+  "current": {
+    "source_commit": "688ea1dbdf125b75adcd628c09f02170184857ff",
+    "run_id": 42089978999,
+    "layout": "The user approved the versioned layout on 5 November 2026. Assembly implementation and source-installer fixtures exist.",
+    "expected_runtime_methods_per_target": 118,
+    "runtime_methods_executed_per_target": 0,
+    "native_cli_qualification": false,
+    "remaining_failure": "Both native CLI jobs stop at the unit harness build. The separate x64 diagnostic collector also needs current-source adaptation.",
+    "separate_package_jobs": "Both native Windows package scopes pass seven cases. The Linux reference scope passes 24 cases, with ARM64 and RISC-V execution under QEMU."
+  }
 }

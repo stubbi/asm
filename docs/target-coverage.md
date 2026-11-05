@@ -136,7 +136,8 @@ They do not change published host support.
 
 The sixth Windows result used source `540620a9c8ed14fc5904d07c16dda0430cf9fcb1` in [run 42033134716](https://github.com/stubbi/asm/actions/runs/42033134716).
 Subtests can produce multiple failure records for one method.
-The [Windows record](windows-native-evidence.json) retains all eight failed runs and their exact artifact boundaries.
+The [Windows record](windows-native-evidence.json) retains eight failed direct-layout runs and the first managed run.
+The managed run stopped in preflight; it executed none of the 118 runtime cases on either target.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
 

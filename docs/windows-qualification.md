@@ -88,6 +88,15 @@ The [current driver](../tools/windows_test.py) collects 118 cases per target acr
 The suite includes native command, managed installation, recovery, resolver, and child-image checks.
 Three recovery checks inspect test orchestration.
 Native execution remains required.
+The first managed [run 42089978999](https://github.com/stubbi/asm/actions/runs/42089978999) used source `688ea1dbdf125b75adcd628c09f02170184857ff`.
+Both CLI jobs stopped during preflight, before building the CLI or executing any of the 118 runtime cases.
+Each preflight ran 26 methods, with 25 passes and one marker-harness build failure.
+ARM64 diagnostics identify five mock API names that collide with kernel32 import symbols.
+The x86-64 log records linker error 1169; its assertion omitted linker stdout.
+The separate x86-64 diagnostic collector also failed obsolete source anchors.
+These setup failures provide no managed CLI runtime result.
+Both independent Windows package jobs passed seven cases; the Linux reference job passed 24 cases.
+The [evidence record](windows-native-evidence.json) retains the source, report digests, and earlier failed runs.
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.
