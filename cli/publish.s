@@ -569,8 +569,8 @@ pub_source_paths:
     ret
 
 /* Inspect the small project manifest inside the validated TAR. The accepted
- * subset matches the native build manifest: one package and up to seven target entries,
- * no escapes or duplicate fields. All reads are bounded by a copied NUL.
+ * subset uses the shared bounded build/dependency/native-link parser.
+ * No escapes or duplicate fields are accepted. Reads use a copied NUL.
  * Input: RDI=validated target, pub_name/version and successful archive table.
  * Output: EAX=0/1. Owns a 16385-byte manifest buffer and eight 256-byte values. Frame:56.
  * Optional values and the field mask reset before each artifact. The stateless
@@ -584,7 +584,6 @@ pub_check_project:
     push r15
     sub rsp, 8
     mov [rip + pub_project_target], rdi
-    mov byte ptr [rip + pub_project_matched], 0
     xor r14d, r14d
     call pub_source_paths
     test eax, eax
@@ -607,7 +606,6 @@ pub_check_project:
     jz .Lpub_project_bad
     cmp rdx, PUB_LEGACY_MANIFEST_MAX
     ja .Lpub_project_bad
-    mov [rip + pub_manifest_length], rdx
     mov rsi, rax
     lea rdi, [rip + pub_manifest]
     mov rcx, rdx
@@ -621,214 +619,23 @@ pub_check_project:
     cmp r8, rcx
     jb .Lpub_manifest_copy
     mov byte ptr [rdi + rcx], 0
-    mov r12, rdi
-    xor r13d, r13d
-    xor r15d, r15d
-.Lpub_manifest_line:
-    call pub_skip_horizontal
-    mov al, [r12]
-    test al, al
-    jz .Lpub_manifest_finish
-    cmp al, 10
-    je .Lpub_manifest_next_char
-    cmp al, '#'
-    je .Lpub_manifest_comment
-    cmp al, '['
-    je .Lpub_manifest_section
-    lea rdi, [rip + pub_key]
-    xor ecx, ecx
-.Lpub_manifest_key:
-    mov al, [r12]
-    cmp al, 'a'
-    jb .Lpub_manifest_key_end
-    cmp al, 'z'
-    ja .Lpub_manifest_key_end
-    cmp ecx, 31
-    jae .Lpub_project_bad
-    mov [rdi + rcx], al
-    inc ecx
-    inc r12
-    jmp .Lpub_manifest_key
-.Lpub_manifest_key_end:
-    test ecx, ecx
-    jz .Lpub_project_bad
-    mov byte ptr [rdi + rcx], 0
-    call pub_skip_horizontal
-    cmp byte ptr [r12], '='
-    jne .Lpub_project_bad
-    inc r12
-    call pub_skip_horizontal
-    cmp byte ptr [r12], '"'
-    jne .Lpub_project_bad
-    inc r12
-    lea rbx, [rip + pub_project_fields]
-.Lpub_manifest_field:
-    mov rsi, [rbx]
-    test rsi, rsi
-    jz .Lpub_project_bad
-    lea rdi, [rip + pub_key]
-    call streq
-    test eax, eax
-    jnz .Lpub_manifest_value
-    add rbx, 24
-    jmp .Lpub_manifest_field
-.Lpub_manifest_value:
-    mov edx, [rbx + 16]
-    cmp r13d, 3
-    jne .Lpub_manifest_legacy_field
-    cmp edx, 8                 /* The table name already fixes the target. */
-    je .Lpub_project_bad
-    cmp dword ptr [rbx + 20], 1
-    je .Lpub_project_bad
-    jmp .Lpub_manifest_field_scope_ok
-.Lpub_manifest_legacy_field:
-    cmp r13d, [rbx + 20]
-    jne .Lpub_project_bad
-.Lpub_manifest_field_scope_ok:
-    test r14d, edx
-    jnz .Lpub_project_bad
-    or r14d, edx
-    mov rdi, [rbx + 8]
-    xor ecx, ecx
-.Lpub_manifest_value_character:
-    mov al, [r12]
-    cmp al, '"'
-    je .Lpub_manifest_value_end
-    cmp al, 32
-    jb .Lpub_project_bad
-    cmp al, 126
-    ja .Lpub_project_bad
-    cmp al, '\\'
-    je .Lpub_project_bad
-    cmp ecx, 255
-    jae .Lpub_project_bad
-    mov [rdi + rcx], al
-    inc ecx
-    inc r12
-    jmp .Lpub_manifest_value_character
-.Lpub_manifest_value_end:
-    test ecx, ecx
-    jz .Lpub_project_bad
-    mov byte ptr [rdi + rcx], 0
-    inc r12
-    jmp .Lpub_manifest_line_end
-.Lpub_manifest_section:
-    cmp r13d, 2
-    jb .Lpub_manifest_section_start
-    call pub_project_entry
+    lea rsi, [rip + rm_archive_metadata]
+    mov rdx, [rip + pub_project_target]
+    call rm_parse_manifest
     test eax, eax
     jnz .Lpub_project_bad
-.Lpub_manifest_section_start:
-    xor r13d, r13d
-    inc r12
-    lea rdi, [rip + pub_key]
-    xor ecx, ecx
-.Lpub_manifest_section_character:
-    mov al, [r12]
-    cmp al, ']'
-    je .Lpub_manifest_section_end
-    cmp al, 32
-    jb .Lpub_project_bad
-    cmp al, 126
-    ja .Lpub_project_bad
-    cmp ecx, 31
-    jae .Lpub_project_bad
-    mov [rdi + rcx], al
-    inc ecx
-    inc r12
-    jmp .Lpub_manifest_section_character
-.Lpub_manifest_section_end:
-    mov byte ptr [rdi + rcx], 0
-    inc r12
-    lea rsi, [rip + pub_package_section]
-    call streq
-    test eax, eax
-    jnz .Lpub_manifest_package
-    lea rdi, [rip + pub_key]
-    lea rsi, [rip + pub_build_section]
-    call streq
-    test eax, eax
-    jz .Lpub_manifest_target
-    test r15d, 510            /* Legacy and target entries cannot mix. */
-    jnz .Lpub_project_bad
-    or r15d, 2
-    call pub_project_reset_entry
-    mov r13d, 2
-    jmp .Lpub_manifest_line_end
-.Lpub_manifest_target:
-    test r15d, 2
-    jnz .Lpub_project_bad
-    lea rdi, [rip + pub_key]
-    cmp dword ptr [rdi], 0x67726174
-    jne .Lpub_project_bad
-    cmp word ptr [rdi + 4], 0x7465
-    jne .Lpub_project_bad
-    cmp byte ptr [rdi + 6], '.'
-    jne .Lpub_project_bad
-    lea rbx, [rip + pub_project_targets]
-.Lpub_manifest_target_find:
-    mov rsi, [rbx]
-    test rsi, rsi
-    jz .Lpub_project_bad
-    lea rdi, [rip + pub_key + 7]
-    call streq
-    test eax, eax
-    jnz .Lpub_manifest_target_found
-    add rbx, 16
-    jmp .Lpub_manifest_target_find
-.Lpub_manifest_target_found:
-    mov edx, [rbx + 8]
-    test r15d, edx
-    jnz .Lpub_project_bad
-    or r15d, edx
-    call pub_project_reset_entry
-    mov rsi, [rbx]
+    lea rdi, [rip + pub_project_name]
+    mov rsi, [rip + rm_archive_metadata + 24]
+    call copy_string
+    lea rdi, [rip + pub_project_version]
+    mov rsi, [rip + rm_archive_metadata + 32]
+    call copy_string
+    lea rdi, [rip + pub_project_source]
+    mov rsi, [rip + rm_archive_metadata + 40]
+    call copy_string
     lea rdi, [rip + pub_project_arch]
-    call copy_string            /* Canonical IDs fit the 256-byte buffer. */
-    mov r13d, 3
-    jmp .Lpub_manifest_line_end
-.Lpub_manifest_package:
-    test r15d, 1
-    jnz .Lpub_project_bad
-    or r15d, 1
-    mov r13d, 1
-.Lpub_manifest_line_end:
-    call pub_skip_horizontal
-    cmp byte ptr [r12], '#'
-    je .Lpub_manifest_comment
-    cmp byte ptr [r12], 0
-    je .Lpub_manifest_finish
-    cmp byte ptr [r12], 10
-    jne .Lpub_project_bad
-.Lpub_manifest_next_char:
-    inc r12
-    jmp .Lpub_manifest_line
-.Lpub_manifest_comment:
-    mov al, [r12]
-    test al, al
-    jz .Lpub_manifest_finish
-    inc r12
-    cmp al, 10
-    jne .Lpub_manifest_comment
-    jmp .Lpub_manifest_line
-.Lpub_manifest_finish:
-    test r15d, 508             /* Named target table bits only. */
-    jz .Lpub_manifest_size_ready
-    cmp qword ptr [rip + pub_manifest_length], PUB_TARGET_MANIFEST_MAX
-    ja .Lpub_project_bad
-.Lpub_manifest_size_ready:
-    cmp r13d, 2
-    jb .Lpub_manifest_entries_done
-    call pub_project_entry
-    test eax, eax
-    jnz .Lpub_project_bad
-.Lpub_manifest_entries_done:
-    mov eax, r14d
-    and eax, 3
-    cmp eax, 3
-    jne .Lpub_project_bad
-    cmp byte ptr [rip + pub_project_matched], 1
-    jne .Lpub_project_bad
+    mov rsi, [rip + rm_archive_metadata + 48]
+    call copy_string
     mov rsi, [rip + pub_name]
 .Lpub_unscoped_name:
     cmp byte ptr [rsi], '/'
@@ -846,6 +653,43 @@ pub_check_project:
     call streq
     test eax, eax
     jz .Lpub_project_bad
+    lea rdi, [rip + pub_project_arch]
+    mov rsi, [rip + pub_project_target]
+    call streq
+    test eax, eax
+    jz .Lpub_project_bad
+    xor r12d, r12d
+    lea r13, [rip + rm_archive_metadata + RM_RECIPES]
+.Lpub_recipe_loop:
+    cmp r12, [rip + rm_archive_metadata + RM_RECIPE_COUNT]
+    jae .Lpub_project_valid
+    mov rdi, [r13 + 8]
+    call pub_recipe_assembly_member
+    test eax, eax
+    jnz .Lpub_project_bad
+    test qword ptr [r13 + 48], 2
+    jz .Lpub_recipe_checker
+    mov rdi, [r13 + 16]
+    call pub_recipe_assembly_member
+    test eax, eax
+    jnz .Lpub_project_bad
+.Lpub_recipe_checker:
+    mov rdi, [r13 + 40]
+    cmp byte ptr [rdi], 0
+    je .Lpub_recipe_next
+    call pub_portable_path
+    test eax, eax
+    jnz .Lpub_project_bad
+    mov rdi, [r13 + 40]
+    call source_archive_member
+    test rax, rax
+    jz .Lpub_project_bad
+    test ecx, ecx
+    jnz .Lpub_project_bad
+.Lpub_recipe_next:
+    add r13, 64
+    inc r12
+    jmp .Lpub_recipe_loop
 .Lpub_project_valid:
     xor eax, eax
     jmp .Lpub_project_return
@@ -860,163 +704,41 @@ pub_check_project:
     pop rbp
     pop rbx
     ret
-/* Finish one entry before its scratch values are reused. R13D is 2 for
- * legacy or 3 for a target table; R14D contains package and current entry bits.
- * Returns EAX=0/1; preserves parser registers. Checks every explicit input
- * against the already validated archive, including inactive targets. Stack:8. */
-pub_project_entry:
-    sub rsp, 8
-    test r14d, 4
-    jz .Lpub_entry_bad
-    cmp r13d, 2
-    jne .Lpub_entry_target_ready
-    test r14d, 8
-    jz .Lpub_entry_bad
-.Lpub_entry_target_ready:
-    lea rdi, [rip + pub_project_arch]
-    call pub_project_valid_target
-    test eax, eax
-    jz .Lpub_entry_bad
-    lea rdi, [rip + pub_project_link]
-    lea rsi, [rip + pub_project_libraries]
-    lea rdx, [rip + pub_project_check]
-    call native_link_validate
-    test eax, eax
-    jz .Lpub_entry_bad
-    lea rdi, [rip + pub_project_source]
-    call pub_project_assembly_member
-    test eax, eax
-    jnz .Lpub_entry_bad
-    lea rdi, [rip + pub_project_test]
-    cmp byte ptr [rdi], 0
-    je .Lpub_entry_check
-    call pub_project_assembly_member
-    test eax, eax
-    jnz .Lpub_entry_bad
-.Lpub_entry_check:
-    lea rdi, [rip + pub_project_check]
-    cmp byte ptr [rdi], 0
-    je .Lpub_entry_match
-    call pub_project_member
-    test eax, eax
-    jnz .Lpub_entry_bad
-.Lpub_entry_match:
-    lea rdi, [rip + pub_project_arch]
-    mov rsi, [rip + pub_project_target]
-    call streq
-    test eax, eax
-    jz .Lpub_entry_good
-    mov byte ptr [rip + pub_project_matched], 1
-.Lpub_entry_good:
-    xor eax, eax
-    jmp .Lpub_entry_return
-.Lpub_entry_bad:
-    mov eax, 1
-.Lpub_entry_return:
-    add rsp, 8
-    ret
-
-/* Input: RDI=bounded target string. EAX=1 for a known project declaration,
- * else zero. Preserve parser registers and selected build target. Stack:16.
- * Publication artifacts still use registry_valid_target's separate set. */
-pub_project_valid_target:
-    push rbx
+/* RDI=borrowed recipe source/test. EAX=0 for a portable regular assembly
+ * member,1 otherwise. Preserves callee-saved; stack8 plus nested calls. */
+pub_recipe_assembly_member:
     push r12
     mov r12, rdi
-    lea rbx, [rip + pub_project_targets]
-.Lpub_project_valid_target_next:
-    mov rsi, [rbx]
-    test rsi, rsi
-    jz .Lpub_project_valid_target_bad
-    mov rdi, r12
-    call streq
-    test eax, eax
-    jnz .Lpub_project_valid_target_return
-    add rbx, 16
-    jmp .Lpub_project_valid_target_next
-.Lpub_project_valid_target_bad:
-    xor eax, eax
-.Lpub_project_valid_target_return:
-    pop r12
-    pop rbx
-    ret
-
-/* Clear entry-owned 256-byte strings through their leading NUL. Package bits
- * survive in R14D. No calls, stack, or archive changes; only flags are scratch. */
-pub_project_reset_entry:
-    and r14d, 3
-    mov byte ptr [rip + pub_project_source], 0
-    mov byte ptr [rip + pub_project_arch], 0
-    mov byte ptr [rip + pub_project_link], 0
-    mov byte ptr [rip + pub_project_libraries], 0
-    mov byte ptr [rip + pub_project_check], 0
-    mov byte ptr [rip + pub_project_test], 0
-    ret
-
-/* RDI=one NUL-terminated relative assembly path, <=255 bytes. EAX=0/1.
- * Requires a portable path and a regular member with .s, .S, or .asm suffix.
- * Preserves parser registers and owns one saved pointer (8 stack bytes). */
-pub_project_assembly_member:
-    push rbx
-    mov rbx, rdi
-    call strlen
-    cmp rax, 2
-    jb .Lpub_assembly_bad
-    cmp word ptr [rbx + rax - 2], 0x732e
-    je .Lpub_assembly_found
-    cmp word ptr [rbx + rax - 2], 0x532e
-    je .Lpub_assembly_found
-    cmp rax, 4
-    jb .Lpub_assembly_bad
-    cmp dword ptr [rbx + rax - 4], 0x6d73612e
-    jne .Lpub_assembly_bad
-.Lpub_assembly_found:
-    mov rdi, rbx
-    call pub_project_member
-    pop rbx
-    ret
-.Lpub_assembly_bad:
-    mov eax, 1
-    pop rbx
-    ret
-
-/* RDI=one NUL-terminated input path, <=255 bytes. EAX=0/1. Requires a
- * portable regular archive member; no extraction. Preserves parser registers.
- * Owns one saved pointer (8 stack bytes); callees own bounded archive state. */
-pub_project_member:
-    push rbx
-    mov rbx, rdi
     call pub_portable_path
     test eax, eax
-    jnz .Lpub_member_bad
-    mov rdi, rbx
+    jnz .Lpub_recipe_member_bad
+    mov rdi, r12
+    call strlen
+    cmp rax, 2
+    jb .Lpub_recipe_member_bad
+    cmp word ptr [r12 + rax - 2], 0x732e
+    je .Lpub_recipe_member_find
+    cmp word ptr [r12 + rax - 2], 0x532e
+    je .Lpub_recipe_member_find
+    cmp rax, 4
+    jb .Lpub_recipe_member_bad
+    cmp dword ptr [r12 + rax - 4], 0x6d73612e
+    jne .Lpub_recipe_member_bad
+.Lpub_recipe_member_find:
+    mov rdi, r12
     call source_archive_member
     test rax, rax
-    jz .Lpub_member_bad
+    jz .Lpub_recipe_member_bad
     test ecx, ecx
-    jnz .Lpub_member_bad
+    jnz .Lpub_recipe_member_bad
     xor eax, eax
-    jmp .Lpub_member_return
-.Lpub_member_bad:
+    pop r12
+    ret
+.Lpub_recipe_member_bad:
     mov eax, 1
-.Lpub_member_return:
-    pop rbx
+    pop r12
     ret
-/* R12=bounded manifest cursor. Advances R12 over space, TAB and CR.
- * RAX/flags are scratch. No stack or file operations. */
-pub_skip_horizontal:
-    mov al, [r12]
-    cmp al, 32
-    je .Lpub_skip_horizontal_next
-    cmp al, 9
-    je .Lpub_skip_horizontal_next
-    cmp al, 13
-    jne .Lpub_skip_horizontal_done
-.Lpub_skip_horizontal_next:
-    inc r12
-    jmp pub_skip_horizontal
-.Lpub_skip_horizontal_done:
-    ret
+
 /* RBX points to a pointer list. Return 1 if any listed regular member exists. */
 pub_any_member:
     push rbx
@@ -1516,16 +1238,6 @@ pub_readme_txt: .asciz "README.txt"
 pub_license_name: .asciz "LICENSE"
 pub_license_txt: .asciz "LICENSE.txt"
 pub_license_md: .asciz "LICENSE.md"
-pub_package_section: .asciz "package"
-pub_build_section: .asciz "build"
-pub_name_key: .asciz "name"
-pub_version_key: .asciz "version"
-pub_source_key: .asciz "source"
-pub_target_key: .asciz "target"
-pub_link_key: .asciz "link"
-pub_libraries_key: .asciz "libraries"
-pub_check_key: .asciz "check"
-pub_test_key: .asciz "test"
 pub_quote_text: .asciz "\""
 pub_comma: .asciz ","
 pub_rbrace: .asciz "}"
@@ -1576,31 +1288,6 @@ pub_options:
     .quad pub_output_option, pub_output, 64
     .quad pub_source_path_option, pub_source_path, 128
     .quad 0, 0, 0
-pub_project_fields:
-    .quad pub_name_key, pub_project_name
-    .long 1, 1
-    .quad pub_version_key, pub_project_version
-    .long 2, 1
-    .quad pub_source_key, pub_project_source
-    .long 4, 2
-    .quad pub_target_key, pub_project_arch
-    .long 8, 2
-    .quad pub_link_key, pub_project_link
-    .long 16, 2
-    .quad pub_libraries_key, pub_project_libraries
-    .long 32, 2
-    .quad pub_check_key, pub_project_check
-    .long 64, 2
-    .quad pub_test_key, pub_project_test
-    .long 128, 2
-    .quad 0, 0, 0
-pub_project_x86_macos: .asciz "x86_64-macos"
-pub_project_x86_windows: .asciz "x86_64-windows"
-pub_project_arm_windows: .asciz "aarch64-windows"
-.balign 8
-pub_project_targets:
-    .quad registry_host, 4, registry_aarch64, 8, registry_riscv64, 16, registry_macos, 32
-    .quad pub_project_x86_macos, 64, pub_project_x86_windows, 128, pub_project_arm_windows, 256, 0, 0
 pub_readme_names: .quad pub_readme_name, pub_readme_md, pub_readme_txt, 0
 pub_license_names: .quad pub_license_name, pub_license_txt, pub_license_md, 0
 pub_sha_argv: .quad registry_sha256sum, 0
@@ -1627,14 +1314,7 @@ pub_project_name: .skip 256
 pub_project_version: .skip 256
 pub_project_source: .skip 256
 pub_project_arch: .skip 256
-pub_project_link: .skip 256
-pub_project_libraries: .skip 256
-pub_project_check: .skip 256
-pub_project_test: .skip 256
-pub_project_matched: .skip 1
-pub_key: .skip 32
-pub_manifest_length: .skip 8
-pub_manifest: .skip PUB_MANIFEST_CAPACITY
+pub_manifest: .skip 16385
 pub_elf_header: .skip 64
 pub_elf_segment: .skip 56
 pub_pipe: .skip 8
@@ -1643,4 +1323,10 @@ pub_hash_buffer: .skip 72
 pub_json_length: .skip 8
 pub_json: .skip 16384
 pub_number: .skip 32
+.section .note.GNU-stack,"",@progbits
+
+.section .bss
+.balign 8
+.global rm_archive_metadata
+rm_archive_metadata: .skip RM_SIZE
 .section .note.GNU-stack,"",@progbits

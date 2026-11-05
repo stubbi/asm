@@ -5,10 +5,12 @@ ifeq ($(HOST_OS)/$(ARCH),Linux/x86_64)
 CLI_TARGET := x86_64-linux
 else ifeq ($(HOST_OS)/$(ARCH),Linux/aarch64)
 CLI_TARGET := aarch64-linux
+else ifeq ($(HOST_OS)/$(ARCH),Linux/riscv64)
+CLI_TARGET := riscv64-linux
 else ifeq ($(HOST_OS)/$(ARCH),Darwin/aarch64)
 CLI_TARGET := aarch64-macos
 else
-$(error Unsupported CLI target '$(HOST_OS)/$(ARCH)'; use Linux/x86_64, Linux/aarch64 or Darwin/aarch64)
+$(error Unsupported CLI target '$(HOST_OS)/$(ARCH)'; use Linux/x86_64, Linux/aarch64, Linux/riscv64 or Darwin/aarch64)
 endif
 
 ifeq ($(ARCH),$(HOST_ARCH))
@@ -40,7 +42,11 @@ all: build/asm
 doom-test: build/asm
 	ASM_BIN="$(CURDIR)/build/asm" $(MAKE) -C packages/doom test
 
-ifeq ($(ARCH),aarch64)
+ifeq ($(ARCH),riscv64)
+CLI_SOURCE := cli/riscv64/asm.s
+CLI_INPUTS := $(wildcard cli/riscv64/*.s cli/riscv64/*.inc)
+CLI_AS_FLAGS := -march=rv64im -mabi=lp64 -mno-relax --fatal-warnings
+else ifeq ($(ARCH),aarch64)
 CLI_SOURCE := cli/aarch64/asm.s
 CLI_INPUTS := $(wildcard cli/aarch64/*.s cli/aarch64/*.inc)
 CLI_AS_FLAGS := --fatal-warnings
@@ -122,7 +128,7 @@ uninstall: build/asm
 	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
-	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s
+	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/riscv64/asm.o build/asm-riscv64-linux build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s
 
 # Provisioned distribution is a separate activation gate during migration.
 # The current release path stays available until the offline root is reviewed.
@@ -131,15 +137,18 @@ clean:
 verifier-test:
 	cd verifier && $(GO) test -race ./...
 
-VERIFIER_TARGETS := build/asm-verify-x86_64-linux build/asm-verify-aarch64-linux build/asm-verify-aarch64-macos
+VERIFIER_TARGETS := build/asm-verify-x86_64-linux build/asm-verify-aarch64-linux build/asm-verify-aarch64-macos build/asm-verify-riscv64-linux
 build/asm-verify-x86_64-linux: VERIFIER_GOOS := linux
 build/asm-verify-x86_64-linux: VERIFIER_GOARCH := amd64
 build/asm-verify-aarch64-linux: VERIFIER_GOOS := linux
 build/asm-verify-aarch64-linux: VERIFIER_GOARCH := arm64
 build/asm-verify-aarch64-macos: VERIFIER_GOOS := darwin
 build/asm-verify-aarch64-macos: VERIFIER_GOARCH := arm64
+# Source-checkout target; publication still requires separate release admission.
+build/asm-verify-riscv64-linux: VERIFIER_GOOS := linux
+build/asm-verify-riscv64-linux: VERIFIER_GOARCH := riscv64
 
-$(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
+$(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go verifier/internal/securefs/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
 	mkdir -p build
 	cd verifier && CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
 	CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt

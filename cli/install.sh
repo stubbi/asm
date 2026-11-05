@@ -30,8 +30,8 @@ if [ "$action" = uninstall ]; then
         printf '%s\n' 'Asm is not installed at this path.'
         exit 0
     fi
-    if [ -L "$destination" ] || ! cmp -s "$source_file" "$destination"; then
-        printf '%s\n' 'Refuse to remove a different binary or a symbolic link. Check the path and remove it yourself if required.' >&2
+    if [ -L "$destination" ] || [ ! -f "$destination" ] || ! cmp -s "$source_file" "$destination"; then
+        printf '%s\n' 'Refuse to remove a different binary, a symbolic link, or a nonregular file. Check the path before removal.' >&2
         exit 1
     fi
     rm -- "$destination"
@@ -40,7 +40,7 @@ if [ "$action" = uninstall ]; then
 fi
 
 if [ -e "$destination" ] || [ -L "$destination" ]; then
-    if [ ! -L "$destination" ] && [ -f "$destination" ] && cmp -s "$source_file" "$destination"; then
+    if [ ! -L "$destination" ] && [ -f "$destination" ] && [ -x "$destination" ] && cmp -s "$source_file" "$destination"; then
         printf 'The same Asm binary is already installed at %s\n' "$destination"
         exit 0
     fi

@@ -13,3 +13,7 @@ from test_target_indexes import TargetIndexTests
 
 from test_archive_cli import NativeArchiveTests
 from test_programs_cli import InstalledProgramTests
+
+from test_resolver_cli import ResolverCliTests
+from test_resolution_manifest import ResolutionManifestTests
+from test_resolution_manifest_cli import ResolutionManifestCliTests

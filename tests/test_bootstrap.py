@@ -37,6 +37,42 @@ COMMIT = "a" * 40
 # Generation checks availability and JSON shape. Runtime tests exercise the
 # verifier contract separately; this fixture is not a valid signed bundle.
 BUNDLE = b'{"dsseEnvelope": {"payload": "fixture"}}'
+CONTROLLED_INSTALLER_READY_TIMEOUT = 30
+INSTALLER_DIAGNOSTIC_LIMIT = 8192
+
+
+def wait_for_controlled_marker(process, marker, description, *, timeout=CONTROLLED_INSTALLER_READY_TIMEOUT):
+    """Wait for fixture readiness without changing an installer security deadline."""
+    deadline = time.monotonic() + timeout
+    while not marker.exists():
+        status = process.poll()
+        if status is not None:
+            reason = f"installer exited with status {status} before the controlled marker"
+            break
+        if time.monotonic() >= deadline:
+            reason = f"installer still running after {timeout:g}s fixture readiness deadline"
+            break
+        time.sleep(0.01)
+    else:
+        return
+    if marker.exists():
+        return
+    # A descendant can retain a pipe after the installer exits. Read only the
+    # available bounded prefix, without waiting for EOF or changing cleanup.
+    captured = {}
+    for name in ("stdout", "stderr"):
+        pipe = getattr(process, name)
+        previous = os.get_blocking(pipe.fileno())
+        try:
+            os.set_blocking(pipe.fileno(), False)
+            try:
+                captured[name] = os.read(pipe.fileno(), INSTALLER_DIAGNOSTIC_LIMIT)
+            except BlockingIOError:
+                captured[name] = b""
+        finally:
+            os.set_blocking(pipe.fileno(), previous)
+    raise AssertionError(f"{description}: {reason}; return_code={process.poll()}; "
+                         f"stdout_prefix={captured['stdout']!r}; stderr_prefix={captured['stderr']!r}")
 
 
 def release_record(version="0.2.0"):
@@ -837,11 +873,8 @@ class BootstrapUserFlowTests(unittest.TestCase):
         process = subprocess.Popen(["/bin/sh", str(self.script)], cwd=self.base, env=self.env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            deadline = time.monotonic() + 5
             marker = Path(self.config["interrupt_marker"])
-            while not marker.exists() and time.monotonic() < deadline and process.poll() is None:
-                time.sleep(0.01)
-            self.assertTrue(marker.exists(), "Installer did not reach controlled download")
+            wait_for_controlled_marker(process, marker, "Installer did not reach controlled download")
             os.killpg(process.pid, signal.SIGTERM)
             stdout, stderr = process.communicate(timeout=5)
             self.assert_no_install(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
@@ -857,11 +890,8 @@ class BootstrapUserFlowTests(unittest.TestCase):
         process = subprocess.Popen(["/bin/sh", str(self.script)], cwd=self.base, env=self.env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            deadline = time.monotonic() + 5
             marker = Path(self.config["interrupt_marker"])
-            while not marker.exists() and time.monotonic() < deadline and process.poll() is None:
-                time.sleep(0.01)
-            self.assertTrue(marker.exists(), "Installer did not reach the controlled version probe")
+            wait_for_controlled_marker(process, marker, "Installer did not reach the controlled version probe")
             os.killpg(process.pid, signal.SIGTERM)
             stdout, stderr = process.communicate(timeout=5)
             self.assert_no_install(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
