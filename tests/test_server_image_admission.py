@@ -7,10 +7,12 @@ import copy
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -248,6 +250,105 @@ class AdmissionImageContractTests(unittest.TestCase):
             with patch.object(image.platform, "machine", return_value="wrong-target"), self.assertRaises(ValueError):
                 image.qualify(args)
             self.assertEqual(json.loads(output.read_text())["status"], "fail")
+
+    def test_oversized_fifo_cannot_supply_successful_publication_evidence(self):
+        payload = json.dumps(self.aggregate()).encode()
+        payload += b" " * (2_102_535 - len(payload))
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary) / "qualification.json"
+            os.mkfifo(evidence)
+            descriptor = os.open(evidence, os.O_RDWR | os.O_NONBLOCK)
+            stop = threading.Event()
+            supplied = []
+            def writer():
+                offset = 0
+                try:
+                    while offset < len(payload) and not stop.is_set():
+                        try:
+                            offset += os.write(descriptor, payload[offset:offset + 65536])
+                        except BlockingIOError:
+                            stop.wait(0.002)
+                finally:
+                    supplied.append(offset)
+                    os.close(descriptor)
+            thread = threading.Thread(target=writer)
+            thread.start()
+            try:
+                result = subprocess.run([sys.executable, str(ROOT / "tools/test_server_image.py"),
+                    "--check-evidence", str(evidence), "--arch", "amd64", "--revision", "c" * 40],
+                    capture_output=True, timeout=3)
+            finally:
+                stop.set()
+                thread.join(timeout=1)
+            self.assertFalse(thread.is_alive(), "The owned FIFO writer did not finish")
+            self.assertNotEqual(result.returncode, 0,
+                f"Accepted {supplied[0]} FIFO bytes as a valid bounded evidence report")
+            self.assertEqual(result.stdout, b"")
+
+    def test_fifo_without_writer_and_symbolic_inputs_are_rejected_without_waiting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            regular = base / "regular.json"
+            regular.write_text(json.dumps(self.aggregate()))
+            link = base / "symbolic.json"
+            link.symlink_to(regular)
+            fifo = base / "empty-fifo.json"
+            os.mkfifo(fifo)
+            for evidence in (fifo, link, base):
+                with self.subTest(input=evidence.name):
+                    try:
+                        result = subprocess.run([sys.executable, str(ROOT / "tools/test_server_image.py"),
+                            "--check-evidence", str(evidence), "--arch", "amd64", "--revision", "c" * 40],
+                            capture_output=True, timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.fail("The nonregular evidence input blocked instead of being refused")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b"")
+
+    def test_file_growth_after_metadata_cannot_exceed_the_read_budget(self):
+        payload = json.dumps(self.aggregate()).encode()
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary) / "qualification.json"
+            evidence.write_bytes(payload)
+            inode = evidence.stat().st_ino
+            path_stat, descriptor_stat, read = Path.stat, os.fstat, os.read
+            grown = False
+            received = 0
+            def grow(metadata):
+                nonlocal grown
+                if metadata.st_ino == inode and not grown:
+                    grown = True
+                    with evidence.open("ab") as out:
+                        out.write(b" " * (2_102_535 - len(payload)))
+                return metadata
+            def path_metadata(path, *args, **kwargs):
+                return grow(path_stat(path, *args, **kwargs))
+            def descriptor_metadata(descriptor):
+                return grow(descriptor_stat(descriptor))
+            def bounded_read(descriptor, amount):
+                nonlocal received
+                body = read(descriptor, amount)
+                received += len(body)
+                self.assertLessEqual(received, 2_097_153, "Evidence reads exceeded the limit plus one byte")
+                return body
+            # Force growth at the metadata boundary; all file bytes and reads are real.
+            with patch.object(Path, "stat", path_metadata), patch.object(os, "fstat", descriptor_metadata), \
+                    patch.object(os, "read", bounded_read):
+                with self.assertRaises(ValueError):
+                    image.read_evidence(evidence)
+            self.assertTrue(grown)
+            self.assertEqual(evidence.stat().st_size, 2_102_535)
+
+    def test_regular_evidence_accepts_the_exact_byte_limit_and_rejects_one_more(self):
+        payload = json.dumps(self.aggregate()).encode()
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary) / "qualification.json"
+            evidence.write_bytes(payload + b" " * (2_097_152 - len(payload)))
+            self.assertEqual(image.read_evidence(evidence)["tests_run"], 28)
+            with evidence.open("ab") as out:
+                out.write(b" ")
+            with self.assertRaises(ValueError):
+                image.read_evidence(evidence)
 
 
 if __name__ == "__main__":

@@ -109,6 +109,8 @@ Both parts must identify the same runtime image, qualification image, source, ex
 The aggregate count must equal the sum of both part counts.
 Both publishers use the same strict Python evidence contract.
 It rejects duplicate JSON fields, malformed types, missing parts, exclusions, skipped tests, and mismatched identities.
+Evidence input must be a regular file; the reader refuses a final symbolic link and opens without waiting on special files.
+It reads at most two MiB plus one byte and rejects excess content, including growth after the descriptor metadata check.
 The earlier sixteen-case scope `assembly-canonical-exports` cannot qualify admission-bearing images.
 Raw output, exit status, and timeout outcomes remain available for each part when qualification fails.
 These checks do not qualify the complete registry or its deployment.

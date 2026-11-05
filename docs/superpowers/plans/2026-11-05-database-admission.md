@@ -391,7 +391,18 @@ The served runtime Docker stage also remained unchanged.
 These are local metadata, orchestration, source, and syntax checks, not actual-image execution.
 The retained first failures and local check logs are under `/private/tmp/asm-admission-image-gate`.
 
-Docker execution, downloads, CI dispatch, publication, and a main merge are outside this local checkpoint.
+The initial image-gate candidate remains at `c070c20de162e704161542020870e5b640e03363`.
+Fresh review found that its pathname metadata check preceded an unbounded read.
+A retained regression supplied 2,102,535 valid JSON and whitespace bytes through a FIFO and received successful publication validation.
+Other regressions observed an empty FIFO blocking, a symbolic link accepted, and a regular file growing after metadata accepted.
+The reader now opens once with `O_NOFOLLOW` and `O_NONBLOCK`, checks regular-file status through that descriptor, and closes it on every exit.
+Its total reads cannot exceed two MiB plus one byte; excess content is rejected before JSON parsing.
+The existing credential reader was inspected but also imposes ownership, ACL, and single-link policies that do not apply to image evidence.
+The fix uses the same mature descriptor operations without those additional credential restrictions.
+All seventeen admission-image contracts pass, including the exact-size boundary and growth case.
+The original failure log and bounded-reader evidence are under `/private/tmp/asm-admission-evidence-reader`.
+
+Docker execution, downloads, CI dispatch, publication, and merging into main are outside this local checkpoint.
 The prior six-client RISC-V failure remains visible and requires its own diagnosis.
 
 The complete available Git history has not been reviewed for a merge decision.

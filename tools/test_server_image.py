@@ -40,6 +40,7 @@ QUALIFICATION_SCOPE = "assembly-canonical-exports-admission"
 PART_SCOPE = "assembly-image-runtime-part"
 SUITES = {"baseline": ("test_runtime", 16), "capacity": ("test_capacity", 12)}
 MIN_RUNTIME_TESTS = 28
+MAX_EVIDENCE_BYTES = 2 * 1024 * 1024
 FIXTURE_PATH = "/qualification/fixtures/connect-null.so"
 SECURITY = {"uid": 65532, "gid": 65532, "read_only_root": True,
             "effective_capabilities": 0, "no_new_privileges": True}
@@ -170,8 +171,21 @@ def strict_json(raw):
 
 
 def read_evidence(path):
-    require(Path(path).stat().st_size <= 2 * 1024 * 1024, "The evidence report exceeds two MiB.")
-    return strict_json(Path(path).read_bytes())
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        metadata = os.fstat(descriptor)
+        require(stat.S_ISREG(metadata.st_mode), "The evidence report must be a regular file.")
+        require(metadata.st_size <= MAX_EVIDENCE_BYTES, "The evidence report exceeds two MiB.")
+        body = bytearray()
+        while len(body) <= MAX_EVIDENCE_BYTES:
+            chunk = os.read(descriptor, min(65536, MAX_EVIDENCE_BYTES + 1 - len(body)))
+            if not chunk:
+                break
+            body.extend(chunk)
+        require(len(body) <= MAX_EVIDENCE_BYTES, "The evidence report exceeds two MiB.")
+        return strict_json(bytes(body))
+    finally:
+        os.close(descriptor)
 
 
 def index_contract(index, expected):
