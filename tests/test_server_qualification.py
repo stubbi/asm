@@ -49,7 +49,7 @@ class ServerQualificationTests(unittest.TestCase):
     def recorder_inputs(self, work):
         binary = work / "server"
         binary.write_bytes(elf())
-        for name, count in (("native-link", 10), ("reference", 19), ("hosted", 16)):
+        for name, count in (("native-link", 10), ("reference", 19), ("hosted", 28)):
             (work / (name + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
         (work / "build-failure-tests.log").write_text('{"status":"pass","tests":4}\n')
         output = work / "qualification.json"
@@ -82,10 +82,10 @@ class ServerQualificationTests(unittest.TestCase):
                     member.mode = 0o644
                     member.size = len(data)
                     archive.addfile(member, io.BytesIO(data))
-            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 10, 9), ("hosted", 16, 15)):
+            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 10, 9), ("hosted", 28, 27)):
                 for count, expected, status in ((complete, 0, "pass"), (incomplete, 1, "fail")):
                     with self.subTest(suite=suite, count=count):
-                        for name, required in (("native-link", 10), ("reference", 19), ("hosted", 16)):
+                        for name, required in (("native-link", 10), ("reference", 19), ("hosted", 28)):
                             (work / (name + "-tests.log")).write_text(f"Ran {required} tests in 1.0s\n\nOK\n")
                         (work / (suite + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
                         self.assertEqual(self.run_recorder(arguments), expected)

@@ -332,6 +332,17 @@ Both `publish` and `publish-index` in `.github/workflows/server-images.yml` now 
 Do not remove those holds until the actual derived image passes the discovered complete runtime and capacity inventory.
 The legacy sixteen-case receipt cannot release the hold.
 
+### Native receipt boundary
+
+The reviewed admission checkpoint is `815eea50876b6a6bd495e5f088d735c094b7417d`.
+The native port recorder now requires at least twenty-eight hosted tests in the combined unittest summary.
+Its observable boundary test accepts twenty-eight and rejects twenty-seven.
+Before the recorder changed, that test failed because twenty-seven received a successful receipt and exit status zero.
+The retained failure is `/private/tmp/asm-admission-native-gate-20261105/boundary-red.log`.
+After the recorder changed, all nine recorder checks passed.
+Their controlled metadata does not establish native runtime behavior.
+The existing native workflow and combined Make test command remain unchanged.
+
 The complete available Git history has not been reviewed for a merge decision.
 That review remains required before merging the eventual implementation.
 
