@@ -333,6 +333,45 @@
       "run_url": "https://github.com/stubbi/asm/actions/runs/41942936774",
       "scope": "runtime not reached",
       "setup_failure": "Loader setup absent-path assertion exited1; shell log does not identify which expression. No runtime or complete suite ran."
+    },
+    {
+      "artifact_status": "not-built",
+      "checkout_commit": "0532ac63dd68821dc95cc910859fec528461513a",
+      "checks": {
+        "artifact": {
+          "outcome": "not-run"
+        },
+        "artifact_binding": {
+          "outcome": "not-run"
+        },
+        "focused_tests": {
+          "outcome": "not-run"
+        },
+        "make_test": {
+          "outcome": "not-run"
+        },
+        "runtime": {
+          "outcome": "not-run"
+        },
+        "toolchain": {
+          "outcome": "not-run"
+        }
+      },
+      "correction": "Keep the existing multiarch directory. Add only absent shared-library SONAME entries and preserve exact existing links; reject conflicting files.",
+      "head_commit": "7ca152c3fd3e63861118112f5ab41d2de31a2cb2",
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/41943175391/artifacts/riscv64-emulated-0532ac63dd68821dc95cc910859fec528461513a/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "edd664ebcd5c01cbc1a3a4cda816ad68b5cb898c2c0db938592805dd3cff81e1"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/41943175391/full.log",
+        "sha256": "64d92cb58c87eaaa059334c62a7b49615cec5047e1a30f20e3faadccf358a943"
+      },
+      "run_id": 41943175391,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41943175391",
+      "scope": "runtime not reached",
+      "setup_failure": "The loader source resolved and its link was created. /lib/riscv64-linux-gnu already existed as a real directory resolving /usr/lib/riscv64-linux-gnu, so the guard refused to replace it."
     }
   ],
   "execution_mode": "emulated",

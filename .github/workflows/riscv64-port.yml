@@ -77,10 +77,17 @@ jobs:
           import os
           from pathlib import Path
 
+          target_libraries = Path("/usr/riscv64-linux-gnu/lib")
+          runtime_libraries = Path("/lib/riscv64-linux-gnu")
+          runtime_libraries.mkdir(exist_ok=True)
+          if not runtime_libraries.is_dir():
+              raise SystemExit("Target runtime library path must be a directory")
           links = {
-              Path("/lib/ld-linux-riscv64-lp64d.so.1"): Path("/usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1"),
-              Path("/lib/riscv64-linux-gnu"): Path("/usr/riscv64-linux-gnu/lib"),
+              Path("/lib/ld-linux-riscv64-lp64d.so.1"): target_libraries / "ld-linux-riscv64-lp64d.so.1",
           }
+          for source in sorted(target_libraries.iterdir()):
+              if ".so." in source.name and source.is_file():
+                  links[runtime_libraries / source.name] = source
           for destination, source in links.items():
               print(f"Target runtime path: {destination}; source: {source}", flush=True)
               expected = source.resolve(strict=True)
