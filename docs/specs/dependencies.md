@@ -1,6 +1,6 @@
 # Dependency resolution
 
-Status: implementation contract, 4 November 2026. This work is not a published release.
+Status: native graph-resolution implementation contract, 5 November 2026. The graph resolver is not a published release.
 
 ## Outcome and scope
 
@@ -12,7 +12,8 @@ This serves dependable reuse, inspectable evidence, and preservation of user fil
 Native resolver implementations cover Linux x86-64, Linux AArch64, and Apple Silicon macOS.
 They select the current host target, without cross-compilation or execution of another target.
 RISC-V64 Linux also has an unreleased native implementation whose qualification remains separate.
-Intel macOS and Windows need separate native ports and qualification.
+Intel macOS has an unreleased native port; its resolver qualification remains pending.
+The Windows resolver needs a separate native port and qualification.
 Registry acceptance of a package target does not establish CLI host support.
 
 The existing exact dependency commands and v1 locks remain supported.
@@ -125,8 +126,7 @@ The inspection budget bounds this deliberate alpha trade-off.
 
 ## Catalog display contract
 
-The catalog integration is separate, unmerged work in this CLI baseline.
-The following requirements do not describe its current website.
+The catalog displays checked direct declarations, separately from native dependency resolution.
 
 Each website release shows direct dependency declarations for each checked source artifact target.
 The site derives these declarations from the same validated archive bytes, bound to their SHA-256 digest.

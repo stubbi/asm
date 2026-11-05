@@ -122,7 +122,8 @@ class ResolverCliTests(unittest.TestCase):
             finish = "bl _exit" if IS_MACOS else "mov x8, #93\nsvc #0"
             body = f"bl {symbol}\nsub x0, x0, #7\n{finish}"
         else:
-            body = f"call {symbol}\nmov edi, eax\nsub edi, 7\nmov eax, 60\nsyscall"
+            finish = "call _exit" if IS_MACOS else "mov eax, 60\nsyscall"
+            body = f"call {symbol}\nmov edi, eax\nsub edi, 7\n{finish}"
         (project or self.project).joinpath("src/main.s").write_text(
             f'.include "stubbi/{name}/{version}/{TARGET}/src/{name}.s"\n' + program(body))
 
