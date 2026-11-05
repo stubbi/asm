@@ -483,7 +483,12 @@ win_nt_component:
 7:  tst x20, #WIN_OPEN_DELETE
     b.eq 8f
     ARM_IMM x1, 0x130080         /* DELETE/SYNC/READ_CONTROL/attributes */
-8:  tst x20, #64
+8:  /* Only a private stage explicitly reopened for final DACL publication
+     * requests WRITE_DAC. Ordinary directory/ancestor reads keep read rights. */
+    tst x20, #WIN_OPEN_SET_DACL
+    b.eq 6f
+    orr x1, x1, #0x40000
+6:  tst x20, #64
     b.eq 3f
     mov x6, #3                   /* FILE_OPEN_IF */
     tst x20, #128

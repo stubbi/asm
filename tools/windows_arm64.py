@@ -85,6 +85,9 @@ def prepare(source: Path) -> str:
         text = replace_once(text, '    add x22, x19, #1', '    add x22, x19, #3')
         text = replace_once(text, '    add x1, x19, #1', '    add x1, x19, #3')
         text = text.replace('/.local/bin/asm"', '/.local/bin/asm.exe"')
+        text = replace_once(text,
+            '    ldr x0, [x19, #40]\n    ldrb w10, [x0]\n    cmp w10, #47\n    b.ne program_state_error',
+            '    ldr x0, [x19, #40]\n    ARM_CALL win_is_absolute\n    cbz w9, program_state_error')
         text = replace_once(text, 'program_cli_name: .asciz "asm"', 'program_cli_name: .asciz "asm.exe"')
         text = replace_once(text, '    ldrb w10, [x0, #3]\n    cbnz w10, .Lp_cli_destination_safe',
             '    ldrb w10, [x0, #3]\n    cmp w10, #46\n    b.ne .Lp_cli_destination_safe\n    ldr w10, [x0, #4]\n    ARM_IMM w11, 0x00657865\n    ARM_IMM w12, 0x202020\n    orr w10, w10, w12\n    cmp w10, w11\n    b.ne .Lp_cli_destination_safe')
@@ -120,6 +123,11 @@ def prepare(source: Path) -> str:
 
         text = text.replace('host ELF executables', 'host ARM64 PE executables').replace('AArch64 ELF executable', 'ARM64 PE executable')
     if source.name == 'archive.s':
+        begin = text.index('\narc_create_stage:')
+        end = text.index('\narc_member_parent:', begin)
+        stage = replace_once(text[begin:end], 'ARM_IMM w10, ARC_DIRECTORY',
+                             'ARM_IMM w10, ARC_DIRECTORY | WIN_OPEN_SET_DACL')
+        text = text[:begin] + stage + text[end:]
         text = routine(text, 'arc_decompress', 'arc_is_zero', (LOCAL / 'decompress.s').read_text())
         text = text.replace('/usr/bin/gzip', 'C:/Program Files/Git/usr/bin/gzip.exe')
         text = replace_once(text, '.Larc_path_last:', '.Larc_path_last:')
@@ -190,7 +198,7 @@ def prepare(source: Path) -> str:
         text = text.replace('native_runtime_prefix: .asciz "-Wl,-rpath,"', 'native_runtime_prefix: .asciz "-L"')
         text += '\n.section .rdata,"dr"\nwin_native_hardening: .asciz "-Wl,/dynamicbase,/nxcompat,/Brepro"\n'
     if source.name == 'platform.inc':
-        text += '\n.equ WIN_OPEN_IMAGE, 0x20000000\n'
+        text += '\n.equ WIN_OPEN_IMAGE, 0x20000000\n.equ WIN_OPEN_SET_DACL, 0x04000000\n'
         text = text.replace('    str x30, [sp, #-16]!\n    bl', '    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n    bl')
         text = text.replace('    ldr x30, [sp], #16', '    ldp x29, x30, [sp], #16')
     text = re.sub(r'^\.include "([^"]+)"', lambda m: prepare(ROOT / m[1]), text, flags=re.M)

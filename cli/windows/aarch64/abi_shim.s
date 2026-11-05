@@ -108,6 +108,25 @@ _main:
     ldr x11, [x10, #8]
     ARM_IMM x12, 0x4404
     REQUIRE_EQ x11, x12
+    /* Actual archive creation and final permission change use the same held
+     * private root. A read-only ancestor receives no WRITE_DAC grant. */
+    ARM_ADDR x10, abi_archive_active
+    mov x11, #1
+    str x11, [x10]
+    ARM_ADDR x10, abi_file_attributes
+    mov x11, #16
+    str x11, [x10]
+    ARM_CALL arc_create_stage
+    REQUIRE_EQ x9, #0
+    ARM_ADDR x10, arc_root_fd
+    ldr x0, [x10]
+    mov x1, #493
+    ARM_CALL win_set_mode
+    REQUIRE_EQ x9, #0
+    ARM_ADDR x10, abi_archive_active
+    str xzr, [x10]
+    ARM_ADDR x10, abi_file_attributes
+    str xzr, [x10]
     /* Rename uses the retained source and destination parent in class65. */
     mov x0, #-100
     ARM_ADDR x1, abi_rename_source
@@ -381,6 +400,9 @@ NtCreateFile:
     cbnz x11, abi_failed
     ldr x11, [sp, #16]
     cbnz x11, abi_failed
+    ARM_ADDR x11, abi_archive_active
+    ldr x11, [x11]
+    cbnz x11, .Labi_archive_create
     ARM_IMM x11, 0x120089
     cmp x1, x11
     b.ne .Labi_lock_create
@@ -394,6 +416,18 @@ NtCreateFile:
     ldr x11, [x2, #16]
     ldrh w12, [x11]
     REQUIRE_EQ w12, #10
+    b .Labi_created
+.Labi_archive_create:
+    /* Simulate access enforcement at SetSecurityInfo using observed desired
+     * access. Both old/new opens succeed, then missing WRITE_DAC fails. */
+    ARM_ADDR x11, abi_archive_granted
+    str x1, [x11]
+    tst x1, #6                  /* Never add data/append rights. */
+    b.ne abi_failed
+    ARM_IMM x11, 0x200021
+    REQUIRE_EQ x10, x11
+    REQUIRE_EQ x6, #7
+    REQUIRE_EQ x7, #1
     b .Labi_created
 .Labi_lock_create:
     ARM_IMM x11, 0x130080
@@ -814,3 +848,61 @@ win_rename_info: .space 8248
 
 abi_rename_reserved: .asciz "build/CON"
 abi_rename_stream: .asciz "build/main.o:stream"
+
+.text
+arm_getrandom:
+    WIN_SAVE
+    REQUIRE_EQ x1, #16
+    mov x10, #0
+1:  strb w10,[x0,x10]
+    add x10,x10,#1
+    cmp x10,#16
+    b.lo 1b
+    mov x9,#16
+    WIN_RETURN
+arm_mkdirat:
+    ARM_IMM x10,0x4400
+    REQUIRE_EQ x0,x10
+    REQUIRE_EQ x2,#448
+    mov x9,#0
+    ret
+arm_openat:
+    WIN_SAVE
+    ARM_CALL abi_archive_win_open
+    WIN_RETURN
+GetCurrentDirectoryW:
+    b abi_failed
+SetSecurityInfo:
+    ARM_IMM x10,0x4404
+    REQUIRE_EQ x0,x10
+    REQUIRE_EQ x1,#1
+    ARM_IMM x10,0x80000004
+    REQUIRE_EQ x2,x10
+    ARM_ADDR x10,win_private_acl
+    REQUIRE_EQ x5,x10
+    ARM_ADDR x10,abi_archive_granted
+    ldr x10,[x10]
+    tst x10,#0x40000
+    b.eq 1f
+    API_CLOBBER
+    mov w0,#0
+    ret
+1:  API_CLOBBER
+    mov w0,#5
+    ret
+.data
+.p2align 3
+abi_archive_active: .quad 0
+abi_archive_granted: .quad 0
+arc_parent_fd: .quad 0x4400
+arc_root_fd: .quad -1
+arc_stage_created: .byte 0
+arc_random: .space 16
+arc_hex: .ascii "0123456789abcdef"
+arc_stage_name: .ascii ".asm-stage-"
+    .space 64
+.p2align 3
+win_private_acl: .space 2048
+win_path_w: .space 8192
+win_path_full: .space 8192
+win_nt_root: .hword 92,63,63,92,67,58,92,0

@@ -30,10 +30,13 @@ def source_text():
     spec = importlib.util.spec_from_file_location('windows_arm64', ROOT / 'tools/windows_arm64.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    archive = module.prepare(ROOT / 'cli/aarch64/archive.s')
+    stage = archive[archive.index('arc_create_stage:'):archive.index('/* Open/create implied parent')]
     parts = [module.prepare(ROOT / 'cli/aarch64/platform.inc'),
              region(HERE / 'platform.s', '.equ WIN_OPEN_IDENTITY', '/* x0=Win32 error'),
              region(HERE / 'platform.s', 'win_error_code:', 'win_nt_error:'),
              region(HERE / 'platform.s', 'win_handle:', 'arm_close:'),
+             region(HERE / 'platform.s', 'win_open:', '/* Private component open:').replace('win_open:', 'abi_archive_win_open:', 1),
              region(HERE / 'platform.s', 'win_nt_component:', '\narm_open:'),
              region(HERE / 'platform.s', 'arm_probe_fd_stat:', 'arm_lstat:'),
              region(HERE / 'platform.s', 'arm_unlink:', '/* Rename uses source HANDLE'),
@@ -46,6 +49,9 @@ def source_text():
              region(HERE / 'process.s', '.macro WIN_QUOTE', '/* Populate argc'),
              region(HERE / 'process.s', 'win_spawn_core:', '\n/* x0=explicit UTF8'),
              region(HERE / 'pipe.s', 'win_pump_capture:', '\n.section .rdata'),
+             region(HERE / 'security.s', 'win_set_mode:', '.section .rdata'),
+             region(ROOT / 'cli/aarch64/archive.s', '.equ ARC_LIMIT', '/* Native AArch64 port.'),
+             stage,
              (HERE / 'abi_shim.s').read_text()]
     text = '\n.text\n'.join(parts)
     text = text.replace('adrp \\reg, \\symbol', 'adrp \\reg, (\\symbol)@PAGE')
@@ -53,12 +59,12 @@ def source_text():
     return re.sub(r'^\.arch.*$', '', text, flags=re.M)
 
 
-def run_case(directory, label, source):
+def run_case(directory, label, source, *, linker_flags=()):
     assembly = directory / (label + '.s')
     executable = directory / label
     assembly.write_text(source)
     build = subprocess.run(['/usr/bin/clang', '-arch', 'arm64', '-Wl,-no_uuid',
-                            str(assembly), '-o', str(executable)],
+                            *linker_flags, str(assembly), '-o', str(executable)],
                            capture_output=True, text=True, timeout=30)
     result = {'source_sha256': hashlib.sha256(assembly.read_bytes()).hexdigest(),
               'build_exit_code': build.returncode, 'build_stderr': build.stderr}
@@ -87,6 +93,13 @@ def main():
         return source[:begin] + body.replace(old, new) + source[finish:]
 
     cases = {'current': source}
+    cases['regression_archive_stage_access'] = mutate(
+        'arc_create_stage:', 'GetStdHandle:',
+        '    ARM_IMM w10, ARC_DIRECTORY | WIN_OPEN_SET_DACL',
+        '    ARM_IMM w10, ARC_DIRECTORY')
+    cases['regression_archive_desired_access'] = mutate(
+        'win_nt_component:', 'arm_unlink:',
+        '    orr x1, x1, #0x40000\n', '')
     for routine, end in [('arm_read:', 'arm_write:'), ('arm_write:', 'win_nt_component:')]:
         cases['regression_' + routine[:-1]] = mutate(routine, end, '    ldp x1, x2, [x29, #24]\n', '')
     for routine, end, allocation, api in [

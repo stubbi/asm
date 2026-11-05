@@ -116,7 +116,7 @@ python3 cli/windows/aarch64/abi_test.py --output build/windows/aarch64/abi-shim-
 The shim executes production file, probe, directory, process-creation, deletion, and capture-loop bodies.
 Its test APIs destroy volatile registers and check stack arguments at the callee's stack pointer.
 The current bodies pass those checks.
-Nine separate regression variants fail when executed.
+Eleven separate regression variants fail when executed.
 Those variants restore reviewed stack, volatile-register, capture-deadline, final-output-drain, or extended-directory-path defects.
 The checked deletion paths also reject a directory passed to unlink and a regular file passed to rmdir.
 Probe tests inspect actual shim-supplied identities, reject permission claims, use metadata-only access, and close failed lookups.
@@ -128,10 +128,10 @@ The capture check includes an empty peek, child completion, one pending byte, an
 The shim uses test APIs and a controlled clock.
 It does not establish Windows API, filesystem, or runtime behavior.
 
-The fourth native Windows candidate ran 45 test methods at commit `e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3`.
-Its evidence records 22 passing methods and 24 failure records, including subtests.
-Project creation and compiler invocation passed.
-Build finalization, valid executable acceptance, source decompression, and dependent workflows failed.
+The fifth native Windows candidate ran 45 test methods at commit `54625e990e81b603d8ea83c6f1554752c0052ed1`.
+Its evidence records 38 passing methods and seven failures.
+Build finalization and valid executable acceptance passed.
+Inventory parsing, source decompression, updater replacement, and the displacement fixture failed.
 Those results do not qualify this target.
 The current corrections still require a fresh native run.
 Cross-assembly does not establish command behavior, DACL compatibility, filesystem race behavior, SDK discovery, or active-image replacement.
@@ -151,6 +151,7 @@ python3 cli/windows/aarch64/environment_test.py --output build/windows/aarch64/e
 python3 cli/windows/aarch64/contracts_test.py --output build/windows/aarch64/contracts-evidence.json
 python3 cli/windows/aarch64/image_test.py --output build/windows/aarch64/image-evidence.json
 python3 cli/windows/aarch64/metadata_test.py --output build/windows/aarch64/metadata-evidence.json
+python3 cli/windows/aarch64/inventory_test.py --output build/windows/aarch64/inventory-evidence.json
 ```
 
 The security shim executes the production owner and DACL routines with eleven controlled cases.
@@ -167,7 +168,8 @@ Only exact status zero succeeds.
 Missing APIs and unsupported results require manual installation; an observed identity mismatch preserves both files.
 The native fixture observed original-file status zero and replacement-file status `C0000001`.
 This internal Windows API is an explicit platform assumption.
-The adapter still requires the native positive and displaced-image regressions.
+The native current-image control passed.
+The displacement fixture needs its corrected native rename call before it can test the adapter.
 A pathname from GetModuleFileNameW cannot replace this identity check.
 
 ## Primary references
@@ -200,3 +202,17 @@ Release metadata tests bind the exact Windows `.exe` asset name, size, and diges
 These host checks do not authenticate provenance or establish Windows file authorization.
 The full prepared source-package validator accepts the raw TAR fixture on the host.
 Native decompression remains unresolved; the next native diagnostic records gzip status and captured byte counts.
+
+The inventory regression executes the complete prepared receipt parser and metadata validators on an Apple Silicon host.
+A serialized native drive path with spaces and an ampersand passes.
+A virtual drive prefix, drive-relative path, and traversal are rejected.
+Restoring the Unix-only root check makes the valid receipt fail.
+This host parser result still requires the native install, list, upgrade, and uninstall round trip.
+
+Archive publication reopens only the newly-created private stage root with `WRITE_DAC`.
+That right permits the existing final `SetSecurityInfo` operation.
+Ordinary read-only directory and ancestor handles retain their original requested rights.
+A source-derived host check executes stage creation, native component open, and DACL finalization.
+Its API shim rejects finalization when the observed handle lacks `WRITE_DAC`.
+The current preparation passes; removing either narrow flag or access mapping fails.
+This is a separate later archive defect; native capture evidence still determines the original failure boundary.
