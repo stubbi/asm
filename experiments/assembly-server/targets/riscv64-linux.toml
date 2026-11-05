@@ -1,0 +1,11 @@
+# Linux RISC-V RV64GC, LP64D. Use a source-built Asm CLI.
+[package]
+name = "asm-server"
+version = "0.1.0"
+
+[build]
+source = "riscv64/server.s"
+target = "riscv64-linux"
+link = "c"
+libraries = "microhttpd pq pthread"
+check = "abi-check.c"

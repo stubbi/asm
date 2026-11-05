@@ -2,6 +2,7 @@
 
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
+import os
 from pathlib import Path
 import socket
 import unittest
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from local_postgres import Database, LocalPostgres, MIGRATION, verify_migration, verify_version
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BUILD = Path(os.environ.get("ASM_PROTO_BUILD_DIR", Path(__file__).resolve().parent / "build"))
 
 
 class FixtureTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class FixtureTests(unittest.TestCase):
                 verify_version(value)
 
     def test_identity_failure_during_start_removes_owned_process_listener_and_directory(self):
-        fixture = LocalPostgres(ROOT / "build/assembly-server")
+        fixture = LocalPostgres(BUILD)
         # Start a real server, then force the ownership read to disagree.
         # This exercises cleanup inside start(), before __enter__ can succeed.
         with patch.object(Database, "execute", return_value=[["/not-the-owned-data-directory"]]):

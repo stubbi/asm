@@ -1,11 +1,14 @@
 # Build the local dependencies
 
 This recipe supplies the exact libraries, headers, and PostgreSQL tools used by the experiment.
-It targets Linux x86-64 with the GNU toolchain.
-It installs files below the checkout's ignored `build` directory.
+It targets the selected Linux ISA with a native GNU toolchain and compatible C ABI.
+It installs files below the package's `build` directory.
 
 Use a C compiler, GNU make, binutils, Perl, tar, bzip2, curl, and `sha256sum`.
-Use Python 3.10 or later for the tests.
+Use Python 3.11 or later for package preparation and the tests.
+For RISC-V native libraries, use RV64GC and LP64D throughout; the freestanding RV64I/LP64 example is a different profile.
+Install a source-built Asm CLI with native library build support before building the server.
+The published Asm 0.5.0 CLI does not support this manifest extension.
 Run PostgreSQL tests as an ordinary user, without `sudo`.
 The [PostgreSQL documentation](https://www.postgresql.org/docs/16/app-initdb.html) requires an unprivileged server owner.
 
@@ -14,11 +17,11 @@ The following commands download source from the official GNU and PostgreSQL host
 
 ## 1. Fetch the pinned sources
 
-Run these commands from the repository root:
+Run these commands from the package directory:
 
 ```sh
 set -eu
-ASM_DEPS="$PWD/build/assembly-server-deps"
+ASM_DEPS="$PWD/build/deps"
 mkdir -p "$ASM_DEPS/downloads" "$ASM_DEPS/tmp"
 
 curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
@@ -83,15 +86,16 @@ These dependencies serve a loopback experiment; this recipe does not qualify a p
 
 ## 3. Run the experiment checks
 
-Run this command from the repository root:
+Run this command from the package directory:
 
 ```sh
-make -C experiments/assembly-server test \
+make test \
   MHD_PREFIX="$ASM_DEPS/mhd" \
   PG_PREFIX="$ASM_DEPS/postgres"
 ```
 
-The build checks headers, runtime versions, and the ABI before compiling the assembly application.
+`asm build` checks header layouts and constants before linking the assembly application.
+Assembly startup checks runtime library versions before configuration reads, database requests, or listeners.
 The tests initialize their own PostgreSQL clusters and stop them after use.
 They do not require Rust, an existing PostgreSQL service, credentials, a container engine, or a public endpoint.
 

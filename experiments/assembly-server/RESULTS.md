@@ -113,6 +113,6 @@ It has no public deployment, container image, release binary, or production prom
 The tests ran on a shared host and establish functional outcomes only.
 They do not establish throughput, tail latency, total memory use, or superiority over another implementation.
 
-The [architecture gates](../../docs/architecture-gates.md) still apply.
+The [architecture gates](https://github.com/stubbi/asm/blob/main/docs/architecture-gates.md) still apply.
 The experiment lacks full reference parity, indexed search, authenticated package metadata, artifact delivery, public publication, and an HTML interface.
 Public TLS, production scheduling, absolute HTTP deadlines, independent assembly review, and failure qualification remain open.
