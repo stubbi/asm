@@ -106,6 +106,17 @@ The remaining defects concern update initialization, failure cleanup, argument l
 Both native Windows package jobs and the Linux reference package job passed.
 Neither CLI target has full native qualification.
 
+The third managed [run 42116539771](https://github.com/stubbi/asm/actions/runs/42116539771) used source `9dfe052a9258c76850971d49dce49a00de09cd17`.
+ARM64 passed 117 of 118 methods, with no errors or skips.
+One method had four subtest failures: the argument-error path returned status 2 while the test expected status 1.
+The following file-preservation assertions were not reached in those four subtests.
+The x86-64 preflight ran 28 methods and had one error: the marker compiler exceeded its unchanged 30-second limit.
+Its main CLI build and runtime suite were skipped.
+The combined compiler command does not identify the failed inner phase or the timeout cause.
+The separate instrumented x86-64 updater probe passed its one controlled case.
+That probe does not replace the full runtime suite.
+Both native Windows package jobs and the Linux reference package job passed.
+
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.

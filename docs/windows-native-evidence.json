@@ -1665,20 +1665,162 @@
         }
       ],
       "record_classification_limit": "The driver labels subtest exceptions as fail records; the raw unittest summary classifies three x64 subtest exceptions as errors. Preserve both counts."
+    },
+    {
+      "iteration": 3,
+      "run_id": 42116539771,
+      "url": "https://github.com/stubbi/asm/actions/runs/42116539771",
+      "event": "workflow_dispatch",
+      "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+      "source_tree": "53d0a8f70d51110afe4497d5a2beb7cf8d7db03c",
+      "outcome": "fail",
+      "native_cli_qualification": false,
+      "preflight": {
+        "x86_64-windows": {
+          "tests_run": 28,
+          "passed": 27,
+          "errors": 1,
+          "native_runtime_executed": 0,
+          "build_skipped": true,
+          "observed_error": "The unchanged combined clang marker-build command exceeds 30 seconds. Its inner phase and cause remain unknown; the original exception does not expose partial streams."
+        },
+        "aarch64-windows": {
+          "tests_run": 28,
+          "passed": 28,
+          "errors": 0,
+          "native_runtime_executed": 118
+        }
+      },
+      "reports": [
+        {
+          "path": "build/windows-managed-third-native/linux-reference-packages-9dfe052a9258c76850971d49dce49a00de09cd17/results.json",
+          "sha256": "33bd53dbdd44895763c6f0d51d5840193761d95749f6a5c2eed2ef90b836b423",
+          "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU",
+          "outcome": "pass",
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+          "tests_run": 24
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-cli-x86_64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/x64-adapter-diagnostics.json",
+          "sha256": "715aa8ee2ce04746fee82b9b68292b12a64af8baa18081a62e8d2cbdc2f5aeb7",
+          "scope": null,
+          "outcome": null,
+          "source_commit": null,
+          "collection_failed": false,
+          "update_probe": {
+            "outcome": "pass",
+            "tests_run": 1,
+            "native_qualification": false,
+            "scope": "Test-only transport/verifier fixtures and instrumented assembly",
+            "failures": [],
+            "errors": [],
+            "skipped": []
+          },
+          "instrumented_executable_sha256": "cf78580ba7b79cad9bf11f5744c49d57dce000e512d2b2ef4b1b5240ae73c4a7",
+          "native_cli_qualification": false
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-cli-x86_64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/primary-unmap-probe.json",
+          "sha256": "8d13c65725e4c92501650b0a515be9fa15c3a7172e0d08a6c19e3424dfc3f1d6",
+          "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+          "outcome": null,
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17"
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-packages-aarch64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/packages.json",
+          "sha256": "2e5a31662b349efd54d96dfda4466c075748c9061d750d2fa7ba308fb6d15263",
+          "scope": "packages",
+          "outcome": "pass",
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+          "target": "aarch64-windows",
+          "tests_run": 7,
+          "package_outcome": "pass"
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-cli-aarch64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/runtime.json",
+          "sha256": "1dfc642f9d4b7eed643393f539c405a443c6860ec7781a195c7f41e69f949832",
+          "scope": "cli",
+          "outcome": "fail",
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+          "target": "aarch64-windows",
+          "tests_run": 118,
+          "passing_methods": 117,
+          "nonpassing_methods": 1,
+          "record_counts": {
+            "pass": 117,
+            "fail": 4
+          },
+          "failed_methods": [
+            "test_runtime.WindowsRuntimeTests.test_resolver_artifact_paths_are_absolute_or_relative_without_drive_ambiguity"
+          ],
+          "artifact": {
+            "file": "asm-aarch64-windows.exe",
+            "bytes": 165888,
+            "sha256": "2f49a23cce4c5d79cb4840ddcbbae64152285f6c201f1497b0c13749d614526e",
+            "pe_machine": 43620,
+            "sha256_after_tests": "2f49a23cce4c5d79cb4840ddcbbae64152285f6c201f1497b0c13749d614526e"
+          },
+          "native_cli_qualification": false
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-cli-aarch64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/primary-unmap-probe.json",
+          "sha256": "c0197a4d5a1bab6441dce8858d98d892bb6b30f43ed4a66c4a1600b1c79837d0",
+          "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+          "outcome": null,
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17"
+        },
+        {
+          "path": "build/windows-managed-third-native/native-windows-packages-x86_64-windows-9dfe052a9258c76850971d49dce49a00de09cd17/windows-evidence/packages.json",
+          "sha256": "4c635fab49cce485e5af020389cd56b8734e8b5ef3f9ef8ef87921067a6adef2",
+          "scope": "packages",
+          "outcome": "pass",
+          "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+          "target": "x86_64-windows",
+          "tests_run": 7,
+          "package_outcome": "pass"
+        }
+      ],
+      "raw_logs": [
+        {
+          "path": "build/integration-evidence/windows-managed-third-full.log",
+          "sha256": "94fb621e227c9da9f73b117f52d3de5f166206fe4354cc81b928d954de4dd92b"
+        },
+        {
+          "path": "build/integration-evidence/windows-managed-third-x64-job.log",
+          "sha256": "0bb0284f563fabfd2149f373dc3b336dba36b5b8e9883d935ec7b958a0304985"
+        },
+        {
+          "path": "build/integration-evidence/windows-managed-third-artifact-api.json",
+          "sha256": "9d6a31b2d221e4055cec81bc31c6a9431e80089e11f37703ae133305c03c2a96"
+        }
+      ],
+      "remaining_failure": "ARM64 has four subtest failures in one method: argument-error status 2 versus stale expected status 1. The x86-64 runtime does not execute after the 30-second marker compiler timeout.",
+      "limits": [
+        "The compiler timeout does not identify the inner compile/link phase or its cause.",
+        "The passing instrumented x64 update probe covers one controlled test case. It does not replace the skipped 118-case suite.",
+        "The ARM64 file-preservation assertions after failed status checks are not reached in those four refusal subtests."
+      ],
+      "audit": {
+        "file": "build/integration-evidence/windows-managed-third-audit.json",
+        "sha256": "a6101bb4da753600e970508940b008388808004d930a0a5f6be04a303bfa82d8"
+      }
     }
   ],
   "current": {
-    "source_commit": "bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb",
-    "run_id": 42111645129,
+    "source_commit": "9dfe052a9258c76850971d49dce49a00de09cd17",
+    "run_id": 42116539771,
     "layout": "The approved versioned layout is implemented in assembly; full native qualification remains incomplete.",
     "expected_runtime_methods_per_target": 118,
-    "runtime_methods_executed_per_target": 118,
+    "runtime_methods_executed": {
+      "x86_64-windows": 0,
+      "aarch64-windows": 118
+    },
     "passing_methods": {
-      "aarch64-windows": 112,
-      "x86_64-windows": 106
+      "x86_64-windows": null,
+      "aarch64-windows": 117
     },
     "native_cli_qualification": false,
-    "remaining_failure": "Update initialization and failure cleanup, argument limits and diagnostics, early path refusal, and the child fixture require corrections.",
+    "remaining_failure": "ARM64 has four subtest failures in one method: argument-error status 2 versus stale expected status 1. The x86-64 runtime does not execute after the 30-second marker compiler timeout.",
     "separate_package_jobs": "Both native Windows package scopes pass seven cases. The Linux reference scope passes 24 cases, with ARM64 and RISC-V execution under QEMU."
   }
 }
