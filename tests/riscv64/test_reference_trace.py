@@ -272,7 +272,9 @@ PGresult *PQgetResult(PGconn *c) {
  return delivered++<(mode==17 ? 2:1) ? (PGresult *)(uintptr_t)0x5678:NULL;
 }
 ExecStatusType PQresultStatus(const PGresult *r) {
- if(r!=(PGresult *)(uintptr_t)0x5678)abort();errno=EACCES;return mode==12 ? PGRES_FATAL_ERROR:PGRES_TUPLES_OK;
+ if(r!=(PGresult *)(uintptr_t)0x5678) { abort(); }
+ errno=EACCES;
+ return mode==12 ? PGRES_FATAL_ERROR:PGRES_TUPLES_OK;
 }
 int PQntuples(const PGresult *r) { (void)r;errno=EACCES;return mode==13 ? 2:1; }
 int PQnfields(const PGresult *r) { (void)r;errno=EACCES;return mode==14 ? 2:1; }
