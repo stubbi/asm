@@ -1,6 +1,6 @@
 # Fixed deployment envelope
 
-Status: unexecuted native qualification candidate, 5 November 2026.
+Status: failed native preflight; the parser correction awaits qualification, 5 November 2026.
 
 This profile tests the selected PostgreSQL 18 database with one fixed application resource envelope.
 It serves operators who need inspectable resource and failure evidence before deployment.
@@ -66,7 +66,33 @@ Replace both uppercase placeholders.
 An existing evidence directory is preserved.
 Successful evidence requires all three part reports, exact image bindings, resource closure, and successful owned cleanup.
 Retain the complete evidence directory after failure.
-No native profile result exists yet.
+No successful 31-case profile result exists yet.
+
+## First native preflight
+
+[Run 42111348191](https://github.com/stubbi/asm/actions/runs/42111348191) tested source `7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e` once.
+That source differs from frozen candidate `95d4cf94455c10917922a0d94a180bc0a54f983f` only in the registered preflight workflow.
+The ordinary compatibility gate passed 38 applicable cases with the existing macOS exclusion.
+Its source-scoped receipt is [retained separately](deployment-envelope-evidence/42111348191/ordinary-qualification.json).
+
+The constrained baseline completed all sixteen assertions before its evidence parser rejected `core_sched.force_idle_usec` in `cpu.stat`.
+The [failed qualification receipt](deployment-envelope-evidence/42111348191/qualification.json) keeps the original failure.
+All [34 raw cgroup samples](deployment-envelope-evidence/42111348191/baseline.stdout.log) and the [baseline test log](deployment-envelope-evidence/42111348191/baseline.stderr.log) are retained.
+The [local failing regression](deployment-envelope-evidence/42111348191/parser-red.txt) reproduces the parser defect from those samples.
+The correction accepts bounded canonical dotted counter keys.
+Required counters, duplicates, numeric bounds, monotonicity, limits, and OOM checks remain unchanged.
+
+The twelve admission and three envelope cases did not run.
+The nine-cancellation admission assertion did not run.
+The partial baseline does not qualify the resource envelope, capacity, draining, or deployment.
+Both gates reported successful owned cleanup.
+The parser correction has no native result.
+
+The original artifact ZIP is retained privately outside this repository.
+It contains 183132 bytes.
+Its SHA-256 is `d89f3b633f6a2fbf2673bf25d216dcda05832d12b41de2faacea6c5d6ee83311`.
+This digest matches the [GitHub artifact metadata](deployment-envelope-evidence/42111348191/artifacts.json).
+The [independent inspection](deployment-envelope-evidence/42111348191/independent-review.json) records the exact image identities and observed coverage.
 
 ## Limits and sources
 

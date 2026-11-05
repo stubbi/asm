@@ -152,7 +152,7 @@ Fresh fixture startup does not establish production startup behavior or recovery
 Private application limits of one CPU and 256 MiB require separate qualification.
 Database connection admission remains a separate gate.
 The [fixed deployment envelope candidate](deployment-envelope.md) adds a separate shared driver/runtime resource check.
-It has no native result yet.
+Its first native preflight failed in fixture evidence parsing; full profile qualification remains incomplete.
 It does not qualify ARM64 or RISC-V database images.
 The ordinary PostgreSQL 16.15 operator and server image gates remain required independently.
 Older `psql` compatibility is limited to the command paths exercised here.

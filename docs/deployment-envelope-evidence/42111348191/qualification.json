@@ -1,0 +1,169 @@
+{
+  "architecture": "amd64",
+  "cleanup": [
+    {
+      "identity": "asm-postgres18-c785348449544a4f9d0d508fe3e63f11",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-079035d04542432e957b381e1d1687c4",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-6567856324c34aada2519a02aeeb4f04",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-3ef2ba374b2b4d69b78362af50e269a2",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-10eafb5045694d93b19af6315742751c",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-3e66173434af4c208dcdadc46ca21020",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-d623a15ef6e343edbceeb77ae77965d7",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-a9b722c0f7e24d679c453e6c180d73c6",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-5daef000d56d424d99f9eaceb8d9ec14",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-b19696f2394a4686aa93f40ba9cb8996",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-1713e1097c7b4e4bb23fc7dbd25b2dfd",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-342d5bda1a494c95ae97f1817f50ab0d",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-2d4bf51963da4fd9ae79d509fa2bc288",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-6facce8b394c4abaa6c77fe38a4193cd",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-fa1324d706c747e98ea683223fc56aba",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-34ae1ebb9bd64d8d9a83090c63d3c3fb",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-880dc6c730394673a093fe2996aa4d0d",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-f55fc8b57f324b4dbcfb8abcccf929a4",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-88dfaf86c69f4623a87bf2194dbcef90",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-3e84c2fc5798442cad4f93e86dccc3d2",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-e0870db526044220aa7e288e86ed61a4",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-e000876e5e434d679568ff4b0dfd5cc4",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-4dcdb41944094d35b8fa34258145b65d",
+      "status": "removed"
+    }
+  ],
+  "database_image": {
+    "config_digest": "sha256:e81943bf2a7f93b868b0ce332642e9005ab3bc02d23f7effb505e5a19b7daa42",
+    "index_digest": "sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+    "platform_digest": "sha256:9d1808e9b9c82fb1175ecc7aba615e88b16013e8f118c536a8b5a9aca017ec03",
+    "qualification_image_id": "sha256:bae8dd8c42604d50693c6fd157555947ed9c3558635d54f387aed775a22caada",
+    "reference": "ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+    "runtime_files": {
+      "/lib/x86_64-linux-gnu/libaudit.so.1": "8632b443369cb51570b78e0bf5b0fa5b1a7b343439b65c21200a27e015aed507",
+      "/lib/x86_64-linux-gnu/libc.so.6": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+      "/lib/x86_64-linux-gnu/libcap-ng.so.0": "6b5be42df1bed00b8ea1f52e9412dce5ed500c29a6dd22b31e72f5dab5a3a575",
+      "/lib/x86_64-linux-gnu/libcap.so.2": "41217b0af128444f66dee8adda52b2ceaf19da00e5b0b155e2b87b857671286b",
+      "/lib/x86_64-linux-gnu/libcom_err.so.2": "dc4828400674492839b630c001db424cd38e5cecfcf46dbf705a637647e04bea",
+      "/lib/x86_64-linux-gnu/libcrypto.so.3": "8ae56f0a9481280a68c19f59809cd242a07a91ad7142944d21a878221992244b",
+      "/lib/x86_64-linux-gnu/libgcc_s.so.1": "30c61ab012a4241bed033725a09b61f5fdd3bb7df95ee852d0b096520524c7af",
+      "/lib/x86_64-linux-gnu/libgssapi_krb5.so.2": "c290f761873ebeac539911010526e1c5db86218bfcb29672760da46841741de0",
+      "/lib/x86_64-linux-gnu/libicudata.so.76": "a04b2b906193fa1e40f968a3d16d7d6c844a1fafbdd5bce6e9f67b01c124ff24",
+      "/lib/x86_64-linux-gnu/libicui18n.so.76": "596132c352dc25d1e8a1f91e2c5790262ed02376d27afc14b545a1952341b3fc",
+      "/lib/x86_64-linux-gnu/libicuuc.so.76": "a8e433e81075732faf255b17d4a25ce28632e41fef1a75e727ee7f4ed73ab151",
+      "/lib/x86_64-linux-gnu/libk5crypto.so.3": "c4c3221d0350f882cee0430b58d5fb289a5776c684d3156964864c8a9719dff1",
+      "/lib/x86_64-linux-gnu/libkeyutils.so.1": "e5d5a7450d08eff7d4bbcaac75ef2b94d3447c81a1b2ddf3ab85d2de4709a9a8",
+      "/lib/x86_64-linux-gnu/libkrb5.so.3": "c4ab64e6bc2874a83e649e4439be752465da027a0041e2bb5343f81c80f0882d",
+      "/lib/x86_64-linux-gnu/libkrb5support.so.0": "f559f051ee5d39f151a57d79f2cde475c484030098b0c73f9f7035b421b187c4",
+      "/lib/x86_64-linux-gnu/liblber.so.2": "ca319704dd4f58b5b3fc8510738850f03f18940544ba04bebf2fa8a23a798346",
+      "/lib/x86_64-linux-gnu/libldap.so.2": "e8f34e65087f24f296fa7a65a8c65383f4a7e2b532c46e40463d4e59a206c20a",
+      "/lib/x86_64-linux-gnu/liblz4.so.1": "67bf8b84af77e962e09be661944f7c61393c4806746734e36db9fbdaebc1de36",
+      "/lib/x86_64-linux-gnu/liblzma.so.5": "7ca392e92ebb94b6f8ee094cbd5243185e4452377b94acc657f7ba8c8f9dda2c",
+      "/lib/x86_64-linux-gnu/libm.so.6": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3",
+      "/lib/x86_64-linux-gnu/libnuma.so.1": "c3c046679e00b24819cc9410f9efb63a402a96ebd7cabf7f787234fc933ced0e",
+      "/lib/x86_64-linux-gnu/libpam.so.0": "7e61037c89b06382c9d22518174914fef77b9e473962f49ab1c90c55c9b5bca2",
+      "/lib/x86_64-linux-gnu/libpq.so.5": "9cce9bfae9405a71e0d642457d9d8748093cea9fdc0f785b5d2ed9575aec168d",
+      "/lib/x86_64-linux-gnu/libresolv.so.2": "d41dd4adacf5a35df426461dd8a92d7bdd5ba29bb61a1c3531bec0ada386f8dd",
+      "/lib/x86_64-linux-gnu/libsasl2.so.2": "3f93968591811eb3972c3467c69c2968dd9cb2b51f7b7bb48de22ba8e17d13fd",
+      "/lib/x86_64-linux-gnu/libssl.so.3": "9592038e92d1f41affcbb625334d0b6e788714c889104fa6d5b107cf9fd657f2",
+      "/lib/x86_64-linux-gnu/libstdc++.so.6": "972bb2a18b71140dab0240f8a1f68ab3fb1d56bcd4c4f824a91b70888faf5a00",
+      "/lib/x86_64-linux-gnu/libsystemd.so.0": "c59f9015342de9c2dcb2decccb3d83218849fe3e4388c723a6528254fd7606f0",
+      "/lib/x86_64-linux-gnu/liburing.so.2": "27e394244c998e6deeff5f49d2cac4ee5c399d35f8d502e8adb86d12e6fa554f",
+      "/lib/x86_64-linux-gnu/libxml2.so.2": "8f2643af68a9eba917929046806dabd1848867068d0eee0f6799288a8e886963",
+      "/lib/x86_64-linux-gnu/libxxhash.so.0": "7dd49b353facbee50c371d0559ce29db5afee5ac33249ca5c7068420fb642762",
+      "/lib/x86_64-linux-gnu/libz.so.1": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e",
+      "/lib/x86_64-linux-gnu/libzstd.so.1": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21",
+      "/lib64/ld-linux-x86-64.so.2": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+      "/usr/lib/postgresql/18/bin/initdb": "e625647c2750ff98d37f812e9fba60e9f6418e7d5a7488dfe7b6996312dbf206",
+      "/usr/lib/postgresql/18/bin/postgres": "4944085dba4adcf0f65b8fb4e698c5ac353ecff890fdc89afe8007c2547b1469",
+      "/usr/lib/postgresql/18/lib/plpgsql.so": "5a9e41b9e2a182fec34fdae13fe2021133734c0eef5907a4260b39bccc66b44e"
+    }
+  },
+  "execution": "native",
+  "failure": {
+    "error": "ValueError",
+    "message": "The shared driver/runtime container failed or was OOM-killed."
+  },
+  "finished_at": "2026-11-05T21:24:53.261652+00:00",
+  "measurement_scope": "Python driver and assembly runtime share one constrained cgroup; PostgreSQL is separate.",
+  "os": "linux",
+  "preparation_cleanup": "removed",
+  "profile": "deployment-envelope",
+  "resources": {
+    "application_cpus": 1,
+    "application_memory_bytes": 268435456,
+    "application_swap_bytes": 0,
+    "application_tmpfs_bytes": 67108864,
+    "database_cpus": 2,
+    "database_memory_bytes": 2147483648,
+    "database_tmpfs_bytes": 536870912,
+    "pids_per_container": 128
+  },
+  "schema": 1,
+  "scope": "selected-cnpg18-deployment-envelope",
+  "source_revision": "7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e",
+  "started_at": "2026-11-05T21:24:41.157712+00:00",
+  "status": "fail",
+  "suites": []
+}

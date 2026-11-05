@@ -1,0 +1,72 @@
+{
+  "archive": {
+    "bytes": 183132,
+    "sha256": "d89f3b633f6a2fbf2673bf25d216dcda05832d12b41de2faacea6c5d6ee83311"
+  },
+  "first_failure": "cpu.stat parser rejects observed core_sched.force_idle_usec key after all baseline assertions pass",
+  "limits": [
+    "No 31-case profile result exists.",
+    "The constrained baseline measurements include the Python driver.",
+    "No private capacity, graceful draining, Kubernetes or deployment qualification."
+  ],
+  "ordinary": {
+    "applicable_passes": 38,
+    "cleanup_removed": 33,
+    "images": {
+      "http": {
+        "qualifier": "sha256:1998a86814f004eb22175be2166d465a946d8d0b104e39026eaa4be4e771cae8",
+        "runtime": "sha256:2bf6fb6b95adb3da6dcf33510711a2df1bf1c3c4fb980b2526b7237adb1cbe3f"
+      },
+      "operator": {
+        "qualifier": "sha256:d4eedfb7e9d1608d4a87261b9784b55d3a71e3d682661e923818f1b715bad763",
+        "runtime": "sha256:ebb0e21803bde1eadfbd8dd1634e4ddd44d4f65569ea8f0d6bb67c093e143f79"
+      }
+    },
+    "macOS_exclusions": 1,
+    "status": "pass",
+    "tests_run": 39
+  },
+  "overall": "fail",
+  "profile": {
+    "baseline_assertions_passed": 16,
+    "capacity_cases_run": 0,
+    "cgroup_samples": 34,
+    "cleanup_removed": 23,
+    "envelope_cases_run": 0,
+    "final_cpu_stat": {
+      "burst_usec": 0,
+      "core_sched.force_idle_usec": 0,
+      "nice_usec": 0,
+      "nr_bursts": 0,
+      "nr_periods": 37,
+      "nr_throttled": 0,
+      "system_usec": 234838,
+      "throttled_usec": 0,
+      "usage_usec": 1201642,
+      "user_usec": 966803
+    },
+    "final_current_bytes": 26345472,
+    "nine_cancellation_admission_assertion": "not-run",
+    "oom_killed": false,
+    "peak_memory_bytes": 42627072,
+    "raw_outcomes": {
+      "complete": 74,
+      "refused": 89,
+      "reset": 2
+    },
+    "raw_requests": 165,
+    "sql_cancellation_file_counts": {
+      "asm-postgres18-079035d04542432e957b381e1d1687c4.database.file.log": 1
+    },
+    "status": "fail",
+    "valid_request_availability_failures": 63
+  },
+  "run": "https://github.com/stubbi/asm/actions/runs/42111348191",
+  "run_attempt": 1,
+  "selected_database": {
+    "config_digest": "sha256:e81943bf2a7f93b868b0ce332642e9005ab3bc02d23f7effb505e5a19b7daa42",
+    "index_digest": "sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+    "platform_digest": "sha256:9d1808e9b9c82fb1175ecc7aba615e88b16013e8f118c536a8b5a9aca017ec03"
+  },
+  "source_revision": "7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e"
+}

@@ -46,7 +46,8 @@ def counters(value, required):
     result = {}
     for line in value.splitlines():
         fields = line.split()
-        need(len(fields) == 2 and re.fullmatch(r"[a-z_]{1,40}", fields[0]) and fields[0] not in result,
+        need(len(fields) == 2 and len(fields[0]) <= 40 and
+             re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", fields[0]) and fields[0] not in result,
              "A cgroup counter set is ambiguous.")
         result[fields[0]] = number(fields[1])
     need(set(required) <= result.keys(), "A required cgroup counter is unavailable.")
