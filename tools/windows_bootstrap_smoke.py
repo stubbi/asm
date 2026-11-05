@@ -163,6 +163,16 @@ def source_version(root):
     return versions[0]
 
 
+def powershell_observation(output):
+    """Read static version and process environment data, not effective policy."""
+    lines = output.splitlines()
+    if not 1 <= len(lines) <= 2 or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,3}', lines[0]):
+        raise ValueError('The PowerShell version observation is malformed.')
+    if tuple(map(int, lines[0].split('.'))) < (5, 1):
+        raise ValueError('The bootstrap requires Windows PowerShell 5.1 or later.')
+    return {'version': lines[0], 'process_environment_preference': lines[1] if len(lines) == 2 else None}
+
+
 def fixed_tools(target, *, llvm=Path('C:/Program Files/LLVM/bin'),
                 sdk=Path('C:/Program Files (x86)/Windows Kits/10/Lib'), windows=None):
     if windows is None:
@@ -352,7 +362,9 @@ def main(argv=None):
                        'machine': platform.machine(), 'image_os': os.environ.get('ImageOS'),
                        'image_version': os.environ.get('ImageVersion')},
               'powershell_policy': {'scope': 'Process', 'requested': 'Bypass',
-                                    'persistent_policy_changed': False},
+                                    'persistent_policy_changed': False,
+                                    'effective_policy': None, 'persistent_scopes': None,
+                                    'group_policy_scopes': None, 'full_policy_query_measured': False},
               'limits': {'child_seconds': 90, 'stream_bytes': MAX_OUTPUT,
                          'fixture_file_bytes': MAX_FILE}, 'inputs': {}}
     owned = None
@@ -386,9 +398,9 @@ def main(argv=None):
             if name in ('clang', 'link'):
                 report['tools'][name]['version'] = checked([path, '--version'], report['commands'], env=environment, timeout=15)
         ps = [tools['powershell'], '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass']
-        report['powershell_policy']['observed'] = checked(ps + ['-Command',
-            '$PSVersionTable.PSVersion.ToString(); Get-ExecutionPolicy -List | Format-Table -HideTableHeaders | Out-String'],
-            report['commands'], env=environment, cwd=owned, timeout=15)
+        report['powershell_policy']['observed'] = powershell_observation(checked(ps + ['-Command',
+            '$PSVersionTable.PSVersion.ToString(); [Environment]::GetEnvironmentVariable("PSExecutionPolicyPreference")'],
+            report['commands'], env=environment, cwd=owned, timeout=15))
         version = source_version(ROOT)
         report['source_version'] = version
         marker = owned / 'PACKAGE_EXECUTED'

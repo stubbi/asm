@@ -77,6 +77,12 @@ class BootstrapSmokeDriverTests(unittest.TestCase):
         self.assertFalse(driver.command_succeeded(result))
 
     def test_version_comes_from_exact_source_commands(self):
+        self.assertEqual(driver.powershell_observation('5.1.26100.7019\nBypass'),
+                         {'version': '5.1.26100.7019', 'process_environment_preference': 'Bypass'})
+        self.assertEqual(driver.powershell_observation('5.1.26100.7019')['process_environment_preference'], None)
+        for observation in ('5.0.1.2\nBypass', 'not-a-version\nBypass', '5.1\nBypass\nextra'):
+            with self.subTest(observation=observation), self.assertRaises(ValueError):
+                driver.powershell_observation(observation)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'cli').mkdir()
