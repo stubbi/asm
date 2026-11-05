@@ -32,6 +32,10 @@ The [workflow](../.github/workflows/windows-ports.yml) uses `windows-2025` and `
 It runs separate CLI and package jobs on each ISA.
 All four jobs must pass.
 Package qualification proceeds independently when the CLI build or tests fail.
+An independent Ubuntu job also runs the full reference-package suite.
+It uses GNU cross tools, QEMU user mode, and QEMU system semihosting for the required Linux package cases.
+Those results do not qualify native ARM64 or RISC-V hardware.
+Other platforms' skipped runtime cases remain explicit and do not qualify those targets.
 GitHub lists both labels in its [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 These labels were checked on 5 November 2026.
 The standard ARM64 label requires a public repository.
@@ -152,13 +156,18 @@ Failed runs remain part of the qualification history.
 
 The JSON report identifies the source commit, target, ABI, host, tools, artifact digest, command results, and test outcomes.
 Missing or skipped checks cannot become a passing native qualification.
+Expected failures and unexpected successes also prevent qualification and have distinct recorded outcomes.
 Native qualification is one input to release acceptance.
 It does not replace verifier tests, complete history review, provenance publication, or testing published downloads.
 
-Local checks on 5 November 2026 passed eighteen evidence-driver and fixture tests.
+Local checks on 5 November 2026 passed twenty-one evidence-driver and fixture tests.
 The C tool fixture cross-compiled to x64 and ARM64 COFF with Apple Clang.
 Neither result executes Windows code.
-Native Windows CLI behavior, native MSVC resolution, and reference-package execution remain unrun at this writing.
+Both native Windows reference-package jobs passed in [run 41942208419](https://github.com/stubbi/asm/actions/runs/41942208419).
+That run used source commit `0bf5b1d9c695fa520243757b991aa1e01f450eaa`.
+The ARM64 CLI failed to link, and the x64 CLI failed runtime tests.
+The aggregate qualification therefore failed.
+Complete CLI behavior and native MSVC resolution remain unqualified.
 The suite's unsupported-host refusal is an error result, never a skipped success.
 
 Both cross-built PE executables also reached the native-host gate on the local macOS machine.
@@ -177,7 +186,7 @@ Hostile absolute archive paths now target sentinel files inside a separately own
 The test retains that directory until all no-mutation assertions finish.
 
 The current suite exercises generated projects, deterministic source packages, and the checked-in Windows hello and math reference packages.
-Native execution of these package hooks remains required before a support declaration.
+The successful package jobs do not establish successful CLI integration or release qualification.
 Windows server qualification is outside this workflow; the server deployment contract is Linux.
 
 Run the evidence-driver checks on a development host:

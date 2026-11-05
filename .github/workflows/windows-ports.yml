@@ -121,6 +121,11 @@ jobs:
         run: |
           python tools/windows_test.py --asm "build/asm-$env:ASM_TARGET.exe" --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-evidence/runtime.json --toolchain-bin 'C:\Program Files\LLVM\bin'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Collect isolated x64 adapter diagnostics
+        if: always() && matrix.scope == 'cli' && matrix.platform == 'x64'
+        run: |
+          python cli/windows/x86_64/native_diagnostics.py --toolchain-bin 'C:\Program Files\LLVM\bin' --evidence build/windows-evidence/x64-adapter-diagnostics.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Run the independent native reference-package contract
         if: matrix.scope == 'packages'
         env:
@@ -140,15 +145,104 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  linux-packages:
+    name: Check Linux reference packages with QEMU
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record the Linux test host
+        shell: bash
+        run: |
+          mkdir -p build/linux-package-evidence
+          git rev-parse HEAD > build/linux-package-evidence/source-commit.txt
+          {
+            uname -a
+            python3 --version
+          } > build/linux-package-evidence/host.txt
+      - name: Install GNU cross tools and QEMU
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user qemu-system-misc
+          {
+            aarch64-linux-gnu-as --version
+            riscv64-linux-gnu-as --version
+            qemu-aarch64 --version
+            qemu-riscv64 --version
+            qemu-system-riscv64 --version
+          } > build/linux-package-evidence/tools.txt
+      - name: Run the actual reference-package suite
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 - <<'PY' 2>&1 | tee build/linux-package-evidence/tests.log
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import unittest
+          from tools.windows_test import EvidenceResult
+
+          suite = unittest.TestLoader().discover("tests/packages", pattern="test_*.py")
+          result = unittest.TextTestRunner(verbosity=2, resultclass=EvidenceResult).run(suite)
+          required = {
+              "test_math_aarch64.MathAarch64Tests.test_linux_demo_and_unsigned_abi_cases",
+              "test_math_riscv64.MathRiscv64ArchiveTests.test_source_archive_has_a_usable_riscv_project",
+              "test_math_riscv64.MathRiscv64NativeTests.test_binaries_match_the_declared_target_and_have_no_executable_stack",
+              "test_math_riscv64.MathRiscv64NativeTests.test_demo_prints_the_computed_example",
+              "test_math_riscv64.MathRiscv64NativeTests.test_unsigned_boundaries_one_bit_inputs_and_calling_convention",
+              "test_math_riscv64.MathRiscv64NativeTests.test_unwritable_stdout_returns_failure_and_reports_the_problem",
+              "test_math_riscv64.MathRiscv64NativeTests.test_machine_mode_callable_cases_with_semihosting",
+              "test_math_riscv64.MathRiscv64NativeTests.test_write_loop_handles_injected_short_interrupted_zero_and_error_results",
+          }
+          passed = {record["test"] for record in result.records if record["outcome"] == "pass"}
+          missing = sorted(required - passed)
+          accepted = bool(result.testsRun and result.wasSuccessful() and not result.expectedFailures and not missing)
+          inputs = list(Path("tests/packages").glob("*.py"))
+          inputs += [path for path in Path("examples").rglob("*") if path.is_file()]
+          report = {
+              "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU",
+              "source_commit": os.environ["GITHUB_SHA"],
+              "host": platform.platform(),
+              "execution": {"aarch64-linux": "QEMU user mode", "riscv64-linux": "QEMU user mode",
+                            "riscv64-machine": "QEMU system semihosting"},
+              "native_arm64_or_riscv64_qualification": False,
+              "inputs_sha256": {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(inputs)},
+              "tests_run": result.testsRun, "tests": result.records,
+              "required_linux_cases_not_passed": missing,
+              "outcome": "pass" if accepted else "fail",
+          }
+          Path("build/linux-package-evidence/results.json").write_text(json.dumps(report, indent=2) + "\n")
+          raise SystemExit(0 if accepted else 1)
+          PY
+      - name: Retain Linux reference-package results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-reference-packages-${{ github.sha }}
+          path: build/linux-package-evidence/*
+          if-no-files-found: error
+          retention-days: 14
+
   qualification:
-    name: Require all four Windows qualification results
-    needs: native
+    name: Require Windows scopes and Linux reference packages
+    needs: [native, linux-packages]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
-      - name: Require both native jobs
+      - name: Require every Windows scope and Linux package result
         env:
           ASM_NATIVE_RESULT: ${{ needs.native.result }}
-        run: test "$ASM_NATIVE_RESULT" = success
+          ASM_LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
+        run: |
+          test "$ASM_NATIVE_RESULT" = success
+          test "$ASM_LINUX_PACKAGES_RESULT" = success

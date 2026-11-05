@@ -114,10 +114,22 @@ class EvidenceResult(unittest.TextTestResult):
         super().addSkip(test, reason)
         self.record(test, "not-run", reason)
 
+    def addExpectedFailure(self, test, error):
+        super().addExpectedFailure(test, error)
+        self.record(test, "expected-failure", self._exc_info_to_string(error, test))
+
+    def addUnexpectedSuccess(self, test):
+        super().addUnexpectedSuccess(test)
+        self.record(test, "unexpected-success")
+
     def addSubTest(self, test, subtest, error):
         super().addSubTest(test, subtest, error)
         if error:
             self.record(subtest, "fail", self._exc_info_to_string(error, test))
+
+
+def qualifies_result(result):
+    return bool(result.testsRun and result.wasSuccessful() and not result.skipped and not result.expectedFailures)
 
 
 def require_package_execution(events, target):
@@ -170,7 +182,7 @@ def run_packages(target, llvm):
     try:
         report["events"] = [json.loads(line) for line in output.getvalue().splitlines() if line.strip()]
         require_package_execution(report["events"], target)
-        if result.testsRun and result.wasSuccessful() and not result.skipped:
+        if qualifies_result(result):
             report["outcome"] = "pass"
     except (ValueError, KeyError) as error:
         report["error"] = str(error)
@@ -253,7 +265,7 @@ def main(argv=None):
             report["tests"] = result.records
             report["tests_run"] = result.testsRun
             report["artifact"]["sha256_after_tests"] = digest(args.asm)
-            passed = (result.wasSuccessful() and not result.skipped and
+            passed = (qualifies_result(result) and
                       report["artifact"]["sha256_after_tests"] == report["artifact"]["sha256"])
         if args.packages or args.packages_only:
             report["packages"] = run_packages(args.target, llvm.resolve())

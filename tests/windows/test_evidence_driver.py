@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 import difflib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path, PureWindowsPath
@@ -214,6 +215,56 @@ class RuntimeHelperTests(unittest.TestCase):
             with self.subTest(calls=calls):
                 with self.assertRaises(AssertionError):
                     assert_complete_provenance(calls)
+
+
+class OutcomeGateTests(unittest.TestCase):
+    def run_case(self, case):
+        return unittest.TextTestRunner(stream=io.StringIO(), resultclass=driver.EvidenceResult).run(case)
+
+    def test_expected_failure_is_recorded_and_cannot_qualify(self):
+        class KnownFailure(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_case(self):
+                self.fail("expected fixture failure")
+
+        result = self.run_case(KnownFailure("test_case"))
+        self.assertTrue(result.wasSuccessful(), "This exercises unittest's expected-failure success behavior")
+        self.assertEqual(len(result.expectedFailures), 1)
+        self.assertEqual(result.records[0]["outcome"], "expected-failure")
+        self.assertIn("expected fixture failure", result.records[0]["detail"])
+        self.assertFalse(driver.qualifies_result(result))
+
+    def test_skip_empty_suite_and_unexpected_success_cannot_qualify(self):
+        class Skipped(unittest.TestCase):
+            def test_case(self):
+                self.skipTest("missing fixture capability")
+
+        class UnexpectedSuccess(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_case(self):
+                pass
+
+        skipped = self.run_case(Skipped("test_case"))
+        self.assertEqual(skipped.records[0]["outcome"], "not-run")
+        unexpected = self.run_case(UnexpectedSuccess("test_case"))
+        self.assertEqual(unexpected.records[0]["outcome"], "unexpected-success")
+        for result in (skipped, unexpected, self.run_case(unittest.TestSuite())):
+            self.assertFalse(driver.qualifies_result(result))
+
+    def test_only_an_executed_unittest_success_qualifies(self):
+        class Cases(unittest.TestCase):
+            def test_pass(self):
+                self.assertEqual(2 + 2, 4)
+
+            def test_failure(self):
+                self.fail("real fixture failure")
+
+            def test_error(self):
+                raise RuntimeError("real fixture error")
+
+        for name, expected in (("test_pass", True), ("test_failure", False), ("test_error", False)):
+            with self.subTest(name=name):
+                self.assertEqual(driver.qualifies_result(self.run_case(Cases(name))), expected)
 
 
 class VerifierFixtureTests(unittest.TestCase):
