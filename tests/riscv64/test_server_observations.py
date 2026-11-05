@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import hashlib
 import importlib.util
 import io
+from contextlib import redirect_stdout
 import json
 from pathlib import Path
 import stat
@@ -123,6 +124,108 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(sum(item["tests"] for item in report["not_run"]), 5)
         self.assertEqual(report["limits"]["cleanup_reserve_seconds"], 90)
         self.assertEqual(report["limits"]["attached_runtime_seconds_cap"], 600)
+
+    def test_phase_report_labels_added_arms_without_clearing_the_original_gate(self):
+        report = self.runner.initial_report(phase_probe=True)
+        self.assertEqual(report["scope"], "retained-riscv64-reference-server-phase-probe")
+        self.assertEqual(report["comparison_order"], ["direct", "proxy"])
+        self.assertEqual(report["original_19_test_gate"], "fail")
+        self.assertEqual(report["limits"]["suite_seconds"], 180)
+        self.assertFalse(report["application_qualified"])
+
+    def test_phase_log_summary_cannot_publish_body_or_arbitrary_error_text(self):
+        private = "postgresql://private-password@private-host/database"
+        guest = {"outcome": "fail", "error": private,
+                 "server_tests": {"tests_run": 14, "exit_code": 1}}
+        record = {"index": 5, "status": 503, "elapsed_seconds": 1.9,
+                  "body_base64": private, "exception": private}
+        trace = {"id": 1, "index": 5, "kind": -1, "start_ns": 100, "end_ns": 200,
+                 "first_api": 1, "first_return": 0, "first_errno": 0, "sqlstate": private}
+        observation = {"simultaneous_searches": {"records": [record]},
+                       "phase_traces": {"main": {"association": private, "records": [trace]}}}
+        summary = self.runner.sanitized_phase_summary(guest, observation)
+        self.assertNotIn(private, json.dumps(summary))
+        self.assertEqual(summary["qualification"], "UNQUALIFIED")
+        self.assertEqual(summary["original_19_test_gate"], "fail")
+        self.assertEqual(summary["cohorts"][0]["http"],
+                         [{"index": 5, "status": 503, "elapsed_us": 1900000}])
+        self.assertEqual(summary["cohorts"][0]["association"], "inconclusive")
+
+    def test_phase_log_summary_keeps_invalid_nested_shapes_inconclusive(self):
+        summary = self.runner.sanitized_phase_summary({"server_tests": None},
+            {"simultaneous_searches": None, "controlled_search_comparison": {"arms": None},
+             "phase_traces": {"main": None}})
+        self.assertIsNone(summary["tests_run"])
+        self.assertEqual([wave["association"] for wave in summary["cohorts"]], ["inconclusive"] * 3)
+
+    def test_host_helper_retention_is_bounded_and_preserves_existing_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source, output = base / "source", base / "retained"
+            source.write_bytes(b"reviewed helper bytes")
+            self.runner.retain_host_file(source, output, limit=64)
+            self.assertEqual(output.read_bytes(), source.read_bytes())
+            source.write_bytes(b"other bytes")
+            with self.assertRaises(ValueError):
+                self.runner.retain_host_file(source, output, limit=64)
+            self.assertEqual(output.read_bytes(), b"reviewed helper bytes")
+            source.write_bytes(b"x" * 65)
+            with self.assertRaises(ValueError):
+                self.runner.retain_host_file(source, base / "oversized", limit=64)
+            self.assertFalse((base / "oversized").exists())
+            link = base / "link"
+            link.symlink_to(source)
+            with self.assertRaises(ValueError):
+                self.runner.retain_host_file(link, base / "linked", limit=128)
+            self.assertFalse((base / "linked").exists())
+
+    def test_forwarding_check_does_not_run_an_unverified_helper(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            trace = base / "trace"
+            trace.mkdir()
+            previous = base / "trace-forwarding.log"
+            previous.write_bytes(b"earlier evidence")
+            with mock.patch.object(self.runner.combined, "bounded_process") as child:
+                result = self.runner.trace_smoke(trace, base)
+            child.assert_not_called()
+            self.assertEqual(result["outcome"], "fail")
+            self.assertEqual(result["qualification"], "UNQUALIFIED")
+            self.assertEqual(previous.read_bytes(), b"earlier evidence")
+
+    def test_incomplete_phase_collection_still_emits_a_private_failure_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            private = "postgresql://private-password@private-host/database"
+            (base / "qualification.json").write_text(json.dumps({"error": private, "server_tests": None}))
+            report = {"failure_stage": "runtime", "collection": {
+                "collected": ["qualification.json"], "errors": {"server_package.log": private}}}
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.runner.publish_phase_summary(report, base)
+            self.assertNotIn(private, output.getvalue())
+            summary = json.loads((base / "phase-summary.json").read_text())
+            self.assertEqual(summary["host"]["failure_stage"], "runtime")
+            self.assertFalse(summary["host"]["collection_complete"])
+            self.assertEqual(summary["original_19_test_gate"], "fail")
+
+    def test_late_final_report_io_cannot_leave_a_passing_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            clock = [599.0]
+            report = self.runner.initial_report()
+            report["outcome"] = "pass"
+            writer = self.runner.combined.write_report
+            def slow_write(path, value):
+                writer(path, value)
+                clock[0] += 2
+            with mock.patch.object(self.runner.time, "monotonic", side_effect=lambda: clock[0]), \
+                 mock.patch.object(self.runner.combined, "write_report", side_effect=slow_write):
+                self.runner.finish_host_report(report, output, started=0, deadline=600, phase_probe=False)
+            retained = json.loads((output / "UNQUALIFIED-host-report.json").read_text())
+            self.assertEqual(retained["outcome"], "fail")
+            self.assertTrue(retained["host_deadline_exceeded"])
+            self.assertFalse(retained["application_qualified"])
 
     def _host_failure_scenario(self, base, *, extraction_seconds=0, create_timeout=False):
         """Replace only unavailable Docker; retain real host files and failure reports."""

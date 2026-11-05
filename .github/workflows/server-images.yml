@@ -1,4 +1,4 @@
-name: UNQUALIFIED RISC-V server observations
+name: UNQUALIFIED RISC-V server phase comparison
 
 # This isolated branch diagnoses a failed gate. It cannot publish an image.
 on:
@@ -14,13 +14,13 @@ concurrency:
 
 jobs:
   observe:
-    name: Observe the unchanged 14 HTTP cases (UNQUALIFIED)
+    name: Observe the original cases and direct/proxy cohorts (UNQUALIFIED)
     runs-on: ubuntu-24.04
     # The inner host budget is 600 seconds, including evidence collection.
     # This outer budget also covers checkout, downloads, source selection, and upload.
     timeout-minutes: 35
     env:
-      ASM_FIXTURE_REVISION: 48f55e1357edeead605cd20664ca5d6338faf0b5
+      ASM_FIXTURE_REVISION: 8fad44da00fa79001a42593810de2e0aa65597aa
       ASM_EVIDENCE: ${{ github.workspace }}/server-observations-evidence
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
@@ -42,7 +42,7 @@ jobs:
           import json
           import os
           from pathlib import Path
-          report = {"schema": 1, "scope": "UNQUALIFIED-riscv-server-observations", "outcome": "fail",
+          report = {"schema": 1, "scope": "UNQUALIFIED-riscv-server-phase-probe", "outcome": "fail",
                     "source_revision": os.environ["GITHUB_SHA"], "execution": "qemu-user",
                     "application_qualified": False, "native_qualified": False, "release_qualified": False,
                     "original_19_test_gate": "fail", "error": "The diagnostic has not completed."}
@@ -50,7 +50,7 @@ jobs:
           PYTHON
           python3 tools/riscv64_server_observations.py --self-test \
             2>&1 | tee "$ASM_EVIDENCE/self-tests.log"
-      - name: Download only the two reviewed artifacts under exact byte bounds
+      - name: Download the reviewed artifacts and pinned public header source
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,6 +106,23 @@ jobs:
               if actual != digest:
                   raise ValueError("The artifact download differs from its reviewed digest.")
               remaining(1)
+          source = inputs / "mhd-source.tar.gz"
+          source_url = "https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz"
+          source_sha = "7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a"
+          result = bounded_process(["/usr/bin/curl", "-q", "--fail", "--silent", "--show-error", "--location",
+                                    "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
+                                    "--max-time", "60", "--max-filesize", "8388608", "--output", source, source_url],
+                                   evidence / "mhd-source-download.log", timeout=remaining(65), max_bytes=16384)
+          if result["outcome"] != "pass" or source.stat().st_size != 2102293:
+              raise ValueError("The pinned MHD header source could not be downloaded within its bounds.")
+          with source.open("rb") as stream:
+              actual = hashlib.file_digest(stream, "sha256").hexdigest()
+          if actual != source_sha:
+              raise ValueError("The MHD header source differs from the historical image build pin.")
+          remaining(1)
+          (evidence / "mhd-source.json").write_text(json.dumps({"schema": 1, "url": source_url,
+              "sha256": source_sha, "bytes": source.stat().st_size,
+              "historical_recipe_revision": "1b4f34899cbf67edba1cfc5ba7ed08ea97269f66"}, indent=2) + "\n")
           PYTHON
       - name: Materialize the reviewed fixture and original package source
         timeout-minutes: 3
@@ -114,21 +131,22 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$ASM_FIXTURE_REVISION" 04c93b3f0200173298d24f22a06393bc359a1af0
           python3 tools/riscv64_server_observations.py --prepare-context "$ASM_CONTEXT" \
-            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION"
+            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION" --phase-probe
           cp "$ASM_CONTEXT/input-manifest.json" "$ASM_EVIDENCE/input-manifest.json"
-      - name: Install and verify the original pinned user emulator
+      - name: Install the pinned emulator and diagnostic build tools
         timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
           ASM_QEMU_DEB="$RUNNER_TEMP/asm-qemu-user-static.deb"
-          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+          curl -q --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
             --output "$ASM_QEMU_DEB" \
             https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb
           printf '%s  %s\n' 5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0 "$ASM_QEMU_DEB" | sha256sum --check --strict
           test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB"
+          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB" \
+            gcc-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
           printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
           if ! test -e /proc/sys/fs/binfmt_misc/register; then
             sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
@@ -143,22 +161,33 @@ jobs:
             cat /proc/sys/fs/binfmt_misc/qemu-riscv64
             /usr/bin/qemu-riscv64-static --version
             dpkg-query --show qemu-user-static systemd
+            dpkg-query --show gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
+            /usr/bin/riscv64-linux-gnu-gcc --version
+            sha256sum /usr/bin/riscv64-linux-gnu-gcc
             sha256sum /usr/bin/qemu-riscv64-static
           } > "$ASM_EVIDENCE/environment.txt"
-      - name: Observe the exact failed binary with unchanged assertions and limits
+      - name: Check trace forwarding, source capture, and bounded build tooling
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests/riscv64 -p 'test_reference_*.py' -v \
+            2>&1 | tee "$ASM_EVIDENCE/reference-self-tests.log"
+      - name: Observe the exact failed binary with the reviewed phase fixture
         timeout-minutes: 12
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/riscv64_server_observations.py --run-image \
             --image-zip "$ASM_INPUTS/image.zip" --server-zip "$ASM_INPUTS/server.zip" \
-            --context "$ASM_CONTEXT" --output "$ASM_EVIDENCE"
+            --context "$ASM_CONTEXT" --output "$ASM_EVIDENCE" --phase-probe \
+            --mhd-source "$ASM_INPUTS/mhd-source.tar.gz"
       - name: Retain bounded observations from success or failure
         timeout-minutes: 2
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: UNQUALIFIED-server-observations-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: UNQUALIFIED-server-phase-probe-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: server-observations-evidence/
           if-no-files-found: error
           retention-days: 14

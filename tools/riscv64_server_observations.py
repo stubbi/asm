@@ -9,6 +9,7 @@ import ast
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -78,6 +79,39 @@ def verify_file(path, size, expected):
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_size != size or digest(path) != expected:
         raise ValueError("Retained input bytes do not match their exact size and SHA-256.")
+
+
+def retain_host_file(source, destination, *, limit=JSON_LIMIT):
+    """Retain one bounded regular host artifact without replacing a destination."""
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    except OSError:
+        raise ValueError("Cannot open a regular host artifact.") from None
+    temporary = None
+    try:
+        with os.fdopen(descriptor, "rb") as original:
+            info = os.fstat(original.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                raise ValueError("A host artifact exceeds its regular-file or byte bound.")
+            descriptor, temporary = tempfile.mkstemp(prefix=".asm-host-evidence-", dir=destination.parent)
+            count, value = 0, hashlib.sha256()
+            with os.fdopen(descriptor, "wb") as copied:
+                while data := original.read(65536):
+                    count += len(data)
+                    if count > limit:
+                        raise ValueError("A host artifact exceeds its byte bound.")
+                    copied.write(data)
+                    value.update(data)
+            if count != info.st_size:
+                raise ValueError("A host artifact changed during retention.")
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            raise ValueError("The retained host artifact destination already exists.") from None
+        return {"bytes": count, "sha256": value.hexdigest()}
+    finally:
+        if temporary is not None:
+            Path(temporary).unlink(missing_ok=True)
 
 
 def portable_name(name):
@@ -167,8 +201,8 @@ def image_archive_contract(archive, expected_id=IMAGE_ID):
     return config
 
 
-def initial_report():
-    return {"schema": 1, "scope": "retained-riscv64-reference-server-observations",
+def initial_report(*, phase_probe=False):
+    report = {"schema": 1, "scope": "retained-riscv64-reference-server-observations",
             "qualification": "UNQUALIFIED", "outcome": "fail", "execution": "qemu-user", "target": "riscv64-linux",
             "application_qualified": False, "native_qualified": False, "release_qualified": False,
             "original_19_test_gate": "fail", "original_run": 42042426725,
@@ -185,6 +219,130 @@ def initial_report():
             "scope_limits": ["The original 19-test gate remains failed regardless of this diagnostic outcome.",
                              "The image has different unqualified runtime tools and system libraries.",
                              "The observer adds work and can affect measured timing."]}
+    if phase_probe:
+        report.update(scope="retained-riscv64-reference-server-phase-probe",
+                      comparison_order=["direct", "proxy"])
+    return report
+
+
+def sanitized_phase_summary(guest, observation):
+    """Return bounded numeric readback without bodies, configuration, or errors."""
+    from riscv64_reference_trace import RANGES, ENUMS
+
+    def integer(value, low, high):
+        return value if type(value) is int and low <= value <= high else None
+
+    def mapping(value):
+        return value if isinstance(value, dict) else {}
+
+    tests = mapping(guest.get("server_tests"))
+    summary = {"schema": 1, "scope": "reference-phase-probe-summary", "qualification": "UNQUALIFIED",
+               "original_19_test_gate": "fail", "tests_run": integer(tests.get("tests_run"), 0, 14),
+               "exit_code": integer(tests.get("exit_code"), -255, 255), "cohorts": []}
+    comparison = mapping(observation.get("controlled_search_comparison"))
+    arms = comparison.get("arms", [])
+    arms = arms if isinstance(arms, list) and len(arms) <= 2 else []
+    waves = [("original-proxy", "main", mapping(observation.get("simultaneous_searches")).get("records", []))]
+    for label in ("direct", "proxy"):
+        arm = next((item for item in arms if isinstance(item, dict) and item.get("label") == label), {})
+        waves.append((label, label, arm.get("records", [])))
+    phases = mapping(observation.get("phase_traces"))
+    numeric = ("id", "index", "kind", "first_api", "first_return", "first_errno", "connect_poll",
+               "sends", "poll_return", "poll_errno", "poll_revents", "poll_timeout", "poll_timeouts", "status")
+    for label, key, records in waves:
+        section = mapping(phases.get(key))
+        cohort = {"label": label, "association": "complete" if section.get("association") == "complete"
+                  else "inconclusive", "http": [], "traces": []}
+        for row in records[:16] if isinstance(records, list) else []:
+            if not isinstance(row, dict) or integer(row.get("index"), 1, 16) is None:
+                continue
+            elapsed = row.get("elapsed_seconds")
+            elapsed = (round(elapsed * 1000000) if type(elapsed) in (int, float) and math.isfinite(elapsed)
+                       and 0 <= elapsed <= 180 else None)
+            cohort["http"].append({"index": row["index"], "status": integer(row.get("status"), 100, 599),
+                                   "elapsed_us": elapsed})
+        associations = mapping(section.get("cohort_record_ids"))
+        selected = set(associations.values()) if all(
+            integer(value, 1, 256) is not None for value in associations.values()) else set()
+        values = section.get("records", [])
+        for row in values if isinstance(values, list) and len(values) <= 256 else []:
+            if (not isinstance(row, dict) or integer(row.get("index"), 1, 16) is None
+                    or (selected and row.get("id") not in selected)):
+                continue
+            trace = {}
+            for name in numeric:
+                value = row.get(name)
+                if name in RANGES and integer(value, *RANGES[name]) is not None:
+                    trace[name] = value
+                elif name in ENUMS and type(value) is int and value in ENUMS[name]:
+                    trace[name] = value
+            state = row.get("sqlstate", "")
+            trace["sqlstate"] = state if type(state) is str and re.fullmatch(r"[A-Z0-9]{5}|", state) else ""
+            cohort["traces"].append(trace)
+            if len(cohort["traces"]) == 16:
+                break
+        summary["cohorts"].append(cohort)
+    if len(json.dumps(summary, separators=(",", ":"))) > 16384:
+        for cohort in summary["cohorts"]:
+            cohort["traces"] = []
+        summary["details_omitted"] = True
+    return summary
+
+
+def publish_phase_summary(report, output):
+    """Make small failure readback available even if full collection is incomplete."""
+    collected = report.get("collection", {}).get("collected", [])
+    documents = []
+    for filename in ("qualification.json", "observations/qualification.json"):
+        value = {}
+        if filename in collected:
+            try:
+                path = output / filename
+                if path.is_file() and path.stat().st_size <= JSON_LIMIT:
+                    value = load_object(path.read_bytes())
+            except (OSError, ValueError, TypeError, RecursionError):
+                pass
+        documents.append(value)
+    summary = sanitized_phase_summary(*documents)
+    permitted = {"archive-inputs", "trace-build", "image-load", "server-artifact", "image-inspection",
+                 "registration", "container-create", "container-inspection", "runtime", "collection", "cleanup",
+                 "host-evidence"}
+    stage = report.get("failure_stage")
+    summary["host"] = {"failure_stage": stage if stage in permitted else "unknown",
+                       "collection_complete": set(collected) == {
+                           "qualification.json", "observations/qualification.json", "server_package.log"}
+                       and not report.get("collection", {}).get("errors"),
+                       "trace_built": report.get("trace_build", {}).get("outcome") == "pass",
+                       "container_recorded": "container" in report,
+                       "cleanup_reported_error": "cleanup_error" in report}
+    print("ASM_REFERENCE_SUMMARY=" + json.dumps(summary, separators=(",", ":")), flush=True)
+    combined.write_report(output / "phase-summary.json", summary)
+
+
+def finish_host_report(report, output, *, started, deadline, phase_probe):
+    """Keep late evidence I/O from publishing a passing bounded result."""
+    def check_time():
+        report["host_elapsed_seconds"] = round(time.monotonic() - started, 3)
+        if time.monotonic() > deadline:
+            report.update(host_deadline_exceeded=True, outcome="fail",
+                          error="The shared 600-second host deadline was exceeded.")
+
+    report["operation_seconds_limit"] = 510
+    check_time()
+    if phase_probe:
+        try:
+            publish_phase_summary(report, output)
+        except (OSError, ValueError, TypeError, AttributeError, RecursionError):
+            report["summary_error"] = "The bounded diagnostic summary could not be retained."
+    check_time()
+    if any(key in report for key in ("error", "collection_error", "cleanup_error", "host_evidence_error", "summary_error")):
+        report["outcome"] = "fail"
+    report["finished_at"] = datetime.now(timezone.utc).isoformat()
+    destination = output / "UNQUALIFIED-host-report.json"
+    combined.write_report(destination, report)
+    if time.monotonic() > deadline and report["outcome"] == "pass":
+        check_time()
+        combined.write_report(destination, report)
 
 
 def container_contract(container, source=None):
@@ -215,7 +373,7 @@ def assertion_contract(base, fixture):
     return sorted(original)
 
 
-def _materialize_context(destination, revision, fixture_revision, repository):
+def _materialize_context(destination, revision, fixture_revision, repository, phase_probe=False):
     import registry
     import release
     for commit in (revision, fixture_revision, BASE_REVISION):
@@ -244,28 +402,36 @@ def _materialize_context(destination, revision, fixture_revision, repository):
         if sum(isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
                for node in ast.walk(ast.parse(fixture[filename][0]))) != count:
             raise ValueError("The diagnostic source must retain all 19 original tests.")
-    driver = registry.git_files(repository, revision, ".", ["tools/riscv64_combined.py", "tools/riscv64_server_observations.py"])
-    if set(driver) != {"tools/riscv64_combined.py", "tools/riscv64_server_observations.py"}:
+    driver_names = {"tools/riscv64_combined.py", "tools/riscv64_server_observations.py"}
+    if phase_probe:
+        driver_names.update({"tools/diagnostics/reference_libpq_trace.c", "tools/riscv64_reference_trace.py",
+                             "tools/riscv64_reference_build.py", "tools/riscv64_reference_suite.py",
+                             "tests/riscv64/test_reference_trace.py"})
+    driver = registry.git_files(repository, revision, ".", sorted(driver_names))
+    if set(driver) != driver_names:
         raise ValueError("The workflow commit lacks the complete diagnostic driver.")
     destination.mkdir()
     release.materialize(fixture, destination / "source")
     release.materialize(driver, destination / "runner")
-    combined.write_report(destination / "input-manifest.json", {
+    receipt = {
         "schema": 2, "qualification": "UNQUALIFIED", "revision": revision, "fixture_revision": fixture_revision,
         "base_revision": BASE_REVISION, "source_tree_sha256": combined.tree_digest(destination / "source"),
         "runner_tree_sha256": combined.tree_digest(destination / "runner"), "test_methods": methods,
-        "source_files": len(fixture), "assertions_unchanged": True})
+        "source_files": len(fixture), "assertions_unchanged": True}
+    if phase_probe:
+        receipt["phase_probe"] = True
+    combined.write_report(destination / "input-manifest.json", receipt)
     (destination / "input-manifest.json").chmod(0o444)
 
 
-def prepare_context(destination, revision, fixture_revision):
+def prepare_context(destination, revision, fixture_revision, *, phase_probe=False):
     worker = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
               "from riscv64_server_observations import _materialize_context; "
-              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]))")
+              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]), sys.argv[6] == '1')")
     with tempfile.TemporaryDirectory(prefix="asm-observations-source-") as temporary:
         log = Path(temporary) / "source.log"
         result = combined.bounded_process([sys.executable, "-c", worker, str(Path(__file__).resolve().parent),
-            str(destination.absolute()), revision, fixture_revision, str(ROOT)], log, timeout=120)
+            str(destination.absolute()), revision, fixture_revision, str(ROOT), "1" if phase_probe else "0"], log, timeout=120)
         if result["outcome"] != "pass":
             raise ValueError("Cannot materialize the exact diagnostic source: " + log.read_text(errors="replace")[-2048:])
 
@@ -279,9 +445,13 @@ def library_contract(path, expected):
             "comparison_to_failed_run": "exact-byte-match"}
 
 
-def run_server_suite(source, log):
-    result = combined.bounded_process([sys.executable, "-m", "unittest", "test_server.ServerTests", "-v"],
-                                      log, cwd=source, timeout=180)
+def run_server_suite(source, log, *, phase_probe=False):
+    arguments = [sys.executable, "-m", "unittest", "test_server.ServerTests", "-v"]
+    if phase_probe:
+        arguments = [sys.executable, Path(__file__).with_name("riscv64_reference_suite.py"),
+                     "--source", source, "--registration", source.parent / "binfmt-registration.json",
+                     "--trace-directory", source.parent / "trace", "--deadline", str(time.monotonic() + 180)]
+    result = combined.bounded_process(arguments, log, cwd=source, timeout=180)
     text = log.read_text(errors="replace")
     counts = re.findall(r"^Ran (\d+) tests? in [0-9.]+s$", text, re.M)
     result.update(tests_run=int(counts[0]) if len(counts) == 1 else None,
@@ -348,8 +518,49 @@ def runtime_inventory(binary, prior, directory):
     return inventory
 
 
-def inside(output):
-    report = initial_report()
+def trace_smoke(trace_directory, output):
+    """Check the built RISC-V interposer with its exact forwarding fixture."""
+    from riscv64_reference_build import elf_contract
+    from riscv64_reference_suite import error_type, read_object, trace_library
+    from riscv64_reference_trace import ERROR_PREFIX, read_records
+
+    report = {"scope": "diagnostic-interposer-forwarding", "qualification": "UNQUALIFIED", "outcome": "fail"}
+    temporary = tempfile.TemporaryDirectory(prefix=".asm-trace-check-", dir=output)
+    log = Path(temporary.name) / "output.log"
+    try:
+        library, _ = trace_library(trace_directory)
+        manifest = read_object(trace_directory / "manifest.json")
+        for filename in ("reference_libpq_trace.so", "libreference_provider.so", "reference_trace_check"):
+            actual = elf_contract(trace_directory / filename, shared=filename != "reference_trace_check")
+            entry = manifest["outputs"][filename]
+            if (type(entry) is not dict or set(entry) != set(actual)
+                    or any(type(entry[key]) is not type(value) or entry[key] != value for key, value in actual.items())):
+                raise ValueError("The forwarding fixture differs from its build receipt.")
+        arguments = ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "HOME=/nonexistent", "LC_ALL=C", "TZ=UTC",
+                     "QEMU_LD_PREFIX=/", "LD_LIBRARY_PATH=" + str(trace_directory),
+                     "LD_PRELOAD=" + str(library), trace_directory / "reference_trace_check"]
+        report["process"] = combined.bounded_process(arguments, log, timeout=30, max_bytes=65536)
+        if report["process"]["outcome"] != "pass":
+            raise ValueError("The diagnostic forwarding fixture failed.")
+        records = read_records(log)
+        if len(records) != 1 or records[0]["index"] != 5 or records[0]["kind"] != 2:
+            raise ValueError("The diagnostic forwarding record is incomplete.")
+        report.update(outcome="pass", records=records)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError) as error:
+        report["failure_type"] = error_type(error)
+    finally:
+        if log.is_file() and log.stat().st_size <= 65536:
+            data = log.read_bytes()
+            report.update(output_bytes=len(data), output_sha256=hashlib.sha256(data).hexdigest(),
+                          producer_error_marker=ERROR_PREFIX in data)
+        # Retain only validated records and the output identity. The control
+        # log is not an allowlisted application artifact or raw error channel.
+        temporary.cleanup()
+    return report
+
+
+def inside(output, *, phase_probe=False):
+    report = initial_report(phase_probe=phase_probe)
     build = INSIDE_WORK / "build"
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -362,7 +573,8 @@ def inside(output):
         inputs = load_object((context / "input-manifest.json").read_text())
         if (type(inputs.get("schema")) is not int or inputs["schema"] != 2
                 or inputs.get("base_revision") != BASE_REVISION or inputs.get("source_files") != 33
-                or inputs.get("assertions_unchanged") is not True or len(inputs.get("test_methods", [])) != 14):
+                or inputs.get("assertions_unchanged") is not True or len(inputs.get("test_methods", [])) != 14
+                or inputs.get("phase_probe", False) is not phase_probe):
             raise ValueError("The diagnostic source receipt is incomplete.")
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
@@ -383,8 +595,13 @@ def inside(output):
         report["runtime_environment"] = {key: os.environ.get(key) for key in
             ("PATH", "HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED", "QEMU_LD_PREFIX", "LD_LIBRARY_PATH", "LC_ALL", "TZ")}
         report["runtime_inventory"] = runtime_inventory(binary, prior, output.parent)
+        if phase_probe:
+            report["trace_check"] = trace_smoke(context / "trace", output.parent)
+            if report["trace_check"]["outcome"] != "pass":
+                raise ValueError("The diagnostic forwarding check failed before the server suite.")
         build.mkdir(mode=0o700)
-        report["server_tests"] = run_server_suite(context / "source", output.parent / "server_package.log")
+        report["server_tests"] = run_server_suite(context / "source", output.parent / "server_package.log",
+                                                 phase_probe=phase_probe)
         report["observation"] = retain_observation(build, output.parent / "observations/qualification.json")
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
@@ -400,7 +617,7 @@ def inside(output):
     return 0 if report["outcome"] == "pass" else 1
 
 
-def run_image(image_zip, server_zip, context, output):
+def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_source=None):
     started = time.monotonic()
     host_deadline = started + 600
     operation_deadline = host_deadline - 90
@@ -410,10 +627,13 @@ def run_image(image_zip, server_zip, context, output):
             raise ValueError("The shared host " + phase + " deadline elapsed.")
         return seconds
     output.mkdir(parents=True, exist_ok=True)
-    report = initial_report()
+    report = initial_report(phase_probe=phase_probe)
     name = "asm-reference-observations-" + uuid.uuid4().hex
     created = False
+    stage = "archive-inputs"
     try:
+        if phase_probe and mhd_source is None:
+            raise ValueError("The phase probe requires the pinned MHD header source archive.")
         # Temporary archive bytes are retained only until Docker has loaded the
         # verified image. The host never expands unneeded runtime archives.
         with tempfile.TemporaryDirectory(prefix="asm-observations-image-") as temporary:
@@ -423,8 +643,24 @@ def run_image(image_zip, server_zip, context, output):
             image_config = image_archive_contract(archive)
             report["image"] = {"id": IMAGE_ID, "archive_sha256": IMAGE_TAR_SHA,
                                "config": image_config, "source_run": 42035969713, "source_artifact": 13423240467}
+            if phase_probe:
+                stage = "trace-build"
+                from riscv64_reference_build import prepare_trace
+                report["trace_build"] = prepare_trace(archive, context,
+                    timeout=remaining(120, operation_deadline, "operation"), mhd_source=mhd_source)
+                combined.write_report(output / "trace-build-manifest.json", report["trace_build"])
+                for filename in ("reference_libpq_trace.so", "libreference_provider.so", "reference_trace_check"):
+                    artifact = context / "trace" / filename
+                    if artifact.stat().st_size > JSON_LIMIT:
+                        raise ValueError("A diagnostic helper exceeds its retained byte limit.")
+                    retained = retain_host_file(artifact, output / filename)
+                    expected = report["trace_build"].get("outputs", {}).get(filename, {})
+                    if retained != {key: expected.get(key) for key in ("bytes", "sha256")}:
+                        raise ValueError("A retained helper differs from its build receipt.")
+            stage = "image-load"
             combined.command(["docker", "load", "--input", archive],
                              timeout=remaining(120, operation_deadline, "operation"))
+        stage = "server-artifact"
         extract_zip_member(server_zip, context / "asm-server-riscv64-linux", "asm-server-riscv64-linux",
                            SERVER_BYTES, SERVER_SHA, SERVER_ZIP_BYTES, SERVER_ZIP_SHA)
         # This small report is selected from the already verified failed-run ZIP.
@@ -441,6 +677,7 @@ def run_image(image_zip, server_zip, context, output):
         (context / "asm-server-riscv64-linux").chmod(0o555)
         for path in (context, *[item for item in context.rglob("*") if item.is_dir()]):
             path.chmod(0o755)
+        stage = "image-inspection"
         info = load_json(combined.command(["docker", "image", "inspect", IMAGE_ID],
             timeout=remaining(30, operation_deadline, "operation")).stdout)[0]
         if (info["Id"] != IMAGE_ID or info["Architecture"] != "riscv64" or info["Os"] != "linux"
@@ -450,6 +687,11 @@ def run_image(image_zip, server_zip, context, output):
         mounted = str(context.resolve())
         if "," in mounted:
             raise ValueError("The diagnostic context path cannot contain a mount separator.")
+        if phase_probe:
+            stage = "registration"
+            from riscv64_reference_suite import capture_registration
+            report["binfmt_registration"] = capture_registration(context, run_id=os.environ.get("GITHUB_RUN_ID", ""))
+            combined.write_report(output / "binfmt-registration.json", report["binfmt_registration"])
         create = ["docker", "create", "--pull=never", "--name", name, "--platform", "linux/riscv64",
                   "--network", "none", "--user", "65532:65532", "--cap-drop", "ALL",
                   "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "2g", "--cpus", "2",
@@ -458,21 +700,38 @@ def run_image(image_zip, server_zip, context, output):
                   "--entrypoint", "/usr/bin/python3", IMAGE_ID,
                   "/inputs/runner/tools/riscv64_server_observations.py", "--inside", "--output",
                   str(INSIDE_WORK / "evidence/qualification.json")]
+        if phase_probe:
+            create.append("--phase-probe")
+        stage = "container-create"
         create_timeout = remaining(30, operation_deadline, "operation")
         created = True
         combined.command(create, timeout=create_timeout)
+        stage = "container-inspection"
         container = load_json(combined.command(["docker", "inspect", name],
             timeout=remaining(30, operation_deadline, "operation")).stdout)[0]
         container_contract(container, mounted)
         report["container"] = {"image": container["Image"], "config": container["Config"], "host_config": container["HostConfig"]}
+        stage = "runtime"
         report["runtime"] = combined.bounded_process(["docker", "start", "--attach", name], output / "runtime.log",
             timeout=remaining(600, operation_deadline, "operation"), max_bytes=combined.RUNTIME_LOG_BYTE_LIMIT)
         if report["runtime"]["outcome"] != "pass":
             report["error"] = "The retained-server diagnostic failed; inspect the scoped test and observation records."
+            report["failure_stage"] = stage
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError,
             subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         report["error"] = str(error)
+        report["failure_stage"] = stage
     finally:
+        if phase_probe:
+            for filename in ("trace-build-failure.json", "trace-build-failure.log"):
+                failure_file = context / filename
+                try:
+                    if failure_file.exists() or failure_file.is_symlink():
+                        retain_host_file(failure_file, output / filename)
+                except (OSError, ValueError) as error:
+                    report["host_evidence_error"] = str(error)
+                    report.setdefault("failure_stage", "host-evidence")
+                    report["outcome"] = "fail"
         if created:
             errors, collected, budget = {}, set(), {"bytes": 0, "files": 0}
             try:
@@ -480,6 +739,7 @@ def run_image(image_zip, server_zip, context, output):
                                  timeout=remaining(15, host_deadline, "cleanup"))
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 errors["stop"] = str(error)
+                report.setdefault("failure_stage", "cleanup")
             # All three transports share 60 seconds and leave the final 15
             # seconds for removal. Setup, attached execution, and cleanup share
             # one 600-second budget; the guest suite still has its own 180 cap.
@@ -494,6 +754,7 @@ def run_image(image_zip, server_zip, context, output):
                     collected.add(relative)
                 except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
                     errors[relative] = str(error)
+                    report.setdefault("failure_stage", "collection")
             report["collection"] = {**budget, "errors": errors, "collected": sorted(collected)}
             if not errors and len(collected) == 3:
                 try:
@@ -511,6 +772,7 @@ def run_image(image_zip, server_zip, context, output):
                         report["outcome"] = "pass"
                 except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
                     report["collection_error"] = str(error)
+                    report.setdefault("failure_stage", "collection")
             else:
                 report["collection_error"] = "Current bounded collection did not supply all three diagnostic records."
             try:
@@ -518,15 +780,9 @@ def run_image(image_zip, server_zip, context, output):
                                  timeout=remaining(15, host_deadline, "cleanup"))
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 report["cleanup_error"] = str(error)
+                report.setdefault("failure_stage", "cleanup")
                 report["outcome"] = "fail"
-        report["host_elapsed_seconds"] = round(time.monotonic() - started, 3)
-        report["operation_seconds_limit"] = 510
-        if time.monotonic() > host_deadline:
-            report["host_deadline_exceeded"] = True
-            report["outcome"] = "fail"
-            report["error"] = "The shared 600-second host deadline was exceeded."
-        report["finished_at"] = datetime.now(timezone.utc).isoformat()
-        combined.write_report(output / "UNQUALIFIED-host-report.json", report)
+        finish_host_report(report, output, started=started, deadline=host_deadline, phase_probe=phase_probe)
     return 0 if report["outcome"] == "pass" else 1
 
 
@@ -543,6 +799,8 @@ def main():
     parser.add_argument("--server-zip", type=Path)
     parser.add_argument("--context", type=Path)
     parser.add_argument("--output", type=Path, default=INSIDE_WORK / "evidence/qualification.json")
+    parser.add_argument("--phase-probe", action="store_true")
+    parser.add_argument("--mhd-source", type=Path)
     args = parser.parse_args()
     if args.self_test:
         suite = unittest.defaultTestLoader.discover(str(ROOT / "tests/riscv64"), pattern="test_server_observations.py")
@@ -550,13 +808,16 @@ def main():
     if args.prepare_context:
         if not args.revision or not args.fixture_revision:
             parser.error("Supply --revision and --fixture-revision with --prepare-context.")
-        prepare_context(args.prepare_context, args.revision, args.fixture_revision)
+        prepare_context(args.prepare_context, args.revision, args.fixture_revision, phase_probe=args.phase_probe)
         return 0
     if args.inside:
-        return inside(args.output)
+        return inside(args.output, phase_probe=args.phase_probe)
     if not all((args.image_zip, args.server_zip, args.context)):
         parser.error("Supply --image-zip, --server-zip, and --context with --run-image.")
-    return run_image(args.image_zip, args.server_zip, args.context, args.output)
+    if args.phase_probe and args.mhd_source is None:
+        parser.error("Supply --mhd-source with the phase probe.")
+    return run_image(args.image_zip, args.server_zip, args.context, args.output,
+                     phase_probe=args.phase_probe, mhd_source=args.mhd_source)
 
 
 if __name__ == "__main__":
