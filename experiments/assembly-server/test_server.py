@@ -262,6 +262,16 @@ class ServerTests(unittest.TestCase):
         finally:
             self.fixture_admin.execute(f'GRANT SELECT ON asm.artifacts TO "{self.reader}"')
         self.assertEqual(self.request("/health/ready")[0], 200)
+        for schema in ("pgxtemp_", "pgxtempx", "pgxtoast_temp_", "pgxtoastxtempx"):
+            with self.subTest(schema=schema):
+                self.fixture_admin.execute(f'CREATE SCHEMA "{schema}"')
+                try:
+                    self.fixture_admin.execute(f'GRANT CREATE ON SCHEMA "{schema}" TO "{self.reader}"')
+                    self.assertEqual(self.request("/health/ready")[0], 503)
+                    self.assertEqual(self.request("/health/live")[0], 200)
+                finally:
+                    self.fixture_admin.execute(f'DROP SCHEMA "{schema}"')
+                self.assertEqual(self.request("/health/ready")[0], 200)
 
     def test_startup_rejects_migrator_and_missing_grants(self):
         result = subprocess.run([str(BINARY), str(self.unused_port()), str(self.url_files["migrator"])],
