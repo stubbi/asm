@@ -8,6 +8,7 @@ import io
 import json
 from pathlib import Path
 import platform
+import re
 import struct
 import subprocess
 import sys
@@ -91,6 +92,29 @@ class ServerQualificationTests(unittest.TestCase):
                         report = json.loads(output.read_text())
                         self.assertEqual(report["status"], status)
                         self.assertEqual(report["tests"][suite]["status"], status)
+
+    def test_required_context_reports_every_native_matrix_outcome(self):
+        workflow = (ROOT / ".github/workflows/assembly-server.yml").read_text()
+        jobs = re.split(r"(?m)^  (?=[a-z][a-z0-9_-]*:\s*$)", workflow.split("jobs:\n", 1)[1])
+        gates = [job for job in jobs if "    name: Test the assembly server reference\n" in job]
+        self.assertEqual(len(gates), 1, "Repository rules require this exact check name")
+        gate = gates[0]
+        self.assertRegex(gate, r"(?m)^    permissions: \{\}$")
+        self.assertRegex(gate, r"(?m)^    needs: test$")
+        self.assertRegex(gate, r"(?m)^    if: \$\{\{ always\(\) \}\}$")
+        self.assertIn("SERVER_TEST_RESULT: ${{ needs.test.result }}", gate)
+        command = re.search(r"(?m)^        run: (.+)$", gate)
+        self.assertIsNotNone(command)
+        for result in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                outcome = subprocess.run(["/bin/sh", "-c", command[1]],
+                                         env={"SERVER_TEST_RESULT": result}, capture_output=True, timeout=5)
+                self.assertEqual(outcome.returncode == 0, result == "success")
+                self.assertEqual(outcome.stdout, b"")
+                if result == "success":
+                    self.assertEqual(outcome.stderr, b"")
+                else:
+                    self.assertIn(b"Inspect both target jobs.", outcome.stderr)
 
     def test_missing_source_archive_cannot_receive_a_pass_record(self):
         with tempfile.TemporaryDirectory() as temporary:

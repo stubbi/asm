@@ -92,7 +92,8 @@ Cross-target native-library linking still requires a separate sysroot contract.
 The [server package record](server-package-evidence.json) retains native Linux x86-64 and ARM64 qualification.
 Its integration record covers source `2279e7de` after synchronization with the unified target and lock contracts.
 The complete CI checkout tree matches that head.
-The evidence gate now requires all 19 reference tests.
+The current workflow requires nine native-link tests, including inactive-target path rejection.
+The evidence gate also requires all 19 reference tests.
 An 18-test synthetic report failed the boundary regression before correction.
 Each target passed eight native-link tests, 19 extracted-package tests, 11 hosted-runtime tests, and four failure-preservation checks.
 The reference package built through the recorded native Asm CLI.

@@ -1,6 +1,6 @@
 # Canonical hosted catalog
 
-This component stores accepted registry v1 records and publishes three exact exports in PostgreSQL.
+This component stores accepted registry v1 records and publishes four exact exports in PostgreSQL.
 It does not start an HTTP service or replace the static registry by itself.
 The native CLI and authoritative HTTP application remain assembly.
 `tools/registry_admin.py` is an explicit Python registry operator tool.
@@ -62,10 +62,15 @@ PostgreSQL administrators and the migration identity remain trusted.
 ## Migration identity
 
 `schema.sql` is migration version `1`.
+This unprovisioned candidate includes the full feed and two compatibility feeds.
+No production schema migration occurs in this change.
+The previous three-export candidate had a different digest.
+An existing schema with that marker fails closed; this tool does not upgrade it.
+Keep earlier schema bytes and results in Git history.
 Its SHA-384 is:
 
 ```text
-259a54d22fcd1e53addf4f5f197d7ca0f7c5040e2492776fc60a30f59cd1428a6618f4ec39fa1f3df867d4b05ee2d9ae
+7626f1fbee350bc04442bf5a53b78ae146c566da21cde76b56e88afe19d473787bd92cb324c9c4865623c80e6bf0a860
 ```
 
 The tool verifies the exact file bytes against `MIGRATION_SHA384` before applying them.
@@ -193,7 +198,7 @@ Published canonical manifest bytes cannot change.
 Imports cannot omit retained releases or reuse an artifact URL for another release.
 An advisory transaction lock and expected revision serialize publication.
 Exactly one concurrent import with the same expected head can advance that head.
-All three exports and the new head commit atomically.
+All four exports and the new head commit atomically.
 
 Replaying identical bytes for an accepted commit returns its original revision.
 Replaying an older commit does not move the current head backward.
@@ -213,7 +218,7 @@ Run `reader-guard.sql` in the actual reader transaction before accepting databas
 The transaction must be read-only.
 The query returns exactly one non-null text field: `1` for acceptance or `0` for refusal.
 A SQL error, missing result, or any other result is a refusal.
-No import means no ready catalog: the guard returns `0` until all three exports exist.
+No import means no ready catalog: the guard returns `0` until all four exports exist.
 
 The guard requires the exact migration marker, required reads, trusted object owners, and a complete current export set.
 It rejects database or schema creation, table and column writes, updatable view writes, and sequence mutation permissions.
@@ -235,6 +240,7 @@ Never interpolate a request path into SQL.
 | --- | ---: | --- |
 | `/registry/v1/index.tsv` | 1048576 | `text/tab-separated-values; charset=utf-8` |
 | `/registry/v1/index-macos.tsv` | 1048576 | `text/tab-separated-values; charset=utf-8` |
+| `/registry/v1/index-all.tsv` | 1048576 | `text/tab-separated-values; charset=utf-8` |
 | `/registry/v1/index.json` | 4194304 | `application/json` |
 
 Exactly one row contains the response bytes.
@@ -245,7 +251,12 @@ A single statement observes one committed head, including all related export met
 Independent requests can observe different revisions during publication.
 
 The Linux TSV preserves `registry.legacy_tsv` behavior.
-The full TSV preserves macOS rows from `registry.make_indexes`.
+The macOS TSV preserves `registry.macos_compat_tsv` behavior.
+These compatibility feeds retain their fixed three-target and four-target vocabularies.
+The full TSV preserves all accepted target rows from `registry.make_indexes`.
+Windows rows enter only the full TSV and JSON.
+SQL independently checks the same six catalog targets and 14-artifact bound as Python.
+Catalog recognition does not qualify a CLI host or enable an HTTP route.
 JSON bytes match `registry.json_bytes`, including sorted keys, two-space indentation, and one final LF.
 Do not reconstruct these exports from the prototype schema or infer target compatibility.
 Runtime response buffers must support these bounds before routes are enabled.
@@ -267,7 +278,8 @@ Run the existing registry gate:
 python3 -m unittest discover -s tests/registry -p 'test_*.py' -v
 ```
 
-Tests cover current-catalog parity, macOS preservation, immutable history, namespace conflicts, atomic failure, concurrent publication, replay, and source isolation.
+Tests cover current-catalog parity, compatibility feeds, immutable history, namespace conflicts, atomic failure, concurrent publication, replay, and source isolation.
+The Windows fixture checks all four exports in one revision and preserves both old feed vocabularies.
 They also cover duplicate or noncanonical JSON, role denial, dangerous default grants, credential file permissions, and TLS policy refusal.
 Reader tests exercise function-only authority, indirect roles, column writes, views, sequences, missing reads, and exact migration binding.
 The macOS extended ACL regression runs on macOS.

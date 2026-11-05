@@ -141,7 +141,9 @@ class CatalogDatabaseTests(unittest.TestCase):
         self.import_first()
         tsv, index = registry.make_indexes(self.records)
         expected = {"/registry/v1/index.tsv": registry.legacy_tsv(tsv),
-                    "/registry/v1/index-macos.tsv": tsv, "/registry/v1/index.json": registry.json_bytes(index).decode()}
+                    "/registry/v1/index-macos.tsv": registry.macos_compat_tsv(tsv),
+                    "/registry/v1/index-all.tsv": tsv,
+                    "/registry/v1/index.json": registry.json_bytes(index).decode()}
         reader = Database(self.connection_url("reader"))
         self.addCleanup(reader.close)
         for route, body in expected.items():
@@ -154,6 +156,50 @@ class CatalogDatabaseTests(unittest.TestCase):
         self.assertEqual(json.loads(replay.stdout)["revision"], 1)
         self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.snapshots"), [["1"]])
         self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.releases"), [[str(len(self.records))]])
+
+    def test_windows_rows_publish_only_to_full_feed_and_json_in_one_revision(self):
+        self.import_first()
+        before = self.admin.execute("SELECT route,body FROM asm_catalog.current_exports ORDER BY route")
+        record = json.loads(registry.json_bytes(next(r for r in self.records if r["name"] == "stubbi/asm")))
+        versions = [registry.version_tuple(r["version"]) for r in self.records if r["name"] == record["name"]]
+        record["version"] = f"{max(versions)[0] + 1}.0.0"
+        record["artifacts"] = [
+            {"target": target, "kind": kind, "bytes": 1024, "sha256": "a" * 64,
+             "url": f"https://github.com/stubbi/asm/releases/download/v{record['version']}/fixture-{target}-{kind}"
+                    + (".tar.gz" if kind == "source" else ".exe" if target.endswith("-windows") else "")}
+            for target in sorted(registry.TARGETS) for kind in ("source", "executable")]
+        self.assertEqual(len(record["artifacts"]), 12)
+        self.records.append(record)
+        path = self.repo / "registry/packages/stubbi/asm" / (record["version"] + ".json")
+        path.write_bytes(registry.json_bytes(record))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Accept six-target catalog fixture")
+        self.commit = self.git("rev-parse", "HEAD").decode().strip()
+        full, index = registry.make_indexes(self.records)
+        exports = (registry.legacy_tsv(full), registry.macos_compat_tsv(full), full,
+                   registry.json_bytes(index).decode())
+        records = [registry.json_bytes(r).decode() for r in self.records]
+        # Every submitted export is checked independently before any publication.
+        for changed in range(4):
+            wrong = list(exports)
+            wrong[changed] = full if changed < 2 else exports[changed] + " "
+            connection = Database(self.connection_url("operator"))
+            try:
+                with self.subTest(export=changed), self.assertRaises(AssertionError):
+                    connection.execute("SELECT asm_catalog.publish($1,1,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5,$6)",
+                                       [self.commit, json.dumps(records), *wrong])
+            finally:
+                connection.close()
+            self.assertEqual(self.admin.execute("SELECT revision FROM asm_catalog.head"), [["1"]])
+            self.assertEqual(self.admin.execute("SELECT route,body FROM asm_catalog.current_exports ORDER BY route"), before)
+        result = self.publish(1)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(self.admin.execute("SELECT count(*),min(revision),max(revision) FROM asm_catalog.current_exports"),
+                         [["4", "2", "2"]])
+        for route, body in zip(registry_admin.ROUTES, exports):
+            self.assertEqual(self.admin.execute("SELECT body FROM asm_catalog.current_exports WHERE route=$1", [route]), [[body]])
+            self.assertEqual("-windows" in body, route.endswith(("index-all.tsv", "index.json")))
+        self.assertEqual(self.guard(), [["1"]])
 
     def test_conflicting_release_or_removed_history_rolls_back_the_entire_snapshot(self):
         self.import_first()
@@ -228,8 +274,8 @@ class CatalogDatabaseTests(unittest.TestCase):
             try:
                 connection.execute("BEGIN")
                 with self.subTest(compact_manifest=records is compact), self.assertRaises(AssertionError):
-                    connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5)",
-                        [self.commit, json.dumps(records), registry.legacy_tsv(tsv), tsv, index_body])
+                    connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5,$6)",
+                        [self.commit, json.dumps(records), registry.legacy_tsv(tsv), registry.macos_compat_tsv(tsv), tsv, index_body])
             finally:
                 # Closing this owned transaction rolls back either branch independently.
                 connection.close()
@@ -257,8 +303,8 @@ class CatalogDatabaseTests(unittest.TestCase):
             try:
                 connection.execute("BEGIN")
                 with self.subTest(records=records[0][:30], forged=body == variants[-1][1]), self.assertRaises(AssertionError):
-                    connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5)",
-                        [self.commit, json.dumps(records), registry.legacy_tsv(tsv), tsv, body])
+                    connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5,$6)",
+                        [self.commit, json.dumps(records), registry.legacy_tsv(tsv), registry.macos_compat_tsv(tsv), tsv, body])
             finally:
                 connection.close()
         self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.releases"), [["0"]])
@@ -274,8 +320,9 @@ class CatalogDatabaseTests(unittest.TestCase):
             connection.execute("SET standard_conforming_strings=off")
             connection.execute("BEGIN")
             with self.assertRaises(AssertionError):
-                connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5)",
+                connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5,$6)",
                     [self.commit, json.dumps(records), registry.legacy_tsv(tsv).replace("github.com", "githubXcom"),
+                     registry.macos_compat_tsv(tsv).replace("github.com", "githubXcom"),
                      tsv.replace("github.com", "githubXcom"), registry.json_bytes(index).decode().replace("github.com", "githubXcom")])
         finally:
             connection.close()
@@ -290,8 +337,8 @@ class CatalogDatabaseTests(unittest.TestCase):
         try:
             connection.execute("CREATE TEMP TABLE jsonb (fake integer)")
             connection.execute("SET standard_conforming_strings=off")
-            self.assertEqual(connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5)",
-                [self.commit, json.dumps(records), registry.legacy_tsv(tsv), tsv, registry.json_bytes(index).decode()]), [["1"]])
+            self.assertEqual(connection.execute("SELECT asm_catalog.publish($1,0,ARRAY(SELECT value FROM json_array_elements_text($2::json)),$3,$4,$5,$6)",
+                [self.commit, json.dumps(records), registry.legacy_tsv(tsv), registry.macos_compat_tsv(tsv), tsv, registry.json_bytes(index).decode()]), [["1"]])
         finally:
             connection.close()
 
@@ -305,7 +352,7 @@ class CatalogDatabaseTests(unittest.TestCase):
             has_table_privilege('asm_operator','asm_catalog.head','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER'),
             has_table_privilege('asm_operator','asm_catalog.schema_version','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER'),
             has_table_privilege('asm_reader','asm_catalog.releases','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER'),
-            has_function_privilege('asm_reader','asm_catalog.publish(text,bigint,text[],text,text,text)','EXECUTE'),
+            has_function_privilege('asm_reader','asm_catalog.publish(text,bigint,text[],text,text,text,text)','EXECUTE'),
             has_schema_privilege('asm_reader','asm_catalog','CREATE'),
             has_sequence_privilege('asm_reader','asm_catalog.audit_id_seq','USAGE,UPDATE')""")
         self.assertEqual(rows, [["f"] * 6])
@@ -351,8 +398,8 @@ class CatalogDatabaseTests(unittest.TestCase):
         self.import_first()
         self.assertEqual(self.guard(), [["1"]])
         cases = [
-            ("GRANT EXECUTE ON FUNCTION asm_catalog.publish(text,bigint,text[],text,text,text) TO asm_reader",
-             "REVOKE EXECUTE ON FUNCTION asm_catalog.publish(text,bigint,text[],text,text,text) FROM asm_reader"),
+            ("GRANT EXECUTE ON FUNCTION asm_catalog.publish(text,bigint,text[],text,text,text,text) TO asm_reader",
+             "REVOKE EXECUTE ON FUNCTION asm_catalog.publish(text,bigint,text[],text,text,text,text) FROM asm_reader"),
             ("GRANT asm_operator TO asm_reader", "REVOKE asm_operator FROM asm_reader"),
             ("GRANT CREATE ON SCHEMA asm_catalog TO asm_reader", "REVOKE CREATE ON SCHEMA asm_catalog FROM asm_reader"),
             (f'GRANT CREATE ON DATABASE "{self.dbname}" TO asm_reader', f'REVOKE CREATE ON DATABASE "{self.dbname}" FROM asm_reader'),
@@ -419,7 +466,7 @@ class CatalogDatabaseTests(unittest.TestCase):
             results = list(pool.map(attempt, commits))
         self.assertEqual(sorted(result.returncode for result in results), [0, 1])
         self.assertEqual(self.admin.execute("SELECT count(*),max(revision) FROM asm_catalog.snapshots"), [["2", "2"]])
-        self.assertEqual(self.admin.execute("SELECT count(*),min(revision),max(revision) FROM asm_catalog.current_exports"), [["3", "2", "2"]])
+        self.assertEqual(self.admin.execute("SELECT count(*),min(revision),max(revision) FROM asm_catalog.current_exports"), [["4", "2", "2"]])
         self.commit = original
         replay = self.publish(0)
         self.assertEqual(replay.returncode, 0, replay.stderr.decode())

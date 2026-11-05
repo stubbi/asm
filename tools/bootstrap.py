@@ -30,9 +30,15 @@ END = "<!-- ASM_BOOTSTRAP_END -->"
 
 
 def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dict | None:
-    """Select the latest active compatible release; require its artifact checks."""
+    """Select the latest POSIX-installer release; require its artifact checks.
+
+    Catalog targets outside this installer profile remain in package records.
+    They cannot add a shell-install route or suppress an older compatible one.
+    """
     candidates = [record for record in registry.check_records(records)
-                  if record["name"] == "stubbi/asm" and not record["yanked"]]
+                  if record["name"] == "stubbi/asm" and not record["yanked"]
+                  and any(artifact["kind"] == "executable" and artifact["target"] in TARGETS
+                          for artifact in record["artifacts"])]
     if not candidates:
         return None
     record = max(candidates, key=lambda item: tuple(int(part) for part in item["version"].split(".")))
@@ -50,7 +56,8 @@ def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dic
     registry.require(re.fullmatch(r"[0-9a-f]{40}", source["commit"]) is not None,
                      "installer source needs a full Git commit")
     artifacts = [{key: artifact[key] for key in ("target", "sha256", "bytes", "url")}
-                 for artifact in record["artifacts"] if artifact["kind"] == "executable"]
+                 for artifact in record["artifacts"]
+                 if artifact["kind"] == "executable" and artifact["target"] in TARGETS]
     release = {"version": version, "artifacts": sorted(artifacts, key=lambda item: item["target"]),
                "source_commit": source["commit"], "repository_id": REPOSITORY_ID,
                "bundle_url": f"{REPOSITORY}/releases/download/v{version}/release-attestation.sigstore.json"}

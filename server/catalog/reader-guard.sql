@@ -54,15 +54,15 @@ WITH reachable AS MATERIALIZED (
             WHERE n.nspname='asm_catalog' AND pg_catalog.pg_get_userbyid(p.proowner)<>'asm_migrator') AS valid
 ), migration AS MATERIALIZED (
     SELECT count(*) = 1 AND coalesce(bool_and(version=1 AND
-        sha384='259a54d22fcd1e53addf4f5f197d7ca0f7c5040e2492776fc60a30f59cd1428a6618f4ec39fa1f3df867d4b05ee2d9ae'),false) AS valid
+        sha384='7626f1fbee350bc04442bf5a53b78ae146c566da21cde76b56e88afe19d473787bd92cb324c9c4865623c80e6bf0a860'),false) AS valid
     FROM asm_catalog.schema_version
 ), exports AS MATERIALIZED (
     -- These literal reads also fail closed if a view or permission is broken.
-    SELECT count(*)=3 AND count(DISTINCT route)=3 AND min(revision)=max(revision)
+    SELECT count(*)=4 AND count(DISTINCT route)=4 AND min(revision)=max(revision)
         AND bool_and(revision>0 AND acceptance_commit COLLATE "C" ~ '^[0-9a-f]{40}$' AND acceptance_commit<>repeat('0',40)
             AND ((route='/registry/v1/index.json' AND media_type='application/json'
                     AND octet_length(body) BETWEEN 1 AND 4194304)
-                OR (route IN ('/registry/v1/index.tsv','/registry/v1/index-macos.tsv')
+                OR (route IN ('/registry/v1/index.tsv','/registry/v1/index-macos.tsv','/registry/v1/index-all.tsv')
                     AND media_type='text/tab-separated-values; charset=utf-8'
                     AND octet_length(body) BETWEEN 1 AND 1048576))) AS valid
     FROM asm_catalog.current_exports

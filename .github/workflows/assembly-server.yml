@@ -174,3 +174,16 @@ jobs:
             ${{ runner.temp }}/asm-server-source.tar.gz
           if-no-files-found: error
           retention-days: 7
+
+  required:
+    name: Test the assembly server reference
+    permissions: {}
+    if: ${{ always() }}
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require both native qualification jobs
+        env:
+          SERVER_TEST_RESULT: ${{ needs.test.result }}
+        run: test "$SERVER_TEST_RESULT" = success || { printf '%s\n' 'Native server qualification did not succeed. Inspect both target jobs.' >&2; exit 1; }

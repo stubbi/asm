@@ -21,6 +21,7 @@ ASM = ROOT / "build/asm"
 SPEC = importlib.util.spec_from_file_location("publication_registry", ROOT / "tools/registry.py")
 registry = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(registry)
+CLI_ARTIFACT_TARGETS = ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos")
 
 
 def source_files(name="math", version="0.1.0", target="x86_64-linux"):
@@ -139,7 +140,7 @@ class NativePublishTests(unittest.TestCase):
                    "x86_64-macos", "x86_64-windows", "aarch64-windows")
         files = self.target_files(targets)
         self.artifact.write_bytes(registry.make_archive(files))
-        for target in ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"):
+        for target in CLI_ARTIFACT_TARGETS:
             with self.subTest(artifact_target=target):
                 self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]))
                 record = json.loads(self.output.read_bytes())
@@ -163,12 +164,17 @@ class NativePublishTests(unittest.TestCase):
 
     def test_multi_target_archive_matches_each_declared_artifact_target(self):
         self.artifact.write_bytes(registry.make_archive(self.target_files()))
-        for target in registry.TARGETS:
+        for target in CLI_ARTIFACT_TARGETS:
             with self.subTest(target=target):
                 self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]))
                 record = json.loads(self.output.read_bytes())
                 self.assertEqual(record["artifacts"][0]["target"], target)
                 self.output.unlink()
+        # Catalog format recognition does not expand native publication.
+        for target in sorted(set(registry.TARGETS) - set(CLI_ARTIFACT_TARGETS)):
+            with self.subTest(catalog_only_target=target):
+                self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]), code=2)
+                self.assertFalse(self.output.exists())
 
     def test_multi_target_archive_preserves_target_specific_native_library_fields(self):
         files = self.target_files()
