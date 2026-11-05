@@ -1322,7 +1322,8 @@ valid_version:
     b .Linvalid
 
 /* Input: x0=source path already bounded to 255 chars. Output: w9=1 for a
- * relative path with no empty/. /.. or option-like segments, else zero. This
+ * relative path with no empty/. /.., option-like, or @-leading segments.
+ * The @ restriction prevents compiler/assembler response-file expansion. This
  * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     mov x16, x0
@@ -1346,6 +1347,9 @@ valid_source:
     lsl w10, w10, #24
     lsl w11, w11, #24
     cmp w10, w11
+    b.eq .Linvalid
+    ldrb w10, [x16]
+    cmp w10, #'@'
     b.eq .Linvalid
     mov w2, w3
 .Lsource_loop:

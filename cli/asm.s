@@ -931,7 +931,8 @@ valid_version:
     jmp .Linvalid
 
 /* Input: RDI=source path already bounded to 255 chars. Output: EAX=1 for a
- * relative path with no empty/. /.. or option-like segments, else zero. This
+ * relative path with no empty/. /.., option-like, or @-leading segments.
+ * The @ restriction prevents compiler/assembler response-file expansion. This
  * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     cmp byte ptr [rdi], '/'
@@ -941,6 +942,8 @@ valid_source:
 .Lsource_segment:
     mov al, [rdi + rcx]
     cmp al, '-'
+    je .Linvalid
+    cmp al, '@'
     je .Linvalid
     mov edx, ecx
 .Lsource_loop:

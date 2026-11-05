@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, IS_RISCV64, IS_MACOS, TARGET
+from host import IS_ARM64, IS_RISCV64, IS_MACOS, TARGET, exit_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +25,8 @@ def main_source():
                 'mov w0, #0\nldp x29, x30, [sp], #16\nret\n'
                 '.data\nmessage: .asciz "native linked"\n')
     if IS_RISCV64:
-        return ('.global main\n.text\nmain:\n'
+        return ('.attribute arch, "rv64gc"\n.attribute stack_align, 16\n'
+                '.global main\n.text\nmain:\n'
                 'addi sp, sp, -16\nsd ra, 8(sp)\nsd s0, 0(sp)\nmv s0, sp\n'
                 'la a0, message\ncall puts\nli a0, 0\n'
                 'ld s0, 0(sp)\nld ra, 8(sp)\naddi sp, sp, 16\nret\n'
@@ -76,7 +77,7 @@ class NativeLinkTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<H", data, 16)[0], 3, "ELF must use ET_DYN")
         if IS_RISCV64:
             self.assertEqual(struct.unpack_from("<H", data, 18)[0], 243, "ELF must declare EM_RISCV")
-            self.assertEqual(struct.unpack_from("<I", data, 48)[0] & 6, 4, "C-linked ELF must use LP64D")
+            self.assertEqual(struct.unpack_from("<I", data, 48)[0], 5, "C-linked ELF must declare RVC and LP64D")
         offset = struct.unpack_from("<Q", data, 32)[0]
         size, count = struct.unpack_from("<HH", data, 54)
         self.assertEqual(size, 56, "Unexpected ELF64 program-header size")
@@ -189,6 +190,41 @@ class NativeLinkTests(unittest.TestCase):
         self.cli("build", success=False)
         self.assertEqual(binary.read_bytes(), before)
         self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_checker_filename_cannot_select_a_compiler_response_file(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        (self.work / "@response.c").write_text('_Static_assert(0, "must reject");\n')
+        (self.work / "response.c").write_text('--version\n')
+        self.manifest.write_text(self.base + 'link = "c"\ncheck = "@response.c"\n')
+        result = self.cli("build", success=False)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("invalid or missing asm.toml", result.stderr)
+        self.assertEqual(binary.read_bytes(), before)
+        self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_source_components_cannot_select_assembler_response_files(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        for linked in (False, True):
+            for path in ("@main.s", "src/@main.s"):
+                with self.subTest(c_abi=linked, path=path):
+                    source = self.work / path
+                    source.parent.mkdir(exist_ok=True)
+                    source.write_text(main_source() if linked else exit_source(23))
+                    manifest = self.base.replace('source = "main.s"', f'source = "{path}"')
+                    self.manifest.write_text(manifest + ('link = "c"\n' if linked else ''))
+                    result = self.cli("build", success=False)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("invalid or missing asm.toml", result.stderr)
+                    self.assertEqual(binary.read_bytes(), before)
+                    self.assertFalse(list((self.work / "build").glob(".asm-*")))
+        (self.work / "main@literal.s").write_text(main_source())
+        self.manifest.write_text(self.base.replace('source = "main.s"', 'source = "main@literal.s"')
+                                 + 'link = "c"\n')
+        self.assertEqual(self.cli("run").stdout, "native linked\n")
 
     def test_hidden_c_checker_is_compiled_without_execution(self):
         (self.work / ".c").write_text(

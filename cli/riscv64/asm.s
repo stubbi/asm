@@ -1959,7 +1959,8 @@ valid_version:
     RV_BCOND eq, .Lvalid
     RV_JUMP .Linvalid
 /* Input: a0=source path already bounded to 255 chars. Output: t0=1 for a
- * relative path with no empty/. /.. or option-like segments, else zero. This
+ * relative path with no empty/. /.., option-like, or @-leading segments.
+ * The @ restriction prevents compiler/assembler response-file expansion. This
  * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     mv s6, a0
@@ -2008,6 +2009,12 @@ valid_source:
     RV_ZEXT t2
     mv s8, t1
     mv s10, t2
+    RV_FLAGS sub, 32
+    RV_BCOND eq, .Linvalid
+    mv s8, s6
+    RV_LOAD t1, 1
+    mv s8, t1
+    li s10, '@'
     RV_FLAGS sub, 32
     RV_BCOND eq, .Linvalid
     mv a2, a3
@@ -2351,9 +2358,9 @@ build_project:
     RV_CALL native_link_compile_check
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_asm1585
+    beqz s8, .Lrv_cb_skip_asm1589
     RV_JUMP build_child_error
-.Lrv_cb_skip_asm1585:
+.Lrv_cb_skip_asm1589:
     RV_CALL rv_prepare_assembly
     RV_ADDR s6, as_path
     mv a0, s6
@@ -2369,15 +2376,15 @@ build_project:
     RV_LOAD t1, 1
     mv s8, t1
     RV_ZEXT s8
-    bnez s8, .Lrv_cb_skip_asm1596
+    bnez s8, .Lrv_cb_skip_asm1600
     RV_JUMP .Lbuild_standalone_link
-.Lrv_cb_skip_asm1596:
+.Lrv_cb_skip_asm1600:
     RV_CALL native_link_build
     mv s8, t0
     RV_ZEXT s8
-    beqz s8, .Lrv_cb_skip_asm1598
+    beqz s8, .Lrv_cb_skip_asm1602
     RV_JUMP build_child_error
-.Lrv_cb_skip_asm1598:
+.Lrv_cb_skip_asm1602:
     RV_JUMP .Lbuild_linked
 .Lbuild_standalone_link:
     RV_ADDR s6, ld_path
@@ -2529,12 +2536,12 @@ unsigned_decimal:
     RV_FLAGS and, 32
 /* Caller establishes a2 = 0 and a nonzero divisor. */
     mv t1, t0
-    beqz a4, .Lrv_div_zero_asm1719
+    beqz a4, .Lrv_div_zero_asm1723
     divu t0, t1, a4
-    j .Lrv_div_done_asm1719
-.Lrv_div_zero_asm1719:
+    j .Lrv_div_done_asm1723
+.Lrv_div_zero_asm1723:
     li t0, 0
-.Lrv_div_done_asm1719:
+.Lrv_div_done_asm1723:
     mul s8, t0, a4
     sub a2, t1, s8
     li s10, 255
