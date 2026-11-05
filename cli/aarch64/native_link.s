@@ -11,8 +11,7 @@
  * with at most 255 bytes. Empty strings represent absent optional fields.
  * Output: w9=1 for the native-link contract, otherwise 0. Does not change
  * inputs or global package state. Preserves x19-x24; stack: 48 saved bytes.
- * valid_source checks relative paths and rejects leading @ in each component.
- * That restriction prevents compiler response-file expansion. */
+ * valid_source supplies the existing relative-path syntax check. */
 native_link_validate:
     ARM_SAVE x19
     ARM_SAVE x20

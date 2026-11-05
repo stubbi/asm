@@ -32,8 +32,9 @@ The native Asm CLI supports three hosts in the current alpha release:
 
 The catalog accepts those three targets and `riscv64-linux`.
 Catalog target support does not mean native CLI support.
-RISC-V development needs the documented external toolchain.
-Native Asm builds for its own host; it does not provide a general cross-build command.
+RISC-V development needs the documented cross tools.
+Asm 0.6.0 selects its native host by default and supports explicit standalone Linux cross builds.
+The [project contract](https://github.com/stubbi/asm/blob/main/docs/multi-target-projects.md) defines the required GNU or LLVM tools.
 Emulated execution does not establish physical-target performance.
 
 The current catalog does not encode optional instruction-set features or complete ABI compatibility.
@@ -70,7 +71,8 @@ Report unavailable discovery separately from no matching packages.
 6. Document routine contracts and preserve the selected ABI.
 7. Test normal behavior and relevant failures through the intended interface.
 
-`asm build` assembles and links a native project.
+`asm build` assembles and links the selected project implementation.
+`asm test --target TARGET --no-run` builds a foreign Linux test without executing it.
 `asm test` builds and executes its test program.
 `asm run` builds and executes its main program.
 Use their `--locked` forms for existing locked dependencies.

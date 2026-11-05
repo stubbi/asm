@@ -1935,9 +1935,8 @@ valid_version:
     b .Linvalid
 
 /* Input: x0=source path already bounded to 255 chars. Output: w9=1 for a
- * relative path with no empty/. /.., option-like, or @-leading segments.
- * The @ restriction prevents compiler/assembler response-file expansion. This
- * validates syntax; assembly and included files remain trusted local input. */
+ * relative path with no empty/. /.., option, or response-file segments, else zero.
+ * This validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     mov x16, x0
     ldrb w10, [x16]
@@ -1961,8 +1960,8 @@ valid_source:
     lsl w11, w11, #24
     cmp w10, w11
     b.eq .Linvalid
-    ldrb w10, [x16]
-    cmp w10, #'@'
+    and w10, w9, #255
+    cmp w10, #64
     b.eq .Linvalid
     mov w2, w3
 .Lsource_loop:
@@ -2696,10 +2695,10 @@ err_build_io: .asciz "cannot write build artifacts; build must be a real directo
 err_test: .asciz "test program failed"
 err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
-version_text: .asciz "asm 0.5.0 (aarch64-linux)\n"
-version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"host\":\"aarch64-linux\"}\n"
-license_text: .asciz "asm 0.5.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.5.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
-license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.5.0\"}\n"
+version_text: .asciz "asm 0.6.0 (aarch64-linux)\n"
+version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"host\":\"aarch64-linux\"}\n"
+license_text: .asciz "asm 0.6.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.6.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.6.0\"}\n"
 targets_text: .asciz "x86_64-linux (cross; GNU target binutils)\naarch64-linux (host; GNU as + ld)\nriscv64-linux (cross; GNU target binutils)\n"
 targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
@@ -2715,7 +2714,7 @@ test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
-    .ascii "asm 0.5.0 - build assembly projects\n\n"
+    .ascii "asm 0.6.0 - build assembly projects\n\n"
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
@@ -2756,9 +2755,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss

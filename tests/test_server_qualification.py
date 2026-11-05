@@ -48,7 +48,7 @@ class ServerQualificationTests(unittest.TestCase):
     def recorder_inputs(self, work):
         binary = work / "server"
         binary.write_bytes(elf())
-        for name, count in (("native-link", 8), ("reference", 19), ("hosted", 11)):
+        for name, count in (("native-link", 9), ("reference", 19), ("hosted", 11)):
             (work / (name + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
         (work / "build-failure-tests.log").write_text('{"status":"pass","tests":4}\n')
         output = work / "qualification.json"
@@ -67,7 +67,7 @@ class ServerQualificationTests(unittest.TestCase):
                 patch.object(record.subprocess, "run", side_effect=tool_result):
             return record.main()
 
-    def test_reference_suite_requires_all_nineteen_tests(self):
+    def test_current_native_and_reference_suites_must_be_complete(self):
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             arguments, output = self.recorder_inputs(work)
@@ -81,13 +81,16 @@ class ServerQualificationTests(unittest.TestCase):
                     member.mode = 0o644
                     member.size = len(data)
                     archive.addfile(member, io.BytesIO(data))
-            for count, expected, status in ((19, 0, "pass"), (18, 1, "fail")):
-                with self.subTest(count=count):
-                    (work / "reference-tests.log").write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
-                    self.assertEqual(self.run_recorder(arguments), expected)
-                    report = json.loads(output.read_text())
-                    self.assertEqual(report["status"], status)
-                    self.assertEqual(report["tests"]["reference"]["status"], status)
+            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 9, 8)):
+                for count, expected, status in ((complete, 0, "pass"), (incomplete, 1, "fail")):
+                    with self.subTest(suite=suite, count=count):
+                        for name, required in (("native-link", 9), ("reference", 19)):
+                            (work / (name + "-tests.log")).write_text(f"Ran {required} tests in 1.0s\n\nOK\n")
+                        (work / (suite + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
+                        self.assertEqual(self.run_recorder(arguments), expected)
+                        report = json.loads(output.read_text())
+                        self.assertEqual(report["status"], status)
+                        self.assertEqual(report["tests"][suite]["status"], status)
 
     def test_missing_source_archive_cannot_receive_a_pass_record(self):
         with tempfile.TemporaryDirectory() as temporary:

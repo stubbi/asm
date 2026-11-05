@@ -1,7 +1,11 @@
 # Native library builds
 
-Status: implementation contract for source builds.
-Published Asm 0.5.0 binaries do not support this extension.
+Status: Asm 0.6.0 native-library contract.
+Earlier published binaries do not support this extension.
+The [release notes](releases/0.6.0.md) state the publication gates and artifact scope.
+
+Source, test, and checker path components cannot start with `@`.
+Compilers can interpret that prefix as an argument file instead of the declared input.
 
 ## Purpose
 
@@ -112,7 +116,8 @@ Its crossassembly results do not replace the later native Linux results.
 
 The [architecture acceptance gates](architecture-gates.md) define the wider platform work.
 This section covers native linking and the assembly server only.
-All native-linking additions remain unreleased.
+The qualification records identify source revisions and artifacts.
+They do not declare released target support.
 
 | CLI host target | ISA | OS | C ABI for linked projects | CPU requirement | Current CLI evidence |
 | --- | --- | --- | --- | --- | --- |

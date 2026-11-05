@@ -1486,6 +1486,153 @@
       "Startup DNS/configuration changes are isolated and absent.",
       "No publication, deployment or performance qualification.",
       "Previous failed and canceled reports remain historical evidence; an eighteen-test record cannot qualify the current suite."
-    ]
+    ],
+    "evidence_only_head_confirmation": {
+      "head_commit": "5b5bdf680780ceded6e9b4ad95f6ea67ca2a9039",
+      "ci_checkout_commit": "05dfc48266a658103ebd6ee0e88010075d31ef2d",
+      "checkout_tree_matches_head": true,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42007778931",
+      "status": "pass",
+      "scope": "All head checks passed. Both native server jobs repeated eight native-link, nineteen reference, eleven hosted and four failure-preservation tests; canonical catalog TLS checks passed.",
+      "artifact_recheck": "All eight downloaded artifact sizes and SHA-256 digests, and six retained test-log digests independently matched.",
+      "artifacts": {
+        "aarch64-linux": {
+          "cli": {
+            "bytes": 168880,
+            "sha256": "1da6021372270d3ccdaf8e9b7cd538614720872d8020cd14c38f69f582a12806",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 74864,
+            "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 78440,
+            "sha256": "946eef31a8a0224719c052dae8601d8eb678ea9f62c6d18e5858bbb9d32f778c",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69424,
+            "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+          }
+        },
+        "x86_64-linux": {
+          "cli": {
+            "bytes": 127480,
+            "sha256": "93195486433fee6e81629266a9b239204ad76774237a480844c948128be4de75",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 28312,
+            "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 35808,
+            "sha256": "2c1b743e1e46bddfb6f5b886dbd5c3fd1434a7bf807e03bee3ffe86fe60226e5",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69423,
+            "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+          }
+        }
+      }
+    }
+  },
+  "release_preparation_sync": {
+    "date": "2026-11-05",
+    "main_commit": "6d7c7df53b1ae17a44c13b038cf95cc798fffa94",
+    "preceding_head": "5b5bdf680780ceded6e9b4ad95f6ea67ca2a9039",
+    "scope": "Reuse main0.6.0 version, compiler-response-file guards and active/inactive regressions. Preserve all unified target/lock/archive contracts. Server/reference source bytes remain unchanged from fb72db4.",
+    "cli_implementation_matches_main": true,
+    "local_source_state": "Checks ran on the pending synchronization tree. CLI and registry implementation inputs match the recorded main commit; package tests remain included. Only this evidence record changed after these checks.",
+    "local_checks": {
+      "native": {
+        "status": "pass",
+        "tests": 262,
+        "seconds": 199.747,
+        "log": {
+          "sha256": "0bde2848dee41d9fbb92f7f2a367bb4a9a3826edb3d755b3fac57ed084801463",
+          "bytes": 45246
+        }
+      },
+      "registry": {
+        "status": "pass",
+        "tests": 74,
+        "seconds": 2.519,
+        "log": {
+          "sha256": "7ca5ac60281c36c91a583f8864b216a8ea59eca65612496450aa757f6dbfee9d",
+          "bytes": 11710
+        }
+      }
+    },
+    "local_cli": {
+      "sha256": "3ef597087b8f8f4668f49cda2b54f2503590b98a14f1acb5b8ab939ffd62247c",
+      "bytes": 282400
+    },
+    "registry_metadata": {
+      "status": "pass",
+      "releases": 15,
+      "artifact_bytes_checked": false,
+      "log": {
+        "sha256": "7d829560d10b49a535619d10639a7cacf57a944eb3f8f4fd7173213a5c167bf8",
+        "bytes": 146
+      }
+    },
+    "required_suites": {
+      "native-link": 9,
+      "reference": 19,
+      "hosted": 11,
+      "failure_preservation": 4
+    },
+    "gate_regression": {
+      "observed_before": "An otherwise passing synthetic report with eight native-link tests was incorrectly accepted after main added a ninth required case.",
+      "red": {
+        "sha256": "28b7f2139faa84162fbcfafd59c6332b5bbf1009bd6e455257ff0f6a9880d896",
+        "bytes": 1760
+      },
+      "after": "All eight evidence-parser checks pass, including9/8 native-link and19/18 reference boundaries.",
+      "green": {
+        "sha256": "e6964a0949ffb470a47b1daa3b94f645a338c0050dad71e287f591346ff9c32e",
+        "bytes": 2638
+      },
+      "scope": "Synthetic report checks are evidence-policy tests, not server execution."
+    },
+    "history_review": "Review extended through main6d7c7df and its narrow #35 changes. Preserve0.6.0 identity, licenses, earlier source evidence and all active/inactive response-file checks.",
+    "post_sync_linux_scope": "The older eight-native-test records remain historical. Final PR-head CI must pass nine native-link tests and all nineteen reference tests before admission."
   }
 }
