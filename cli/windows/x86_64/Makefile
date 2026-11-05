@@ -13,8 +13,8 @@ prepare:
 	$(PYTHON) tools/windows_x64.py --output $(OUT)/asm.s
 
 $(BINARY): prepare
-	$(CLANG) --target=x86_64-pc-windows-msvc -c $(OUT)/asm.s -o $(OUT)/asm.obj
-	$(CLANG) --target=x86_64-pc-windows-msvc -fuse-ld=lld -nostdlib $(OUT)/asm.obj -o $(BINARY) -Wl,/entry:_start,/subsystem:console,/nxcompat,/dynamicbase,/stack:8388608 kernel32.lib advapi32.lib bcrypt.lib ntdll.lib shell32.lib
+	$(CLANG) --no-default-config --target=x86_64-pc-windows-msvc -c $(OUT)/asm.s -o $(OUT)/asm.obj
+	$(CLANG) --no-default-config --target=x86_64-pc-windows-msvc -fuse-ld=lld -nostdlib $(OUT)/asm.obj -o $(BINARY) -Wl,/entry:_start,/subsystem:console,/nxcompat,/dynamicbase,/stack:8388608 -Wl,kernel32.lib,advapi32.lib,bcrypt.lib,ntdll.lib,shell32.lib
 
 check: $(BINARY)
 	$(PYTHON) tools/windows_test.py --asm $(BINARY) --target x86_64-windows --evidence $(OUT)/native-test.json

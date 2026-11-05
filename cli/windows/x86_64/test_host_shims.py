@@ -8,12 +8,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 from pathlib import Path
 import importlib.util
 import platform
+import json
 import re
 import shutil
 import struct
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 LOCAL = Path(__file__).resolve().parent
@@ -72,6 +74,7 @@ class HostShims(unittest.TestCase):
         cls.build_process()
         cls.build_manifest_paths()
         cls.build_targets()
+        cls.build_clang_arguments()
 
     @classmethod
     def tearDownClass(cls):
@@ -91,7 +94,7 @@ class HostShims(unittest.TestCase):
         source.write_text(assembly)
         csource = cls.directory / (name + '.c')
         csource.write_text(driver)
-        command = [cls.clang, '-arch', 'x86_64'] if cls.prefix else [cls.clang, '-m64']
+        command = [cls.clang, '--no-default-config', '-arch', 'x86_64'] if cls.prefix else [cls.clang, '--no-default-config', '-m64']
         result = subprocess.run(command + [str(source), str(csource), '-o', str(cls.directory / name)],
                        capture_output=True, text=True, timeout=30)
         if result.returncode:
@@ -573,9 +576,90 @@ win_path_wide: .space 8192
 
 
     @classmethod
+    def build_clang_arguments(cls):
+        assembly = cls.macros + block(cls.platform_source,'win_compile_project','win_component_safe')
+        assembly += '\n.text\n' + cls.prepared[cls.prepared.index('native_link_compile_check:\n'):cls.prepared.index('.section .rdata',cls.prepared.index('native_cc_spawn:\n'))]
+        assembly += r"""
+.text
+.global clang_arguments
+clang_arguments:
+    cmp edi, 1
+    je win_link_standalone
+    cmp edi, 2
+    je native_link_compile_check
+    cmp edi, 3
+    je native_link_build
+    jmp win_compile_project
+spawn_wait:
+    mov rax, rsi
+    ret
+.data
+as_path: .asciz "C:/LLVM/bin/clang.exe"
+ld_path: .asciz "C:/LLVM/bin/clang.exe"
+as_64: .asciz "-c"
+arg_I: .asciz "-I"
+arg_o: .asciz "-o"
+arg_z: .asciz "-nostdlib"
+dependency_packages_root: .asciz ".asm/packages"
+stage_object: .asciz "build/private/main.o"
+stage_binary: .asciz "build/private/app.exe"
+package_source: .asciz "src/main.s"
+package_test: .asciz "custom/test.s"
+package_check: .asciz "abi.c"
+package_libraries: .asciz "kernel32 ucrt"
+test_mode: .byte 0
+.p2align 3
+native_include_count: .quad 0
+native_library_count: .quad 0
+native_include_dirs: .space 64
+native_library_dirs: .space 64
+native_library_args: .space 272
+native_cc_argv: .space 512
+child_argv: .space 512
+"""
+        for name in ['win_kernel32_lib','noexecstack']:
+            assembly += re.findall(r'^' + name + r': .+$',cls.prepared,re.M)[0] + '\n'
+        for row in re.findall(r'^native_\w+: .asciz .+$',cls.prepared,re.M):
+            assembly += row + '\n'
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern const char** clang_arguments(int);\nint main(int n,char**a){const char**v=clang_arguments(atoi(a[1]));for(int i=0;i<64&&v[i];i++)puts(v[i]);}\n'
+        cls.build('clang-arguments',assembly,driver,['clang_arguments'])
+
+    def test_clang_default_configuration_is_actually_ignored(self):
+        config = self.directory / 'compiler-config'
+        config.mkdir()
+        (config / 'x86_64-pc-windows-msvc-clang.cfg').write_text('--asm-ambient-configuration-must-not-load\n')
+        base = [self.clang,'--target=x86_64-pc-windows-msvc',
+                '--config-user-dir='+str(config),'--config-system-dir='+str(config),
+                '-###','-E','-x','c','-']
+        loaded = subprocess.run(base,input='',capture_output=True,text=True,timeout=10)
+        self.assertNotEqual(loaded.returncode,0)
+        self.assertIn('--asm-ambient-configuration-must-not-load',loaded.stderr)
+        isolated = subprocess.run(base+['--no-default-config'],input='',capture_output=True,text=True,timeout=10)
+        self.assertEqual(isolated.returncode,0,isolated.stderr)
+        self.assertNotIn('--asm-ambient-configuration-must-not-load',isolated.stderr)
+
+    def test_every_native_clang_path_disables_ambient_configuration(self):
+        for mode in range(4):
+            r = self.run_fixture('clang-arguments',str(mode))
+            self.assertEqual(r.returncode,0,r.stderr)
+            arguments = r.stdout.splitlines()
+            self.assertEqual(arguments[1],'--no-default-config')
+            if mode in [1,3]:
+                self.assertIn('-fuse-ld=lld',arguments)
+                self.assertTrue(any('/Brepro' in a for a in arguments))
+            if mode == 1:
+                self.assertIn('-Wl,kernel32.lib',arguments)
+                self.assertNotIn('kernel32.lib',arguments)
+            if mode == 2:
+                self.assertIn('-fsyntax-only',arguments)
+            if mode == 3:
+                self.assertIn('-lkernel32',arguments)
+                self.assertIn('-lucrt',arguments)
+
+    @classmethod
     def build_process(cls):
         body = block(cls.platform_source,'win_process','win_explicit_environment')
-        data = cls.platform_source[cls.platform_source.index('.section .data\n.p2align 3\nwin_pipe_security:'):cls.platform_source.index('win_hash_file:\n')]
+        data = cls.platform_source[cls.platform_source.rindex('.section .data',0,cls.platform_source.index('win_pipe_security:')):cls.platform_source.index('win_hash_file:\n')]
         assembly = cls.macros + body + data + '\n.text\n' + block(cls.prepared,'streq','strlen') + r"""
 .text
 .global process_case
@@ -768,6 +852,32 @@ test_stat: .space 144
                 self.assertEqual(r.returncode,0,r.stderr)
                 self.assertEqual(r.stdout.strip(),str(expected))
 
+    def test_native_api_literal_alignment_in_actual_coff(self):
+        source = self.directory / 'literal-alignment.s'
+        obj = self.directory / 'literal-alignment.obj'
+        source.write_text(self.prepared)
+        r = subprocess.run([self.clang,'--no-default-config','-target','x86_64-pc-windows-msvc','-c',str(source),'-o',str(obj)],capture_output=True,text=True,timeout=30)
+        self.assertEqual(r.returncode,0,r.stderr)
+        data = obj.read_bytes()
+        _,_,_,offset,count,_,_ = struct.unpack_from('<HHIIIHH',data)
+        strings = offset + count*18
+        symbols = {}
+        for i in range(count):
+            location = offset + i*18
+            name = data[location:location+8]
+            if name[:4] == b'\0'*4:
+                start = strings + struct.unpack_from('<I',name,4)[0]
+                name = data[start:data.find(b'\0',start)]
+            else:
+                name = name.rstrip(b'\0')
+            symbols[name.decode(errors='replace')] = struct.unpack_from('<I',data,location+8)[0]
+        wide = ['win_nt_root','win_lock_name','win_installer_name','win_home_name',
+                'win_profile_name','win_null_wide','win_sha256_name','win_object_length']
+        for name in wide:
+            with self.subTest(symbol=name):
+                self.assertEqual(symbols[name] % 2,0)
+        self.assertEqual(symbols['win_build_names'] % 8,0)
+
     def test_drive_absolute_output_does_not_use_cwd(self):
         for value in ['C:/output/tool.exe', r'C:\output\tool.exe', '/C:/output/tool.exe']:
             with self.subTest(value=value):
@@ -847,6 +957,42 @@ test_stat: .space 144
         result = self.run_fixture('verifier-environment', '1')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), '-22')
+
+
+class DiagnosticEvidence(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('x64_diagnostic',LOCAL / 'native_diagnostics.py')
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+
+    def test_timeout_keeps_bounded_partial_output_and_fails_collection(self):
+        report = {'commands': []}
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'timeout.json'
+            def operation():
+                with mock.patch.object(self.module.subprocess,'run',side_effect=subprocess.TimeoutExpired(['fixture'],30,output=b'x'*70000,stderr=b'partial error')):
+                    self.module.run_recorded(report,['fixture'])
+            result = self.module.collect_evidence(destination,report,operation)
+            saved = json.loads(destination.read_text())
+        self.assertEqual(result,1)
+        self.assertTrue(saved['commands'][0]['timed_out'])
+        self.assertEqual(len(saved['commands'][0]['stdout']),65536)
+        self.assertEqual(saved['commands'][0]['stderr'],'partial error')
+        self.assertTrue(saved['commands'][0]['output_truncated'])
+
+    def test_os_error_and_later_exception_preserve_collected_rows(self):
+        report = {'commands': []}
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'os-error.json'
+            def operation():
+                with mock.patch.object(self.module.subprocess,'run',side_effect=FileNotFoundError(2,'fixture missing')):
+                    self.module.run_recorded(report,['fixture'])
+                raise ValueError('later collection failure')
+            result = self.module.collect_evidence(destination,report,operation)
+            saved = json.loads(destination.read_text())
+        self.assertEqual(result,1)
+        self.assertEqual(saved['commands'][0]['os_error']['errno'],2)
+        self.assertEqual(saved['collection_error']['type'],'ValueError')
 
 
 if __name__ == '__main__':

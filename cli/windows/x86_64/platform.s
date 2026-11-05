@@ -1142,13 +1142,16 @@ win_fchdir:
     WLEAVE
 
 .section .data
+.p2align 1
 win_nt_root: .short '\\','?','?','\\','C',':','\\',0
 win_home: .ascii "HOME="
     .space 4096
 .section .rdata,"dr"
+.p2align 1
 win_home_name: .short 'H','O','M','E',0
+.p2align 1
 win_profile_name: .short 'U','S','E','R','P','R','O','F','I','L','E',0
-win_kernel32_lib: .asciz "kernel32.lib"
+win_kernel32_lib: .asciz "-Wl,kernel32.lib"
 win_error_initialize: .asciz "cannot initialize Windows arguments, paths, or user permissions"
 .section .bss
 .p2align 3
@@ -1880,11 +1883,15 @@ win_getdents:
     WLEAVE
 
 .section .data
+.p2align 2
 win_sid_capacity: .long 68
+.p2align 2
 win_installer_capacity: .long 68
 .section .rdata,"dr"
 win_root_utf8: .asciz "/"
+.p2align 1
 win_installer_name: .short 78,84,32,83,69,82,86,73,67,69,92,84,114,117,115,116,101,100,73,110,115,116,97,108,108,101,114,0
+.p2align 1
 win_lock_name: .short '.','a','s','m','.','l','o','c','k',0
 .section .bss
 .p2align 3
@@ -2441,20 +2448,32 @@ win_build_environment:
 
 .section .data
 .p2align 3
+.p2align 2
 win_pipe_security: .long 24,0
     .quad 0
     .long 1,0
+.p2align 3
 win_attribute_size: .quad 1024
 .section .rdata,"dr"
+.p2align 1
 win_null_wide: .short 'N','U','L',0
+.p2align 3
 win_4096: .quad 4096
+.p2align 3
 win_build_names: .quad win_env_systemroot,win_env_windir,win_env_temp,win_env_tmp,win_env_lib,win_env_include,win_env_path,0
+.p2align 1
 win_env_systemroot: .short 'S','y','s','t','e','m','R','o','o','t',0
+.p2align 1
 win_env_windir: .short 'W','I','N','D','I','R',0
+.p2align 1
 win_env_temp: .short 'T','E','M','P',0
+.p2align 1
 win_env_tmp: .short 'T','M','P',0
+.p2align 1
 win_env_lib: .short 'L','I','B',0
+.p2align 1
 win_env_include: .short 'I','N','C','L','U','D','E',0
+.p2align 1
 win_env_path: .short 'P','A','T','H',0
 .section .bss
 .p2align 3
@@ -2733,7 +2752,9 @@ win_download:
 
 .section .rdata,"dr"
 win_stdout_dash: .asciz "-"
+.p2align 1
 win_sha256_name: .short 'S','H','A','2','5','6',0
+.p2align 1
 win_object_length: .short 'O','b','j','e','c','t','L','e','n','g','t','h',0
 .section .bss
 .p2align 3
@@ -2888,24 +2909,26 @@ win_compile_project:
     lea rbx, [rip + child_argv]
     lea rax, [rip + as_path]
     mov [rbx], rax
-    lea rax, [rip + win_clang_target]
+    lea rax, [rip + win_clang_no_config]
     mov [rbx + 8], rax
-    lea rax, [rip + as_64]
+    lea rax, [rip + win_clang_target]
     mov [rbx + 16], rax
-    lea rax, [rip + arg_I]
+    lea rax, [rip + as_64]
     mov [rbx + 24], rax
-    lea rax, [rip + dependency_packages_root]
+    lea rax, [rip + arg_I]
     mov [rbx + 32], rax
-    lea rax, [rip + arg_o]
+    lea rax, [rip + dependency_packages_root]
     mov [rbx + 40], rax
-    lea rax, [rip + stage_object]
+    lea rax, [rip + arg_o]
     mov [rbx + 48], rax
+    lea rax, [rip + stage_object]
+    mov [rbx + 56], rax
     lea rax, [rip + package_source]
     cmp byte ptr [rip + test_mode], 0
     je 1f
     lea rax, [rip + package_test]
-1:  mov [rbx + 56], rax
-    mov qword ptr [rbx + 64], 0
+1:  mov [rbx + 64], rax
+    mov qword ptr [rbx + 72], 0
     lea rdi, [rip + as_path]
     mov rsi, rbx
     call spawn_wait
@@ -2919,29 +2942,32 @@ win_link_standalone:
     lea rbx, [rip + child_argv]
     lea rax, [rip + ld_path]
     mov [rbx], rax
-    lea rax, [rip + win_clang_target]
+    lea rax, [rip + win_clang_no_config]
     mov [rbx + 8], rax
-    lea rax, [rip + win_lld_flag]
+    lea rax, [rip + win_clang_target]
     mov [rbx + 16], rax
-    lea rax, [rip + arg_z]
+    lea rax, [rip + win_lld_flag]
     mov [rbx + 24], rax
-    lea rax, [rip + noexecstack]
+    lea rax, [rip + arg_z]
     mov [rbx + 32], rax
-    lea rax, [rip + arg_o]
+    lea rax, [rip + noexecstack]
     mov [rbx + 40], rax
-    lea rax, [rip + stage_binary]
+    lea rax, [rip + arg_o]
     mov [rbx + 48], rax
-    lea rax, [rip + stage_object]
+    lea rax, [rip + stage_binary]
     mov [rbx + 56], rax
-    lea rax, [rip + win_kernel32_lib]
+    lea rax, [rip + stage_object]
     mov [rbx + 64], rax
-    mov qword ptr [rbx + 72], 0
+    lea rax, [rip + win_kernel32_lib]
+    mov [rbx + 72], rax
+    mov qword ptr [rbx + 80], 0
     lea rdi, [rip + ld_path]
     mov rsi, rbx
     call spawn_wait
     WLEAVE
 
 .section .rdata,"dr"
+win_clang_no_config: .asciz "--no-default-config"
 win_clang_target: .asciz "--target=x86_64-pc-windows-msvc"
 win_lld_flag: .asciz "-fuse-ld=lld"
 

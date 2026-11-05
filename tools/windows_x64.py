@@ -56,7 +56,7 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
         text = text.replace('as_64: .asciz "--64"', 'as_64: .asciz "-c"')
         text = text.replace('arg_z: .asciz "-z"', 'arg_z: .asciz "-nostdlib"')
         text = text.replace('noexecstack: .asciz "noexecstack"',
-                            'noexecstack: .asciz "-Wl,/entry:_start,/subsystem:console,/nxcompat,/dynamicbase"')
+                            'noexecstack: .asciz "-Wl,/entry:_start,/subsystem:console,/nxcompat,/dynamicbase,/Brepro"')
         text = text.replace('mov qword ptr [rip + child_argv + 48], 0\n    lea rdi, [rip + ld_path]',
                             'lea rax, [rip + win_kernel32_lib]\n    mov [rip + child_argv + 48], rax\n    mov qword ptr [rip + child_argv + 56], 0\n    lea rdi, [rip + ld_path]')
         text = text.replace('valid_source:\n', 'valid_source:\n    jmp win_valid_source\nwin_shared_valid_source:\n', 1)
@@ -89,7 +89,7 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     ret
 ''')
         text = text.replace('https://asm.build/registry/v1/index.tsv',
-                            'https://asm.build/registry/v1/index-windows-x86_64.tsv')
+                            'https://asm.build/registry/v1/index-all.tsv')
         text = text.replace('registry_bin_suffix: .asciz ".bin"', 'registry_bin_suffix: .asciz ".exe"')
         anchor = '''.Linstall_name_start:
     inc rsi
@@ -203,11 +203,15 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     ret
 ''')
     if source.name == 'native_link.s':
+        text = text.replace('this path needs at most 24.', 'this path needs at most 26.')
+        anchor = '    lea rax, [rip + native_cc_path]\n    call native_argv_add\n'
+        assert text.count(anchor) == 2
+        text = text.replace(anchor, anchor + '    lea rax, [rip + win_clang_no_config]\n    call native_argv_add\n')
         text = text.replace('native_fpie: .asciz "-fPIE"', 'native_fpie: .asciz "-fuse-ld=lld"')
         text = text.replace('native_pie: .asciz "-pie"',
                             'native_pie: .asciz "--target=x86_64-pc-windows-msvc"')
         text = text.replace('native_hardening: .asciz "-Wl,-z,relro,-z,now,-z,noexecstack"',
-                            'native_hardening: .asciz "-Wl,/nxcompat,/dynamicbase"')
+                            'native_hardening: .asciz "-Wl,/nxcompat,/dynamicbase,/Brepro"')
         begin = text.index('    imul rax, r13, 272\n')
         end = text.index('    inc r13\n', begin)
         text = text[:begin] + text[end:]

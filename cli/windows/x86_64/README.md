@@ -2,8 +2,8 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Two native Windows runs executed the CLI and retained failed runtime results.
-The second run created a project, then exposed ownership and child-process failures.
+Three native Windows runs executed the CLI and retained failed runtime results.
+The third run passed project creation and C ABI execution, but retained linker, lock, and updater failures.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -101,18 +101,23 @@ On 2026-11-05, Apple clang 17.0.0 cross-assembled the flattened source with exit
 
 ```text
 python3 tools/windows_x64.py --output build/windows/x86_64/asm.s
-clang -target x86_64-pc-windows-msvc -c build/windows/x86_64/asm.s -o build/windows/x86_64/asm.obj
+clang --no-default-config -target x86_64-pc-windows-msvc -c build/windows/x86_64/asm.s -o build/windows/x86_64/asm.obj
 ```
 
-The generated assembly SHA-256 was `e1f4533af1c655ad217457dd44a09a369a7620a8aed69dfc699e23f8de5efdd0`.
-The object SHA-256 was `25b516245df5ff61933ba88d671bfdc32a66561c7d82691003867341c5d6e64c`.
+The generated assembly SHA-256 was `ff7017ebdfa3186de855d76af32483e39d034bcd7ac091b6ca362ee94c573507`.
+The object SHA-256 was `10b49399273e9b94d253908bf09cd042a474ed2cf21b923c3ce378cd58860d72`.
 These digests identify source and object bytes, not a qualified executable.
-The temporary-import cross-link produced 97,792 bytes with SHA-256 `e46b1ac08a42861ecb9775efddcc57853b4ed29217482546356a92eade8338a3`.
-`build/windows/x86_64/cross-build-current.json` records exact compile and link arguments.
+The temporary-import cross-link produced 97,792 bytes with SHA-256 `e00705341c5547ecd9119672bc177b1748ce4a6a873b9b1fcaec138fbe01045b`.
+`build/windows/x86_64/cross-build-third-fixes.json` records exact compile and link arguments.
 The first link attempt failed because its temporary import library lacked `NtSetInformationFile`.
 Adding that existing SDK export to the local import definition permitted the cross-link.
 This does not establish native SDK linking or execution.
 Native CI must record the final PE digest with its actual SDK, toolchain, host, and results.
+The required `make test` run retained two macOS bootstrap timing failures among 264 tests.
+One exact rerun exceeded its 20-second process deadline.
+A stalled-verifier case took 13.98 seconds against its 10-second assertion.
+`build/x64-third-required-make-test.log` retains the full result.
+The aggregate integration gate must resolve these failures; they are not counted as passes.
 
 `pe.s` checks a bounded AMD64 PE32+ console executable container.
 It checks header and section ranges, alignment, an executable file-backed entry, NX compatibility, and writable executable sections.
@@ -127,8 +132,9 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, fifteen focused checks passed on macOS through Rosetta.
-They execute extracted x86-64 assembly with deterministic API shims.
+On 2026-11-05, twenty focused checks passed on macOS.
+The assembly fixtures execute through Rosetta with deterministic API shims.
+Other checks inspect produced COFF layouts, Clang behavior, and diagnostic failures.
 They do not establish Windows API behavior or native filesystem effects.
 
 Run the checks from the repository root:
@@ -156,7 +162,20 @@ Ownership cases cover TrustedInstaller, elevated and ordinary Administrators tok
 The prior ownership implementation failed seven policy cases before correction.
 An additional case retains the rejection of Administrators as a private directory owner.
 An exact process routine shim reproduces status 127 when API structure storage is misaligned.
-Aligned storage permits that simulated launch; native error evidence must confirm the remaining real failure.
+Aligned storage permits that simulated launch.
+The third native diagnostic observed successful process setup before Clang rejected a raw `kernel32.lib` input.
+The corrected argv forwards that fixed library directly to the linker.
+SDK library lookup still uses the reviewed developer environment; the adapter does not infer missing SDK support.
+A host Clang driver check rejects the raw library input and accepts the forwarded argument.
+That check does not link an SDK executable.
+Exact assembly, checker, C link, and standalone link argument checks require `--no-default-config`.
+A real Clang configuration fixture confirms that this flag ignores an otherwise loaded invalid default configuration.
+PE links use `/Brepro` for deterministic linker metadata.
+Actual COFF symbol checks reproduced five unaligned UTF16 literals before correction.
+All native API UTF16 literals now have explicit word alignment.
+The lock literal was among those unaligned inputs.
+The third diagnostic recorded `STATUS_DATATYPE_MISALIGNMENT` from its lock-file open, before the filesystem preflight.
+Native locking and updater confirmation remain required.
 Manifest cases preserve all seven canonical target identities and reject Windows stream, device, and path aliases.
 Publication metadata keeps its Linux table entry separate from the Windows host.
 Foreign Windows and Mach-O executable publication remains unsupported on this candidate.
@@ -175,7 +194,10 @@ Python-created files and directories inherited that Administrators ownership.
 The corrected policy uses actual token elevation, rather than assuming that every Administrators owner belongs to the caller.
 Positive fixture directories receive the actual token user's owner SID; their inherited DACLs remain unchanged.
 The retained second-run JSON is under `build/windows-second-native`.
-The policy and process storage corrections need a native rerun.
+The third [native CLI run](https://github.com/stubbi/asm/actions/runs/42010274631) passed the corrected owner preflights and C ABI execution.
+It retained failures for standalone linking and lock-file creation.
+Its diagnostic found that the apparent filesystem failure followed an unaligned lock-file open.
+The current literal alignment and linker arguments need a native rerun.
 Package lifecycle, compiler output, recovery, and updater qualification remain incomplete.
 The ordinary repository CLI and verifier release gates also remain required.
 
@@ -202,7 +224,7 @@ It also records child-process setup stages, API results, and Windows error codes
 An error code is meaningful only when its API result indicates failure.
 The fixture runs the generated project and retains the actual exit status.
 It records ambient HOME ownership before setting the positive fixture owner.
-The diagnostic source cross-linked to 99,840 bytes with SHA-256 `1c3fc1702be1dab2dd96d5f57fa346aa399f8cca58227811c9ca78e16dc9e370`.
+The diagnostic source cross-linked to 99,840 bytes with SHA-256 `74749491a0c70683f00787313140892604d60f99dde681a8f072b0045baec95a`.
 The equal-version updater check makes no network request.
 The release generator never includes the diagnostic assembly.
 
@@ -214,6 +236,10 @@ python cli/windows/x86_64/native_diagnostics.py --evidence build/windows-evidenc
 
 The evidence destination must not exist.
 The fixture's successful collection does not mean that the recorded CLI commands passed.
+A timeout retains bounded partial output and returns collection failure.
+A process-start error retains its operating-system error details.
+A finalizer writes partial evidence when a later collection step raises an exception.
+Two deterministic host cases exercise those failure paths.
 Its JSON records each command's actual exit status and bounded output.
 
 ## Primary API references
@@ -234,3 +260,6 @@ They document API behavior; they do not qualify this implementation.
 - [Token elevation information](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-token_information_class)
 - [Fixed account lookup](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountnamew)
 - [Process attribute storage](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-initializeprocthreadattributelist)
+
+- [Clang configuration files](https://clang.llvm.org/docs/UsersManual.html#configuration-files)
+- [Clang linker arguments](https://clang.llvm.org/docs/ClangCommandLineReference.html#linker-options)

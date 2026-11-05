@@ -161,6 +161,58 @@ def set_fixture_user_owner(paths):
         kernel.CloseHandle(token)
 
 
+def captured_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, bytes):
+        return value[:LIMIT].decode('utf-8', errors='replace')
+    return value[:LIMIT]
+
+
+def run_recorded(report, argv, **options):
+    """Retain completed and failed process observations with bounded output."""
+    started = time.monotonic()
+    argv = list(map(str, argv))
+    row = {'argv': argv}
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=30, **options)
+        stdout, stderr = result.stdout, result.stderr
+        row['exit_code'] = result.returncode
+    except subprocess.TimeoutExpired as error:
+        stdout, stderr = error.stdout, error.stderr
+        row.update(exit_code=None, timed_out=True)
+        report['collection_failed'] = True
+        result = subprocess.CompletedProcess(argv, 127, captured_text(stdout), captured_text(stderr))
+    except OSError as error:
+        stdout, stderr = '', ''
+        row.update(exit_code=None, os_error={'type': type(error).__name__,
+            'errno': error.errno, 'winerror': getattr(error, 'winerror', None),
+            'message': str(error)[:1024]})
+        report['collection_failed'] = True
+        result = subprocess.CompletedProcess(argv, 127, '', '')
+    row.update(stdout=captured_text(stdout), stderr=captured_text(stderr),
+        output_truncated=len(stdout or '') > LIMIT or len(stderr or '') > LIMIT,
+        seconds=round(time.monotonic()-started, 6))
+    report['commands'].append(row)
+    return result
+
+
+def collect_evidence(destination, report, operation):
+    """Write partial evidence even if collection fails before its final step."""
+    try:
+        operation()
+    except Exception as error:
+        report['collection_failed'] = True
+        report['collection_error'] = {'type': type(error).__name__, 'message': str(error)[:1024]}
+    finally:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('x', encoding='utf-8') as output:
+            json.dump(report, output, indent=2)
+            output.write('\n')
+    return 1 if report.get('build_failed') or report.get('collection_failed') else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--toolchain-bin', type=Path, default=Path('C:/Program Files/LLVM/bin'))
@@ -170,64 +222,55 @@ def main():
         parser.error('This diagnostic fixture requires native Windows')
     if args.evidence.exists():
         parser.error('The evidence destination must not already exist')
-    spec = importlib.util.spec_from_file_location('windows_x64', ROOT / 'tools/windows_x64.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     report = {'process_stages': {str(i+1): name for i,name in enumerate(['win_wide','win_wide_command','win_build_environment','win_explicit_environment','CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW','InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW'])}, 'kind': 'windows-x64-adapter-diagnostics', 'native_qualification': False, 'commands': []}
 
     def run(argv, **options):
-        started = time.monotonic()
-        result = subprocess.run(list(map(str, argv)), capture_output=True, text=True,
-                                encoding='utf-8', errors='replace', timeout=30, **options)
-        report['commands'].append({'argv': list(map(str, argv)), 'exit_code': result.returncode,
-            'stdout': result.stdout[:LIMIT], 'stderr': result.stderr[:LIMIT],
-            'output_truncated': len(result.stdout) > LIMIT or len(result.stderr) > LIMIT,
-            'seconds': round(time.monotonic() - started, 6)})
-        return result
+        return run_recorded(report, argv, **options)
 
-    with tempfile.TemporaryDirectory(prefix='asm-x64-native-diagnostic-') as temporary:
-        work = Path(temporary)
-        source, obj, binary = (work / 'diagnostic.s', work / 'diagnostic.obj', work / 'diagnostic.exe')
-        text = diagnostic_source(module)
-        source.write_text(text)
-        report['assembly_sha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
-        compile_result = run([args.toolchain_bin / 'clang.exe', '--target=x86_64-pc-windows-msvc',
-                              '-c', source, '-o', obj], cwd=ROOT)
-        if compile_result.returncode:
-            report['build_failed'] = True
-        else:
-            linked = run([args.toolchain_bin / 'lld-link.exe', '/machine:x64', '/entry:_start',
-                '/subsystem:console', '/nodefaultlib', '/nxcompat', '/dynamicbase', '/Brepro',
-                '/out:' + str(binary), obj, 'kernel32.lib', 'ntdll.lib', 'advapi32.lib',
-                'bcrypt.lib', 'shell32.lib'], cwd=ROOT)
-            if linked.returncode:
+    def collect():
+        spec = importlib.util.spec_from_file_location('windows_x64', ROOT / 'tools/windows_x64.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory(prefix='asm-x64-native-diagnostic-') as temporary:
+            work = Path(temporary)
+            source, obj, binary = (work / 'diagnostic.s', work / 'diagnostic.obj', work / 'diagnostic.exe')
+            text = diagnostic_source(module)
+            source.write_text(text)
+            report['assembly_sha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
+            compile_result = run([args.toolchain_bin / 'clang.exe', '--no-default-config', '--target=x86_64-pc-windows-msvc',
+                                  '-c', source, '-o', obj], cwd=ROOT)
+            if compile_result.returncode:
                 report['build_failed'] = True
             else:
-                report['executable_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
-                home = work / 'home with spaces'
-                home.mkdir()
-                report['ambient_home_security'] = api_security([home])
-                set_fixture_user_owner([home])
-                environment = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
-                new_project = work / 'hello'
-                run([binary, 'new', new_project], cwd=work, env=environment)
-                run([binary, 'run'], cwd=new_project, env=environment)
-                run([binary, 'installed', '--json'], cwd=work, env=environment)
-                version = json.loads(run([binary, 'version', '--json'], cwd=work, env=environment).stdout)['version']
-                installation = home / '.local/bin/asm.exe'
-                installation.parent.mkdir(parents=True, exist_ok=True)
-                set_fixture_user_owner([home / '.local', installation.parent])
-                shutil.copyfile(binary, installation)
-                run([installation, 'self', 'update', version, '--json'], cwd=work, env=environment)
-                report['security'] = api_security([
-                    *reversed(installation.parents), installation, new_project,
-                    new_project / 'asm.toml', new_project / 'src/main.s'])
-    args.evidence.parent.mkdir(parents=True, exist_ok=True)
-    with args.evidence.open('x', encoding='utf-8') as output:
-        json.dump(report, output, indent=2)
-        output.write('\n')
+                linked = run([args.toolchain_bin / 'lld-link.exe', '/machine:x64', '/entry:_start',
+                    '/subsystem:console', '/nodefaultlib', '/nxcompat', '/dynamicbase', '/Brepro',
+                    '/out:' + str(binary), obj, 'kernel32.lib', 'ntdll.lib', 'advapi32.lib',
+                    'bcrypt.lib', 'shell32.lib'], cwd=ROOT)
+                if linked.returncode:
+                    report['build_failed'] = True
+                else:
+                    report['executable_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
+                    home = work / 'home with spaces'
+                    home.mkdir()
+                    report['ambient_home_security'] = api_security([home])
+                    set_fixture_user_owner([home])
+                    environment = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+                    new_project = work / 'hello'
+                    run([binary, 'new', new_project], cwd=work, env=environment)
+                    run([binary, 'run'], cwd=new_project, env=environment)
+                    run([binary, 'installed', '--json'], cwd=work, env=environment)
+                    version = json.loads(run([binary, 'version', '--json'], cwd=work, env=environment).stdout)['version']
+                    installation = home / '.local/bin/asm.exe'
+                    installation.parent.mkdir(parents=True, exist_ok=True)
+                    set_fixture_user_owner([home / '.local', installation.parent])
+                    shutil.copyfile(binary, installation)
+                    run([installation, 'self', 'update', version, '--json'], cwd=work, env=environment)
+                    report['security'] = api_security([
+                        *reversed(installation.parents), installation, new_project,
+                        new_project / 'asm.toml', new_project / 'src/main.s'])
+    result = collect_evidence(args.evidence, report, collect)
     print('Adapter diagnostic evidence:', args.evidence)
-    return 1 if report.get('build_failed') else 0
+    return result
 
 
 if __name__ == '__main__':
