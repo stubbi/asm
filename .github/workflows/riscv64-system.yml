@@ -1,0 +1,48 @@
+name: RISC-V full-system CLI qualification
+
+on:
+  pull_request:
+    paths:
+      - 'cli/**'
+      - 'tests/**'
+      - 'tools/riscv64*.py'
+      - 'Makefile'
+      - '.github/workflows/riscv64-system.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  system-emulated:
+    name: Check the unchanged CLI contract in a RISC-V Linux guest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    env:
+      ASM_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record failed and unrun evidence before host setup
+        run: |
+          python3 tools/riscv64_system.py --initialize-only --output build/riscv64-system --commit "$GITHUB_SHA"
+          python3 -m unittest discover -s tests/riscv64 -p test_system.py -v
+      - name: Install host emulation and private guest-seed tools
+        run: |
+          set -o pipefail
+          timeout 600 sudo apt-get update 2>&1 | tee build/riscv64-system/host-apt-update.log
+          timeout 600 sudo apt-get install --no-install-recommends -y qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl 2>&1 | tee build/riscv64-system/host-apt-install.log
+          dpkg-query -W qemu-system-misc qemu-utils opensbi cloud-image-utils genisoimage openssh-client curl > build/riscv64-system/host-packages.txt
+      - name: Build and check with native guest tools and kernel
+        run: |
+          python3 tools/riscv64_system.py --output build/riscv64-system --commit "$GITHUB_SHA"
+      - name: Retain exact bytes and every available failed or passed result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: riscv64-system-emulated-${{ github.sha }}-${{ github.run_attempt }}
+          path: build/riscv64-system/*
+          if-no-files-found: error
+          retention-days: 14
