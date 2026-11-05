@@ -6,11 +6,13 @@ Python runs tests only. It is not a registry application backend.
 import http.client
 import concurrent.futures
 from contextlib import contextmanager
+from decimal import Decimal
 import fcntl
 import json
 import os
 from pathlib import Path
 import pty
+import re
 import secrets
 import socket
 import subprocess
@@ -214,6 +216,94 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(body["application_language"], "assembly")
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+
+    def test_metrics_fixed_exposition_and_route_labels(self):
+        # A missing route or a path-derived metric label breaks this contract.
+        probe = "/metrics-probe/untrusted-package/untrusted-account"
+        self.assertEqual(self.raw_request(probe)[0], 404)
+        code, headers, body = self.raw_request("/metrics")
+        self.assertEqual(code, 200, "GET /metrics must expose the bounded internal request metrics.")
+        self.assertEqual(headers["Content-Type"], "text/plain; version=0.0.4; charset=utf-8")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertLessEqual(len(body), 16384)
+        self.assertTrue(body.endswith(b"\n"))
+        self.assertNotIn(b"\r", body)
+        self.assertNotIn(probe.encode("ascii"), body)
+        routes = ("live", "ready", "about", "index", "metrics", "other")
+        classes = ("2xx", "4xx", "5xx")
+        boundaries = ("0.005", "0.01", "0.05", "0.1", "0.5", "1", "2", "+Inf")
+        requests = "asm_http_requests_total"
+        duration = "asm_http_request_duration_seconds"
+        failures = "asm_http_connection_failures_total"
+        expected_types = {requests: "counter", duration: "histogram", failures: "counter"}
+        expected = {(requests, (("route", route), ("status_class", status)))
+                    for route in routes for status in classes}
+        expected.update((duration + "_bucket", (("le", boundary), ("route", route)))
+                        for route in routes for boundary in boundaries)
+        expected.update((duration + suffix, (("route", route),))
+                        for route in routes for suffix in ("_sum", "_count"))
+        expected.add((failures, ()))
+        types, help_text, samples = {}, {}, {}
+        for line in body.decode("ascii").splitlines():
+            if line.startswith("# HELP "):
+                fields = line.split(" ", 3)
+                self.assertEqual(len(fields), 4)
+                name, text = fields[2:]
+                self.assertIn(name, expected_types)
+                self.assertNotIn(name, help_text)
+                self.assertTrue(text)
+                help_text[name] = text
+                continue
+            if line.startswith("# TYPE "):
+                fields = line.split()
+                self.assertEqual(len(fields), 4)
+                name, metric_type = fields[2:]
+                self.assertIn(name, expected_types)
+                self.assertNotIn(name, types)
+                self.assertEqual(metric_type, expected_types[name])
+                types[name] = metric_type
+                continue
+            match = re.fullmatch(r"(asm_[a-z_]+)(?:\{([^}]*)\})? ([0-9]+(?:\.[0-9]{1,9})?)", line)
+            self.assertIsNotNone(match, "Malformed or unexpected metrics line: " + line)
+            name, raw_labels, value = match.groups()
+            labels = {}
+            for field in raw_labels.split(",") if raw_labels else ():
+                label = re.fullmatch(r'([a-z_]+)="([^"\\]*)"', field)
+                self.assertIsNotNone(label, "Malformed metric label: " + field)
+                key, text = label.groups()
+                self.assertNotIn(key, labels)
+                labels[key] = text
+            key = (name, tuple(sorted(labels.items())))
+            self.assertIn(key, expected, "Unexpected metric name or user-derived label.")
+            self.assertNotIn(key, samples)
+            family = duration if name.startswith(duration + "_") else name
+            self.assertIn(family, types, "TYPE must precede the family's samples.")
+            self.assertIn(family, help_text, "HELP must precede the family's samples.")
+            if name != duration + "_sum":
+                self.assertRegex(value, r"^[0-9]+$")
+                self.assertLessEqual(int(value), 18446744073709551615)
+            else:
+                self.assertLessEqual(Decimal(value), Decimal("18446744073.709551615"))
+            samples[key] = Decimal(value)
+        self.assertEqual(types, expected_types)
+        self.assertEqual(set(help_text), set(expected_types))
+        for family in (requests, duration):
+            for term in ("queue", "header", "transfer"):
+                self.assertIn(term, help_text[family].lower())
+        self.assertIn("queue", help_text[failures].lower())
+        self.assertEqual(set(samples), expected)
+        self.assertEqual(len(samples), 79)
+        for route in routes:
+            count = samples[(duration + "_count", (("route", route),))]
+            self.assertEqual(count, sum(samples[(requests, (("route", route), ("status_class", status)))]
+                                        for status in classes))
+            buckets = [samples[(duration + "_bucket", (("le", boundary), ("route", route)))]
+                       for boundary in boundaries]
+            self.assertEqual(buckets, sorted(buckets))
+            self.assertEqual(buckets[-1], count)
+            if count == 0:
+                self.assertEqual(samples[(duration + "_sum", (("route", route),))], 0)
 
     def test_canonical_exports_preserve_exact_current_bytes_and_media_types(self):
         self.assertGreater(len(self.exports["/registry/v1/index.json"]), 16384)
