@@ -260,10 +260,14 @@ def main(argv=None):
             report["test_artifacts"] = test_runtime.TEST_ARTIFACTS
             import test_managed_runtime
             import test_managed_recovery
+            import test_resolver_runtime
+            import test_managed_child_binding
             suite = unittest.TestSuite([
                 unittest.defaultTestLoader.loadTestsFromModule(test_runtime),
                 unittest.defaultTestLoader.loadTestsFromModule(test_managed_runtime),
                 unittest.defaultTestLoader.loadTestsFromModule(test_managed_recovery),
+                unittest.defaultTestLoader.loadTestsFromModule(test_resolver_runtime),
+                unittest.defaultTestLoader.loadTestsFromModule(test_managed_child_binding),
             ])
             if not suite.countTestCases():
                 raise RuntimeError("The Windows runtime suite contains no tests.")

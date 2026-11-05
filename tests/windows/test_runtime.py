@@ -920,6 +920,17 @@ class WindowsRuntimeTests(unittest.TestCase):
         (project / "tests/main.s").write_text(self.native_main())
         return project, base
 
+    def test_resolution_metadata_preserves_native_c_abi_build_fields(self):
+        project, _ = self.native_project()
+        manifest = project / 'asm.toml'
+        manifest.write_bytes(manifest.read_bytes() +
+                             b'[resolution]\nschema = "1"\n[features]\ndefault = ["fast"]\nfast = []\n')
+        index = self.work / 'empty-resolution-index.tsv'
+        index.write_bytes(b'# asm-registry-v1\n')
+        self.cli('resolve', '--index', index, cwd=project)
+        self.assertTrue((project / 'asm.lock').read_bytes().startswith(b'# asm-lock-v3\n'))
+        self.assertEqual(self.cli('run', '--locked', cwd=project).stdout, 'native linked\n')
+
     def test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output(self):
         project, base = self.native_project()
         self.assertEqual(self.cli("run", cwd=project).stdout, "native linked\n")
