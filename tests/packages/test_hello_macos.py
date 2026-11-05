@@ -1,11 +1,15 @@
 """Observe native macOS hello output and failure exits; label translation separately."""
 import hashlib
+from contextlib import redirect_stdout
+import importlib.util
+import io
 import os
 from pathlib import Path
 import platform
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 try:
     from .macos_host import is_apple_silicon
@@ -55,23 +59,28 @@ class MacHelloTests(unittest.TestCase):
     def test_intel_greeting_and_output_failures(self):
         self.exercise("x86_64", "x86_64")
 
-    def test_translated_python_reports_both_execution_modes_correctly(self):
+    def test_execution_modes_ignore_python_process_architecture(self):
         if not ARM_HARDWARE:
-            self.skipTest("This regression requires Apple Silicon and translated Python")
-        prefix = ["/usr/bin/arch", "-x86_64", "/usr/bin/python3"]
-        probe = subprocess.run([*prefix, "-c", "pass"], capture_output=True, timeout=10)
-        if probe.returncode:
-            self.skipTest("The system Python cannot run under Rosetta")
-        result = subprocess.run(
-            [*prefix, str(Path(__file__).resolve()),
-             "MacHelloTests.test_apple_silicon_greeting_and_output_failures",
-             "MacHelloTests.test_intel_greeting_and_output_failures", "-v"],
-            capture_output=True, timeout=30,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(b"aarch64-macos: native;", result.stdout)
-        self.assertIn(b"x86_64-macos: Rosetta translation;", result.stdout)
-        self.assertNotIn(b"skipped", result.stderr)
+            self.skipTest("This regression requires Apple Silicon")
+        name = f"{__package__}._hello_process_metadata" if __package__ else "_hello_process_metadata"
+        output = io.StringIO()
+        with patch("platform.machine", return_value="x86_64"):
+            # Reload the cached hardware decision under controlled process metadata.
+            # The hardware probe and compiled executables remain real.
+            spec = importlib.util.spec_from_file_location(name, __file__)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            self.assertTrue(module.is_apple_silicon())
+            self.assertTrue(module.ARM_HARDWARE)
+            case = module.MacHelloTests("test_apple_silicon_greeting_and_output_failures")
+            try:
+                with redirect_stdout(output):
+                    case.exercise("aarch64", "arm64")
+                    case.exercise("x86_64", "x86_64")
+            except unittest.SkipTest as error:
+                self.fail(f"Controlled process metadata skipped a runnable target: {error}")
+        self.assertIn("aarch64-macos: native;", output.getvalue())
+        self.assertIn("x86_64-macos: Rosetta translation;", output.getvalue())
 
 
 if __name__ == "__main__":
