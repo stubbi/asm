@@ -27,7 +27,8 @@ Keep required notices and identify the origin of imported material.
 
 The root `asm.toml` defines the Linux x86-64 reference build.
 Use `make` for native host selection.
-The manifest format describes one project target, not a list of CLI hosts.
+The manifest describes one project with a legacy build or named target implementations.
+Project declarations do not establish CLI host support.
 
 Keep measurements separate from experiments that explore new behavior.
 Retain failed and superseded measurements when they explain a published result.
@@ -40,6 +41,7 @@ Install Git, Make, Python 3.11 or later, and Node.js 18 or later.
 Linux also needs GNU Binutils, curl, GNU Coreutils, and gzip.
 Linux x86-64 release checks need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
 On macOS, install Xcode Command Line Tools. The OS supplies the other native tools.
+Cross-build checks on Apple Silicon also require Homebrew LLVM and LLD.
 Clone the repository.
 Run `make test` on macOS.
 Run `make check` on Linux for the complete cross-target release suite.

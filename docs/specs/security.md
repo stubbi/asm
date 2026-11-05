@@ -29,7 +29,7 @@ The executable and inventory are separate filesystem entries; interruption can r
 
 Lock checks cover declared dependencies. GNU assembler includes and data directives can select other local files. The local build workflow is not a hermetic sandbox. Registry workers need separate isolation before they build untrusted submissions.
 
-Unreleased selected-target builds validate every declared recipe before creating a build stage.
+Asm 0.6.0 selected-target builds validate every declared recipe before creating a build stage.
 The CLI invokes fixed GNU or LLVM tools with direct arguments.
 Cross-target output is never executed implicitly.
 V2 locks bind package and target pairs and validate inactive metadata before cache actions.

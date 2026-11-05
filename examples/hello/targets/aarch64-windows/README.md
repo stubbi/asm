@@ -7,7 +7,7 @@ The assembler include path points to the project root.
 
 This package targets Windows ARM64 and the Microsoft ARM64 ABI.
 An ABI defines function calls, register use, and stack layout.
-This source package targets unreleased checkout version 0.5.0.
+This implementation belongs to the 0.6.0 source project.
 Native Windows qualification remains required.
 The program requires no C runtime.
 The source uses LLVM's assembler with AArch64 syntax.
@@ -57,7 +57,7 @@ It preserves registers `x18` through `x30` and does not use optional instruction
 The linker enables address randomization and non-executable data sections.
 
 Cross-assembly and PE inspection do not establish native Windows behavior.
-Before publication, run the package tests on a matching Windows host.
+Before publishing a Windows executable, run the package tests on a matching Windows host.
 From the repository root, run `python -m unittest discover -s tests/packages -p test_hello_windows.py -v`.
 That check covers captured output, read-only standard output, file preservation, and the assembly contract test.
 The native runtime check reports a skip on other operating systems.
