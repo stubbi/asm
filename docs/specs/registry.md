@@ -154,8 +154,7 @@ When no version is active, consumers must use each version's own license field.
 Each version contains `version`, `license`, `source`, `yanked`, `artifacts`, and `evidence`.
 Its `license` comes from that exact release record, including for a yanked version.
 A yanked version also includes its reason.
-The source field uses the release-record shape above.
-Artifact fields retain their release-record values.
+The artifact and source fields use the release-record shapes above.
 The website keeps all versions visible, including yanked versions.
 An absent version license is unavailable; consumers must not substitute the latest version's declaration.
 
@@ -163,9 +162,18 @@ Current evidence has `metadata`, `artifacts`, `provenance`, `formal`, and `agent
 
 #### Declared source dependencies
 
-A verified site build adds `dependency_metadata` to each checked source artifact in the generated JSON index.
-The builder derives this field from that artifact's root `asm.toml` after size, SHA-256, archive, and project validation.
+A verified site build writes optional declarations to `registry/v1/dependencies.json`.
+The existing catalog JSON and native TSV formats remain unchanged for existing clients.
+The builder derives declarations from each source artifact's root `asm.toml` after size, SHA-256, archive, and project validation.
 It reuses the existing artifact download and does not execute or resolve package code.
+
+The declaration file has `schema: 1` and a `sources` array.
+Each source entry contains `name`, `version`, `target`, and `metadata`.
+The name, version, target, and source digest must match an exact catalog artifact before the website displays its metadata.
+The file has a four-MiB limit and at most 4096 source entries.
+Duplicate source identities make the declaration file unavailable in the browser.
+Missing or invalid declarations must not make the package catalog unavailable.
+The `metadata` object contains these fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -180,12 +188,12 @@ Inline declarations retain their explicit values and use those defaults for omit
 The manifest extension below defines accepted requirements, features, and bounds.
 
 A checked legacy source manifest has empty dependency and feature declarations.
-An unchecked source artifact has no `dependency_metadata` field; its declarations are unavailable, not known empty.
+An unchecked source artifact has no source entry; its declarations are unavailable, not known empty.
 Executable artifacts never inherit source dependency declarations.
 Different target artifacts can declare different dependencies for the same package version.
 These declarations do not describe resolved transitive dependencies, assembler includes, or executable contents.
 
-The generated field does not change published release records, source archives, or native TSV indexes.
+The optional file does not change published release records, source archives, or existing registry indexes.
 Its source digest identifies the checked bytes; it does not authenticate the publisher.
 
 #### Dependency manifest extension

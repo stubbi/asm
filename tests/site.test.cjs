@@ -196,3 +196,43 @@ test("package fragment links use canonical identities without collisions", () =>
     assert.equal(packageAnchor(name), null);
   }
 });
+
+function declarationCatalog() {
+  const source = sourceWithDependencies();
+  delete source.dependency_metadata;
+  return [{ name: "owner/app", versions: [
+    { version: "1.0.0", evidence: { artifacts: "validated" }, artifacts: [source] },
+    { version: "2.0.0", evidence: { artifacts: "validated" }, artifacts: [{ ...source }] }
+  ] }];
+}
+
+test("optional declarations bind only the exact package version target and source digest", () => {
+  const { mergeDependencyMetadata } = require("../site/app.js");
+  const entry = { name: "owner/app", version: "1.0.0", target: "x86_64-linux", metadata: sourceWithDependencies().dependency_metadata };
+  const catalog = declarationCatalog();
+  const result = mergeDependencyMetadata(catalog, { schema: 1, sources: [entry] });
+  assert.equal(result[0].versions[0].artifacts[0].dependency_metadata.dependencies[0].requirement, "^1.2.0");
+  assert.equal(result[0].versions[1].artifacts[0].dependency_metadata, undefined);
+  assert.equal(catalog[0].versions[0].artifacts[0].dependency_metadata, undefined);
+  for (const change of [
+    { name: "other/app" }, { version: "3.0.0" }, { target: "aarch64-linux" },
+    { metadata: { ...entry.metadata, source_sha256: "c".repeat(64) } }
+  ]) {
+    const unmatched = mergeDependencyMetadata(catalog, { schema: 1, sources: [{ ...entry, ...change }] });
+    assert.equal(unmatched[0].versions[0].artifacts[0].dependency_metadata, undefined);
+  }
+});
+
+test("missing invalid or ambiguous optional declarations keep catalog records with unknown metadata", () => {
+  const { mergeDependencyMetadata } = require("../site/app.js");
+  const entry = { name: "owner/app", version: "1.0.0", target: "x86_64-linux", metadata: sourceWithDependencies().dependency_metadata };
+  const catalog = declarationCatalog();
+  catalog[0].versions[0].artifacts[0].dependency_metadata = entry.metadata;
+  for (const data of [null, {}, { schema: 2, sources: [entry] }, { schema: 1, sources: null },
+    { schema: 1, sources: [entry, entry] }, { schema: 1, sources: Array(4097).fill(entry) }]) {
+    const result = mergeDependencyMetadata(catalog, data);
+    assert.equal(result[0].name, "owner/app");
+    assert.equal(result[0].versions.length, 2);
+    assert.equal(result[0].versions[0].artifacts[0].dependency_metadata, undefined);
+  }
+});

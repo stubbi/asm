@@ -122,6 +122,36 @@
     return metadata;
   }
 
+  // The optional file cannot change the v1 catalog or attach another source's
+  // declarations. Missing, invalid, or ambiguous input leaves metadata unknown.
+  function mergeDependencyMetadata(packages, data) {
+    const result = packages.map((pkg) => ({ ...pkg, versions: pkg.versions.map((version) => ({
+      ...version, artifacts: version.artifacts.map((artifact) => {
+        const copy = { ...artifact };
+        delete copy.dependency_metadata;
+        return copy;
+      })
+    })) }));
+    if (!data || data.schema !== 1 || !Array.isArray(data.sources) || data.sources.length > 4096) return result;
+    const sources = new Map();
+    for (const source of data.sources) {
+      if (!source || !packageAnchor(source.name) || typeof source.version !== "string" ||
+          source.version.length > 32 || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(source.version) ||
+          typeof source.target !== "string" || !source.target.length || source.target.length > 128 ||
+          typeof source.metadata?.source_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(source.metadata.source_sha256)) return result;
+      const key = JSON.stringify([source.name, source.version, source.target, source.metadata.source_sha256]);
+      if (sources.has(key)) return result;
+      sources.set(key, source.metadata);
+    }
+    result.forEach((pkg) => pkg.versions.forEach((version) => version.artifacts.forEach((artifact) => {
+      const metadata = sources.get(JSON.stringify([pkg.name, version.version, artifact.target, artifact.sha256]));
+      if (dependencyMetadata({ ...artifact, dependency_metadata: metadata }, version.evidence?.artifacts)) {
+        artifact.dependency_metadata = metadata;
+      }
+    })));
+    return result;
+  }
+
   function evidenceText(value) {
     if (!evidenceStates.has(value)) return "Unavailable";
     return value === "not-run" ? "Not run" : value.charAt(0).toUpperCase() + value.slice(1);
@@ -145,7 +175,7 @@
 
   // These pure functions are also used by the repository's Node checks.
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, packageAnchor, dependencyMetadata };
+    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, packageAnchor, dependencyMetadata, mergeDependencyMetadata };
   }
   if (typeof document === "undefined") return;
 
@@ -317,6 +347,7 @@
 
   function renderVersion(version, latest) {
     const section = element("details", "version-record");
+    section.dataset.version = version.version;
     section.open = version.version === latest;
     const summary = element("summary", "", `Version ${version.version}`);
     if (version.yanked) summary.append(element("span", "release-state", "Yanked"));
@@ -450,12 +481,17 @@
     panel.hidden = false;
   }
 
-  async function getJSON(path) {
+  async function getJSON(path, limit = 0) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(path, { signal: controller.signal, credentials: "omit" });
       if (!response.ok) throw new Error("Record unavailable");
+      if (limit) {
+        const text = await response.text();
+        if (text.length > limit) throw new Error("Record exceeds limit");
+        return JSON.parse(text);
+      }
       return await response.json();
     } finally {
       window.clearTimeout(timeout);
@@ -464,8 +500,9 @@
 
   async function loadRegistry() {
     status.textContent = "Loading package records…";
+    const declarations = getJSON("registry/v1/dependencies.json", 4 * 1024 * 1024).catch(() => null);
     try {
-      packages = normalizeIndex(await getJSON("registry/v1/index.json"));
+      packages = mergeDependencyMetadata(normalizeIndex(await getJSON("registry/v1/index.json")), null);
       const targets = [...new Set(packages.flatMap((pkg) => pkg.targets))].sort();
       targets.forEach((target) => {
         const option = element("option", "", target);
@@ -479,6 +516,18 @@
       showPackageFromHash();
       renderCliDownload();
       renderMathGuide();
+      try {
+        packages = mergeDependencyMetadata(packages, await declarations);
+        list.querySelectorAll(".package-record").forEach((record) => {
+          const pkg = packages.find((entry) => entry.name === record.querySelector(".package-name").textContent);
+          record.querySelectorAll(".version-record").forEach((section) => {
+            const version = pkg.versions.find((entry) => entry.version === section.dataset.version);
+            section.querySelector(".dependency-section").replaceWith(renderDependencies(version));
+          });
+        });
+      } catch {
+        // Optional declarations must not make the package catalog unavailable.
+      }
       try {
         const records = await getJSON("registry/v1/downloads.json");
         if (records?.schema === 1 && records.source === "github-release-assets") {

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_site
 import registry
+import agent_catalog
 
 DECLARATIONS = '''[resolution]
 schema = "1"
@@ -65,13 +66,20 @@ class SiteDependencyExportTests(unittest.TestCase):
         build_site.build_site(ROOT, self.work / "registry", output, verify=verify, artifact_reader=self.read)
         return output, json.loads((output / "registry/v1/index.json").read_bytes())
 
+    def declarations(self, output):
+        data = json.loads((output / "registry/v1/dependencies.json").read_bytes())
+        self.assertEqual(data["schema"], 1)
+        return data["sources"]
+
     def test_checked_source_exports_declared_dependencies_and_feature_members(self):
         artifact = self.source()
         output, index = self.export()
         release = index["packages"][0]["versions"][0]
-        exported = release["artifacts"][0]
-        self.assertIn("dependency_metadata", exported)
-        self.assertEqual(exported["dependency_metadata"], {
+        declarations = self.declarations(output)
+        self.assertEqual(len(declarations), 1)
+        exported = declarations[0]
+        self.assertEqual((exported["name"], exported["version"], exported["target"]), ("owner/hello", "1.0.0", "x86_64-linux"))
+        self.assertEqual(exported["metadata"], {
             "schema": 1, "source_sha256": artifact["sha256"],
             "dependencies": [
                 {"name": "stubbi/core", "requirement": "^1.2.0", "optional": False, "default_features": True, "features": []},
@@ -81,20 +89,31 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.assertEqual(release["evidence"]["artifacts"], "validated")
         self.assertEqual(json.loads((output / "registry/v1/packages/owner/hello/1.0.0.json").read_bytes()), self.record)
 
+    def test_checked_index_remains_compatible_with_existing_catalog_clients(self):
+        self.source()
+        output, index = self.export()
+        try:
+            packages = agent_catalog._validate((output / "registry/v1/index.json").read_bytes())
+        except registry.RegistryError as error:
+            self.fail(f"Checked catalog changed its existing artifact contract: {error}")
+        self.assertEqual([package["name"] for package in packages], ["owner/hello"])
+        self.assertNotIn("dependency_metadata", index["packages"][0]["versions"][0]["artifacts"][0])
+
     def test_checked_legacy_source_exports_known_empty_declarations(self):
         artifact = self.source(declarations="")
-        _, index = self.export()
-        exported = index["packages"][0]["versions"][0]["artifacts"][0]
-        self.assertIn("dependency_metadata", exported)
-        self.assertEqual(exported["dependency_metadata"], {
+        output, _ = self.export()
+        declarations = self.declarations(output)
+        self.assertEqual(len(declarations), 1)
+        self.assertEqual(declarations[0]["metadata"], {
             "schema": 1, "source_sha256": artifact["sha256"], "dependencies": [], "features": {}})
 
     def test_unchecked_source_metadata_remains_unavailable(self):
         self.source()
-        _, index = self.export(verify=False)
+        output, index = self.export(verify=False)
         release = index["packages"][0]["versions"][0]
         self.assertNotIn("dependency_metadata", release["artifacts"][0])
         self.assertEqual(release["evidence"]["artifacts"], "not-run")
+        self.assertEqual(self.declarations(output), [])
         self.assertEqual(self.requests, [])
 
     def test_source_targets_retain_their_separate_declarations(self):
@@ -102,14 +121,13 @@ class SiteDependencyExportTests(unittest.TestCase):
         targets = {"aarch64-linux": "stubbi/arm", "aarch64-macos": "stubbi/macos", "riscv64-linux": "stubbi/riscv"}
         sources = {target: self.source(target, '[resolution]\nschema = "1"\n[dependencies]\n'
                                       f'"{name}" = ">=3.0.0"\n') for target, name in targets.items()}
-        _, index = self.export()
-        artifacts = {item["target"]: item for item in index["packages"][0]["versions"][0]["artifacts"]}
+        output, _ = self.export()
+        declarations = {item["target"]: item["metadata"] for item in self.declarations(output)}
         for target, name in targets.items():
             with self.subTest(target=target):
-                self.assertIn("dependency_metadata", artifacts[target])
-                self.assertEqual(artifacts[target]["dependency_metadata"]["dependencies"][0]["name"], name)
-                self.assertEqual(artifacts[target]["dependency_metadata"]["source_sha256"], sources[target]["sha256"])
-        self.assertEqual(len(artifacts["x86_64-linux"]["dependency_metadata"]["dependencies"]), 2)
+                self.assertEqual(declarations[target]["dependencies"][0]["name"], name)
+                self.assertEqual(declarations[target]["source_sha256"], sources[target]["sha256"])
+        self.assertEqual(len(declarations["x86_64-linux"]["dependencies"]), 2)
         self.assertEqual(len(self.requests), 4)
 
     def test_corrupt_bytes_and_malformed_manifests_stop_site_publication(self):
@@ -133,7 +151,7 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.assertEqual(self.requests, [artifact["url"]])
 
     def test_checked_executable_does_not_inherit_source_declarations(self):
-        self.source()
+        source = self.source()
         header = bytearray(64)
         header[:7] = b"\x7fELF\x02\x01\x01"
         struct.pack_into("<HHI", header, 16, 2, 62, 1)
@@ -144,8 +162,11 @@ class SiteDependencyExportTests(unittest.TestCase):
                     "url": "https://github.com/owner/hello/releases/download/v1.0.0/hello-bin", "bytes": len(data)}
         self.record["artifacts"].append(artifact)
         self.payloads[artifact["url"]] = data
-        _, index = self.export()
+        output, index = self.export()
         artifacts = {item["kind"]: item for item in index["packages"][0]["versions"][0]["artifacts"]}
         self.assertNotIn("dependency_metadata", artifacts["executable"])
-        self.assertIn("dependency_metadata", artifacts["source"])
+        declarations = self.declarations(output)
+        self.assertEqual(len(declarations), 1)
+        self.assertEqual(declarations[0]["metadata"]["source_sha256"], source["sha256"])
+        self.assertNotEqual(declarations[0]["metadata"]["source_sha256"], artifact["sha256"])
         self.assertEqual(len(self.requests), 2)
