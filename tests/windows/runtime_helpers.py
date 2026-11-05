@@ -82,6 +82,7 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
     import ctypes
     from ctypes import wintypes
     import hashlib
+    import ntpath
     import os
     import subprocess
     import threading
@@ -109,6 +110,12 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
     kernel.GetFileInformationByHandle.restype = wintypes.BOOL
     kernel.SetFileInformationByHandle.argtypes = [HANDLE, ctypes.c_int, VOID, DWORD]
     kernel.SetFileInformationByHandle.restype = wintypes.BOOL
+    kernel.GetFinalPathNameByHandleW.argtypes = [HANDLE, wintypes.LPWSTR, DWORD, DWORD]
+    kernel.GetFinalPathNameByHandleW.restype = DWORD
+    kernel.SetFilePointerEx.argtypes = [HANDLE, ctypes.c_longlong, VOID, DWORD]
+    kernel.SetFilePointerEx.restype = wintypes.BOOL
+    kernel.ReadFile.argtypes = [HANDLE, VOID, DWORD, ctypes.POINTER(DWORD), VOID]
+    kernel.ReadFile.restype = wintypes.BOOL
     kernel.ResumeThread.argtypes = [HANDLE]
     kernel.ResumeThread.restype = DWORD
     kernel.CloseHandle.argtypes = [HANDLE]
@@ -128,24 +135,63 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         if not condition:
             raise RuntimeError(message)
 
-    def file_handle(path, *, delete=False):
+    def file_handle(path, *, delete=False, directory=False):
         # READ_DATA, EXECUTE, READ_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE.
-        handle = kernel.CreateFileW(str(path), 0x1200A1 | (0x10000 if delete else 0),
-                                    7, None, 3, 0x200000, None)
+        access = 0x1200A0 if directory else 0x1200A1
+        flags = 0x200000 | (0x2000000 if directory else 0)
+        handle = kernel.CreateFileW(str(path), access | (0x10000 if delete else 0),
+                                    7, None, 3, flags, None)
         if handle == invalid:
             raise ctypes.WinError(ctypes.get_last_error())
         return handle
 
-    def identity(handle):
+    def identity(handle, *, directory=False):
         info = FileInformation()
         if not kernel.GetFileInformationByHandle(handle, ctypes.byref(info)):
             raise ctypes.WinError(ctypes.get_last_error())
-        require(not info.attributes & 0x410, "The image fixture must be a regular file without reparse points.")
-        require(info.links == 1, "The image fixture must have exactly one hard link.")
+        require(not info.attributes & 0x400 and bool(info.attributes & 0x10) == directory,
+                "The fixture handle has the wrong file type or a reparse point.")
+        require(directory or info.links == 1, "The image fixture must have exactly one hard link.")
         return {"volume_serial": info.volume, "file_index": info.index_high << 32 | info.index_low,
                 "links": info.links, "bytes": info.size_high << 32 | info.size_low}
 
-    process = thread = original = replacement = None
+    def final_path(handle):
+        path = ctypes.create_unicode_buffer(4096)
+        length = kernel.GetFinalPathNameByHandleW(handle, path, len(path), 0)
+        if not length:
+            raise ctypes.WinError(ctypes.get_last_error())
+        require(length < len(path), "The final fixture path exceeds its WCHAR capacity.")
+        return path.value
+
+    def namespace_identity(path, expected):
+        handle = file_handle(path)
+        try:
+            actual = identity(handle)
+            require(actual == expected, "The intended pathname does not identify the held fixture file.")
+            return actual
+        finally:
+            kernel.CloseHandle(handle)
+
+    def handle_digest(handle, size):
+        require(size <= 8 * 1024 * 1024, "The held image exceeds the fixture byte limit.")
+        if not kernel.SetFilePointerEx(handle, 0, None, 0):
+            raise ctypes.WinError(ctypes.get_last_error())
+        digest, remaining = hashlib.sha256(), size
+        buffer = ctypes.create_string_buffer(65536)
+        while remaining:
+            count = DWORD()
+            if not kernel.ReadFile(handle, buffer, min(remaining, len(buffer)), ctypes.byref(count), None):
+                raise ctypes.WinError(ctypes.get_last_error())
+            require(0 < count.value <= min(remaining, len(buffer)), "The held image read ended early or exceeded its bound.")
+            digest.update(buffer.raw[:count.value])
+            remaining -= count.value
+        count = DWORD()
+        if not kernel.ReadFile(handle, buffer, 1, ctypes.byref(count), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        require(count.value == 0, "The held image has unexpected trailing bytes.")
+        return digest.hexdigest()
+
+    process = thread = original = replacement = parent = None
     descriptors, readers, captured = [], [], {"stdout": bytearray(), "stderr": bytearray()}
     overflow, reader_errors = threading.Event(), []
     completed = False
@@ -204,8 +250,12 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
             reader.start()
             readers.append(reader)
         report["stage"] = "open-mapped-original"
+        parent = file_handle(installed.parent, directory=True)
+        report["parent_identity"] = identity(parent, directory=True)
+        report["parent_final_path"] = final_path(parent)
         original = file_handle(installed, delete=True)
         report["original_identity"] = identity(original)
+        report["original_final_path_before"] = final_path(original)
 
         def mapping_status(handle):
             value = HANDLE(handle)
@@ -214,16 +264,25 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         report["original_mapping_before"] = mapping_status(original)
         require(report["original_mapping_before"] == 0, "The original file does not match the suspended process image.")
         report["stage"] = "rename-mapped-original"
-        name = str(displaced).encode("utf-16-le")
-        buffer = ctypes.create_string_buffer(max(ctypes.sizeof(RenameInformation), RenameInformation.name.offset + len(name)))
+        # A simple basename avoids Win32 full-path conversion. Hold its parent
+        # explicitly and terminate FileName, while its byte length excludes NUL.
+        name = displaced.name.encode("utf-16-le")
+        buffer = ctypes.create_string_buffer(ctypes.sizeof(RenameInformation) + len(name) + 2)
         rename = RenameInformation.from_buffer(buffer)
         rename.flags = 2  # FILE_RENAME_FLAG_POSIX_SEMANTICS; destination must be absent.
-        rename.root = None
+        rename.root = parent
         rename.length = len(name)
         ctypes.memmove(ctypes.byref(buffer, RenameInformation.name.offset), name, len(name))
+        report["rename_input"] = {"name": displaced.name, "file_name_length_bytes": len(name),
+                                  "buffer_bytes": len(buffer), "terminated": True, "held_parent": True}
         if not kernel.SetFileInformationByHandle(original, 22, buffer, len(buffer)):
             raise ctypes.WinError(ctypes.get_last_error())
         report["rename_succeeded"] = True
+        report["original_final_path_after_rename"] = final_path(original)
+        expected_displaced = report["parent_final_path"].rstrip("\\") + "\\" + displaced.name
+        require(ntpath.normcase(report["original_final_path_after_rename"]) == ntpath.normcase(expected_displaced),
+                "The renamed handle does not have the intended destination path.")
+        report["displaced_namespace_identity_before_resume"] = namespace_identity(displaced, report["original_identity"])
         report["stage"] = "create-byte-identical-replacement"
         with installed.open("xb") as output:
             output.write(before)
@@ -232,6 +291,10 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         own_replacement(installed)
         replacement = file_handle(installed)
         report["replacement_identity"] = identity(replacement)
+        report["replacement_final_path"] = final_path(replacement)
+        expected_replacement = report["parent_final_path"].rstrip("\\") + "\\" + installed.name
+        require(ntpath.normcase(report["replacement_final_path"]) == ntpath.normcase(expected_replacement),
+                "The replacement handle does not have the intended installation path.")
         identity_fields = ("volume_serial", "file_index")
         require(tuple(report["replacement_identity"][key] for key in identity_fields) !=
                 tuple(report["original_identity"][key] for key in identity_fields),
@@ -252,8 +315,13 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
         report["replacement_identity_after"] = identity(replacement)
         require(report["original_identity_after"] == report["original_identity"], "The original file identity changed.")
         require(report["replacement_identity_after"] == report["replacement_identity"], "The replacement file identity changed.")
-        report["sha256_displaced_after"] = hashlib.sha256(displaced.read_bytes()).hexdigest()
-        report["sha256_replacement_after"] = hashlib.sha256(installed.read_bytes()).hexdigest()
+        report["parent_identity_after"] = identity(parent, directory=True)
+        require(all(report["parent_identity_after"][key] == report["parent_identity"][key] for key in identity_fields),
+                "The fixture parent identity changed.")
+        report["displaced_namespace_identity_after"] = namespace_identity(displaced, report["original_identity"])
+        report["replacement_namespace_identity_after"] = namespace_identity(installed, report["replacement_identity"])
+        report["sha256_displaced_after"] = handle_digest(original, report["original_identity"]["bytes"])
+        report["sha256_replacement_after"] = handle_digest(replacement, report["replacement_identity"]["bytes"])
         require(report["sha256_displaced_after"] == report["sha256_replacement_after"] == before_digest,
                 "The displaced or replacement bytes changed.")
         report["native_api_qualification"] = True
@@ -275,7 +343,7 @@ def displaced_running_image(installed, version, environment, cwd, *, own_replace
                                        "unfinished_readers": any(reader.is_alive() for reader in readers)}
         for fd in descriptors:
             os.close(fd)
-        for handle in (replacement, original, thread, process):
+        for handle in (replacement, original, parent, thread, process):
             if handle is not None:
                 kernel.CloseHandle(handle)
         report["stdout"] = captured["stdout"].decode("utf-8", errors="replace")
