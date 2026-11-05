@@ -7,11 +7,14 @@ assembly executable. The fixture owns a fresh local PostgreSQL cluster and
 creates its test records without an external service or reference executable.
 """
 from concurrent.futures import ThreadPoolExecutor
+import base64
 import hashlib
 import http.client
+from itertools import islice
 import json
 import os
 from pathlib import Path
+import platform
 import select
 import secrets
 import socket
@@ -28,6 +31,192 @@ from local_postgres import Database, LocalPostgres, MIGRATION_SHA384, create_cat
 
 BUILD = Path(os.environ.get("ASM_PROTO_BUILD_DIR", Path(__file__).resolve().parent / "build"))
 BINARY = Path(os.environ["ASM_PROTO_BINARY"])
+
+
+class ReferenceDiagnostic:
+    """Bounded fixture observations. These records never qualify the server."""
+    RAW_LIMIT = 16384
+    PROC_LIMIT = 131072
+    JSON_LIMIT = 1048576
+    SNAPSHOT_LIMIT = 65536
+    STATUS_FIELDS = ("Name", "State", "Tgid", "Pid", "PPid", "Threads", "NSpid", "NStgid")
+
+    def __init__(self, server_pid, forbidden):
+        self.server_pid = server_pid
+        self.forbidden = sorted((value for value in forbidden if value), key=len, reverse=True)
+        self.directory = Path(tempfile.mkdtemp(prefix="reference-causal-", dir=BUILD))
+        digest, size = hashlib.sha256(), 0
+        with BINARY.open("rb") as source:
+            for chunk in iter(lambda: source.read(131072), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        self.data = {
+            "schema": 1, "scope": "reference-server-causal-diagnostic", "qualification": "UNQUALIFIED",
+            "base_commit": "04c93b3f0200173298d24f22a06393bc359a1af0",
+            "runtime": {"path": str(BINARY), "sha256": digest.hexdigest(), "bytes": size},
+            "limits": {"raw_response_bytes_per_query": self.RAW_LIMIT, "proc_read_bytes": self.PROC_LIMIT + 1,
+                       "proc_retained_bytes": self.PROC_LIMIT,
+                       "task_rows_per_snapshot": 64, "fd_links_per_snapshot": 128,
+                       "snapshot_json_bytes": self.SNAPSHOT_LIMIT, "snapshots": 8,
+                       "total_json_bytes": self.JSON_LIMIT, "errors_per_snapshot": 32},
+            "redaction": "Known fixture password and complete connection URLs; no arbitrary exception text.",
+            "observer_effect": "Snapshots and evidence writes add work. Timings are diagnostic and unqualified.",
+            "observer": {"system": platform.system(), "release": platform.release(),
+                         "machine": platform.machine(), "pid": os.getpid()},
+            "server": {"pid": server_pid},
+            "publication_errors": [],
+            "connection_cap": {"recovery": "not_reached", "clients": [], "snapshots": []},
+            "simultaneous_searches": {"workers": 8, "timeout_seconds": 4, "records": [None] * 16},
+        }
+        errors = []
+        for label, pid in (("observer", os.getpid()), ("server", server_pid)):
+            self.data[label]["proc_status"] = self._status(self._read(Path(f"/proc/{pid}/status"), 16384, errors))
+            try:
+                self.data[label]["proc_exe"] = self._safe(os.readlink(f"/proc/{pid}/exe"))[:1024]
+            except OSError as error:
+                self._error(errors, f"/proc/{pid}/exe", error)
+        self.data["procfs"] = "available" if Path("/proc/self/status").is_file() else "unavailable"
+        self.data["identity_errors"] = errors
+        self.publish()
+
+    @staticmethod
+    def exception(error, stage):
+        return {"type": type(error).__name__, "errno": getattr(error, "errno", None), "stage": stage}
+
+    def _safe(self, value):
+        raw = value.encode("utf-8", errors="replace")
+        for secret in self.forbidden:
+            raw = raw.replace(secret, b"[REDACTED]")
+        return raw.decode("utf-8", errors="replace")
+
+    def _error(self, errors, path, error):
+        self._note(errors, {"path": str(path), **self.exception(error, "procfs")})
+
+    @staticmethod
+    def _note(errors, note):
+        if len(errors) < 31:
+            errors.append(note)
+        elif len(errors) == 31:
+            errors.append({"omitted_errors": 1})
+        else:
+            errors[-1]["omitted_errors"] += 1
+
+    def _read(self, path, limit, errors):
+        try:
+            with path.open("rb") as source:
+                raw = source.read(limit + 1)
+            if len(raw) > limit:
+                self._note(errors, {"path": str(path), "truncated": True, "limit": limit})
+            return self._safe(raw[:limit].decode("utf-8", errors="replace"))
+        except OSError as error:
+            self._error(errors, path, error)
+            return ""
+
+    def _status(self, text):
+        return {key: value.strip()[:128] for row in text.splitlines() if ":" in row
+                for key, value in [row.split(":", 1)] if key in self.STATUS_FIELDS}
+
+    def _entries(self, path, limit, errors):
+        try:
+            with os.scandir(path) as entries:
+                names = [entry.name for entry in islice(entries, limit + 1)]
+            return sorted((int(name) for name in names[:limit] if name.isdecimal())), len(names) > limit
+        except OSError as error:
+            self._error(errors, path, error)
+            return [], False
+
+    def publish(self):
+        """Use only our newly created private directory. A write failure fails the test."""
+        payload = json.dumps(self.data, separators=(",", ":"), ensure_ascii=True).encode() + b"\n"
+        if len(payload) > self.JSON_LIMIT:
+            raise ValueError("Reference diagnostic exceeded its JSON limit.")
+        temporary = None
+        try:
+            fd, temporary = tempfile.mkstemp(prefix=".capture-", dir=self.directory)
+            with os.fdopen(fd, "wb") as output:
+                output.write(payload)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, self.directory / "diagnostic.json")
+        except OSError as error:
+            if len(self.data["publication_errors"]) < 32:
+                self.data["publication_errors"].append(self.exception(error, "evidence-write"))
+            raise
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
+
+    def response(self, record, status, headers, raw=None, *, complete=True):
+        record.update(status=status, headers={key: self._safe(value)[:128] for key, value in headers
+                      if key.lower() in ("content-type", "content-length", "connection", "cache-control",
+                                         "x-content-type-options")})
+        if raw is None:
+            return
+        safe = raw
+        for secret in self.forbidden:
+            safe = safe.replace(secret, b"[REDACTED]")
+        record.update(body_bytes=len(raw), body_sha256=hashlib.sha256(raw).hexdigest(),
+                      body_base64=base64.b64encode(safe[:self.RAW_LIMIT]).decode("ascii"),
+                      body_truncated=len(raw) > self.RAW_LIMIT or len(safe) > self.RAW_LIMIT,
+                      body_redacted=safe != raw, body_complete=complete,
+                      body_state="complete" if complete else "partial")
+
+    def client(self, index, event, client, start, error=None):
+        record = {"index": index, "event": event, "start_monotonic": start, "end_monotonic": time.monotonic()}
+        if client is not None and event != "close":
+            for label, getter in (("local", client.getsockname), ("peer", client.getpeername)):
+                try:
+                    record[label] = getter()
+                except OSError as endpoint_error:
+                    record[label] = self.exception(endpoint_error, "endpoint")
+        if error is not None:
+            record["exception"] = self.exception(error, event)
+        self.data["connection_cap"]["clients"].append(record)
+
+    def snapshot(self, phase, **observations):
+        """Read only this server's task roster and owned TCP socket rows."""
+        errors, root = [], Path(f"/proc/{self.server_pid}")
+        snapshot = {"phase": phase, "start_monotonic": time.monotonic(), "observations": observations,
+                    "status": self._status(self._read(root / "status", 16384, errors)),
+                    "tasks": [], "socket_fds": [], "tcp": [], "errors": errors}
+        ids, snapshot["tasks_truncated"] = self._entries(root / "task", 64, errors)
+        snapshot["task_ids"] = ids
+        for tid in ids:
+            task = root / "task" / str(tid)
+            snapshot["tasks"].append({"tid": tid, "comm": self._read(task / "comm", 256, errors)[:128],
+                                      "status": self._status(self._read(task / "status", 16384, errors)),
+                                      "wchan": self._read(task / "wchan", 256, errors)[:128]})
+        fds, snapshot["fds_truncated"] = self._entries(root / "fd", 128, errors)
+        inodes = set()
+        for fd in fds:
+            try:
+                link = os.readlink(root / "fd" / str(fd))
+            except OSError as error:
+                self._error(errors, root / "fd" / str(fd), error)
+                continue
+            if link.startswith("socket:[") and link.endswith("]") and link[8:-1].isdecimal():
+                inodes.add(link[8:-1])
+                snapshot["socket_fds"].append({"fd": fd, "link": link})
+        for table in ("tcp", "tcp6"):
+            for row in self._read(root / "net" / table, self.PROC_LIMIT, errors).splitlines()[1:]:
+                fields = row.split()
+                if len(fields) > 9 and fields[9] in inodes and len(snapshot["tcp"]) < 128:
+                    snapshot["tcp"].append({"table": table, "inode": fields[9], "row": row[:512]})
+        snapshot["end_monotonic"] = time.monotonic()
+        snapshot["retention_truncated"] = False
+        while len(json.dumps(snapshot, separators=(",", ":")).encode()) > self.SNAPSHOT_LIMIT:
+            snapshot["retention_truncated"] = True
+            for key in ("tcp", "tasks", "socket_fds"):
+                if snapshot[key]:
+                    snapshot[key].pop()
+                    break
+            else:
+                raise ValueError("Reference diagnostic snapshot exceeded its limit.")
+        snapshots = self.data["connection_cap"]["snapshots"]
+        if len(snapshots) >= 8:
+            raise ValueError("Reference diagnostic exceeded its snapshot limit.")
+        snapshots.append(snapshot)
+        self.publish()
 
 
 class GateProxy:
@@ -136,6 +325,8 @@ class ServerTests(unittest.TestCase):
         cls.port = cls.unused_port()
         cls.server = subprocess.Popen([str(BINARY), str(cls.port), str(cls.proxy_file)], stdout=cls.log, stderr=cls.log)
         cls.addClassCleanup(cls.stop_server)
+        cls.diagnostic = ReferenceDiagnostic(cls.server.pid, [cls.password.encode()] +
+            [path.read_bytes().strip() for path in (*cls.url_files.values(), cls.proxy_file)])
         cls.wait_server(cls.server, cls.port)
         cls.evidence = {"binary_sha256": hashlib.sha256(BINARY.read_bytes()).hexdigest(),
                         "libpq_version": cls.admin.lib.PQlibVersion(), "database_version": cls.fixture_admin.execute("SHOW server_version")[0][0],
@@ -185,15 +376,31 @@ class ServerTests(unittest.TestCase):
         saved_log = BUILD / "server-test.log"
         saved_log.write_bytes((cls.base / "server.log").read_bytes())
 
-    def request(self, path, *, method="GET", body=None, headers=None, timeout=4):
+    def request(self, path, *, method="GET", body=None, headers=None, timeout=4, diagnostic=None):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+        stage = "transport"
         try:
             connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
+            if diagnostic is not None:
+                self.diagnostic.response(diagnostic, response.status, response.getheaders())
             data = response.read()
+            if diagnostic is not None:
+                self.diagnostic.response(diagnostic, response.status, response.getheaders(), data)
+            stage = "json"
             return response.status, dict(response.getheaders()), json.loads(data)
+        except Exception as error:
+            if diagnostic is not None:
+                if isinstance(error, http.client.IncompleteRead):
+                    self.diagnostic.response(diagnostic, diagnostic["status"], diagnostic["headers"].items(),
+                                             error.partial, complete=False)
+                diagnostic["exception"] = self.diagnostic.exception(error, stage)
+            raise
         finally:
             connection.close()
+            if diagnostic is not None:
+                diagnostic["end_monotonic"] = time.monotonic()
+                diagnostic["elapsed_seconds"] = diagnostic["end_monotonic"] - diagnostic["start_monotonic"]
 
     def test_health_and_declared_dependency_boundary(self):
         self.assertEqual(self.request("/health/live")[2], {"status": "alive"})
@@ -310,18 +517,37 @@ class ServerTests(unittest.TestCase):
     def test_connection_cap_bounds_http_threads_and_recovers(self):
         held = []
         recovery_start = None
+        cap_passed = False
+        self.diagnostic.snapshot("baseline")
         try:
-            for _ in range(16):
-                client = socket.create_connection(("127.0.0.1", self.port), timeout=1)
-                client.sendall(b"GET /health/live HTTP/1.1\r\nHost: localhost\r\nX-Pending: ")
+            for index in range(16):
+                start = time.monotonic()
+                client = None
+                try:
+                    client = socket.create_connection(("127.0.0.1", self.port), timeout=1)
+                except Exception as error:
+                    self.diagnostic.client(index, "connect", client, start, error)
+                    raise
                 held.append(client)
+                self.diagnostic.client(index, "connect", client, start)
+                start = time.monotonic()
+                try:
+                    client.sendall(b"GET /health/live HTTP/1.1\r\nHost: localhost\r\nX-Pending: ")
+                except Exception as error:
+                    self.diagnostic.client(index, "send", client, start, error)
+                    raise
+                self.diagnostic.client(index, "send", client, start)
             def threads():
                 rows = Path(f"/proc/{self.server.pid}/status").read_text().splitlines()
                 return int(next(row.split()[1] for row in rows if row.startswith("Threads:")))
             deadline = time.monotonic() + 1
             while threads() < 18 and time.monotonic() < deadline:
                 time.sleep(0.01)
-            self.assertEqual(threads(), 18)  # main + listener + 16 connections
+            try:
+                self.assertEqual(threads(), 18)  # main + listener + 16 connections
+                cap_passed = True
+            finally:
+                self.diagnostic.snapshot("cap", assertion_passed=cap_passed)
             with socket.create_connection(("127.0.0.1", self.port), timeout=1) as extra:
                 extra.settimeout(0.15)
                 extra.sendall(b"GET /health/live HTTP/1.1\r\nHost: localhost\r\n\r\n")
@@ -334,17 +560,42 @@ class ServerTests(unittest.TestCase):
             self.evidence["measurements"]["threads_at_connection_cap"] = 18
         finally:
             recovery_start = time.monotonic()
-            for client in held:
-                client.close()
+            try:
+                for index, client in enumerate(held):
+                    start = time.monotonic()
+                    try:
+                        client.close()
+                    except Exception as error:
+                        self.diagnostic.client(index, "close", None, start, error)
+                        raise
+                    self.diagnostic.client(index, "close", None, start)
+            finally:
+                deadline = time.monotonic() + 1
+                budget = {"seconds": 1, "anchor_monotonic": deadline - 1, "deadline_monotonic": deadline}
+                self.diagnostic.data["connection_cap"]["recovery_budget"] = budget
+                self.diagnostic.snapshot("immediate_post_closure")
+                budget["remaining_seconds_after_snapshot"] = deadline - time.monotonic()
+                if budget["remaining_seconds_after_snapshot"] <= 0:
+                    self.diagnostic.data["connection_cap"]["observer_budget_exhausted"] = True
+                    self.diagnostic.publish()
         # Closing the client sockets starts asynchronous library cleanup.
         # ITC wakes listener cleanup. Worker exit alone did not prove that the
         # admission slots were released when that wake channel was disabled.
-        deadline = time.monotonic() + 1
-        while threads() > 2 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        self.assertEqual(threads(), 2)
-        self.assertEqual(self.request("/health/live")[0], 200)
-        self.evidence["measurements"]["connection_cap_recovery_seconds"] = time.monotonic() - recovery_start
+        self.diagnostic.data["connection_cap"]["recovery"] = "reached"
+        try:
+            if budget["remaining_seconds_after_snapshot"] <= 0:
+                self.diagnostic.data["connection_cap"]["recovery"] = "inconclusive_observer_budget_exhausted"
+                raise RuntimeError("The diagnostic snapshot exhausted the existing recovery budget.")
+            while threads() > 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(threads(), 2)
+            self.assertEqual(self.request("/health/live")[0], 200)
+            self.evidence["measurements"]["connection_cap_recovery_seconds"] = time.monotonic() - recovery_start
+            self.diagnostic.data["connection_cap"]["recovery"] = "observed_success"
+        finally:
+            self.diagnostic.snapshot("recovery", liveness_status=200 if
+                self.diagnostic.data["connection_cap"]["recovery"] == "observed_success" else None,
+                elapsed_seconds=time.monotonic() - recovery_start)
 
     def test_a_stalled_database_does_not_stall_liveness(self):
         self.proxy.closed_gate.set()
@@ -370,10 +621,26 @@ class ServerTests(unittest.TestCase):
     def test_simultaneous_searches_keep_request_data_separate(self):
         def one(i):
             query = f"fixture {i:02d}"
-            code, _, data = self.request("/prototype/packages?" + urlencode({"q": query}))
-            return code, [p["name"] for p in data["packages"]]
+            path = "/prototype/packages?" + urlencode({"q": query})
+            record = {"index": i, "query": query, "route": path, "start_monotonic": time.monotonic(),
+                      "status": None, "headers": {}, "body_bytes": None, "body_sha256": None,
+                      "body_base64": "", "body_truncated": False, "body_redacted": False,
+                      "body_complete": False, "body_state": "unavailable", "exception": None}
+            try:
+                return self.request(path, diagnostic=record), None, record
+            except Exception as error:
+                return None, error, record
         with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(one, range(1, 17)))
+            outcomes = list(pool.map(one, range(1, 17)))
+        # Every request record is committed before any response schema is used.
+        self.diagnostic.data["simultaneous_searches"]["records"] = [record for _, _, record in outcomes]
+        self.diagnostic.publish()
+        results = []
+        for response, error, _ in outcomes:
+            if error is not None:
+                raise error
+            code, _, data = response
+            results.append((code, [p["name"] for p in data["packages"]]))
         self.assertEqual(results, [(200, [f"fixture/p{i:02d}"]) for i in range(1, 17)])
 
     def test_shutdown_is_bounded_with_a_stalled_database(self):
