@@ -106,7 +106,12 @@ class RegistryCliTests(unittest.TestCase):
             "--artifact", self.artifact, "--json",
         ).stdout)
         self.assertEqual(result["version"], "3.0.0")
-        self.cli("fetch", "stubbi/hello", "--target", "riscv64-linux", "--artifact", self.artifact, code=1)
+        missing_target = next(target for target in ("riscv64-linux", "x86_64-linux", "aarch64-linux")
+                              if target not in {TARGET, OTHER_TARGET})
+        absent = self.work / "absent-target-output"
+        self.cli("fetch", "stubbi/hello", "--target", missing_target, "--artifact", self.artifact,
+                 "--output", absent, code=1)
+        self.assertFalse(absent.exists())
 
     def test_fetch_refuses_existing_file_and_symlink(self):
         self.write_index(self.row())

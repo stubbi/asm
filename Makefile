@@ -6,8 +6,8 @@ ifneq ($(ARCH),aarch64)
 $(error Native macOS qualification currently requires Apple Silicon)
 endif
 endif
-ifeq ($(filter $(ARCH),x86_64 aarch64),)
-$(error Unsupported CLI architecture '$(ARCH)'; use x86_64 or aarch64)
+ifeq ($(filter $(ARCH),x86_64 aarch64 riscv64),)
+$(error Unsupported CLI architecture '$(ARCH)'; use x86_64, aarch64, or riscv64)
 endif
 
 ifeq ($(ARCH),$(HOST_ARCH))
@@ -31,11 +31,16 @@ DESTDIR ?=
 REPLACE ?= 0
 GO ?= go
 TRUSTED_DISTRIBUTION ?= 0
+GO_ARCH := $(if $(filter x86_64,$(ARCH)),amd64,$(if $(filter aarch64,$(ARCH)),arm64,riscv64))
 
 .PHONY: all test clean install uninstall check build/asm
 all: build/asm
 
-ifeq ($(ARCH),aarch64)
+ifeq ($(ARCH),riscv64)
+CLI_SOURCE := cli/riscv64/asm.s
+CLI_INPUTS := $(wildcard cli/riscv64/*.s cli/riscv64/*.inc)
+CLI_AS_FLAGS := -march=rv64im -mabi=lp64 -mno-relax --fatal-warnings
+else ifeq ($(ARCH),aarch64)
 CLI_SOURCE := cli/aarch64/asm.s
 CLI_INPUTS := $(wildcard cli/aarch64/*.s cli/aarch64/*.inc)
 CLI_AS_FLAGS := --fatal-warnings
@@ -100,7 +105,7 @@ uninstall: build/asm
 	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
-	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s
+	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/riscv64/asm.o build/asm-riscv64-linux build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s
 
 # Provisioned distribution is a separate activation gate during migration.
 # The current release path stays available until the offline root is reviewed.
@@ -111,8 +116,8 @@ verifier-test:
 
 build/asm-verify-$(ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux): $(wildcard verifier/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
 	mkdir -p build
-	cd verifier && CGO_ENABLED=0 GOARCH=$(if $(filter x86_64,$(ARCH)),amd64,arm64) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
-	GOARCH=$(if $(filter x86_64,$(ARCH)),amd64,arm64) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
+	cd verifier && CGO_ENABLED=0 GOARCH=$(GO_ARCH) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
+	GOARCH=$(GO_ARCH) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
 
 check-trust-root:
 	$(MAKE) build/asm-verify-$(HOST_ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux) ARCH=$(HOST_ARCH)

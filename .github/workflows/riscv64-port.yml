@@ -1,0 +1,60 @@
+name: RISC-V CLI qualification
+
+on:
+  pull_request:
+    paths:
+      - 'cli/**'
+      - 'tests/**'
+      - 'tools/riscv64*.py'
+      - 'Makefile'
+      - '.github/workflows/riscv64-port.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulated:
+    name: Check the RISC-V CLI through Linux user-mode emulation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the cross-toolchain and explicit RISC-V execution handler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support
+          sudo update-binfmts --enable qemu-riscv64
+          test -f /proc/sys/fs/binfmt_misc/qemu-riscv64
+          rg '^enabled$' /proc/sys/fs/binfmt_misc/qemu-riscv64
+      - name: Select fixed cross-tool paths in this disposable runner
+        run: |
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-as /usr/bin/as
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-ld /usr/bin/ld
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-gcc /usr/bin/cc
+      - name: Prepare a protected checkout for root-only failure checks
+        run: |
+          sudo cp -a "$GITHUB_WORKSPACE" /tmp/asm-riscv64-ci
+          sudo chown -R root:root /tmp/asm-riscv64-ci
+          sudo mkdir -p /tmp/asm-riscv64-ci/build
+          dpkg-query -W binutils-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support > /tmp/asm-riscv64-packages.txt
+      - name: Build and run the complete CLI contract
+        working-directory: /tmp/asm-riscv64-ci
+        run: |
+          sudo make ARCH=riscv64 build/asm-riscv64-linux
+          sudo env QEMU_LD_PREFIX=/usr/riscv64-linux-gnu python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode emulated --evidence build/riscv64-qualification.json
+      - name: Retain exact bytes, tool versions, and failed or passed evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: riscv64-emulated-${{ github.sha }}
+          path: |
+            /tmp/asm-riscv64-ci/build/asm-riscv64-linux
+            /tmp/asm-riscv64-ci/build/riscv64-qualification.json
+            /tmp/asm-riscv64-ci/build/riscv64-qualification-logs/*
+            /tmp/asm-riscv64-packages.txt
+          if-no-files-found: error
+          retention-days: 14
