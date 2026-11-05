@@ -16,7 +16,7 @@ else:
     import test_hello_windows as windows
 
 
-TARGETS = tuple((name.replace("hello-", "math-"), *rest) for name, *rest in windows.TARGETS)
+TARGETS = tuple((name.replace("hello", "math"), *rest) for name, *rest in windows.TARGETS)
 
 
 class WindowsMathTests(unittest.TestCase):
@@ -26,9 +26,10 @@ class WindowsMathTests(unittest.TestCase):
                 package = windows.ROOT / "examples" / name
                 self.assertTrue((package / "asm.toml").is_file(), f"Missing package: {name}")
                 manifest = tomllib.loads((package / "asm.toml").read_text())
-                self.assertEqual(manifest["package"], {"name": "math", "version": "0.6.0"})
-                self.assertEqual(manifest["build"], {"source": "src/main.s", "target": target})
-                self.assertEqual((package / "LICENSE").read_bytes(), (windows.ROOT / "examples/math/LICENSE").read_bytes())
+                self.assertEqual(manifest["package"], {"name": "math", "version": windows.VERSION})
+                self.assertEqual(manifest["target"][target], {"source": f"targets/{target}/src/main.s",
+                                                             "test": f"targets/{target}/tests/main.s"})
+                self.assertEqual((package / "LICENSE").read_bytes(), (windows.ROOT / "LICENSES/MIT.txt").read_bytes())
 
     def test_main_and_callable_assembly_abi_tests_build_for_each_windows_target(self):
         # A wrong target, missing callable source, or broken import/unwind contract must fail.
