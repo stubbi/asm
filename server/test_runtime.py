@@ -86,7 +86,8 @@ class RuntimeTests(unittest.TestCase):
         cls.cluster.start()
         cls.prefix = "asm_proto_" + secrets.token_hex(6)
         cls.dbname = cls.prefix
-        cls.roles = {name: "asm_" + name for name in ("migrator", "reader", "operator")}
+        cls.roles = {name: cls.prefix + suffix for name, suffix in
+                     (("migrator", "_m"), ("reader", "_r"), ("operator", "_o"))}
         password = secrets.token_hex(24)
         for role in cls.roles.values():
             cls.cluster.admin.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD \'{password}\'')
@@ -100,6 +101,9 @@ class RuntimeTests(unittest.TestCase):
         finally:
             migrator.close()
             operator.close()
+        for label, role in tuple(cls.roles.items()):
+            cls.roles[label] = "asm_" + label
+            cls.cluster.admin.execute(f'ALTER ROLE "{role}" RENAME TO "{cls.roles[label]}"')
         cls.configs = {}
         for label, role in cls.roles.items():
             cls.cluster.certificate(label, role)
