@@ -254,10 +254,15 @@ class WindowsRuntimeTests(unittest.TestCase):
                   f'[target.{TARGET}]\nsource="src/main.s"\n')
         inactive = f'[target.{OTHER_TARGET}]\n'
         for recipe in ('source="../outside.s"\n', 'source="@options.s"\n',
+                       'source="C:/outside.s"\n', 'source="src/NUL.s"\n',
+                       'source="src/trailing./main.s"\n', 'source="source.s:stream"\n',
+                       'source="src/main.s"\ntest="C:/outside.s"\n',
+                       'source="src/main.s"\nlink="c"\ncheck="C:/outside.c"\n',
                        'source="src/main.s"\nunknown="value"\n'):
             with self.subTest(recipe=recipe):
                 (project / "asm.toml").write_text(native + inactive + recipe)
-                self.cli("build", cwd=project, code=1)
+                result = self.cli("build", cwd=project, code=1)
+                self.assertIn("invalid or missing asm.toml", result.stderr)
                 self.assertEqual((project / "build/app.exe").read_bytes(), previous)
                 self.assertFalse(list((project / "build").glob(".asm-stage-*")))
 
@@ -848,6 +853,27 @@ class WindowsRuntimeTests(unittest.TestCase):
         executable.write_bytes(b"MZ invalid executable")
         self.cli(*self.publication_args(executable, "executable", output), code=1)
         self.assertFalse(output.exists())
+        # Use the established Linux container fixture as a positive dispatch control.
+        header = bytearray(64)
+        header[:7] = b"\x7fELF\x02\x01\x01"
+        struct.pack_into("<HHI", header, 16, 2, 62, 1)
+        struct.pack_into("<Q", header, 32, 64)
+        struct.pack_into("<HHH", header, 52, 64, 56, 1)
+        linux = bytes(header) + struct.pack("<IIQQQQQQ", 1, 5, 0, 0x400000, 0x400000, 120, 120, 4096)
+        executable.write_bytes(linux)
+        control = self.work / "linux-container.json"
+        arguments = self.publication_args(executable, "executable", control)
+        target_index = arguments.index("--artifact") + 1
+        arguments[target_index] = "x86_64-linux"
+        self.cli(*arguments)
+        self.assertEqual(json.loads(control.read_bytes())["artifacts"][0]["target"], "x86_64-linux")
+        for target in ("x86_64-windows", "aarch64-windows", "x86_64-macos", "aarch64-macos"):
+            with self.subTest(wrong_os=target):
+                arguments = self.publication_args(executable, "executable", output)
+                arguments[target_index] = target
+                self.cli(*arguments, code=1)
+                self.assertFalse(output.exists())
+                self.assertEqual(executable.read_bytes(), linux)
 
     def native_main(self):
         if ARM64:
