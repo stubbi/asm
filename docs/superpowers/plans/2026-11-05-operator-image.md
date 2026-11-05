@@ -25,6 +25,8 @@ The governing principles are dependable reuse, human control, and evidence with 
   It records loaded-library digests, package versions, source identity, resource limits, and complete applicable test results.
 - `.github/workflows/operator-images.yml` qualifies native AMD64 with read authority.
   Only a main push can publish the exact qualified artifact and provenance.
+- `containers/operator-publication.jq` checks typed evidence and inspected image bindings before artifact loading.
+  The trusted exact-main checkout supplies that policy; its regressions also run in the derived image.
 - `tests/operator_image/` retains source, preparation, and image-contract regressions.
 - `docs/operator-images.md` states commands, evidence, assumptions, and remaining limits.
 

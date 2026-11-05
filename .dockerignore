@@ -18,6 +18,9 @@
 !.operator-source/
 !.operator-source/source.bundle
 !.operator-source/source.json
+!.github/
+!.github/workflows/
+!.github/workflows/operator-images.yml
 !tests/
 !tests/hosted_registry/
 !tests/hosted_registry/**

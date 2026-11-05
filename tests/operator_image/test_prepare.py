@@ -52,9 +52,12 @@ class PreparationTests(unittest.TestCase):
                 path.chmod(0o440)
             (directory / "..data").symlink_to(generation.name)
             os.lchown(directory / "..data", -1, os.getegid())
-        self.psql = self.base / "psql"
-        self.psql.write_text("#!" + sys.executable + "\nprint('psql (PostgreSQL) 16.15')\n")
-        self.psql.chmod(0o700)
+        if os.environ.get("ASM_OPERATOR_PROJECTION_FIXTURES"):
+            self.psql = Path("/opt/asm/postgres/bin/psql")
+        else:
+            self.psql = self.base / "psql"
+            self.psql.write_text("#!" + sys.executable + "\nprint('psql (PostgreSQL) 16.15')\n")
+            self.psql.chmod(0o700)
         # Exercise the kernel snapshot operations on owned files locally.
         # Image qualification separately requires the real root:GID65532 policy.
         self.authority = patch.multiple(prepare, SOURCE_UID=os.geteuid(), SOURCE_GID=os.getegid())
@@ -310,6 +313,18 @@ class RootProjectedImageTests(unittest.TestCase):
                     prepare.prepare(base / case / "config", base / case / "tls", destination,
                                     "asm_operator", Path("/opt/asm/postgres/bin/psql"), resolve_dns=True)
                 self.assertFalse(destination.exists())
+
+
+class ImagePreparationFixtureTests(unittest.TestCase):
+    def test_image_mode_selects_the_fixed_client_without_creating_a_writable_executable(self):
+        case = PreparationTests("test_snapshot_preserves_exact_tls_bytes_and_default_operator_policy")
+        with patch.dict(os.environ, {"ASM_OPERATOR_PROJECTION_FIXTURES": "/qualified/image/fixtures"}):
+            case.setUp()
+        try:
+            self.assertEqual(case.psql, Path("/opt/asm/postgres/bin/psql"))
+            self.assertFalse((case.base / "psql").exists())
+        finally:
+            case.doCleanups()
 
 
 if __name__ == "__main__":

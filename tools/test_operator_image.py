@@ -216,7 +216,7 @@ def inside(args):
     for directory in ("/qualification/tests/hosted_registry", "/qualification/tests/operator_image"):
         suite.addTests(unittest.TestLoader().discover(directory, pattern="test_*.py"))
     count = suite.countTestCases()
-    need(count >= 48, "The complete operator qualification suite is unavailable.")
+    need(count >= 52, "The complete operator qualification suite is unavailable.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
     inapplicable = test_contract(result, count)

@@ -63,6 +63,9 @@ CMD ["--help"]
 # Only this derived test target contains PostgreSQL server tools and synthetic keys.
 FROM runtime AS qualification
 USER 0:0
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes jq \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/asm/postgres /opt/asm/postgres
 COPY --from=build /usr/bin/openssl /usr/bin/openssl
 COPY --from=build /usr/share/doc/openssl/copyright /usr/share/licenses/asm-operator/qualification-openssl/COPYRIGHT
@@ -73,6 +76,8 @@ COPY experiments/assembly-server/local_postgres.py experiments/assembly-server/g
 COPY experiments/assembly-server/fixtures/0001_registry.sql /qualification/experiments/assembly-server/fixtures/0001_registry.sql
 COPY tests/hosted_registry /qualification/tests/hosted_registry
 COPY tests/operator_image /qualification/tests/operator_image
+COPY containers/operator-publication.jq /qualification/containers/operator-publication.jq
+COPY .github/workflows/operator-images.yml /qualification/.github/workflows/operator-images.yml
 COPY registry/packages /qualification/registry/packages
 RUN ln -s /app/tools/registry.py /qualification/tools/registry.py \
     && ln -s /app/tools/registry_admin.py /qualification/tools/registry_admin.py \

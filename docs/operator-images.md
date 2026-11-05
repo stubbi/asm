@@ -155,6 +155,7 @@ The harness checks exact final-image plan commands, missing-credential refusal, 
 It compares application and loaded dependency bytes between final and derived images.
 It runs the complete hosted SQL suite, preparation regressions, and actual entrypoint migration/import/status flow.
 The Linux run must execute the root-owned projection case.
+Preparation tests use the fixed image client; writable test storage remains non-executable.
 Only the named macOS ACL test is inapplicable there.
 No applicable test may be skipped.
 The harness retains tests, source identity, package inventory, runtime digests, isolation settings, and failure evidence.
@@ -166,11 +167,15 @@ Other architectures, Kubernetes deployment, capacity, and recovery also remain u
 
 PR and manual runs do not publish.
 Only a main push can load this run's exact qualified artifact and publish it.
-Publication checks its image ID, source, architecture, and applicable-test result.
+One typed contract checks the report and inspected image before loading the artifact.
+That contract comes from the trusted exact-main checkout.
+It requires Linux AMD64, source and plan bindings, resolved dependencies, integer test counts, and exact isolation settings.
+Publication also checks the loaded image ID against that report.
 It records the immutable registry digest and source provenance.
 It does not rebuild the image with publication credentials.
 
 Source review failures are retained as regressions: sticky ancestors, interrupted publication, cleanup faults, mutable bundle replacement, and hidden unrelated objects.
+Packaging review failures also retain regressions for executable temporary fixtures and malformed publication evidence.
 Local source tests do not substitute for the pending native image gate.
 
 Git object-enumeration references checked on 5 November 2026:

@@ -76,6 +76,8 @@ jobs:
           set -euo pipefail
           ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
           docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > "$ASM_EVIDENCE/image.json"
+          jq --slurp --exit-status --arg revision "$GITHUB_SHA" \
+            --slurpfile image "$ASM_EVIDENCE/image.json" --from-file containers/operator-publication.jq "$ASM_EVIDENCE/qualification.json"
           docker save --output "$ASM_EVIDENCE/runtime.tar" asm-operator:runtime-amd64
           (cd "$ASM_EVIDENCE" && sha256sum runtime.tar > runtime.sha256)
       - name: Retain successful and failed evidence
@@ -98,6 +100,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: operator-image-amd64-${{ github.sha }}
@@ -106,9 +112,8 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum --check runtime.sha256
-          jq --exit-status --arg revision "$GITHUB_SHA" \
-            '.status == "pass" and .scope == "explicit-registry-operator" and .source_revision == $revision and .architecture == "amd64" and .execution == "native" and .tests_run >= 48 and .applicable_tests_run >= 47 and .applicable_tests_skipped == 0 and .security.uid == 65532 and .security.read_only_root and (.security.cluster_token == false)' \
-            qualification.json
+          jq --slurp --exit-status --arg revision "$GITHUB_SHA" \
+            --slurpfile image image.json --from-file containers/operator-publication.jq qualification.json
           docker load --input runtime.tar
           test "$(docker image inspect asm-operator:runtime-amd64 --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
           test "$(docker image inspect asm-operator:runtime-amd64 --format '{{.Architecture}}')" = amd64
