@@ -1,0 +1,7 @@
+[package]
+name = "math"
+version = "0.6.0"
+
+[build]
+source = "src/main.s"
+target = "aarch64-linux"
