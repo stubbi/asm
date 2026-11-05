@@ -180,7 +180,8 @@ def main(arguments=None):
             report["checks"][current] = run([str(work / "probe")], logs / "toolchain.log")
         if report["checks"][current]["outcome"] != "pass":
             raise ValueError("The fixed assembler/linker paths did not produce an executable RV64I/LP64 program")
-        environment = dict(os.environ, ASM_TEST_TARGET="riscv64-linux", ASM_RISCV64_CLI=str(artifact))
+        environment = dict(os.environ, ASM_TEST_TARGET="riscv64-linux", ASM_RISCV64_CLI=str(artifact),
+                           ASM_RISCV64_EXECUTION_MODE=args.execution_mode)
         current = "make_test"
         report["checks"][current] = run(["make", "test", "ARCH=riscv64", f"PYTHON={sys.executable}"],
                                         logs / "make-test.log", environment=environment, timeout=args.suite_timeout)

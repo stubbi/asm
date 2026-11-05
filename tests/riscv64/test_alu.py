@@ -66,7 +66,9 @@ def build_harness(directory, assembler=None, linker=None):
 class Riscv64AluTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if platform.system() != "Linux" or platform.machine() != "riscv64":
+        emulated = (os.environ.get("ASM_RISCV64_EXECUTION_MODE") == "emulated"
+                    and os.environ.get("ASM_TEST_TARGET") == "riscv64-linux")
+        if platform.system() != "Linux" or (platform.machine() != "riscv64" and not emulated):
             raise AssertionError("Required Linux riscv64 execution environment is absent; cross-assembly is not execution")
         if not ASM.is_file():
             raise AssertionError(f"Required RISC-V CLI artifact is absent: {ASM}")
