@@ -4,7 +4,86 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 """
 
 
+def fault_observation(arm64, stage):
+    """Observe one test-only fault point without changing native call inputs.
+
+    The managed boundaries carry integer state, not live AVX or SVE state.
+    Preserve every volatile integer/vector register, flags, and the return
+    address across the standard Windows C ABI. Nonvolatile registers remain
+    the callee's responsibility. The entry stack is already 16-byte aligned.
+    Link snapshot_barrier.c only into these deliberately instrumented variants.
+    """
+    stages = {'payload_flush': 1, 'record_write': 2, 'record_flush': 3,
+              'activation_rename': 4}
+    if stage not in stages:
+        raise ValueError('Unknown managed fault observation boundary.')
+    if arm64:
+        # 160 bytes: x0..x17, LR, NZCV. 512 bytes: all q registers.
+        # q8..q15 also have volatile upper halves under the Windows ABI.
+        lines = ['    sub sp, sp, #672']
+        for index in range(0, 18, 2):
+            lines.append(f'    stp x{index}, x{index + 1}, [sp, #{index * 8}]')
+        lines += ['    str x30, [sp, #144]', '    mrs x16, nzcv',
+                  '    str x16, [sp, #152]']
+        vectors = list(range(0, 32, 2))
+        for offset, index in enumerate(vectors):
+            lines.append(f'    stp q{index}, q{index + 1}, [sp, #{160 + offset * 32}]')
+        lines += [f'    mov x0, #{stages[stage]}', '    bl asm_test_fault_reached']
+        for offset, index in enumerate(vectors):
+            lines.append(f'    ldp q{index}, q{index + 1}, [sp, #{160 + offset * 32}]')
+        lines += ['    ldr x16, [sp, #152]', '    msr nzcv, x16',
+                  '    ldr x30, [sp, #144]']
+        for index in range(0, 18, 2):
+            lines.append(f'    ldp x{index}, x{index + 1}, [sp, #{index * 8}]')
+        lines.append('    add sp, sp, #672')
+    else:
+        registers = ['rax', 'rcx', 'rdx', 'r8', 'r9', 'r10', 'r11']
+        lines = ['    pushfq'] + ['    push ' + reg for reg in registers]
+        # 32 bytes of shadow space, then the six volatile XMM registers.
+        lines.append('    sub rsp, 128')
+        lines += [f'    movdqu [rsp + {32 + index * 16}], xmm{index}' for index in range(6)]
+        lines += [f'    mov ecx, {stages[stage]}', '    call asm_test_fault_reached']
+        lines += [f'    movdqu xmm{index}, [rsp + {32 + index * 16}]' for index in range(6)]
+        lines += ['    add rsp, 128'] + ['    pop ' + reg for reg in reversed(registers)]
+        lines.append('    popfq')
+    return '\n'.join(lines) + '\n'
+
+
+def snapshot_source(source, arm64):
+    marker = '\nwin_managed_snapshot_ready:\n'
+    if source.count(marker) != 1:
+        raise ValueError('The launcher snapshot boundary is absent or ambiguous.')
+    hook = ('    ARM_CALL asm_test_snapshot_barrier\n' if arm64 else
+            '    sub rsp, 32\n    call asm_test_snapshot_barrier\n    add rsp, 32\n')
+    return source.replace(marker, marker + hook, 1)
+
+
+def preparation_failure(source, arm64, stage):
+    native = {'record_write': 'arm_write', 'record_flush': 'arm_fsync',
+              'payload_flush': 'arm_fsync'}
+    if stage not in native:
+        raise ValueError('Unknown managed preparation boundary.')
+    label = '\nwin_managed_' + stage + ':\n'
+    call = '    ARM_CALL ' + native[stage] + '\n' if arm64 else '    call win_syscall\n'
+    anchor = label + call
+    if source.count(label) != 1 or source.count(anchor) != 1:
+        raise ValueError('The managed preparation boundary is absent or ambiguous.')
+    bad = '    mov x0, #-1\n' if arm64 else '    mov rdi, -1\n'
+    return source.replace(anchor, label + fault_observation(arm64, stage) + bad + call, 1)
+
+
 def final_replacement_failure(source, arm64):
+    # The managed commit holds the exact flushed record HANDLE. Fault only
+    # its destination directory after verification and payload publication.
+    managed = '\nwin_managed_activation_rename:\n'
+    if managed in source:
+        call = ('    ARM_CALL win_managed_rename_fd\n' if arm64 else
+                '    call win_managed_rename_fd\n')
+        anchor = managed + call
+        if source.count(managed) != 1 or source.count(anchor) != 1:
+            raise ValueError('The managed activation call is absent or ambiguous.')
+        bad = '    mov x1, #-1\n' if arm64 else '    mov rsi, -1\n'
+        return source.replace(anchor, managed + fault_observation(arm64, 'activation_rename') + bad + call, 1)
     begin_marker = "\nself_commit_update:\n"
     end_marker = "\nself_update_cleanup:\n"
     if source.count(begin_marker) != 1 or source.count(end_marker) != 1:

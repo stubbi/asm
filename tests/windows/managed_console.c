@@ -58,6 +58,42 @@ static char output[1024];
 static D wanted_exit;
 static D output_used;
 
+/* Read at most 4096 binary bytes from inherited synchronous stdin, then
+ * write all bytes to each inherited output. A closed anonymous pipe is EOF.
+ * Input overflow and any other I/O failure return98; complete copies return37.
+ * Borrow all three handles without closing them. Own the static data buffer. */
+static int stdio_copy(void) {
+    static unsigned char data[4096];
+    unsigned char extra;
+    H input = GetStdHandle((D)-10), streams[2];
+    D used = 0, read = 0, capacity, index, offset, written;
+    streams[0] = GetStdHandle((D)-11); streams[1] = GetStdHandle((D)-12);
+    if (!input || input == INVALID || !streams[0] || streams[0] == INVALID
+        || !streams[1] || streams[1] == INVALID) return 98;
+    for (;;) {
+        capacity = used < sizeof(data) ? (D)sizeof(data) - used : 1;
+        read = 0;
+        if (!ReadFile(input, used < sizeof(data) ? data + used : &extra, capacity, &read, 0)) {
+            if (GetLastError() == 109 && !read) break; /* ERROR_BROKEN_PIPE */
+            return 98;
+        }
+        if (read > capacity) return 98;
+        if (!read) break;
+        if (used == sizeof(data)) return 98;
+        used += read;
+    }
+    for (index = 0; index < 2; ++index) {
+        offset = 0;
+        while (offset < used) {
+            written = 0;
+            if (!WriteFile(streams[index], data + offset, used - offset, &written, 0)
+                || !written || written > used - offset) return 98;
+            offset += written;
+        }
+    }
+    return 37;
+}
+
 /* All input is private test argv. Reject overflow before constructing a command. */
 static int equal(const W *value, const char *text) {
     D i = 0;
@@ -73,6 +109,27 @@ static int number(const W *value, D *result) {
         n = n * 10 + digit;
     }
     *result = n;
+    return 1;
+}
+/* EXPECTED_COUNT includes the executable, mode, and count arguments.
+ * Compare a fixed five-token cycle as exact UTF-16 code units. The final
+ * Unicode token contains a surrogate pair. All fixture input is private.
+ * Return one only for 3..1023 arguments and the canonical declared count. */
+static int check_args(int count, W **args) {
+    static const W spaces[] = {'s','p','a','c','e',' ','t','o','k','e','n',0};
+    static const W quotes[] = {'d','o','u','b','l','e','"','q','u','o','t','e',0};
+    static const W empty[] = {0};
+    static const W slashes[] = {'b','a','c','k','\\','s','l','a','s','h','\\',0};
+    static const W unicode[] = {'G','r',0x00fc,0x00df,'e',' ',0x4e16,0x754c,0xd83d,0xde42,0};
+    static const W *tokens[] = {spaces, quotes, empty, slashes, unicode};
+    D expected, i;
+    if (count < 3 || count > 1023 || !number(args[2], &expected) || expected != (D)count) return 0;
+    for (i = 3; i < (D)count; ++i) {
+        const W *token = tokens[(i - 3) % 5];
+        D j = 0;
+        while (token[j] && args[i][j] == token[j]) ++j;
+        if (args[i][j] != token[j]) return 0;
+    }
     return 1;
 }
 static int append(W value, D *used) {
@@ -254,6 +311,13 @@ void fixture_entry(void) {
     if (!args || count < 2) ExitProcess(98);
     if (equal(args[1], "--exit") && count == 3 && number(args[2], &code)) {
         LocalFree(args); ExitProcess(code);
+    }
+    if (equal(args[1], "--check-args")) {
+        code = check_args(count, args) ? 0 : 98;
+        LocalFree(args); ExitProcess(code);
+    }
+    if (equal(args[1], "--stdio") && count == 2) {
+        LocalFree(args); ExitProcess((D)stdio_copy());
     }
     if (equal(args[1], "--console-payload")) payload(count, args);
     if (equal(args[1], "--controller")) controller(count, args);

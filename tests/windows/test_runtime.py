@@ -20,8 +20,9 @@ import tempfile
 import time
 import unittest
 
-from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, capture_deadline_source, displaced_running_image
+from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, preparation_failure, snapshot_source, capture_deadline_source, displaced_running_image
 from fixture_security import own_directory, own_home_directories, own_path
+from managed_helpers import source_install, selection, assert_no_stage, hold_install_lock, snapshot_events, with_minimum_launcher, build_module
 
 ROOT = Path(__file__).resolve().parents[2]
 ASM = Path(os.environ["ASM_WINDOWS_EXE"])
@@ -802,6 +803,9 @@ class WindowsRuntimeTests(unittest.TestCase):
         own_home_directories(self.home, self.work)
         installed.write_bytes(ASM.read_bytes())
         self.cli("self", "update", code=1)  # An unmanaged checkout path cannot replace itself.
+        installed.unlink()
+        source_install(self, ASM.read_bytes(), name="network-preservation")
+        _, payload, record = selection(self)
         with socket.socket() as endpoint:
             endpoint.bind(("127.0.0.1", 0))
             proxy = f"http://127.0.0.1:{endpoint.getsockname()[1]}"
@@ -809,7 +813,9 @@ class WindowsRuntimeTests(unittest.TestCase):
                        ALL_PROXY=proxy, all_proxy=proxy, NO_PROXY="", no_proxy="")
             self.cli("self", "update", binary=installed, env=env, code=1)
         self.assertEqual(installed.read_bytes(), ASM.read_bytes())
-        self.assertEqual(list(installed.parent.glob(".asm-*")), [])
+        self.assertEqual(payload.read_bytes(), ASM.read_bytes())
+        self.assertEqual(selection(self)[2], record)
+        assert_no_stage(self)
 
     def publication_args(self, artifact, kind, output, **overrides):
         fields = {"name": PACKAGE, "version": "0.1.0", "summary": "A runtime fixture",
@@ -1066,7 +1072,8 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("windows_update_source", module_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        source = module.prepare(ROOT / ("cli/aarch64/asm.s" if ARM64 else "cli/asm.s"))
+        entry = ROOT / ("cli/aarch64/asm.s" if ARM64 else "cli/asm.s")
+        source = module.prepare(entry)
         paths = {"C:/Windows/System32/curl.exe": (cls.fixture / "curl.exe").as_posix(),
                  "C:/Program Files/GitHub CLI/gh.exe": (cls.fixture / "gh.exe").as_posix()}
         for original, fixture in paths.items():
@@ -1074,10 +1081,35 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
                 raise RuntimeError(f"The fixed update tool path is absent from the prepared source: {original}")
             source = source.replace(original, fixture)
         cls.current = cls.build_cli(source, "current")
-        cls.next_bytes = cls.build_cli(source.replace(VERSION, cls.next_version), "next")
-        # Fault only the final replacement. The parser, verifier, staging,
-        # identity checks, and cleanup execute with their real native code.
-        cls.finalization_failure = cls.build_cli(final_replacement_failure(source, ARM64), "finalization-failure")
+        # Prepare the changed entry source so emitted PE metadata also records
+        # the actual next version. Patching the already emitted byte directives
+        # would leave a different metadata version from the release fixture.
+        next_entry = cls.fixture / "next-source/asm.s"
+        next_entry.parent.mkdir()
+        next_entry.write_text(entry.read_text().replace(VERSION, cls.next_version), encoding="utf-8")
+        next_source = module.prepare(next_entry)
+        for original, fixture in paths.items():
+            next_source = next_source.replace(original, fixture)
+        cls.next_bytes = cls.build_cli(next_source, "next")
+        # The absolute marker detects any forbidden candidate invocation,
+        # including metadata probes from another working directory.
+        smoke = build_module('windows_bootstrap_smoke')
+        cls.candidate_execution_marker = cls.fixture / 'UPDATE_CANDIDATE_EXECUTED'
+        cls.marker_next = cls.build_cli(smoke.marker_assembly(
+            TARGET, cls.next_version, cls.candidate_execution_marker), 'marker-next')
+        snapshot_obj = cls.fixture / 'snapshot-barrier.obj'
+        cls.build_command([cls.clang, '--no-default-config', '--target=' + cls.triple,
+                           '-Oz', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
+                           '-fno-stack-protector', '-c', ROOT / 'tests/windows/snapshot_barrier.c',
+                           '-o', snapshot_obj])
+        # Each test-only fault variant records its reached boundary before
+        # injecting the native failure. Production binaries omit this object.
+        cls.finalization_failure = cls.build_cli(final_replacement_failure(source, ARM64),
+                                                 "finalization-failure", [snapshot_obj])
+        cls.preparation_failures = {stage: cls.build_cli(preparation_failure(source, ARM64, stage),
+                                                        stage, [snapshot_obj])
+                                    for stage in ('payload_flush', 'record_write', 'record_flush')}
+        cls.snapshot_current = cls.build_cli(snapshot_source(source, ARM64), 'snapshot-current', [snapshot_obj])
 
     @classmethod
     def build_command(cls, argv):
@@ -1090,15 +1122,15 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
             raise RuntimeError((argv, result.stdout, result.stderr))
 
     @classmethod
-    def build_cli(cls, source, name):
+    def build_cli(cls, source, name, extra_objects=()):
         path = cls.fixture / (name + ".s")
         obj = path.with_suffix(".obj")
         binary = path.with_suffix(".exe")
         path.write_text(source, encoding="utf-8")
-        cls.build_command([cls.clang, "--target=" + cls.triple, "-c", path, "-o", obj])
+        cls.build_command([cls.clang, "--no-default-config", "--target=" + cls.triple, "-c", path, "-o", obj])
         cls.build_command([cls.linker, "/machine:" + ("arm64" if ARM64 else "x64"), "/entry:_start",
                            "/subsystem:console", "/nodefaultlib", "/nxcompat", "/dynamicbase", "/Brepro",
-                           "/out:" + str(binary), obj, "kernel32.lib", "ntdll.lib", "advapi32.lib",
+                           "/out:" + str(binary), obj, *extra_objects, "kernel32.lib", "ntdll.lib", "advapi32.lib",
                            "bcrypt.lib", "shell32.lib"])
         data = binary.read_bytes()
         TEST_ARTIFACTS.append({"role": "self-update-test-only-" + name, "target": TARGET,
@@ -1115,11 +1147,12 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.bin_dir.mkdir(parents=True)
         own_home_directories(self.home, self.work)
         self.installed = self.bin_dir / "asm.exe"
-        self.installed.write_bytes(self.current)
         self.environment = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home),
                                 GH_TOKEN="test-token", GITHUB_TOKEN="test-token",
                                 GH_HOST="untrusted.invalid", CURL_CA_BUNDLE="untrusted.pem",
                                 SSL_CERT_FILE="untrusted.pem")
+        source_install(self, self.current)
+        self.initial_row, self.active_payload, self.initial_record = selection(self)
         for name in ("calls.tsv", "network-failure", "reject-signature", "reject-source", "wrong-repository"):
             (self.fixture / name).unlink(missing_ok=True)
         filename = f"asm-{self.next_version}-{TARGET}.exe"
@@ -1148,7 +1181,10 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
 
     def unchanged(self, original=None):
         self.assertEqual(self.installed.read_bytes(), original or self.current)
-        self.assertEqual(list(self.bin_dir.glob(".asm-*")), [])
+        self.assertEqual(selection(self)[2], self.initial_record)
+        self.assertEqual(self.active_payload.read_bytes(), original or self.current)
+        self.assertIn(VERSION, self.cli("version", binary=self.installed).stdout)
+        assert_no_stage(self)
 
     def test_update_replaces_exact_bytes_after_three_provenance_bindings(self):
         result = json.loads(self.update().stdout)
@@ -1156,10 +1192,86 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.assertTrue(result["integrity_verified"])
         self.assertTrue(result["provenance_verified"])
         self.assertEqual(result["version"], self.next_version)
-        self.assertEqual(self.installed.read_bytes(), self.next_bytes)
+        self.assertEqual(self.installed.read_bytes(), self.current)
+        row, payload, record = selection(self)
+        self.assertEqual(row["version"], self.next_version)
+        self.assertEqual(row["sha256"], sha256(self.next_bytes))
+        self.assertEqual(row["size"], len(self.next_bytes))
+        self.assertEqual(payload.read_bytes(), self.next_bytes)
+        self.assertEqual(self.active_payload.read_bytes(), self.current)
+        self.assertNotEqual(record, self.initial_record)
         assert_complete_provenance(self.calls())
         self.assertIn(f"asm {self.next_version}", self.cli("--version", binary=self.installed).stdout)
-        self.assertEqual(list(self.bin_dir.glob(".asm-*")), [])
+        previous_calls = self.calls()
+        self.cli('self', 'update', self.next_version, '--json', binary=self.active_payload, code=1)
+        self.assertEqual(self.calls(), previous_calls, 'An inactive retained payload reached release tools.')
+        self.assertEqual(selection(self)[2], record)
+        assert_no_stage(self)
+
+    def test_verified_update_never_executes_candidate_before_activation(self):
+        marker = self.candidate_execution_marker
+        marker.unlink(missing_ok=True)
+        data = self.marker_next
+        (self.fixture / 'artifact').write_bytes(data)
+        filename = self.manifest['assets'][0]['file']
+        row = self.metadata(data, package='stubbi/asm', version=self.next_version,
+                            kind='executable').replace('/payload.tar.gz', '/' + filename)
+        (self.fixture / 'index.tsv').write_bytes((HEADER + row).encode())
+        self.manifest['assets'][0].update(bytes=len(data), sha256=sha256(data))
+        self.save_manifest()
+        self.assertFalse(marker.exists())
+        result = json.loads(self.update().stdout)
+        self.assertTrue(result['updated'])
+        self.assertFalse(marker.exists(), 'The updater executed its verified candidate.')
+        self.assertEqual(selection(self)[1].read_bytes(), data)
+        self.assertEqual(self.installed.read_bytes(), self.current)
+        self.assertEqual(self.active_payload.read_bytes(), self.current)
+        assert_complete_provenance(self.calls())
+        # Prove the marker is observable only after deliberate invocation.
+        self.cli('--version', binary=self.installed, code=73)
+        self.assertTrue(marker.is_file())
+        assert_no_stage(self)
+
+    def test_existing_exact_digest_payload_is_reused_after_verification(self):
+        directory = self.bin_dir / '.asm-cli/versions' / sha256(self.next_bytes)
+        directory.mkdir()
+        own_directory(directory, self.work)
+        payload = directory / 'asm.exe'
+        payload.write_bytes(self.next_bytes)
+        own_path(payload, self.work)
+        identity = (payload.stat().st_dev, payload.stat().st_ino)
+        result = json.loads(self.update().stdout)
+        self.assertTrue(result['updated'])
+        self.assertEqual(selection(self)[1], payload)
+        self.assertEqual((payload.stat().st_dev, payload.stat().st_ino), identity)
+        self.assertEqual(payload.read_bytes(), self.next_bytes)
+        self.assertEqual(self.installed.read_bytes(), self.current)
+        self.assertEqual(self.active_payload.read_bytes(), self.current)
+        assert_complete_provenance(self.calls())
+        self.assertIn(self.next_version, self.cli('version', binary=self.installed).stdout)
+        assert_no_stage(self)
+
+    def test_existing_digest_payload_corruption_and_hardlink_are_preserved(self):
+        directory = self.bin_dir / '.asm-cli/versions' / sha256(self.next_bytes)
+        directory.mkdir()
+        own_directory(directory, self.work)
+        payload = directory / 'asm.exe'
+        corrupt = self.next_bytes[:-1] + bytes([self.next_bytes[-1] ^ 1])
+        payload.write_bytes(corrupt)
+        own_path(payload, self.work)
+        self.update(code=1)
+        self.assertEqual(payload.read_bytes(), corrupt)
+        self.unchanged()
+        assert_complete_provenance(self.calls())
+        (self.fixture / 'calls.tsv').unlink()
+        payload.write_bytes(self.next_bytes)
+        alias = self.work / 'retained-candidate-hardlink.exe'
+        os.link(payload, alias)
+        self.update(code=1)
+        self.assertEqual(payload.read_bytes(), self.next_bytes)
+        self.assertEqual(alias.read_bytes(), self.next_bytes)
+        self.unchanged()
+        assert_complete_provenance(self.calls())
 
     def test_preexisting_running_image_displacement_is_rejected(self):
         # A failed ownership precondition must not masquerade as image binding.
@@ -1177,7 +1289,7 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.assertFalse(json.loads(report["stderr"])["ok"])
         self.assertEqual(report["stdout"], "")
         self.assertEqual(self.calls(), [], "The rejected image reached transport or verification.")
-        self.assertEqual(list(self.bin_dir.glob(".asm-*")), [])
+        assert_no_stage(self)
 
     def test_update_rejects_signature_source_and_repository_substitution(self):
         for name in ("reject-signature", "reject-source", "wrong-repository"):
@@ -1186,6 +1298,43 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
                 self.update(code=1)
                 self.unchanged()
                 (self.fixture / name).unlink()
+
+    def test_concurrent_installation_lock_refuses_before_release_tools(self):
+        with hold_install_lock(self):
+            self.cli('self', 'update', VERSION, '--json', binary=self.installed, code=1)
+            self.assertEqual(self.calls(), [])
+            self.unchanged()
+        result = json.loads(self.cli('self', 'update', VERSION, '--json', binary=self.installed).stdout)
+        self.assertFalse(result['updated'])
+        self.assertEqual(self.calls(), [])
+
+    def test_hardlinked_and_writable_installation_lock_is_rejected(self):
+        lock = self.bin_dir / '.asm.lock'
+        lock.touch(exist_ok=True)
+        own_path(lock, self.work)
+        alias = self.work / 'lock-hardlink'
+        os.link(lock, alias)
+        self.cli('self', 'update', VERSION, '--json', binary=self.installed, code=1)
+        self.assertEqual(self.calls(), [])
+        self.unchanged()
+        alias.unlink()
+        tool = Path(os.environ['SystemRoot']) / 'System32/icacls.exe'
+        def acl(*arguments):
+            argv = [str(tool), str(lock), *arguments]
+            result = subprocess.run(argv, capture_output=True, timeout=10)
+            COMMANDS.append({'test': self.id(), 'argv': argv, 'exit_code': result.returncode,
+                             'stdout': result.stdout.decode(errors='replace'),
+                             'stderr': result.stderr.decode(errors='replace')})
+            self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        try:
+            acl('/grant', '*S-1-1-0:(M)')
+            self.cli('self', 'update', VERSION, '--json', binary=self.installed, code=1)
+            self.assertEqual(self.calls(), [])
+            self.unchanged()
+        finally:
+            acl('/remove:g', '*S-1-1-0')
+        result = json.loads(self.cli('self', 'update', VERSION, '--json', binary=self.installed).stdout)
+        self.assertFalse(result['updated'])
 
     def test_update_rejects_manifest_source_and_artifact_binding_changes(self):
         original = json.dumps(self.manifest)
@@ -1210,11 +1359,106 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.update(code=1)
         self.unchanged()
 
-    def test_final_replacement_failure_preserves_running_image_after_verification(self):
-        self.installed.write_bytes(self.finalization_failure)
+    def test_incompatible_verified_candidate_preserves_selection_and_launcher(self):
+        data = with_minimum_launcher(self.next_bytes, TARGET, '9.0.0')
+        (self.fixture / 'artifact').write_bytes(data)
+        filename = self.manifest['assets'][0]['file']
+        row = self.metadata(data, package='stubbi/asm', version=self.next_version,
+                            kind='executable').replace('/payload.tar.gz', '/' + filename)
+        (self.fixture / 'index.tsv').write_bytes((HEADER + row).encode())
+        self.manifest['assets'][0].update(bytes=len(data), sha256=sha256(data))
+        self.save_manifest()
         self.update(code=1)
+        self.unchanged()
+        assert_complete_provenance(self.calls())
+
+    def test_launcher_repair_uses_actual_version_and_preserves_old_selection(self):
+        old_record = self.initial_record
+        source_install(self, self.next_bytes, name='new-launcher', repair=True)
+        self.assertEqual(self.installed.read_bytes(), self.next_bytes)
+        self.assertEqual(selection(self)[2], old_record)
+        self.assertEqual(self.active_payload.read_bytes(), self.current)
+        # The root now contains a newer launcher, but still selects the old CLI.
+        self.assertIn(f'asm {VERSION}', self.cli('version', binary=self.installed).stdout)
+        data = with_minimum_launcher(self.next_bytes, TARGET, '1.0.0')
+        (self.fixture / 'artifact').write_bytes(data)
+        filename = self.manifest['assets'][0]['file']
+        row = self.metadata(data, package='stubbi/asm', version=self.next_version,
+                            kind='executable').replace('/payload.tar.gz', '/' + filename)
+        (self.fixture / 'index.tsv').write_bytes((HEADER + row).encode())
+        self.manifest['assets'][0].update(bytes=len(data), sha256=sha256(data))
+        self.save_manifest()
+        result = json.loads(self.update().stdout)
+        self.assertTrue(result['updated'])
+        self.assertEqual(selection(self)[1].read_bytes(), data)
+        self.assertEqual(self.installed.read_bytes(), self.next_bytes)
+        self.assertIn(f'asm {self.next_version}', self.cli('version', binary=self.installed).stdout)
+        assert_complete_provenance(self.calls())
+
+    def test_final_replacement_failure_preserves_running_image_after_verification(self):
+        # Install the fault variant deliberately. The failure injection affects
+        # only the final selection rename, after all provenance bindings.
+        self.installed.unlink()
+        shutil.rmtree(self.bin_dir / ".asm-cli")
+        source_install(self, self.finalization_failure, name="activation-failure")
+        self.initial_row, self.active_payload, self.initial_record = selection(self)
+        marker = self.work / 'reached-activation_rename'
+        self.environment['ASM_TEST_FAULT_MARKER'] = str(marker)
+        self.assertFalse(marker.exists())
+        self.update(code=1)
+        self.assertEqual(marker.read_bytes(), b'# asm-test-fault-v1\nactivation_rename\n')
         self.unchanged(self.finalization_failure)
         assert_complete_provenance(self.calls())
+
+    def test_write_and_flush_failures_preserve_selected_bytes_after_verification(self):
+        for stage, variant in self.preparation_failures.items():
+            with self.subTest(stage=stage):
+                self.installed.unlink()
+                shutil.rmtree(self.bin_dir / '.asm-cli')
+                source_install(self, variant, name=stage)
+                self.initial_row, self.active_payload, self.initial_record = selection(self)
+                (self.fixture / 'calls.tsv').unlink(missing_ok=True)
+                marker = self.work / ('reached-' + stage)
+                self.environment['ASM_TEST_FAULT_MARKER'] = str(marker)
+                self.assertFalse(marker.exists())
+                self.update(code=1)
+                self.assertEqual(marker.read_bytes(), b'# asm-test-fault-v1\n' + stage.encode('ascii') + b'\n')
+                self.unchanged(variant)
+                assert_complete_provenance(self.calls())
+                COMMANDS.append({'test': self.id(), 'preparation_failure': stage,
+                                 'provenance_fixture_calls': self.calls(),
+                                 'selected_record_sha256': sha256(self.initial_record)})
+
+    def test_held_old_snapshot_and_new_record_open_select_their_own_versions(self):
+        self.installed.unlink()
+        shutil.rmtree(self.bin_dir / '.asm-cli')
+        source_install(self, self.snapshot_current, name='snapshot-current')
+        self.initial_row, self.active_payload, self.initial_record = selection(self)
+        with snapshot_events() as events:
+            env = dict(self.environment, **events['environment'])
+            argv = [str(self.installed), '--version']
+            old = subprocess.Popen(argv, cwd=self.work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                events['ready']()
+                self.assertIsNone(old.poll())
+                result = json.loads(self.update().stdout)
+                self.assertTrue(result['updated'])
+                self.assertEqual(selection(self)[0]['version'], self.next_version)
+                events['release']()
+                stdout, stderr = old.communicate(timeout=10)
+                COMMANDS.append({'test': self.id(), 'argv': argv, 'exit_code': old.returncode,
+                                 'stdout': stdout.decode('utf-8'), 'stderr': stderr.decode('utf-8'),
+                                 'selection_order': 'record-open-before-activation'})
+                self.assertEqual(old.returncode, 0, (stdout, stderr))
+                self.assertIn(f'asm {VERSION}', stdout.decode('utf-8'))
+                self.assertEqual(stderr, b'')
+                self.assertIn(f'asm {self.next_version}', self.cli('version', binary=self.installed).stdout)
+                assert_complete_provenance(self.calls())
+                self.assertEqual(self.installed.read_bytes(), self.snapshot_current)
+            finally:
+                if old.poll() is None:
+                    old.kill()
+                    old.communicate(timeout=5)
 
 
 if __name__ == "__main__":

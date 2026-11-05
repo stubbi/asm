@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import platform
 from pathlib import Path, PureWindowsPath
 import struct
 import shutil
@@ -16,7 +17,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure
+from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, preparation_failure, snapshot_source, fault_observation
 
 MODULE = Path(__file__).resolve().parents[2] / "tools/windows_test.py"
 SPEC = importlib.util.spec_from_file_location("windows_test", MODULE)
@@ -142,8 +143,272 @@ class EvidenceDriverTests(unittest.TestCase):
             driver.require_package_execution(events, "aarch64-windows")
 
 
+class FaultObservationTests(unittest.TestCase):
+    def test_observation_wrapper_preserves_live_registers_vectors_and_flags(self):
+        # The callback deliberately changes every volatile integer/vector and
+        # condition flag. An unprotected call is a required failing control.
+        compiler = shutil.which('clang')
+        target_arguments = []
+        host = platform.machine().lower()
+        if os.name == 'nt':
+            compiler = shutil.which('clang.exe')
+            fixed = Path('C:/Program Files/LLVM/bin/clang.exe')
+            if fixed.is_file():
+                compiler = str(fixed)
+            target = os.environ.get('ASM_WINDOWS_TARGET')
+            arm64 = target == 'aarch64-windows' if target else host in ('arm64', 'aarch64')
+            cases = [(arm64, ['--target=' + ('aarch64-pc-windows-msvc' if arm64 else 'x86_64-pc-windows-msvc')])]
+        elif platform.system() == 'Darwin':
+            cases = [(False, ['--target=x86_64-apple-darwin'])]
+            if host in ('arm64', 'aarch64'):
+                cases.append((True, ['--target=arm64-apple-darwin']))
+        else:
+            self.assertIn(host, ('x86_64', 'amd64'), 'This host cannot execute a supported assembly adapter.')
+            cases = [(False, [])]
+        self.assertIsNotNone(compiler, 'The register observation check requires clang.')
+        darwin = platform.system() == 'Darwin'
+        prefix = '_' if darwin else ''
+        with tempfile.TemporaryDirectory(prefix='asm-fault-registers-') as temporary:
+            root = Path(temporary)
+            driver_source = root / 'driver.c'
+            driver_source.write_text('extern int test_probe(void); int main(void) { return test_probe(); }\n')
+            for arm64, target_arguments in cases:
+                if arm64:
+                    address = ('    adrp x16, observed@PAGE\n    add x16, x16, observed@PAGEOFF\n'
+                               if darwin else '    adrp x16, observed\n    add x16, x16, :lo12:observed\n')
+                    setup = ('.text\n.global test_probe\ntest_probe:\n'
+                             '    stp x29, x30, [sp, #-96]!\n    mov x29, sp\n'
+                             '    stp x19, x20, [sp, #16]\n')
+                    setup += ''.join(f'    stp d{i}, d{i + 1}, [sp, #{32 + (i - 8) * 8}]\n'
+                                     for i in range(8, 16, 2))
+                    setup += ''.join(f'    mov x{i}, #{256 + i}\n' for i in range(18))
+                    vectors = list(range(32))
+                    setup += ''.join(f'    movi v{i}.16b, #0x5a\n' for i in vectors)
+                    setup += '    cmp x0, x0\n'
+                    checks = '    b.ne failed\n    b.cc failed\n'
+                    for i in range(18):
+                        checks += f'    cmp x{i}, #{256 + i}\n    b.ne failed\n'
+                    checks += ('    movz x20, #0x5a5a\n    movk x20, #0x5a5a, lsl #16\n'
+                               '    movk x20, #0x5a5a, lsl #32\n    movk x20, #0x5a5a, lsl #48\n')
+                    for i in vectors:
+                        for lane in (0, 1):
+                            checks += f'    umov x19, v{i}.d[{lane}]\n    cmp x19, x20\n    b.ne failed\n'
+                    checks += address + '    ldr w16, [x16]\n    cmp w16, #2\n    b.ne failed\n'
+                    checks += ('    mov w0, #0\n    b done\nfailed:\n    mov w0, #95\ndone:\n'
+                               '    ldp x19, x20, [sp, #16]\n')
+                    checks += ''.join(f'    ldp d{i}, d{i + 1}, [sp, #{32 + (i - 8) * 8}]\n'
+                                      for i in range(8, 16, 2))
+                    checks += '    ldp x29, x30, [sp], #96\n    ret\n'
+                    callback = 'asm_test_fault_reached:\n' + address + '    str w0, [x16]\n'
+                    callback += ''.join(f'    mov x{i}, #0\n' for i in range(18))
+                    callback += ''.join(f'    movi v{i}.16b, #0\n' if i < 8 or i >= 16 else
+                                        f'    ins v{i}.d[1], xzr\n' for i in vectors)
+                    callback += '    cmp x0, #1\n    ret\n.data\n.p2align 2\nobserved: .long 0\n'
+                    unsafe = '    mov x0, #2\n    bl asm_test_fault_reached\n'
+                else:
+                    registers = ['rax', 'rcx', 'rdx', 'r8', 'r9', 'r10', 'r11']
+                    setup = ('.intel_syntax noprefix\n.text\n.global test_probe\ntest_probe:\n'
+                             '    push rbp\n    mov rbp, rsp\n    push rbx\n    sub rsp, 24\n')
+                    setup += ''.join(f'    mov {reg}, {256 + i}\n' for i, reg in enumerate(registers))
+                    setup += '    lea rbx, [rip + vector_pattern]\n'
+                    setup += ''.join(f'    movdqu xmm{i}, [rbx]\n' for i in range(6))
+                    setup += '    cmp rax, rax\n'
+                    checks = '    jne failed\n    jc failed\n'
+                    for i, reg in enumerate(registers):
+                        checks += f'    cmp {reg}, {256 + i}\n    jne failed\n'
+                    checks += '    movabs rax, 0x5a5a5a5a5a5a5a5a\n'
+                    for i in range(6):
+                        checks += (f'    movdqu [rsp], xmm{i}\n    cmp [rsp], rax\n    jne failed\n'
+                                   '    cmp [rsp + 8], rax\n    jne failed\n')
+                    checks += ('    cmp dword ptr [rip + observed], 2\n    jne failed\n'
+                               '    xor eax, eax\n    jmp done\nfailed:\n    mov eax, 95\ndone:\n'
+                               '    lea rsp, [rbp - 8]\n    pop rbx\n    pop rbp\n    ret\n')
+                    callback = 'asm_test_fault_reached:\n    mov [rip + observed], ecx\n'
+                    callback += ''.join(f'    xor {reg}, {reg}\n' for reg in registers)
+                    callback += ''.join(f'    pxor xmm{i}, xmm{i}\n' for i in range(6))
+                    callback += ('    cmp eax, 1\n    ret\n.data\n.p2align 4\n'
+                                 'vector_pattern: .quad 0x5a5a5a5a5a5a5a5a, 0x5a5a5a5a5a5a5a5a\nobserved: .long 0\n')
+                    if platform.system() == 'Linux':
+                        callback += '.section .note.GNU-stack,"",@progbits\n'
+                    unsafe = '    sub rsp, 32\n    mov ecx, 2\n    call asm_test_fault_reached\n    add rsp, 32\n'
+                for control in (False, True):
+                    source, binary = root / 'registers.s', root / 'registers.exe'
+                    hook = unsafe if control else fault_observation(arm64, 'record_write')
+                    assembly = setup + hook + checks + callback
+                    if prefix:
+                        assembly = assembly.replace('test_probe', prefix + 'test_probe').replace(
+                            'asm_test_fault_reached', prefix + 'asm_test_fault_reached')
+                    source.write_text(assembly)
+                    built = subprocess.run([compiler, *target_arguments, str(source), str(driver_source),
+                                            '-o', str(binary)], capture_output=True, timeout=30)
+                    self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+                    ran = subprocess.run([str(binary)], capture_output=True, timeout=5)
+                    self.assertEqual((ran.returncode, ran.stdout, ran.stderr),
+                                     (95 if control else 0, b'', b''), (arm64, control))
+
+    def test_fault_marker_function_writes_exact_stage_and_fails_closed(self):
+        # The actual C function must leave a stage-specific file. A missing
+        # write, short-write mishandling, or accepted failure breaks this test.
+        compiler = shutil.which('cc') or shutil.which('clang')
+        target_arguments = []
+        if os.name == 'nt':
+            compiler = shutil.which('clang.exe')
+            fixed = Path('C:/Program Files/LLVM/bin/clang.exe')
+            if fixed.is_file():
+                compiler = str(fixed)
+            target = os.environ.get('ASM_WINDOWS_TARGET')
+            if not target:
+                target = {'amd64': 'x86_64-windows', 'x86_64': 'x86_64-windows',
+                          'arm64': 'aarch64-windows', 'aarch64': 'aarch64-windows'}.get(platform.machine().lower())
+            triples = {'x86_64-windows': 'x86_64-pc-windows-msvc',
+                       'aarch64-windows': 'aarch64-pc-windows-msvc'}
+            self.assertIn(target, triples)
+            target_arguments = ['--target=' + triples[target]]
+        self.assertIsNotNone(compiler, 'The fault observation check requires a C compiler.')
+        fixture = Path(__file__).with_name('snapshot_barrier.c').read_text()
+        fixture = fixture.replace('#define API __declspec(dllimport)', '#define API')
+        fixture = fixture.replace('__declspec(noreturn)', '__attribute__((noreturn))').replace('L"', 'u"')
+        harness = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+''' + fixture + r'''
+void asm_test_fault_reached(DWORD);
+static FILE *marker;
+static const char *marker_path;
+static int mode, writes, flushes, closes;
+DWORD GetEnvironmentVariableW(const WCHAR *name, WCHAR *value, DWORD capacity) {
+    static const WCHAR expected[] = u"ASM_TEST_FAULT_MARKER";
+    size_t n, i;
+    for (i = 0; expected[i]; ++i) if (name[i] != expected[i]) abort();
+    if (name[i]) abort();
+    if (mode == 1) return 0;
+    if (mode == 2) return capacity;
+    n = strlen(marker_path);
+    if (n >= capacity) abort();
+    for (i = 0; i <= n; ++i) value[i] = (unsigned char)marker_path[i];
+    return (DWORD)n;
+}
+HANDLE CreateFileW(const WCHAR *path, DWORD access, DWORD share, void *security,
+                   DWORD creation, DWORD flags, HANDLE template_file) {
+    if (!path[0] || access != 0x40000000 || share || security || creation != 1
+            || flags != 0x200080 || template_file) abort();
+    if (mode == 3) return (HANDLE)(long long)-1;
+    marker = fopen(marker_path, "wbx");
+    return marker ? (HANDLE)marker : (HANDLE)(long long)-1;
+}
+int WriteFile(HANDLE handle, const void *data, DWORD count, DWORD *written, void *overlap) {
+    ++writes;
+    if (handle != (HANDLE)marker || overlap) abort();
+    *written = 0;
+    if (mode == 4) return 0;
+    if (mode == 5) return 1;
+    if (count > 3) count = 3; /* Require the real function to handle short writes. */
+    *written = (DWORD)fwrite(data, 1, count, marker);
+    return *written == count;
+}
+int FlushFileBuffers(HANDLE handle) {
+    ++flushes;
+    if (handle != (HANDLE)marker) abort();
+    return fflush(marker) == 0 && mode != 6;
+}
+int CloseHandle(HANDLE handle) {
+    ++closes;
+    if (handle != (HANDLE)marker) abort();
+    return fclose(marker) == 0 && mode != 7;
+}
+HANDLE OpenEventW(DWORD a, int b, const WCHAR *c) { abort(); }
+int SetEvent(HANDLE a) { abort(); }
+DWORD WaitForSingleObject(HANDLE a, DWORD b) { abort(); }
+void ExitProcess(DWORD code) {
+    fprintf(stderr, "writes=%d flushes=%d closes=%d\n", writes, flushes, closes);
+    exit((int)code);
+}
+int main(int argc, char **argv) {
+    if (argc != 4) return 99;
+    mode = atoi(argv[2]); marker_path = argv[3];
+    asm_test_fault_reached((DWORD)atoi(argv[1]));
+    fprintf(stderr, "writes=%d flushes=%d closes=%d\n", writes, flushes, closes);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='asm-fault-marker-') as temporary:
+            root = Path(temporary)
+            source, binary = root / 'marker.c', root / 'marker.exe'
+            source.write_text(harness)
+            built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
+                                    '-o', str(binary)], capture_output=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+            stages = ((1, b'payload_flush'), (2, b'record_write'),
+                      (3, b'record_flush'), (4, b'activation_rename'))
+            for stage, name in stages:
+                with self.subTest(stage=stage):
+                    path = root / ('stage-' + str(stage))
+                    ran = subprocess.run([str(binary), str(stage), '0', str(path)], capture_output=True, timeout=5)
+                    self.assertEqual((ran.returncode, ran.stdout), (0, b''), ran.stderr)
+                    self.assertEqual(path.read_bytes(), b'# asm-test-fault-v1\n' + name + b'\n')
+                    self.assertIn(b'flushes=1 closes=1', ran.stderr)
+                    self.assertNotIn(b'writes=1 ', ran.stderr)
+                    again = subprocess.run([str(binary), str(stage), '0', str(path)], capture_output=True, timeout=5)
+                    self.assertEqual(again.returncode, 125, again.stderr)
+                    self.assertEqual(path.read_bytes(), b'# asm-test-fault-v1\n' + name + b'\n')
+            for stage, mode, cleanup in ((0, 0, b'closes=0'), (1, 1, b'closes=0'),
+                                          (1, 2, b'closes=0'), (1, 3, b'closes=0'),
+                                          (1, 4, b'flushes=0 closes=1'), (1, 5, b'flushes=0 closes=1'),
+                                          (1, 6, b'flushes=1 closes=1'), (1, 7, b'flushes=1 closes=1')):
+                with self.subTest(stage=stage, mode=mode):
+                    path = root / ('failure-' + str(stage) + '-' + str(mode))
+                    ran = subprocess.run([str(binary), str(stage), str(mode), str(path)], capture_output=True, timeout=5)
+                    self.assertEqual((ran.returncode, ran.stdout), (125, b''), ran.stderr)
+                    self.assertIn(cleanup, ran.stderr)
+
+
 class RuntimeHelperTests(unittest.TestCase):
-    def test_prepared_fault_instrumentation_changes_one_instruction(self):
+    def test_snapshot_sync_preserves_source_except_one_explicit_test_hook(self):
+        source = 'before\nwin_managed_snapshot_ready:\nafter\n'
+        for arm64, hook in ((True, '    ARM_CALL asm_test_snapshot_barrier\n'),
+                            (False, '    sub rsp, 32\n    call asm_test_snapshot_barrier\n    add rsp, 32\n')):
+            with self.subTest(arm64=arm64):
+                changed = snapshot_source(source, arm64)
+                self.assertEqual(changed.replace(hook, '', 1), source)
+                self.assertIn('win_managed_snapshot_ready:\n' + hook, changed)
+        for source in ('missing', source + source):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                snapshot_source(source, False)
+
+    def test_preparation_fault_targets_only_the_selected_native_boundary(self):
+        for arm64 in (False, True):
+            for stage, native in (('record_write', 'arm_write'), ('record_flush', 'arm_fsync'),
+                                  ('payload_flush', 'arm_fsync')):
+                label = 'win_managed_' + stage + ':\n'
+                call = '    ARM_CALL ' + native + '\n' if arm64 else '    call win_syscall\n'
+                source = 'unchanged before\n' + label + call + 'unchanged after\n'
+                with self.subTest(arm64=arm64, stage=stage):
+                    changed = preparation_failure(source, arm64, stage)
+                    bad = '    mov x0, #-1\n' if arm64 else '    mov rdi, -1\n'
+                    self.assertTrue(changed.startswith('unchanged before\n' + label))
+                    self.assertTrue(changed.endswith(bad + call + 'unchanged after\n'))
+                    self.assertEqual(changed.count('call asm_test_fault_reached' if not arm64 else
+                                                   'bl asm_test_fault_reached'), 1)
+                    number = {'payload_flush': 1, 'record_write': 2, 'record_flush': 3}[stage]
+                    self.assertIn(('    mov x0, #' if arm64 else '    mov ecx, ') + str(number) + '\n', changed)
+
+    def test_managed_fault_changes_only_final_record_activation(self):
+        for arm64, call, bad in ((True, '    ARM_CALL win_managed_rename_fd\n', '    mov x1, #-1\n'),
+                                 (False, '    call win_managed_rename_fd\n', '    mov rsi, -1\n')):
+            source = ('before\nself_commit_update:\n    branch_to_managed_commit\n'
+                      '\nself_update_cleanup:\nuntouched cleanup\n'
+                      'win_managed_activation_rename:\n' + call + 'after\n')
+            with self.subTest(arm64=arm64):
+                changed = final_replacement_failure(source, arm64)
+                self.assertTrue(changed.startswith(source[:source.index('    ' + ('ARM_CALL win_managed_rename_fd' if arm64 else 'call win_managed_rename_fd'))]))
+                self.assertTrue(changed.endswith(bad + call + 'after\n'))
+                self.assertEqual(changed.count('bl asm_test_fault_reached' if arm64 else
+                                               'call asm_test_fault_reached'), 1)
+                self.assertIn('    mov x0, #4\n' if arm64 else '    mov ecx, 4\n', changed)
+                self.assertIn('untouched cleanup\n', changed)
+
+    def test_prepared_fault_instrumentation_changes_only_one_named_boundary(self):
         root = Path(__file__).resolve().parents[2]
         for arm64, tool, entry in ((False, "windows_x64", "cli/asm.s"),
                                    (True, "windows_arm64", "cli/aarch64/asm.s")):
@@ -159,10 +424,21 @@ class RuntimeHelperTests(unittest.TestCase):
                 self.assertEqual(len(edits), 1)
                 kind, start, _, changed_start, changed_end = edits[0]
                 self.assertEqual(kind, "insert")
-                self.assertEqual(after[changed_start:changed_end],
-                                 ["    mov x2, #-1" if arm64 else "    mov rdx, -1"])
-                self.assertEqual(before[start], "    ARM_CALL arm_renameat" if arm64 else "    call win_syscall")
-                if not arm64:
+                managed = '\nwin_managed_activation_rename:\n' in source
+                bad = ("    mov x1, #-1" if arm64 else "    mov rsi, -1") if managed else (
+                    "    mov x2, #-1" if arm64 else "    mov rdx, -1")
+                inserted = after[changed_start:changed_end]
+                self.assertEqual(inserted[-1], bad)
+                expected_call = ("    ARM_CALL win_managed_rename_fd" if arm64 else
+                                 "    call win_managed_rename_fd") if managed else (
+                    "    ARM_CALL arm_renameat" if arm64 else "    call win_syscall")
+                self.assertEqual(before[start], expected_call)
+                if managed:
+                    self.assertEqual(before[start - 1], 'win_managed_activation_rename:')
+                    self.assertIn('    bl asm_test_fault_reached' if arm64 else
+                                  '    call asm_test_fault_reached', inserted)
+                elif not arm64:
+                    self.assertEqual(inserted, [bad])
                     self.assertIn("    mov eax, 264", before[start - 5:start])
 
     def test_x64_fault_targets_rename_and_preserves_later_cleanup(self):

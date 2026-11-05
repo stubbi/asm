@@ -1,4 +1,4 @@
-"""Host checks for receipt parsing only; these do not qualify Windows APIs.
+"""Host checks for fixture logic; these do not qualify Windows APIs.
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import json
@@ -14,6 +14,164 @@ from managed_console import parse_receipt
 
 
 class ConsoleReceiptTests(unittest.TestCase):
+    def test_stdio_copy_preserves_binary_bytes_and_rejects_io_failures(self):
+        # Missing output, partial writes, premature success, and overflow must fail.
+        # Compile the actual fixture routine against bounded host I/O adapters.
+        compiler = shutil.which('cc') or shutil.which('clang')
+        target_arguments = []
+        if os.name == 'nt':
+            compiler = shutil.which('clang.exe')
+            fixed_clang = Path('C:/Program Files/LLVM/bin/clang.exe')
+            if fixed_clang.is_file():
+                compiler = str(fixed_clang)
+            targets = {'x86_64-windows': 'x86_64-pc-windows-msvc',
+                       'aarch64-windows': 'aarch64-pc-windows-msvc'}
+            host_target = {'amd64': 'x86_64-windows', 'x86_64': 'x86_64-windows',
+                           'arm64': 'aarch64-windows', 'aarch64': 'aarch64-windows'}
+            target = os.environ.get('ASM_WINDOWS_TARGET') or host_target.get(platform.machine().lower())
+            self.assertIn(target, targets, 'The stdio checker requires a supported host target.')
+            target_arguments = ['--target=' + targets[target]]
+        self.assertIsNotNone(compiler, 'The stdio checker regression requires a C compiler.')
+        fixture = Path(__file__).with_name('managed_console.c').read_text(encoding='utf-8')
+        start = fixture.index('static D output_used;') + len('static D output_used;')
+        body = fixture[start:fixture.index('/* All input is private test argv.')]
+        harness = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+typedef unsigned int D;
+typedef void *H;
+#define INVALID ((H)(long long)-1)
+H GetStdHandle(D);
+int ReadFile(H, void *, D, D *, void *);
+int WriteFile(H, const void *, D, D *, void *);
+D GetLastError(void);
+''' + body + r'''
+static char mode;
+static D last_error, read_calls;
+H GetStdHandle(D stream) {
+    if (mode == 'i' && stream == (D)-10) return INVALID;
+    if (stream == (D)-10) return (H)1;
+    if (stream == (D)-11) return (H)2;
+    if (stream == (D)-12) return (H)3;
+    abort();
+}
+int ReadFile(H stream, void *buffer, D count, D *read, void *overlapped) {
+    if (stream != (H)1 || overlapped || !count) abort();
+    *read = 0;
+    if (mode == 'r' && read_calls++) { last_error = 5; return 0; }
+    if (mode == 'R') { *read = count + 1; return 1; }
+    if (count > 7) count = 7;
+    *read = (D)fread(buffer, 1, count, stdin);
+    if (!*read && mode == 'p') { last_error = 109; return 0; }
+    return !ferror(stdin);
+}
+int WriteFile(H stream, const void *buffer, D count, D *written, void *overlapped) {
+    if ((stream != (H)2 && stream != (H)3) || overlapped || !count) abort();
+    *written = 0;
+    if ((mode == 'o' && stream == (H)2) || (mode == 'e' && stream == (H)3)) return 0;
+    if (mode == 'z') return 1;
+    if (mode == 'W') { *written = count + 1; return 1; }
+    if (count > 5) count = 5;
+    *written = (D)fwrite(buffer, 1, count, stream == (H)2 ? stdout : stderr);
+    return *written == count;
+}
+D GetLastError(void) { return last_error; }
+int main(int argc, char **argv) {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
+    if (argc != 2) return 99;
+    mode = argv[1][0];
+    return stdio_copy();
+}
+'''
+        data = b'\x00\xffGr\xc3\xbc\xc3\x9fe \xe4\xb8\x96\xe7\x95\x8c\xf0\x9f\x99\x82\r\nend\x00'
+        with tempfile.TemporaryDirectory(prefix='asm-console-stdio-') as temporary:
+            source = Path(temporary) / 'stdio-host.c'
+            binary = Path(temporary) / 'stdio-host.exe'
+            source.write_text(harness, encoding='utf-8')
+            built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
+                                    '-o', str(binary)], capture_output=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+            cases = [('s', data, 37, data, data), ('p', data, 37, data, data),
+                     ('s', b'', 37, b'', b''), ('p', b'x' * 4096, 37, b'x' * 4096, b'x' * 4096),
+                     ('p', b'x' * 4097, 98, b'', b''), ('r', data, 98, b'', b''),
+                     ('o', data, 98, b'', b''), ('e', data, 98, data, b''),
+                     ('z', data, 98, b'', b''), ('i', data, 98, b'', b''),
+                     ('R', data, 98, b'', b''), ('W', data, 98, b'', b'')]
+            for mode, payload, code, out, err in cases:
+                with self.subTest(mode=mode, size=len(payload)):
+                    result = subprocess.run([str(binary), mode], input=payload,
+                                            capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    self.assertEqual(result.stdout, out)
+                    self.assertEqual(result.stderr, err)
+
+    def test_argument_checker_preserves_literal_utf16_tokens_and_count_limits(self):
+        # A checker that accepts the wrong count or one altered token must fail.
+        # Compile its actual C body; no Windows API behavior is simulated here.
+        compiler = shutil.which('cc') or shutil.which('clang')
+        target_arguments = []
+        if os.name == 'nt':
+            compiler = shutil.which('clang.exe')
+            fixed_clang = Path('C:/Program Files/LLVM/bin/clang.exe')
+            if fixed_clang.is_file():
+                compiler = str(fixed_clang)
+            targets = {'x86_64-windows': 'x86_64-pc-windows-msvc',
+                       'aarch64-windows': 'aarch64-pc-windows-msvc'}
+            host_target = {'amd64': 'x86_64-windows', 'x86_64': 'x86_64-windows',
+                           'arm64': 'aarch64-windows', 'aarch64': 'aarch64-windows'}
+            target = os.environ.get('ASM_WINDOWS_TARGET') or host_target.get(platform.machine().lower())
+            self.assertIn(target, targets, 'The argument checker requires a supported host target.')
+            target_arguments = ['--target=' + targets[target]]
+        self.assertIsNotNone(compiler, 'The argument checker regression requires a C compiler.')
+        fixture = Path(__file__).with_name('managed_console.c').read_text(encoding='utf-8')
+        body = fixture[fixture.index('static int number('):fixture.index('static int append(')]
+        harness = r'''
+typedef unsigned short W;
+typedef unsigned int D;
+''' + body + r'''
+int main(int argc, char **argv) {
+    static W *args[1025];
+    static const W *tokens[] = {u"space token", u"double\"quote", u"", u"back\\slash\\",
+                               u"Gr\u00fc\u00dfe \u4e16\u754c\U0001f642"};
+    int count = 257, i;
+    if (argc < 2) return 99;
+    args[0] = (W *)u"fixture"; args[1] = (W *)u"--check-args"; args[2] = (W *)u"257";
+    if (argv[1][0] == 'b') { count = 1023; args[2] = (W *)u"1023"; }
+    if (argv[1][0] == 'c') args[2] = (W *)u"256";
+    if (argv[1][0] == 'e') { count = 1024; args[2] = (W *)u"1024"; }
+    if (argv[1][0] == 'f') args[2] = (W *)u"0257";
+    if (argv[1][0] == 'g') count = 2;
+    if (argv[1][0] == 'h') { count = 3; args[2] = (W *)u"3"; }
+    for (i = 3; i < count; ++i) args[i] = (W *)tokens[(i - 3) % 5];
+    if (argv[1][0] == 'd' && argc == 3 && argv[2][0] >= '0' && argv[2][0] <= '4')
+        args[3 + argv[2][0] - '0'] = (W *)u"altered";
+    return check_args(count, args) ? 0 : 98;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='asm-console-argv-') as temporary:
+            source = Path(temporary) / 'argv-host.c'
+            binary = Path(temporary) / 'argv-host.exe'
+            source.write_text(harness, encoding='utf-8')
+            built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
+                                    '-o', str(binary)], capture_output=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
+            cases = [(['a'], 0), (['b'], 0), (['c'], 98), (['e'], 98), (['f'], 98),
+                     (['g'], 98), (['h'], 0)] + [(['d', str(i)], 98) for i in range(5)]
+            for arguments, expected in cases:
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run([str(binary), *arguments], capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertEqual(result.stderr, b'')
+
     def receipt(self, **changes):
         row = {'status': 'complete', 'event': 0, 'requested_exit_code': 0xc000013a,
                'exit_code': 0xc000013a, 'payload_exit_code': 0xc000013a, 'ready': True, 'event_sent': True,

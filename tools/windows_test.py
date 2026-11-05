@@ -258,7 +258,13 @@ def main(argv=None):
             test_runtime.COMMANDS = report["commands"]
             test_runtime.TOOLCHAIN_BIN = llvm.resolve()
             report["test_artifacts"] = test_runtime.TEST_ARTIFACTS
-            suite = unittest.defaultTestLoader.loadTestsFromModule(test_runtime)
+            import test_managed_runtime
+            import test_managed_recovery
+            suite = unittest.TestSuite([
+                unittest.defaultTestLoader.loadTestsFromModule(test_runtime),
+                unittest.defaultTestLoader.loadTestsFromModule(test_managed_runtime),
+                unittest.defaultTestLoader.loadTestsFromModule(test_managed_recovery),
+            ])
             if not suite.countTestCases():
                 raise RuntimeError("The Windows runtime suite contains no tests.")
             result = unittest.TextTestRunner(verbosity=2, resultclass=EvidenceResult).run(suite)
