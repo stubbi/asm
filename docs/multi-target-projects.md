@@ -1,7 +1,8 @@
 # Multi-target projects
 
-Status: unreleased source-checkout capability.
-Published Asm 0.5.0 binaries do not support this extension.
+Status: Asm 0.6.0 project contract.
+Earlier published binaries do not support this extension.
+The [release notes](releases/0.6.0.md) state the publication gates and artifact scope.
 
 ## One project and explicit implementations
 
@@ -130,7 +131,8 @@ Failed updates preserve the previous lock.
 ## Distribution and evidence
 
 Project declarations and registry artifact support are separate contracts.
-Registry v1 still accepts its existing four artifact targets and six artifacts per release.
+This integration accepts six artifact targets and at most 14 artifacts per release.
+The two Windows labels require PE validation; Intel macOS remains a project declaration only.
 Declaring a Windows source implementation does not qualify a Windows registry artifact or CLI host.
 Published package records and artifact bytes remain immutable.
 A changed source layout requires a new package version before publication.

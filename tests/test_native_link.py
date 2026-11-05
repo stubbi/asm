@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, IS_MACOS, TARGET
+from host import IS_ARM64, IS_MACOS, TARGET, exit_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,6 +170,59 @@ class NativeLinkTests(unittest.TestCase):
         self.cli("build", success=False)
         self.assertEqual(binary.read_bytes(), before)
         self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_checker_filename_cannot_select_a_compiler_response_file(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        (self.work / "@response.c").write_text('_Static_assert(0, "must reject");\n')
+        (self.work / "response.c").write_text('--version\n')
+        self.manifest.write_text(self.base + 'link = "c"\ncheck = "@response.c"\n')
+        result = self.cli("build", success=False)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("invalid or missing asm.toml", result.stderr)
+        self.assertEqual(binary.read_bytes(), before)
+        self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
+    def test_source_components_cannot_select_assembler_response_files(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        for linked in (False, True):
+            for path in ("@main.s", "src/@main.s"):
+                with self.subTest(c_abi=linked, path=path):
+                    source = self.work / path
+                    source.parent.mkdir(exist_ok=True)
+                    source.write_text(main_source() if linked else exit_source(23))
+                    manifest = self.base.replace('source = "main.s"', f'source = "{path}"')
+                    self.manifest.write_text(manifest + ('link = "c"\n' if linked else ''))
+                    result = self.cli("build", success=False)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("invalid or missing asm.toml", result.stderr)
+                    self.assertEqual(binary.read_bytes(), before)
+                    self.assertFalse(list((self.work / "build").glob(".asm-*")))
+        (self.work / "main@literal.s").write_text(main_source())
+        self.manifest.write_text(self.base.replace('source = "main.s"', 'source = "main@literal.s"')
+                                 + 'link = "c"\n')
+        self.assertEqual(self.cli("run").stdout, "native linked\n")
+
+    def test_inactive_target_response_file_inputs_preserve_existing_binary(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        foreign = "aarch64-linux" if TARGET == "x86_64-linux" else "x86_64-linux"
+        selected = ('[package]\nname = "native"\nversion = "0.1.0"\n'
+                    f'[target.{TARGET}]\nsource = "main.s"\nlink = "c"\n')
+        for fields in ('source = "src/@main.s"\n',
+                       'source = "src/main.s"\ntest = "tests/@main.s"\n',
+                       'source = "src/main.s"\nlink = "c"\ncheck = "abi/@check.c"\n'):
+            with self.subTest(fields=fields):
+                self.manifest.write_text(selected + f'[target.{foreign}]\n' + fields)
+                result = self.cli("build", success=False)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("invalid or missing asm.toml", result.stderr)
+                self.assertEqual(binary.read_bytes(), before)
+                self.assertFalse(list((self.work / "build").glob(".asm-*")))
 
     def test_hidden_c_checker_is_compiled_without_execution(self):
         (self.work / ".c").write_text(

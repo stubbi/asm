@@ -25,8 +25,8 @@ The target instructions specify the applicable ABI and preserved registers.
 
 ## Run with Asm
 
-Use an Asm CLI built from this checkout.
-Published 0.5.0 binaries do not support this manifest extension.
+Use Asm 0.6.0 or later.
+Earlier binaries do not support this manifest extension.
 
 Native execution requires Linux x86-64, Linux AArch64, or Apple Silicon with macOS 15 or later.
 Linux builds require GNU Binutils.
@@ -126,10 +126,10 @@ The retained RISC-V digests describe the source before this relocation.
 
 The implementations come from repository commit `48bc44d5490b332dfa87fa60ffa91296d9423cbe`.
 Only project-relative assembly include paths changed.
-The root manifest retains checkout version `0.5.0`.
-This source-layout change is unreleased.
-Publishing changed bytes requires a new package version.
-Published versions, records, and qualification digests remain unchanged.
+The root manifest declares version `0.6.0`.
+Its source archive contains all seven implementations.
+The registry artifact remains declared for Linux x86-64 only.
+Earlier published versions, records, and qualification digests remain unchanged.
 
 The project license is MIT.
 See [LICENSE](LICENSE).

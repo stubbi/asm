@@ -78,8 +78,8 @@ An error can follow partial output.
 4. Call `asm_u64_min`.
 5. Read the unsigned result from `a0`.
 
-The package manifest uses prospective `math` checkout version `0.5.0` and target `riscv64-linux`.
-This checkout does not replace the published version with relocated source bytes.
+The package manifest declares `math` version `0.6.0` and target `riscv64-linux`.
+Version 0.6.0 uses the relocated source paths.
 Earlier published package versions retain their original bytes and licenses.
 
 ## Validation and limits

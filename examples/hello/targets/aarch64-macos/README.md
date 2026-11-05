@@ -47,7 +47,7 @@ python3 -m unittest discover -s tests/packages -p test_hello_macos.py -v
 Local execution uses native Apple Silicon.
 The tests check exact output, exit status, and read-only or closed standard output.
 Build success alone does not qualify an architecture or a CLI port.
-This source relocation is unreleased; it does not change a published package version.
+Version 0.6.0 uses this source layout; earlier published versions retain their original paths.
 
 ## Sources
 
