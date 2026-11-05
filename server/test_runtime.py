@@ -23,6 +23,9 @@ HERE = Path(__file__).resolve().parent
 REFERENCE = HERE.parent / "experiments/assembly-server"
 sys.path.insert(0, str(REFERENCE))
 from local_postgres import Database, LocalPostgres, create_catalog
+sys.path.insert(0, str(HERE.parent / "tools"))
+import registry
+import registry_admin
 
 
 def free_port():
@@ -83,8 +86,7 @@ class RuntimeTests(unittest.TestCase):
         cls.cluster.start()
         cls.prefix = "asm_proto_" + secrets.token_hex(6)
         cls.dbname = cls.prefix
-        cls.roles = {name: cls.prefix + suffix for name, suffix in
-                     (("migrator", "_m"), ("reader", "_r"), ("operator", "_o"))}
+        cls.roles = {name: "asm_" + name for name in ("migrator", "reader", "operator")}
         password = secrets.token_hex(24)
         for role in cls.roles.values():
             cls.cluster.admin.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD \'{password}\'')
@@ -105,6 +107,22 @@ class RuntimeTests(unittest.TestCase):
             path.write_text(cls.url(role, label) + "\n")
             path.chmod(0o600)
             cls.configs[label] = path
+        psql = Path(os.environ["ASM_PROTO_PG_BINDIR"]) / "psql"
+        with registry_admin.Connection(cls.configs["migrator"], psql, cls.roles["migrator"]) as connection:
+            registry_admin.migrate(connection)
+        records = registry.read_records(HERE.parent / "registry")
+        full_tsv, index = registry.make_indexes(records)
+        cls.exports = dict(zip(registry_admin.ROUTES, (
+            registry.legacy_tsv(full_tsv).encode("ascii"), full_tsv.encode("ascii"), registry.json_bytes(index))))
+        with registry_admin.Connection(cls.configs["operator"], psql, cls.roles["operator"]) as connection:
+            for namespace in sorted({record["name"].split("/")[0] for record in records}):
+                connection.execute("SELECT asm_catalog.bind_namespace(" + registry_admin.sql_text(namespace) +
+                    ",12345," + registry_admin.sql_text(cls.revision) + ");")
+            manifests = "ARRAY[" + ",".join(registry_admin.sql_text(registry.json_bytes(record).decode("ascii"))
+                                            for record in records) + "]::text[]"
+            connection.execute("SELECT asm_catalog.publish(" + registry_admin.sql_text(cls.revision) +
+                ",0," + manifests + "," + ",".join(registry_admin.sql_text(body.decode("ascii"))
+                                                   for body in cls.exports.values()) + ");")
         cls.port = free_port()
         cls.log = (cls.base / "server.log").open("wb")
         cls.addClassCleanup(cls.log.close)
@@ -138,14 +156,19 @@ class RuntimeTests(unittest.TestCase):
         return env
 
     @classmethod
-    def request(cls, path, method="GET", body=None):
+    def raw_request(cls, path, method="GET", body=None):
         connection = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=3)
         try:
             connection.request(method, path, body=body)
             response = connection.getresponse()
-            return response.status, dict(response.getheaders()), json.loads(response.read())
+            return response.status, dict(response.getheaders()), response.read()
         finally:
             connection.close()
+
+    @classmethod
+    def request(cls, path, method="GET", body=None):
+        code, headers, body = cls.raw_request(path, method, body)
+        return code, headers, json.loads(body)
 
     @classmethod
     def stop_server(cls):
@@ -186,9 +209,22 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
 
-    def test_unimplemented_catalog_and_write_routes_do_not_claim_success(self):
-        for path in ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv", "/registry/v1/index.json", "/api/v2/packages"):
-            self.assertEqual(self.request(path)[0], 404)
+    def test_canonical_exports_preserve_exact_current_bytes_and_media_types(self):
+        self.assertGreater(len(self.exports["/registry/v1/index.json"]), 16384)
+        for path, expected in self.exports.items():
+            with self.subTest(path=path):
+                code, headers, body = self.raw_request(path)
+                self.assertEqual(code, 200)
+                self.assertEqual(body, expected)
+                self.assertEqual(headers["Content-Type"], "application/json" if path.endswith(".json")
+                                 else "text/tab-separated-values; charset=utf-8")
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertNotIn(b"aarch64-macos", self.exports["/registry/v1/index.tsv"])
+        self.assertIn(b"aarch64-macos", self.exports["/registry/v1/index-macos.tsv"])
+
+    def test_unimplemented_write_routes_do_not_claim_success(self):
+        self.assertEqual(self.request("/api/v2/packages")[0], 404)
         self.assertEqual(self.request("/health/live", method="POST")[0], 405)
         self.assertEqual(self.request("/health/live", body=b"x")[0], 400)
         self.assertEqual(self.request("/health/live?unknown=x")[0], 400)
