@@ -1,13 +1,14 @@
 HOST_OS := $(shell uname -s)
 HOST_ARCH := $(shell uname -m | sed s/arm64/aarch64/)
 ARCH ?= $(HOST_ARCH)
-ifeq ($(HOST_OS),Darwin)
-ifneq ($(ARCH),aarch64)
-$(error Native macOS qualification currently requires Apple Silicon)
-endif
-endif
-ifeq ($(filter $(ARCH),x86_64 aarch64),)
-$(error Unsupported CLI architecture '$(ARCH)'; use x86_64 or aarch64)
+ifeq ($(HOST_OS)/$(ARCH),Linux/x86_64)
+CLI_TARGET := x86_64-linux
+else ifeq ($(HOST_OS)/$(ARCH),Linux/aarch64)
+CLI_TARGET := aarch64-linux
+else ifeq ($(HOST_OS)/$(ARCH),Darwin/aarch64)
+CLI_TARGET := aarch64-macos
+else
+$(error Unsupported CLI target '$(HOST_OS)/$(ARCH)'; use Linux/x86_64, Linux/aarch64 or Darwin/aarch64)
 endif
 
 ifeq ($(ARCH),$(HOST_ARCH))
@@ -109,16 +110,24 @@ clean:
 verifier-test:
 	cd verifier && $(GO) test -race ./...
 
-build/asm-verify-$(ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux): $(wildcard verifier/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
+VERIFIER_TARGETS := build/asm-verify-x86_64-linux build/asm-verify-aarch64-linux build/asm-verify-aarch64-macos
+build/asm-verify-x86_64-linux: VERIFIER_GOOS := linux
+build/asm-verify-x86_64-linux: VERIFIER_GOARCH := amd64
+build/asm-verify-aarch64-linux: VERIFIER_GOOS := linux
+build/asm-verify-aarch64-linux: VERIFIER_GOARCH := arm64
+build/asm-verify-aarch64-macos: VERIFIER_GOOS := darwin
+build/asm-verify-aarch64-macos: VERIFIER_GOARCH := arm64
+
+$(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
 	mkdir -p build
-	cd verifier && CGO_ENABLED=0 GOARCH=$(if $(filter x86_64,$(ARCH)),amd64,arm64) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
-	GOARCH=$(if $(filter x86_64,$(ARCH)),amd64,arm64) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
+	cd verifier && CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
+	CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
 
 check-trust-root:
 	$(MAKE) build/asm-verify-$(HOST_ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux) ARCH=$(HOST_ARCH)
 	build/asm-verify-$(HOST_ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux) check-root verifier/trust/asm-root.json
 
-trusted-cli: check-trust-root build/asm-verify-$(ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux)
+trusted-cli: check-trust-root build/asm-verify-$(CLI_TARGET)
 ifeq ($(HOST_OS),Darwin)
 	$(PYTHON) tools/macos.py --output build/macos/asm-trusted.s
 	{ printf '.set ASM_TRUSTED_DISTRIBUTION, 1\n'; cat build/macos/asm-trusted.s; } > build/macos/asm-trusted-complete.s
