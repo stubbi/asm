@@ -98,3 +98,8 @@ Retain failed attempts beside later results.
 Bind each runtime result to the tested source and executable digests.
 Emulation does not qualify a native machine, release, installer, or deployment.
 Shared distribution changes require the separate release workstream.
+
+`make build/asm-verify-riscv64-linux` builds a development verifier with Go.
+That helper has a separate, unqualified toolchain, ISA, and ABI contract.
+The CLI's RV64IM/LP64 table and runtime harness do not qualify the verifier.
+Helper publication and trust activation require a future immutable release and separate gates.

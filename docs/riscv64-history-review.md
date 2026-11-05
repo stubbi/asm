@@ -10,6 +10,7 @@ The later registry merge retains published 0.6.0 records and binds shared source
 It does not add a published RISC-V CLI host.
 The platform merge retains Intel Darwin fixtures, Windows verifier protections, and the qualified server inputs.
 Its compiler startup environment change requires new RISC-V executable and runtime evidence.
+The selected PR 39 source preserves the reviewed installer guards and internal verifier build prerequisites.
 The implementation review also inspected affected current parsers, archive boundaries, lock readers, target builders, syscall adapters, and retained failure evidence.
 
 The integration retains these earlier decisions:
@@ -37,3 +38,8 @@ The review does not replace deterministic gates.
 Full-system RISC-V CLI execution and the combined server gate remain pending until their exact source and artifact records pass.
 The merge queue owns integration and release admission.
 This branch does not authorize a new RISC-V release or reuse an earlier version for new bytes.
+
+The automatic user-mode job is superseded by the complete full-system gate.
+Manual user-mode diagnostics retain the same strict assertions and failed results.
+User-mode translation does not reproduce the three required guest-kernel denial filters.
+The automatic full-system and combined application gates retain their separate complete contracts.

@@ -1,13 +1,6 @@
-name: RISC-V CLI qualification
+name: RISC-V user-mode diagnostics
 
 on:
-  pull_request:
-    paths:
-      - 'cli/**'
-      - 'tests/**'
-      - 'tools/riscv64*.py'
-      - 'Makefile'
-      - '.github/workflows/riscv64-port.yml'
   workflow_dispatch:
 
 permissions:

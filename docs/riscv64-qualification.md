@@ -66,7 +66,7 @@ Foreign reference packages retain their separate native-target qualification req
 
 ## Emulated Linux qualification
 
-The workflow uses QEMU user-mode emulation on an isolated Ubuntu runner.
+The manual diagnostic workflow uses QEMU user-mode emulation on an isolated Ubuntu runner.
 A registered binary-format handler allows Python and the CLI to execute RISC-V ELF files directly.
 The workflow selects GNU cross-tools at the CLI's fixed paths.
 It installs RISC-V libc headers and startup objects for the linked-project tests.
@@ -85,6 +85,11 @@ The three kernel-denial assertions remain unchanged and mandatory in the strict 
 An emulation difference that prevents a required assertion remains a failed check.
 QEMU can combine distinct guest resource-limit operations into the host `prlimit64` call.
 Complete syscall-failure qualification can therefore require a full-system guest or a native host.
+
+User-mode diagnostics retain the unchanged strict suite and its failed outcomes.
+They run only through `workflow_dispatch` and do not supply the automatic RISC-V admission gate.
+The automatic full-system workflow requires every original kernel-denial assertion and complete suites without skips.
+The combined application workflow separately requires its native-library checks and all 19 server tests.
 
 The separate full-system workflow defines a hash-pinned Ubuntu RISC-V guest.
 Its guest uses native Python and tools against the emulated Linux kernel.
@@ -105,7 +110,7 @@ A provenance file alone does not establish that a virtual machine executed.
 This mode always reports `native_qualified: false` and `release_qualified: false`.
 Full-system CLI qualification remains pending until its complete retained gate passes.
 
-The workflow runs the suite as root in a protected copy below `/tmp`.
+The user-mode diagnostic workflow runs the suite as root in a protected copy below `/tmp`.
 This includes real cross-user checks without trusting a writable checkout ancestor.
 The repository token has read-only contents permission.
 The checkout does not retain credentials.

@@ -1734,6 +1734,132 @@
         "bytes": 69425,
         "sha256": "641752f38d44271854b56c7500c88bffccf548b09560cf0a007d67a505c54473"
       }
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 632496,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "42167bc9a21f3d215b6182ff7c3857df2469dc3c8151d5e9cf406edffc6f7d15"
+      },
+      "checkout_commit": "3969d3c612e86690d53b601802b957844561c57f",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "a37b6134b6cc9ea210cfe50210e4ee1131f8659bc02502a0352a0040e1e3d921",
+          "outcome": "pass",
+          "seconds": 7.531,
+          "skipped_checks": false,
+          "tests_run": 35,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "066090f9fc94972987945b9edccb0e8160b56dadecac04eb393277fd32134385",
+          "outcome": "fail",
+          "seconds": 61.081,
+          "skipped_checks": false,
+          "tests_run": 353,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "400c94c5dbd0802ebcbaf1aa98329443561aa09912bfbbfbbdf637f9cc3aa92f",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-t9t36jkr/probe"
+          ],
+          "exit_code": 0,
+          "incomplete_checks": false,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "effective_cross_tool_configuration_control": "pass: actual GNU linker poison control and public selected-target builds passed",
+      "emulation_kind": "user",
+      "execution_mode": "emulated",
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 0,
+        "failures": 3,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 353
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "incomplete": false,
+        "skipped": 0,
+        "tests": 35
+      },
+      "outcome": "fail",
+      "qualification_schema": 2,
+      "qualification_scope": "native-cli-behavior",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42034219332/riscv64-emulated-3969d3c612e86690d53b601802b957844561c57f/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "64b202f623738117f9d464b7a5708c7e703097827cc0b321e6aeb33411d961b0"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42034219332/full.log",
+        "sha256": "2d9b83ba84051622146aebaed620ba2a3a6e57c148a08e4a067a0af85082c06e"
+      },
+      "release_qualified": false,
+      "remaining_failures": "The same three host-kernel denial injections remain failed under user-mode translation; none were disabled.",
+      "run_id": 42034219332,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219332"
     }
   ],
   "execution_mode": "emulated",
@@ -1818,5 +1944,79 @@
   "native_qualified": false,
   "release_qualified": false,
   "schema": 1,
+  "superseded_runs": [
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219055/retention-summary.json",
+        "sha256": "f361fa4e5944e6d1710a78d82c4d0219d61222de4cadefb857e1e0d0e4ef281b"
+      },
+      "run_id": 42034219055,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219055"
+    },
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219156/cancellation-record.json",
+        "sha256": "280a5a60e77d9f85daa59ba7c8ae8e8ea7dd2013eabd8fbc47e9ffbed8a48411"
+      },
+      "run_id": 42034219156,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219156"
+    },
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219354/retention-summary.json",
+        "sha256": "3198dc1bcdfa76110d97d016dd7f89b9ac9d03a744d73a1b59cf690878849894"
+      },
+      "run_id": 42034219354,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219354"
+    },
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219318/retention-summary.json",
+        "sha256": "3a060712ceec4442683c288f5dbdae67173211f6b312032ca9a9be04e172d2cd"
+      },
+      "run_id": 42034219318,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219318"
+    },
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219052/retention-summary.json",
+        "sha256": "1ebe3f40f60e3d0fa578b439e31cddf2b47af81df031d3e30465999033ae9e6c"
+      },
+      "run_id": 42034219052,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219052"
+    },
+    {
+      "head_commit": "a9e3da37f3c2f96745c452438af43e7a13a58908",
+      "outcome": "cancelled-superseded",
+      "qualification": "No qualification pass is inferred. The retained record and raw final state identify executed, skipped, and incomplete work.",
+      "reason": "Queue selected reviewed PR39 exact28f2aea5128383d675b0662e00de7a00a5220b05 for the next combined source.",
+      "retention_record": {
+        "path": "build/riscv64/ci/42034219021/retention-summary.json",
+        "sha256": "3077537676be373f6edfa5fdab2218184dd76f8c6f8281f294440a3e3029cc5e"
+      },
+      "run_id": 42034219021,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42034219021"
+    }
+  ],
   "target": "riscv64-linux"
 }
