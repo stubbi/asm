@@ -129,8 +129,8 @@ They do not change published host support.
 | Linux x86-64 and ARM64 servers | Both native targets passed the corrected schema-privilege suites. [Run](https://github.com/stubbi/asm/actions/runs/41944988752). | Preserve the [exact package evidence](server-package-evidence.json) during integration. Deployment has separate gates. |
 | RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
 | RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
-| Windows x86-64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix access checks and process execution. Pass the expanded 44-case suite and updater identity checks. |
-| Windows ARM64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix the observed runtime failures. Pass the expanded 44-case suite and updater identity checks. |
+| Windows x86-64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix access checks and process execution. Pass the expanded 45-case suite and updater identity checks. |
+| Windows ARM64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix the observed runtime failures. Pass the expanded 45-case suite and updater identity checks. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | The frozen helper source builds for both Windows targets. | Run independent native Go suites with protected NTFS fixtures. Trust activation remains separate. |
 

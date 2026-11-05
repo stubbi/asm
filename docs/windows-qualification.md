@@ -84,7 +84,7 @@ It cannot produce native qualification evidence.
 
 ## Observable acceptance checks
 
-The [runtime suite](../tests/windows/test_runtime.py) runs 44 test cases through native PE executables.
+The [runtime suite](../tests/windows/test_runtime.py) runs 45 test cases through native PE executables.
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.
@@ -121,6 +121,14 @@ They replace two fixed tool paths with native PE fixtures.
 They retain the parser, staging, identity checks, process control, and replacement mechanism under test.
 The finalization variant injects an invalid directory handle only at the final replacement call.
 The test requires all three successful verifier bindings before that failure.
+
+The displaced-image case starts the CLI with its [primary thread suspended](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags).
+It renames the mapped executable and creates a byte-identical file at the original path before resuming that thread.
+An equal-version positive control must succeed before this case can assess image identity.
+The fixture records native file IDs and separate kernel comparison results for both files.
+The CLI must reject the displaced image before transport or staging and preserve both files.
+The kernel comparison uses the [pinned class-44 research contract](https://github.com/m417z/ntdoc/blob/43061ffc1205edd6b49a146b03ebd243f36f3565/descriptions/processinfoclass.md#processimagefilemapping-44).
+That internal API requires native qualification; unavailable calls and failed renames produce errors, never skipped successes.
 
 The [tool fixture](../tests/windows/update_tool_fixture.c) enforces exact verifier arguments and rejects inherited test credentials.
 It supplies deterministic release bytes and simulated verifier results.

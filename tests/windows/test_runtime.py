@@ -21,7 +21,7 @@ import time
 import unittest
 
 from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, capture_deadline_source, displaced_running_image
-from fixture_security import own_directory, own_home_directories
+from fixture_security import own_directory, own_home_directories, own_path
 
 ROOT = Path(__file__).resolve().parents[2]
 ASM = Path(os.environ["ASM_WINDOWS_EXE"])
@@ -1036,11 +1036,12 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
 
     def test_preexisting_running_image_displacement_is_rejected(self):
         # A failed ownership precondition must not masquerade as image binding.
+        own_path(self.installed, self.work)
         control = json.loads(self.cli("self", "update", VERSION, "--json", binary=self.installed).stdout)
         self.assertFalse(control["updated"])
         self.assertEqual(self.calls(), [])
         report = displaced_running_image(self.installed, VERSION, self.environment, self.work,
-                                         own_replacement=make_fixture_user_owned)
+                                         own_replacement=lambda path: own_path(path, self.work))
         COMMANDS.append({"test": self.id(), "argv": report.get("argv", []), "cwd": str(self.work),
                          "exit_code": report.get("exit_code"), "stdout": report.get("stdout", ""),
                          "stderr": report.get("stderr", ""), "native_image_fixture": report})
