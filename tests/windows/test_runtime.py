@@ -20,7 +20,8 @@ import tempfile
 import time
 import unittest
 
-from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, capture_deadline_source
+from runtime_helpers import absolute_archive_cases, assert_complete_provenance, final_replacement_failure, capture_deadline_source, displaced_running_image
+from fixture_security import own_directory, own_home_directories
 
 ROOT = Path(__file__).resolve().parents[2]
 ASM = Path(os.environ["ASM_WINDOWS_EXE"])
@@ -86,6 +87,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.work = Path(self.temporary.name).resolve()
         self.home = self.work / "home with spaces"
         self.home.mkdir()
+        own_directory(self.home, self.work)
         self.environment = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home))
         self.index = self.work / "index.tsv"
         self.artifact = self.work / "payload"
@@ -218,15 +220,18 @@ class WindowsRuntimeTests(unittest.TestCase):
 
     def test_named_native_target_uses_its_source_and_test_paths(self):
         project = self.project()
+        # Parse all seven real declarations while executing only this native target.
+        shutil.copytree(ROOT / "examples/hello/targets", project / "targets")
+        shutil.copyfile(ROOT / "examples/hello/asm.toml", project / "asm.toml")
         manifest = project / "asm.toml"
         source = project / "selected.s"
         test = project / "selected-test.s"
-        source.write_bytes((project / "src/main.s").read_bytes())
-        test.write_bytes((project / "tests/main.s").read_bytes())
+        source.write_bytes((project / f"targets/{TARGET}/src/main.s").read_bytes())
+        test.write_bytes((project / f"targets/{TARGET}/tests/main.s").read_bytes())
         (project / "src/main.s").write_text("invalid inactive default source\n")
         (project / "tests/main.s").write_text("invalid inactive default test\n")
-        manifest.write_text(f'[package]\nname="hello"\nversion="0.1.0"\n'
-                            f'[target.{TARGET}]\nsource="selected.s"\ntest="selected-test.s"\n')
+        manifest.write_text(manifest.read_text().replace(f'targets/{TARGET}/src/main.s', 'selected.s')
+                            .replace(f'targets/{TARGET}/tests/main.s', 'selected-test.s'))
         self.assertEqual(self.cli("run", "--target", TARGET, cwd=project).stdout, "Hello from asm!\n")
         self.assertTrue(json.loads(self.cli("test", "--target", TARGET, "--json", cwd=project).stdout)["ok"])
         self.assertTrue((project / "build/app.exe").is_file())
@@ -687,6 +692,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
         state_parent = self.home / ".local/state"
         state_parent.mkdir(parents=True, exist_ok=True)
+        own_home_directories(self.home, self.work)
         self.junction(state_parent / "asm", outside)
         self.cli("installed", code=1)
         self.assertEqual(list(outside.iterdir()), [])
@@ -696,6 +702,8 @@ class WindowsRuntimeTests(unittest.TestCase):
         tool = str(Path(os.environ["SystemRoot"]) / "System32/icacls.exe")
         state = self.inventory.parent
         state.mkdir(parents=True)
+        own_home_directories(self.home, self.work)
+        own_directory(state, self.work)
 
         def acl(path, *args):
             result = subprocess.run([tool, str(path), *args], capture_output=True, text=True, timeout=10)
@@ -710,6 +718,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.payload(ASM.read_bytes(), kind="executable")
         output_dir = self.work / "programs"
         output_dir.mkdir()
+        own_directory(output_dir, self.work)
         output = output_dir / "installed.exe"
         self.cli("install", PACKAGE, "--index", self.index, "--artifact", self.artifact,
                  "--output", output)
@@ -724,6 +733,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.payload(ASM.read_bytes(), kind="executable")
         reserved = self.home / ".local/bin"
         reserved.mkdir(parents=True)
+        own_home_directories(self.home, self.work)
         for basename in ("asm.exe", "AsM.ExE", "asm.exe.", "asm.exe ", "CON", "NUL.exe", "hello.exe:stream"):
             with self.subTest(basename=basename):
                 self.cli("install", PACKAGE, "--index", self.index, "--artifact", self.artifact,
@@ -759,6 +769,7 @@ class WindowsRuntimeTests(unittest.TestCase):
     def test_self_update_invalid_install_and_network_failure_preserve_executable(self):
         installed = self.home / ".local/bin/asm.exe"
         installed.parent.mkdir(parents=True)
+        own_home_directories(self.home, self.work)
         installed.write_bytes(ASM.read_bytes())
         self.cli("self", "update", code=1)  # An unmanaged checkout path cannot replace itself.
         with socket.socket() as endpoint:
@@ -975,6 +986,7 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.home = self.work / "home with spaces"
         self.bin_dir = self.home / ".local/bin"
         self.bin_dir.mkdir(parents=True)
+        own_home_directories(self.home, self.work)
         self.installed = self.bin_dir / "asm.exe"
         self.installed.write_bytes(self.current)
         self.environment = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home),
@@ -1020,6 +1032,23 @@ class SelfUpdateRuntimeTests(unittest.TestCase):
         self.assertEqual(self.installed.read_bytes(), self.next_bytes)
         assert_complete_provenance(self.calls())
         self.assertIn(f"asm {self.next_version}", self.cli("--version", binary=self.installed).stdout)
+        self.assertEqual(list(self.bin_dir.glob(".asm-*")), [])
+
+    def test_preexisting_running_image_displacement_is_rejected(self):
+        # A failed ownership precondition must not masquerade as image binding.
+        control = json.loads(self.cli("self", "update", VERSION, "--json", binary=self.installed).stdout)
+        self.assertFalse(control["updated"])
+        self.assertEqual(self.calls(), [])
+        report = displaced_running_image(self.installed, VERSION, self.environment, self.work,
+                                         own_replacement=make_fixture_user_owned)
+        COMMANDS.append({"test": self.id(), "argv": report.get("argv", []), "cwd": str(self.work),
+                         "exit_code": report.get("exit_code"), "stdout": report.get("stdout", ""),
+                         "stderr": report.get("stderr", ""), "native_image_fixture": report})
+        self.assertEqual(report["fixture"], "complete", report)
+        self.assertEqual(report["exit_code"], 1, report)
+        self.assertFalse(json.loads(report["stderr"])["ok"])
+        self.assertEqual(report["stdout"], "")
+        self.assertEqual(self.calls(), [], "The rejected image reached transport or verification.")
         self.assertEqual(list(self.bin_dir.glob(".asm-*")), [])
 
     def test_update_rejects_signature_source_and_repository_substitution(self):

@@ -88,6 +88,10 @@ The [runtime suite](../tests/windows/test_runtime.py) runs 44 test cases through
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.
+An elevated runner can create directories owned by Administrators.
+The fixture assigns the actual user as owner of intended private directories inside its temporary tree.
+It preserves existing access entries before hostile-permission tests apply their deliberate changes.
+This matches the private-directory ownership requirement enforced by the CLI.
 
 | Boundary | Required observation |
 | --- | --- |
