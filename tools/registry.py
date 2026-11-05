@@ -501,7 +501,6 @@ def project_builds(project: object) -> dict[str, dict]:
         for field in ("source", "test"):
             if field in build:
                 path = portable_path(build[field])
-                require(not any(part.startswith("@") for part in path.split("/")), f"build {field} cannot be a response file")
                 require(path.endswith((".s", ".S", ".asm")), f"build {field} must be an assembly file")
         for field in ("link", "libraries", "check"):
             if field in build:
@@ -516,7 +515,6 @@ def project_builds(project: object) -> dict[str, dict]:
                     "build libraries must contain up to eight names separated by one space")
         if "check" in build:
             checker = portable_path(build["check"])
-            require(not any(part.startswith("@") for part in checker.split("/")), "build check cannot be a response file")
             require(checker.endswith(".c"), "build check must be a C file")
     return builds
 
@@ -555,7 +553,6 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
             # size contract. New recipes and schema-1 resolution are bounded.
             require(project["build"]["target"] == target, "project target does not match artifact")
             source = portable_path(project["build"]["source"])
-            require(not any(part.startswith("@") for part in source.split("/")), "build source cannot be a response file")
             require(source in files, "declared assembly source is missing")
             require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
     except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
