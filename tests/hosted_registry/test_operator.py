@@ -57,7 +57,8 @@ class OperatorPlanTests(unittest.TestCase):
         tsv, index = registry.make_indexes([self.record])
         expected = {
             "/registry/v1/index.tsv": registry.legacy_tsv(tsv).encode(),
-            "/registry/v1/index-macos.tsv": tsv.encode(),
+            "/registry/v1/index-macos.tsv": registry.macos_compat_tsv(tsv).encode(),
+            "/registry/v1/index-all.tsv": tsv.encode(),
             "/registry/v1/index.json": registry.json_bytes(index),
         }
         self.assertIn(b"aarch64-macos", expected["/registry/v1/index-macos.tsv"])
@@ -68,6 +69,32 @@ class OperatorPlanTests(unittest.TestCase):
             self.assertEqual(plan["exports"][route]["bytes"], len(body))
         digest = plan.pop("plan_sha256")
         self.assertEqual(digest, hashlib.sha256(registry.json_bytes(plan)).hexdigest())
+
+    def test_new_windows_records_preserve_both_compatibility_feed_bytes(self):
+        before = json.loads(self.run_plan().stdout)
+        windows = json.loads(registry.json_bytes(self.record))
+        windows["version"] = "0.6.0"
+        windows["artifacts"] = [
+            {"target": target, "kind": "executable", "bytes": 1024, "sha256": "a" * 64,
+             "url": f"https://github.com/stubbi/asm/releases/download/v0.6.0/asm-{target}.exe"}
+            for target in ("x86_64-windows", "aarch64-windows")]
+        path = self.record_path.with_name("0.6.0.json")
+        path.write_bytes(registry.json_bytes(windows))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Add unqualified Windows catalog fixtures")
+        self.commit = self.git("rev-parse", "HEAD").decode().strip()
+        result = self.run_plan()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        plan = json.loads(result.stdout)
+        for route in ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv"):
+            self.assertEqual(plan["exports"][route], before["exports"][route])
+        full, index = registry.make_indexes([self.record, windows])
+        for route, body in (("/registry/v1/index-all.tsv", full.encode()),
+                            ("/registry/v1/index.json", registry.json_bytes(index))):
+            self.assertIn(b"x86_64-windows", body)
+            self.assertIn(b"aarch64-windows", body)
+            self.assertEqual(plan["exports"][route],
+                             {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()})
 
     def test_dirty_metadata_and_git_object_replacements_cannot_change_the_plan(self):
         before = self.run_plan()

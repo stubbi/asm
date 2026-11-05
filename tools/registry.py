@@ -29,6 +29,12 @@ SCHEMA = 1
 HEADER = "# asm-registry-v1\n"
 TARGETS = {"x86_64-linux": 62, "aarch64-linux": 183, "riscv64-linux": 243}
 TARGETS["aarch64-macos"] = 0x0100000C
+WINDOWS_TARGETS = {"x86_64-windows": 0x8664, "aarch64-windows": 0xAA64}
+TARGETS.update(WINDOWS_TARGETS)
+MAX_RELEASE_ARTIFACTS = 14
+PE_MAX_SECTIONS = 96
+PE_MAX_DIRECTORIES = 16
+PE_MAX_IMAGE_BYTES = 2 * 1024 * 1024 * 1024
 # Project declarations retain reference ports before their executable formats
 # and native CLI hosts qualify for registry publication.
 PROJECT_TARGETS = set(TARGETS) | {"x86_64-macos", "x86_64-windows", "aarch64-windows"}
@@ -167,8 +173,8 @@ def validate_manifest(value: object) -> dict:
         plain_text(record.get("yank_reason"), 160, "yank reason")
     else:
         require(record.get("yank_reason", "") == "", "a published release cannot have a yank reason")
-    require(isinstance(record["artifacts"], list) and 0 < len(record["artifacts"]) <= 6,
-            "a release needs between one and six artifacts")
+    require(isinstance(record["artifacts"], list) and 0 < len(record["artifacts"]) <= MAX_RELEASE_ARTIFACTS,
+            "a release needs between one and fourteen artifacts")
     seen = set()
     seen_urls = set()
     for artifact in record["artifacts"]:
@@ -760,8 +766,106 @@ def validate_macho(data: bytes, target: str) -> None:
     require(any(start <= entry < stop for start, stop in executable_ranges), "Mach-O entry is not executable")
 
 
+
+def validate_pe(data: bytes, target: str) -> None:
+    """Check bounded PE32+ image headers without loading or executing code.
+
+    This profile accepts Windows console/GUI images with page-aligned sections
+    and declared NX compatibility. It checks section and directory extents;
+    it does not validate imports, instructions, signatures, or runtime support.
+    Microsoft PE/COFF reference, read 2026-11-05:
+    https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+    """
+    require(target in WINDOWS_TARGETS and 64 <= len(data) <= MAX_ARTIFACT_BYTES,
+            "unsupported PE target or size")
+    require(data[:2] == b"MZ", "Windows executable needs an MZ header")
+    pe = struct.unpack_from("<I", data, 60)[0]
+    require(pe >= 64 and pe % 8 == 0 and pe + 24 <= len(data), "invalid PE header offset")
+    require(data[pe:pe + 4] == b"PE\0\0", "Windows executable needs a PE signature")
+    machine, count, _, _, _, optional_size, flags = struct.unpack_from("<HHIIIHH", data, pe + 4)
+    require(machine == WINDOWS_TARGETS[target], "PE target mismatch")
+    require(flags & 2 and not flags & (0x100 | 0x1000 | 0x2000),
+            "PE must be a 64-bit user executable, not a driver or DLL")
+    require(0 < count <= PE_MAX_SECTIONS and 112 <= optional_size <= 4096,
+            "invalid PE section or optional header count")
+    optional = pe + 24
+    table = optional + optional_size
+    require(table + count * 40 <= len(data), "truncated PE section table")
+    require(struct.unpack_from("<H", data, optional)[0] == 0x20B, "PE image must use PE32+")
+    entry = struct.unpack_from("<I", data, optional + 16)[0]
+    base = struct.unpack_from("<Q", data, optional + 24)[0]
+    section_align, file_align = struct.unpack_from("<II", data, optional + 32)
+    image_size, headers = struct.unpack_from("<II", data, optional + 56)
+    subsystem, dll_flags = struct.unpack_from("<HH", data, optional + 68)
+    directories = struct.unpack_from("<I", data, optional + 108)[0]
+    require(0 < image_size <= PE_MAX_IMAGE_BYTES and 0 < base <= (1 << 64) - 1 - image_size
+            and base % 65536 == 0, "invalid PE image base or size")
+    require(512 <= file_align <= 65536 and file_align & (file_align - 1) == 0,
+            "invalid PE file alignment")
+    require(4096 <= section_align <= image_size and section_align >= file_align
+            and section_align & (section_align - 1) == 0 and image_size % section_align == 0,
+            "invalid PE section alignment")
+    require(table + count * 40 <= headers <= len(data) and headers <= image_size
+            and headers % file_align == 0, "invalid PE headers size")
+    require(subsystem in (2, 3) and dll_flags & 0x100, "PE requires a Windows user subsystem and NX compatibility")
+    require(directories <= PE_MAX_DIRECTORIES and 112 + directories * 8 <= optional_size,
+            "PE data directories exceed the optional header")
+    previous_memory_end = None
+    raw_ranges = []
+    initialized_ranges = [(0, headers)]
+    executable_ranges = []
+    first_rva = (headers + section_align - 1) // section_align * section_align
+    for index in range(count):
+        section = table + index * 40
+        virtual_size, rva, raw_size, raw = struct.unpack_from("<IIII", data, section + 8)
+        attributes = struct.unpack_from("<I", data, section + 36)[0]
+        extent = max(virtual_size, raw_size)
+        memory_end = rva + (extent + section_align - 1) // section_align * section_align
+        require(extent > 0 and rva >= first_rva and rva % section_align == 0
+                and memory_end <= image_size, "PE section memory range is out of bounds")
+        require(previous_memory_end is None or rva == previous_memory_end,
+                "PE section memory ranges must be ascending and adjacent")
+        previous_memory_end = memory_end
+        require(not (attributes & 0x80000000 and attributes & 0x20000000),
+                "writable executable PE section")
+        if raw_size:
+            require(raw >= headers and raw % file_align == 0 and raw_size % file_align == 0
+                    and raw + raw_size <= len(data), "PE section file range is out of bounds")
+            require(not any(raw < stop and start < raw + raw_size for start, stop in raw_ranges),
+                    "overlapping PE section file ranges")
+            raw_ranges.append((raw, raw + raw_size))
+            initialized_end = rva + min(virtual_size or raw_size, raw_size)
+            initialized_ranges.append((rva, initialized_end))
+            if attributes & 0x20000000:
+                executable_ranges.append((rva, initialized_end))
+        else:
+            require(raw == 0, "empty PE section has a file offset")
+    require(entry != 0 and any(start <= entry < stop for start, stop in executable_ranges),
+            "PE entry is not in initialized executable bytes")
+    for index in range(directories):
+        address, size = struct.unpack_from("<II", data, optional + 112 + index * 8)
+        if not address and not size:
+            continue
+        if index == 8:  # GlobalPtr contains an RVA but requires a zero size.
+            require(size == 0 and any(start <= address < stop for start, stop in initialized_ranges),
+                    "invalid PE global pointer directory")
+            continue
+        require(address > 0 and size > 0, "incomplete PE data directory")
+        if index == 4:  # The certificate table uses a file offset, not an RVA.
+            require(address >= headers and address % 8 == 0 and size >= 8 and size % 8 == 0
+                    and address + size <= len(data), "PE certificate table is out of bounds")
+            require(not any(address < stop and start < address + size for start, stop in raw_ranges),
+                    "PE certificate table overlaps image bytes")
+        else:
+            require(any(start <= address and address + size <= stop for start, stop in initialized_ranges),
+                    "PE data directory is not in initialized image bytes")
+
+
 def validate_executable(data: bytes, target: str) -> None:
-    if target.endswith("-macos"):
+    require(target in TARGETS, "unsupported executable target")
+    if target in WINDOWS_TARGETS:
+        validate_pe(data, target)
+    elif target.endswith("-macos"):
         validate_macho(data, target)
     else:
         validate_elf(data, target)
@@ -820,12 +924,23 @@ def legacy_tsv(tsv: str) -> str:
     """Keep the published v0.3 Linux parser able to discover its next update.
 
     That parser rejects the entire index when any row has an unknown target.
-    The full feed and JSON retain independently qualified macOS artifacts.
+    The full feed and JSON retain all other accepted targets.
     Input must be the canonical output of make_indexes.
     """
     return "".join(line for line in tsv.splitlines(keepends=True)
                    if line.startswith("#") or line.split("\t")[2] in
                    {"x86_64-linux", "aarch64-linux", "riscv64-linux"})
+
+
+def macos_compat_tsv(tsv: str) -> str:
+    """Preserve the four-target vocabulary of released macOS parsers.
+
+    Input must be the canonical output of make_indexes. Keep this vocabulary
+    fixed when a separately qualified target joins the full catalog.
+    """
+    return "".join(line for line in tsv.splitlines(keepends=True)
+                   if line.startswith("#") or line.split("\t")[2] in
+                   {"x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"})
 
 
 def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = None, *,
@@ -1054,7 +1169,8 @@ def main(argv: list[str] | None = None) -> int:
             tsv, index = make_indexes(records, checked)
             if arguments.command == "build":
                 write_atomic(arguments.output / "index.tsv", legacy_tsv(tsv).encode("ascii"))
-                write_atomic(arguments.output / "index-macos.tsv", tsv.encode("ascii"))
+                write_atomic(arguments.output / "index-macos.tsv", macos_compat_tsv(tsv).encode("ascii"))
+                write_atomic(arguments.output / "index-all.tsv", tsv.encode("ascii"))
                 write_atomic(arguments.output / "index.json", json_bytes(index))
             print(f"Validated {len(records)} releases; checked local artifacts for {len(checked)} releases.")
             if not arguments.artifacts_dir:
