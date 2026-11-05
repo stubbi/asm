@@ -99,9 +99,6 @@ class ReleaseTests(unittest.TestCase):
         shutil.copytree(ROOT / "examples/hello", cls.repo / "examples/hello", ignore=shutil.ignore_patterns("build"))
         if (ROOT / "examples/math").is_dir():
             shutil.copytree(ROOT / "examples/math", cls.repo / "examples/math", ignore=shutil.ignore_patterns("build"))
-        for directory in ("hello-aarch64", "hello-riscv64"):
-            if (ROOT / "examples" / directory).is_dir():
-                shutil.copytree(ROOT / "examples" / directory, cls.repo / "examples" / directory, ignore=shutil.ignore_patterns("build"))
         shutil.copytree(ROOT / "site", cls.repo / "site")
         shutil.copytree(ROOT / "skills/asm-build", cls.repo / "skills/asm-build")
         (cls.repo / "README.md").write_text("# Release test fixture\n\nUses the project's actual assembly sources.\n")
@@ -194,7 +191,7 @@ class ReleaseTests(unittest.TestCase):
         native = self.case_dir / "native-input"
         native.mkdir()
         binary = minimal_macho()
-        evidence = native_evidence(commit, self.version, binary)
+        evidence = native_evidence(commit, self.version, binary, selected_target=True)
         filename = evidence["asset"]["file"]
         (native / filename).write_bytes(binary)
         (native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
