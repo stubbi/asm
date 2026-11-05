@@ -792,13 +792,14 @@ class _SourceDependencyMetadata:
 
 
 def validate_artifact(data: bytes, record: dict, artifact: dict, *,
-                      dependency_metadata: dict[str, _SourceDependencyMetadata] | None = None) -> None:
+                      dependency_metadata: dict[tuple[str, str, str, int, str], _SourceDependencyMetadata] | None = None) -> None:
     require(len(data) == artifact["bytes"], "artifact byte size mismatch")
     require(hashlib.sha256(data).hexdigest() == artifact["sha256"], "artifact SHA-256 mismatch")
     if artifact["kind"] == "source":
         project = validate_project(read_archive(data), record["name"], record["version"], artifact["target"])
         if dependency_metadata is not None:
-            dependency_metadata[artifact["sha256"]] = _SourceDependencyMetadata(project, artifact)
+            metadata = _SourceDependencyMetadata(project, artifact)
+            dependency_metadata[metadata.identity] = metadata
     else:
         validate_executable(data, artifact["target"])
 
@@ -829,15 +830,15 @@ def legacy_tsv(tsv: str) -> str:
 
 
 def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = None, *,
-                 dependency_metadata: dict[str, _SourceDependencyMetadata] | None = None) -> tuple[str, dict]:
+                 dependency_metadata: dict[tuple[str, str, str, int, str], _SourceDependencyMetadata] | None = None) -> tuple[str, dict]:
     records = check_records(records)
     checked = checked or set()
     dependency_metadata = dependency_metadata if dependency_metadata is not None else {}
     require(isinstance(dependency_metadata, dict), "dependency metadata must be a verified collection")
-    for digest, metadata in dependency_metadata.items():
-        require(isinstance(digest, str) and HEX64.fullmatch(digest) is not None
-                and type(metadata) is _SourceDependencyMetadata and metadata.identity[4] == digest,
-                "dependency metadata must identify its verified source digest")
+    for identity, metadata in dependency_metadata.items():
+        require(type(metadata) is _SourceDependencyMetadata and type(identity) is tuple and len(identity) == 5
+                and identity == metadata.identity and isinstance(identity[4], str) and HEX64.fullmatch(identity[4]) is not None,
+                "dependency metadata must identify its verified source artifact")
     attached = set()
     lines = [HEADER]
     packages = {}
@@ -849,16 +850,19 @@ def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = Non
             "latest": None, "targets": [], "versions": []})
         artifacts = copy.deepcopy(sorted(record["artifacts"], key=lambda item: (item["target"], item["kind"])))
         for artifact in artifacts:
-            if artifact["kind"] != "source" or artifact["sha256"] not in dependency_metadata:
+            if artifact["kind"] != "source":
                 continue
-            metadata = dependency_metadata[artifact["sha256"]]
+            identity = (name.split("/")[-1], record["version"], artifact["target"],
+                        artifact["bytes"], artifact["sha256"])
+            if identity not in dependency_metadata:
+                continue
+            metadata = dependency_metadata[identity]
             require((name, record["version"]) in checked,
                     "dependency metadata needs checked release artifacts")
-            require(metadata.identity == (name.split("/")[-1], record["version"], artifact["target"],
-                                         artifact["bytes"], artifact["sha256"]),
+            require(metadata.identity == identity,
                     "dependency metadata does not match its source artifact")
             artifact["dependency_metadata"] = json.loads(metadata.payload)
-            attached.add(artifact["sha256"])
+            attached.add(identity)
         release = {"version": record["version"], "license": record["license"], "source": record["source"],
             "yanked": record["yanked"], "artifacts": artifacts,
             "evidence": {"metadata": "validated", "artifacts": "validated" if (name, record["version"]) in checked else "not-run",
