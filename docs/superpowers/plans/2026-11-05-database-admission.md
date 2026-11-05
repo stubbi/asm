@@ -12,10 +12,12 @@
 
 ## Checkpoint and bounded specification
 
-This is a plan, test-only candidate, and temporary diagnostic workflow, dated 5 November 2026.
-It contains no admission implementation or native runtime result.
-The workflow patch awaits coordinator review before one selected native RED job.
-No push or dispatch has occurred.
+This is an admission implementation candidate, dated 5 November 2026.
+The reviewed diagnostic ran once at the source recorded below.
+Its expected native RED was accepted before implementation started.
+The registered workflow was then restored from the retained original blob.
+The new implementation has not been pushed or run in CI.
+No native Linux GREEN result is claimed for this implementation.
 It does not authorize publication, image changes, or deployment.
 
 The source inspected is canonical HTTP commit `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
@@ -165,8 +167,8 @@ If immediate disconnect cancellation becomes required, specify that separately w
 - [x] Add `test_eight_handshakes_refuse_ninth_and_recover_in_the_same_process`.
 - [x] Verify Python syntax and discovery of exactly one candidate test.
 - [x] Smoke-test fixture forwarding and observation on local loopback sockets.
-- [ ] Build the unchanged canonical runtime on an approved Linux target.
-- [ ] Run the candidate with the same environment as `make -C server test`.
+- [x] Build the unchanged canonical runtime on an approved Linux target.
+- [x] Run the candidate with the same environment as `make -C server test`.
 
 ```sh
 ASM_SERVER_BINARY=/absolute/build/asm-hub \
@@ -177,7 +179,7 @@ python3 server/test_capacity.py
 ```
 
 The intended red assertion is: `The ninth request opened another database connection.`
-No runtime red result has been observed at this checkpoint.
+The expected native RED was observed in run `42050169482`.
 A fixture, executable, crash, or eight-holder setup failure is a different result and must remain visible.
 
 The candidate requires eight observed stalled handshakes within 0.8 seconds.
@@ -191,7 +193,7 @@ The gate tracks each wave separately because old fixture sockets can outlive the
 
 ### Temporary manual native gate
 
-The temporary patch uses the registered `.github/workflows/assembly-server.yml` path on `codex/db-admission` only.
+The retained diagnostic commit `f7987a5f3571f4c7a58f7e731b0127a0e263d3ab` used the registered `.github/workflows/assembly-server.yml` path on `codex/db-admission` only.
 It accepts `workflow_dispatch` only and selects one native AMD64 `ubuntu-24.04` job.
 It requests `contents: read` and does not retain checkout credentials.
 It contains no publishing, signing, deployment, or private infrastructure operation.
@@ -211,7 +213,7 @@ Its retention period is seven days; collect the evidence before that period ends
 The intended RED requires sixteen baseline tests to pass and the candidate to fail at the ninth-connection assertion.
 A setup, fixture, timeout, crash, or holder-precondition failure is a separate failed result.
 The 0.8, 0.5, and 2.8 second assertions remain unchanged.
-The unrelated RISC-V gates are excluded from this diagnostic, not treated as passing.
+The unrelated RISC-V gates were excluded from this diagnostic, not treated as passing.
 
 The original workflow is preserved by Git blob `3b209e45bae4b61032ba906005664173ebd19c3f`.
 Its SHA-256 is `ecbcbb4e97b58d3993dfd66d53ff61941ad80977dfcbe6d3ac6562ab7c654a17`.
@@ -233,10 +235,10 @@ These references were checked on 5 November 2026.
 
 **Interfaces:** Implement the two routine contracts above. Keep `database_query` arguments, results, frame alignment, and library calls compatible.
 
-- [ ] Require Task 1's correct native failure before product code.
-- [ ] Add the named eight-slot limit and aligned counter to each port.
-- [ ] Add the local flag and bounded acquisition before connection creation.
-- [ ] Release from the common epilogue after `PQfinish`, including null-connection failures.
+- [x] Require Task 1's correct native failure before product code.
+- [x] Add the named eight-slot limit and aligned counter to each port.
+- [x] Add the local flag and bounded acquisition before connection creation.
+- [x] Release from the common epilogue after `PQfinish`, including null-connection failures.
 - [ ] Run the candidate until its complete saturation and recovery assertion passes.
 - [ ] Run the existing native runtime suite without skips on every claimed target.
 - [ ] Keep the independent RISC-V six-client regression and its result unchanged in reporting.
@@ -246,41 +248,89 @@ Do not weaken a timing assertion or query guard to obtain a pass.
 
 ## Task 3: Cover the remaining cleanup boundaries
 
-**Files:** Extend `server/test_capacity.py`; update `server/Makefile` and `server/README.md` after native evidence exists.
+**Files:** Extend `server/test_capacity.py`; add `server/test_connect_null.c`; update `server/Makefile` and `server/README.md`.
 
 **Interfaces:** Use observable HTTP responses, accepted TCP connections, same-process identity, and the existing owned fixture administrator.
 
-- [ ] Add nine sequential healthy reads to catch success-path leaks independently of saturation.
-- [ ] Abort admitted handshake sockets and verify complete same-process recovery.
-- [ ] Replace the owned client certificate with the wrong identity for nine requests, then restore it and verify exact exports.
-- [ ] Revoke the owned reader's export permission for nine requests, then restore it and verify readiness and exports.
-- [ ] Exercise null, duplicate, and oversized export results nine times each, then restore the view and verify exact bytes.
-- [ ] Stall SQL through the owned fixture view for three seconds and require HTTP 503 in less than 1.8 seconds.
-- [ ] Record server-side SQL cancellation or the timeout error to distinguish statement cancellation from an unrelated early connection failure.
-- [ ] Disconnect eight HTTP clients after observing their database handshakes, then verify recovery by the original deadline.
-- [ ] Preserve the existing partial-response ownership regression and add an HTTP abort after a maximum-size response starts.
-- [ ] Check live reader connections through the fixture administrator during repeated acquisition/release waves; require a peak no greater than eight.
-- [ ] Add the capacity module to the documented server test gate after a correct native red result.
-- [ ] Document fixed admission separately from persistent connection reuse and unsupported environment settings.
+- [x] Add nine sequential healthy reads to catch success-path leaks independently of saturation.
+- [x] Add handshake-abort recovery checks.
+- [x] Add nine wrong-certificate failures followed by exact-export recovery.
+- [x] Add nine reader-guard failures followed by readiness and export recovery.
+- [x] Add nine null, duplicate, and oversized-result failures followed by full-eight recovery.
+- [x] Add SQL deadline checks below 1.8 seconds with nine server-side statement-timeout messages.
+- [x] Add eight-client disconnect cleanup checks within the original deadline.
+- [x] Add an HTTP abort after a maximum-size response starts.
+- [x] Add sixteen simultaneous contenders and a replacement case that overlaps acquisitions with individual releases.
+- [x] Observe the TCP fixture's actual live handshake sockets during those cases; require a peak no greater than eight.
+- [x] Add a dedicated null-connection fixture with a fixed precompiled read-only library input.
+- [x] Add both modules to the documented native server test gate.
+- [x] Document fixed admission separately from persistent connection reuse and unsupported environment settings.
 - [ ] Run `make -C server test` with the reviewed dependency prefixes and exact source revision.
 - [ ] Review the full diff, source integration, failure records, and security effects before any publication decision.
 
 Do not add application metrics in this task.
 Allocation-failure injection is not present in the existing HTTP fixture.
 If a deterministic allocation/header failure gate is required, coordinate a separate bounded fixture rather than claiming socket abort covers it.
+The checked items above record source additions, not native passes.
+Discovery now finds sixteen unchanged baseline methods and twelve capacity methods, for twenty-eight total cases.
+All new native cases remain unrun on this implementation.
 
 ## Evidence and limits
 
 The local host is Darwin/arm64 and cannot execute these Linux runtime binaries.
-No Docker or remote job was started for this checkpoint.
-Python syntax and one-test discovery passed.
+No Docker build or large local dependency build was started.
+Python syntax and complete twenty-eight-case discovery passed.
 A local loopback smoke check passed for byte forwarding, ninth-connection observation, and independent wave tracking.
 These are fixture checks only.
 `make -C server test` refused this host before compilation with the documented native-Linux requirement.
 It returned exit status two and ran zero runtime tests.
-No native database-admission, deadline, cancellation, or recovery result is claimed.
+The accepted [native RED run](https://github.com/stubbi/asm/actions/runs/42050169482) tested source `f7987a5f3571f4c7a58f7e731b0127a0e263d3ab` before admission implementation.
+All sixteen baseline methods passed in 8.319 seconds, with no skips.
+The candidate failed with `9 != 8 : The ninth request opened another database connection.`
+Its single test took 4.370 seconds and returned exit status one.
+The baseline returned exit status zero.
+The 40,408-byte executable had SHA-256 `716eab55d79b1ef475300c3d22e70d41c5cd64e8a263c06f0fbf9218e2bce4ec`.
+Retained source and test digests matched the reviewed frozen source.
+The local receipt is `/private/tmp/asm-admission-red-42050169482/observation.json`.
+Complete raw run logs and both test exits are retained beside that receipt.
+
+This job had no two-CPU or 512 MiB runtime cap.
+`make -j2` bounded build parallelism only.
+The result is a behavioral diagnostic, not resource-capacity qualification.
+The candidate stopped at the first ninth-connection failure.
+Its later saturated liveness and recovery assertions did not run.
+
+Installed Homebrew clang 23.1.4 cross-assembled all three modified Linux runtime sources.
+This did not link or execute those runtimes.
+The AArch64 atomic helper instructions were also exercised on Darwin ARM64 with only address-relocation syntax adapted for Mach-O.
+Checks covered eight admissions, ninth refusal, 64-bit X0 preservation, and sixteen threads making sixteen thousand attempts.
+The observed active peak was eight, with no residual slots after the threads completed.
+This helper check does not establish Linux HTTP, TLS, database cleanup, or another port's runtime behavior.
+Its local record is `/private/tmp/asm-admission-arm64-helper/result.json`.
+
+Six image-contract self-tests and nine source-qualification recorder tests passed locally.
+Those tests use controlled metadata and do not execute the new runtime or a container.
+Precompiled-fixture path and permission rejection checks, C syntax, actionlint, and Makefile shell syntax also passed.
+The first cross-assembly command stopped before compilation because its source paths repeated the `server` directory.
+The corrected command assembled all three runtime sources; no assembly failure is concealed by that correction.
+
+Native GREEN, full failure cleanup, disconnect recovery, and resource-capacity qualification remain required.
 An independent agent review identified two candidate-test gaps, which were corrected and reviewed again.
 That advice does not replace the missing native gate.
+
+### Required actual-image integration
+
+Before publication, the admission-bearing derived image must run both the existing runtime suite and the new capacity suite.
+An earlier sixteen-test image receipt describes different bytes and cannot qualify this change.
+Build the test-only interposer in the owned native build directory before qualification.
+The qualifier receives a fixed precompiled read-only library through `ASM_SERVER_CONNECT_NULL_FIXTURE`.
+It needs no compiler and loads no executable code from its temporary data directory.
+Keep the failure interposer outside the served production image.
+The source test gate alone does not establish that the final derived image contains or passes the capacity checks.
+That image-gate integration remains an explicit publication requirement for its owner.
+Both `publish` and `publish-index` in `.github/workflows/server-images.yml` now have explicit temporary false conditions.
+Do not remove those holds until the actual derived image passes the discovered complete runtime and capacity inventory.
+The legacy sixteen-case receipt cannot release the hold.
 
 The complete available Git history has not been reviewed for a merge decision.
 That review remains required before merging the eventual implementation.

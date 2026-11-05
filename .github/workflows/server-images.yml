@@ -118,7 +118,9 @@ jobs:
 
   publish:
     needs: qualify
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # Temporary hold: admission-bearing images need the actual-image capacity
+    # suite and prebuilt read-only fixture. Legacy sixteen-case evidence is insufficient.
+    if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -181,7 +183,8 @@ jobs:
 
   publish-index:
     needs: publish
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # Keep index publication held until the admission actual-image gate is qualified.
+    if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

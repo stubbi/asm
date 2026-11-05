@@ -22,6 +22,8 @@
 .option norelax
 .attribute arch, "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0_zifencei2p0"
 .equ DB_DEADLINE_MS, 2000
+.equ DB_ADMISSION_LIMIT, 8
+.equ DB_ADMISSION_TRIES, 16
 .equ MAX_REPLY, 16384
 .equ MAX_TSV, 1048576
 .equ MAX_JSON, 4194304
@@ -119,6 +121,8 @@ sleep_interval: .quad 0, 100000000
 db_config: .zero CONFIG_LIMIT + 2
 .balign 4
 stop_requested: .zero 4
+.balign 4
+database_admitted: .zero 4
 
 .section .text
 .globl main
@@ -1349,12 +1353,46 @@ wait_database:
     ret
 
 
+/* No inputs. a0=1 owns one slot, or 0 owns none. At most 16 CAS attempts.
+ * Changes a0/t0-t3; preserves s0-s11/gp/tp. Stack none; no calls or waits.
+ * The process counter is four-byte aligned and stays in [0,8]. The LR/SC
+ * loop uses only the existing RV64GC A extension and constrained operations. */
+database_try_admit:
+    la t0, database_admitted
+    li t3, DB_ADMISSION_TRIES
+.Ladmit_retry:
+    li t2, DB_ADMISSION_LIMIT
+    lr.w.aq t1, (t0)
+    bgeu t1, t2, .Ladmit_no
+    addi t1, t1, 1
+    sc.w.rl t2, t1, (t0)
+    beqz t2, .Ladmit_yes
+    addi t3, t3, -1
+    bnez t3, .Ladmit_retry
+.Ladmit_no:
+    li a0, 0
+    ret
+.Ladmit_yes:
+    li a0, 1
+    ret
+
+/* Requires one unreleased slot. No inputs/output. Atomically releases it.
+ * Changes t0/t1 only; preserves a0 and s0-s11/gp/tp. Stack none; no calls.
+ * Uses the RV64GC A extension on the aligned 32-bit process counter. */
+database_release_admission:
+    la t0, database_admitted
+    li t1, -1
+    amoadd.w.rl zero, t1, (t0)
+    ret
+
 /* a0=fixed SQL or NULL for guard only; a1=count; a2=borrowed parameters;
  * a3=positive byte bound <=MAX_JSON. Returns owned PGresult or NULL in a0.
  * Frame 80 saves s1-s8 and ra. One TLS connection executes BEGIN READ ONLY,
  * the canonical guard, then optional SQL. All stages drain and share one
  * absolute two-second deadline. PQfinish closes/rolls back the transaction;
- * an accepted result survives until the caller's PQclear. No shared state. */
+ * an accepted result survives until the caller's PQclear. Local word SP+72
+ * owns one shared admission slot from before connection creation through
+ * PQfinish, including the null-connection failure path. */
 database_query:
     addi sp, sp, -80
     sd s1, 0(sp)
@@ -1366,6 +1404,7 @@ database_query:
     sd s7, 48(sp)
     sd s8, 56(sp)
     sd ra, 64(sp)
+    sw zero, 72(sp)
     mv s1, a0
     mv s2, a1
     mv s3, a2
@@ -1379,6 +1418,10 @@ database_query:
     call clock_ms
     bltz a0, .Ldb_failed
     addi s4, a0, DB_DEADLINE_MS
+    call database_try_admit
+    beqz a0, .Ldb_failed
+    li t0, 1
+    sw t0, 72(sp)
     la a0, db_keys
     la a1, db_values
     li a2, 1
@@ -1549,6 +1592,10 @@ database_query:
 .Ldb_null:
     li a0, 0
 .Ldb_return:
+    lw t0, 72(sp)
+    beqz t0, .Ldb_return_done
+    call database_release_admission
+.Ldb_return_done:
     ld s1, 0(sp)
     ld s2, 8(sp)
     ld s3, 16(sp)

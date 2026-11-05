@@ -6,6 +6,8 @@
  */
 .intel_syntax noprefix
 .equ DB_DEADLINE_MS, 2000
+.equ DB_ADMISSION_LIMIT, 8
+.equ DB_ADMISSION_TRIES, 16
 .equ MAX_REPLY, 16384
 .equ MAX_TSV, 1048576
 .equ MAX_JSON, 4194304
@@ -103,6 +105,8 @@ sleep_interval: .quad 0, 100000000
 db_config: .zero CONFIG_LIMIT + 2
 .balign 4
 stop_requested: .zero 4
+.balign 4
+database_admitted: .zero 4
 
 .section .text
 .globl main
@@ -447,6 +451,35 @@ wait_database:
     pop rbx
     ret
 
+/* No inputs. EAX=1 owns one slot, or 0 owns none. At most 16 CAS attempts.
+ * Changes RAX/RCX/RDX and flags; preserves callee-saved registers. No stack.
+ * The aligned process counter stays in [0, DB_ADMISSION_LIMIT]. No waiting,
+ * allocation, library call, or connection sharing occurs in this routine. */
+database_try_admit:
+    mov ecx, DB_ADMISSION_TRIES
+    mov eax, dword ptr [rip + database_admitted]
+.Ladmit_retry:
+    cmp eax, DB_ADMISSION_LIMIT
+    jae .Ladmit_no
+    lea edx, [rax + 1]
+    lock cmpxchg dword ptr [rip + database_admitted], edx
+    je .Ladmit_yes
+    dec ecx
+    jnz .Ladmit_retry
+.Ladmit_no:
+    xor eax, eax
+    ret
+.Ladmit_yes:
+    mov eax, 1
+    ret
+
+/* Requires ownership of one unreleased slot. No inputs or output.
+ * Atomically releases that slot; preserves RAX and every other register.
+ * Changes flags only. Stack none; no library call or system call. */
+database_release_admission:
+    lock sub dword ptr [rip + database_admitted], 1
+    ret
+
 /* Input RDI=fixed SQL or NULL for guard only; ESI=count, RDX=parameters,
  * ECX=positive result byte limit, at most MAX_JSON. Borrows all arguments.
  * Output RAX=owned PGresult with one non-null field, or NULL. Caller PQclear.
@@ -455,6 +488,8 @@ wait_database:
  * PQfinish closes the transaction on every path; the result remains owned.
  * libpq handles framing, parameter encoding, authentication, and any TLS.
  * Arguments remain valid for this call. Callee-saved registers preserved.
+ * Reserves the shared process counter before connection creation; the local
+ * flag at RBP-68 owns that slot through PQfinish, including a null connection.
  * Stack: 56 bytes local/outgoing arguments plus six saved registers. */
 database_query:
     push rbp
@@ -471,6 +506,7 @@ database_query:
     mov qword ptr [rbp - 48], 0
     mov dword ptr [rbp - 56], 0  /* phase: BEGIN, guard, export */
     mov [rbp - 64], ecx
+    mov dword ptr [rbp - 68], 0  /* no admission slot owned yet */
     xor r15d, r15d
     test ecx, ecx
     jle .Ldb_failed
@@ -480,6 +516,10 @@ database_query:
     test rax, rax
     js .Ldb_failed
     lea r14, [rax + DB_DEADLINE_MS]
+    call database_try_admit
+    test eax, eax
+    jz .Ldb_failed
+    mov dword ptr [rbp - 68], 1
     lea rdi, [rip + db_keys]
     lea rsi, [rip + db_values]
     mov edx, 1
@@ -675,6 +715,10 @@ database_query:
 .Ldb_null:
     xor eax, eax
 .Ldb_return:
+    cmp dword ptr [rbp - 68], 0
+    je .Ldb_return_done
+    call database_release_admission
+.Ldb_return_done:
     add rsp, 56
     pop r15
     pop r14
@@ -755,7 +799,7 @@ query_value:
 
 /* MHD access callback; C signature is checked against the pinned header.
  * Uses 104 local bytes plus six saved registers. Borrows request strings only during this call.
- * Each database operation owns its own connection; global data is immutable.
+ * Each database operation owns its connection and one shared admission slot.
  * No request body, file path, database error, or query text enters a log. */
 handle_request:
     push rbp
