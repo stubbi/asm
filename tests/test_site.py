@@ -113,6 +113,16 @@ class SearchDiscoveryTests(unittest.TestCase):
         build_site.build_site(repo, ROOT / "registry", cls.output,
                               artifact_reader=forbidden, metrics_fetcher=forbidden)
 
+    def test_site_build_writes_full_and_compatible_native_feeds(self):
+        registry = build_site.registry
+        full, _ = registry.make_indexes(registry.read_records(ROOT / "registry"))
+        feeds = self.output / "registry/v1"
+        self.assertTrue((feeds / "index-all.tsv").is_file(), "The full native feed is missing")
+        self.assertEqual((feeds / "index-all.tsv").read_bytes(), full.encode("ascii"))
+        self.assertEqual((feeds / "index.tsv").read_bytes(), registry.legacy_tsv(full).encode("ascii"))
+        self.assertEqual((feeds / "index-macos.tsv").read_bytes(),
+                         registry.macos_compat_tsv(full).encode("ascii"))
+
     def test_sitemap_urls_have_html_metadata_and_allow_crawling(self):
         sitemap = ElementTree.parse(self.output / "sitemap.xml")
         namespace = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
