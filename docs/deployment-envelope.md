@@ -1,6 +1,6 @@
 # Fixed deployment envelope
 
-Status: unexecuted native qualification candidate, 5 November 2026.
+Status: earlier native preflight failed; combined-source qualification remains pending, 5 November 2026.
 
 This profile tests the selected PostgreSQL 18 database with one fixed application resource envelope.
 It serves operators who need inspectable resource and failure evidence before deployment.
@@ -11,7 +11,8 @@ The [implementation plan](deployment-envelope-plan.md) records its scope and gov
 | Application qualifier | 1 CPU | 256 MiB | None | 64 MiB |
 | PostgreSQL fixture | 2 CPU | 2 GiB | Existing fixture policy | 512 MiB |
 
-The Python driver and assembly runtime share the application cgroup.
+Qualification drivers and test tools share the application cgroup with the assembly runtime.
+Unit tools run before the first suite snapshot; the memory peak retains their usage.
 A cgroup is the Linux mechanism that applies these resource limits to related processes.
 This conservative fixture scope is not an application-only capacity measurement.
 The temporary filesystem budget does not emulate Kubernetes ephemeral-storage accounting.
@@ -26,10 +27,10 @@ The profile selects three modules in separate application containers with fresh 
 3. Run three envelope cases for eight maximum-size slow readers, eight incomplete headers, and in-flight SIGTERM.
 
 The ordinary admission module remains twelve cases.
+Its 180-second image watchdog and other architectures remain separate from this native AMD64 profile.
 The three modules total 37 cases; the unit checks remain separate from that count.
 Metrics evidence belongs to the baseline report and cannot come from the other two modules.
 All fixed qualification tools must match the original and derived image inventories.
-Its 180-second image watchdog and other architectures remain separate from this native AMD64 profile.
 The profile preserves the existing request, TLS, role, byte, and recovery assertions.
 It does not extend their deadlines.
 Neither PostgreSQL 18 profile accepts expected failures or unexpected successes as qualification evidence.
@@ -69,10 +70,35 @@ Replace both uppercase placeholders.
 An existing evidence directory is preserved.
 Successful evidence requires all three part reports, exact image bindings, resource closure, and successful owned cleanup.
 Retain the complete evidence directory after failure.
-No native result qualifies this combined source.
-The separate preflight source `7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e` contains the earlier 31-case profile.
-Its [run 42111348191](https://github.com/stubbi/asm/actions/runs/42111348191) has no recorded qualification result here.
-That source excludes metrics; its result cannot qualify the combined 37-case profile.
+No native result qualifies this combined 37-case source.
+
+## First native preflight
+
+[Run 42111348191](https://github.com/stubbi/asm/actions/runs/42111348191) tested source `7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e` once.
+That earlier 31-case source excludes metrics.
+It cannot qualify the combined 37-case profile.
+That source differs from frozen candidate `95d4cf94455c10917922a0d94a180bc0a54f983f` only in the registered preflight workflow.
+The ordinary compatibility gate passed 38 applicable cases with the existing macOS exclusion.
+Its source-scoped receipt is [retained separately](deployment-envelope-evidence/42111348191/ordinary-qualification.json).
+
+The constrained baseline completed all sixteen assertions before its evidence parser rejected `core_sched.force_idle_usec` in `cpu.stat`.
+The [failed qualification receipt](deployment-envelope-evidence/42111348191/qualification.json) keeps the original failure.
+All [34 raw cgroup samples](deployment-envelope-evidence/42111348191/baseline.stdout.log) and the [baseline test log](deployment-envelope-evidence/42111348191/baseline.stderr.log) are retained.
+The [local failing regression](deployment-envelope-evidence/42111348191/parser-red.txt) reproduces the parser defect from those samples.
+The correction accepts bounded canonical dotted counter keys.
+Required counters, duplicates, numeric bounds, monotonicity, limits, and OOM checks remain unchanged.
+
+The twelve admission and three envelope cases did not run.
+The nine-cancellation admission assertion did not run.
+The partial baseline does not qualify the resource envelope, capacity, draining, or deployment.
+Both gates reported successful owned cleanup.
+The parser correction has no native result.
+
+The original artifact ZIP is retained privately outside this repository.
+It contains 183132 bytes.
+Its SHA-256 is `d89f3b633f6a2fbf2673bf25d216dcda05832d12b41de2faacea6c5d6ee83311`.
+This digest matches the [GitHub artifact metadata](deployment-envelope-evidence/42111348191/artifacts.json).
+The [independent inspection](deployment-envelope-evidence/42111348191/independent-review.json) records the exact image identities and observed coverage.
 
 ## Limits and sources
 

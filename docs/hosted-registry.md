@@ -20,7 +20,7 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
 | Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | The recorded PostgreSQL 18.6 preflight covers AMD64 only. Deployment and other PostgreSQL 18 database architectures retain separate gates. |
-| Assembly request metrics | Candidate fixed-label counter and histogram implementation on the three Linux ports | Native metrics qualification and observed alert delivery remain pending. |
+| Assembly request metrics | Candidate fixed-label counter and histogram implementation on the three Linux ports | Combined-source metrics qualification and observed alert delivery remain pending. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
 | Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |

@@ -1,0 +1,32 @@
+test_retained_native_samples_accept_the_canonical_dotted_kernel_counter (test_envelope_contract.EnvelopeTests.test_retained_native_samples_accept_the_canonical_dotted_kernel_counter) ... FAIL
+
+======================================================================
+FAIL: test_retained_native_samples_accept_the_canonical_dotted_kernel_counter (test_envelope_contract.EnvelopeTests.test_retained_native_samples_accept_the_canonical_dotted_kernel_counter)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tests/postgres18/test_envelope_contract.py", line 81, in test_retained_native_samples_accept_the_canonical_dotted_kernel_counter
+    envelope.validate_snapshots(samples, cases)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tools/deployment_envelope.py", line 75, in validate_snapshots
+    current = counters(files[name], required)
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tools/deployment_envelope.py", line 49, in counters
+    need(len(fields) == 2 and re.fullmatch(r"[a-z_]{1,40}", fields[0]) and fields[0] not in result,
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         "A cgroup counter set is ambiguous.")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tools/postgres18_fixture.py", line 40, in need
+    raise ValueError(message)
+ValueError: A cgroup counter set is ambiguous.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/jannesstubbemann/.codex/worktrees/deployment-envelope/asm/tests/postgres18/test_envelope_contract.py", line 83, in test_retained_native_samples_accept_the_canonical_dotted_kernel_counter
+    self.fail("The retained canonical kernel samples must parse: " + str(error))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: The retained canonical kernel samples must parse: A cgroup counter set is ambiguous.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

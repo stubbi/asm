@@ -19,10 +19,10 @@ SAMPLE_PREFIX = "ASM_DEPLOYMENT_ENVELOPE_SAMPLE="
 REQUEST_PREFIX = "ASM_DEPLOYMENT_ENVELOPE_REQUEST="
 SCOPE = "selected-cnpg18-deployment-envelope"
 PROFILE = "deployment-envelope"
-MEASUREMENT_SCOPE = "Python driver and assembly runtime share one constrained cgroup; PostgreSQL is separate."
+MEASUREMENT_SCOPE = "Qualification drivers and test tools share one constrained cgroup with the assembly runtime; PostgreSQL is separate."
 FILES = ("memory.max", "memory.current", "memory.peak", "memory.events", "memory.events.local",
          "memory.swap.max", "memory.swap.current", "cpu.max", "cpu.stat")
-SUITES = {"baseline": ("test_runtime", "RuntimeTests", 16),
+SUITES = {"baseline": ("test_runtime", "RuntimeTests", 22),
           "capacity": ("test_capacity", "CapacityTests", 12), "envelope": ("test_envelope", "EnvelopeTests", 3)}
 
 
@@ -46,7 +46,8 @@ def counters(value, required):
     result = {}
     for line in value.splitlines():
         fields = line.split()
-        need(len(fields) == 2 and re.fullmatch(r"[a-z_]{1,40}", fields[0]) and fields[0] not in result,
+        need(len(fields) == 2 and len(fields[0]) <= 40 and
+             re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", fields[0]) and fields[0] not in result,
              "A cgroup counter set is ambiguous.")
         result[fields[0]] = number(fields[1])
     need(set(required) <= result.keys(), "A required cgroup counter is unavailable.")

@@ -128,7 +128,7 @@ def run(mode):
                     samples = [{"phase": phase, "monotonic_ns": number + 1, "files": dict(files)} for number, phase in enumerate(phases)]
                     requests = [{"path": "/health/ready", "valid_request": True, "status": 503, "body_bytes": 132, "outcome": "refused", "elapsed_ns": 1000}]
                     report.update(scope="selected-cnpg18-deployment-envelope", tests_run=counts[suite], profile="deployment-envelope",
-                        measurement_scope="Python driver and assembly runtime share one constrained cgroup; PostgreSQL is separate.",
+                        measurement_scope="Qualification drivers and test tools share one constrained cgroup with the assembly runtime; PostgreSQL is separate.",
                         cgroup=samples, cases=cases, requests=requests, availability={"valid_requests": 1, "availability_failures": 1},
                         fixture={"path": "/qualification/fixtures/connect-null.so", "sha256": "c" * 64, "bytes": 1024, "mode": "0444", "uid": 0, "gid": 0})
                     if mode == "envelope-missing-sample":

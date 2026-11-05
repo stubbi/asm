@@ -1,6 +1,6 @@
 # Fixed deployment envelope implementation plan
 
-Status: approved test-only follow-up; native execution has not run.
+Status: native preflight failed; the parser correction has not run natively.
 
 The base is `3b583e444092f3a1a766b7c3a8a99153970b4fe4`.
 Its tree is `47eda86d610c42034f8680d9dbf29f768526c0fc`.
@@ -46,3 +46,22 @@ The [raw failing contract output](deployment-envelope-expected-failure-red.txt) 
 It used `python3 -m unittest discover -s tests/postgres18 -p test_harness.py -k required_assertions -v`.
 The complete PostgreSQL contract gate passed 47 tests after this fix.
 No native execution accompanied the follow-up.
+
+The first native preflight later tested `7b0e18b2aedf5054b9a0b1cc49d847cdd6a1681e` and failed in cgroup evidence parsing.
+Only the sixteen constrained baseline cases executed; admission and envelope cases did not run.
+The [profile record](deployment-envelope.md#first-native-preflight) retains the failed receipt, all 34 samples, and the original small artifact.
+A local regression failed on the retained dotted kernel key before the parser correction.
+The correction preserves all resource and assertion checks.
+The local contract gate passed 49 tests after the correction.
+This local result does not change the failed native receipt.
+
+## Current joined candidate
+
+The joined source requires 22 HTTP baseline cases, 12 admission cases, and three envelope cases.
+Its HTTP baseline also requires all 19 metrics unit checks and six metrics HTTP identities.
+Qualification drivers and test tools share the constrained application cgroup with the assembly runtime.
+PostgreSQL remains separate.
+The unit tool runs before the first suite snapshot; the memory peak includes its resource use.
+The earlier 31-case preflight retains its original source, scope, and failed outcome.
+The combined 37-case resource profile has no native result.
+Startup integration and private deployment retain separate gates.

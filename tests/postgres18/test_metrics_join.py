@@ -120,7 +120,8 @@ class MetricsJoinTests(unittest.TestCase):
                      + "." + name for name in CASES[suite]]
             phases = ["before-suite"] + [phase + case for case in cases for phase in ("before:", "after:")] + ["after-suite"]
             value.update(scope=harness.envelope.SCOPE, profile="deployment-envelope",
-                         measurement_scope=harness.envelope.MEASUREMENT_SCOPE, tests_run=len(cases), cases=cases,
+                         measurement_scope="Qualification drivers and test tools share one constrained cgroup with the assembly runtime; PostgreSQL is separate.",
+                         tests_run=len(cases), cases=cases,
                          fixture=null_fixture,
                          cgroup=[{"phase": phase, "monotonic_ns": index + 1, "files": cgroup_files()}
                                  for index, phase in enumerate(phases)],
@@ -128,7 +129,10 @@ class MetricsJoinTests(unittest.TestCase):
                                     "body_bytes": 5600, "outcome": "complete", "elapsed_ns": 1000}],
                          availability={"valid_requests": 1, "availability_failures": 0})
             arguments = (suite, "a" * 40, "c" * 64, "b" * 96, "deployment-envelope", null_fixture, metrics()["test_tools"])
-            harness.report_contract(value, *arguments)
+            try:
+                harness.report_contract(value, *arguments)
+            except ValueError as error:
+                self.fail("The joined report must disclose its qualification tools in the measured scope: " + str(error))
             for index in range(len(cases)):
                 changed = copy.deepcopy(value)
                 changed["cases"].pop(index)

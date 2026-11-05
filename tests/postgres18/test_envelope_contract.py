@@ -71,6 +71,34 @@ class EnvelopeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 envelope.validate_snapshots(changed, ["test_case"])
 
+    def test_retained_native_samples_accept_the_canonical_dotted_kernel_counter(self):
+        self.require_envelope()
+        path = ROOT / "docs/deployment-envelope-evidence/42111348191/baseline.stdout.log"
+        prefix = "ASM_DEPLOYMENT_ENVELOPE_SAMPLE="
+        samples = [json.loads(line[len(prefix):]) for line in path.read_text().splitlines() if line.startswith(prefix)]
+        self.assertEqual(len(samples), 34)
+        cases = [sample["phase"][len("before:"):] for sample in samples if sample["phase"].startswith("before:")]
+        self.assertEqual(len(cases), 16)
+        self.assertIn("core_sched.force_idle_usec 0\n", samples[0]["files"]["cpu.stat"])
+        try:
+            envelope.validate_snapshots(samples, cases)
+        except ValueError as error:
+            self.fail("The retained canonical kernel samples must parse: " + str(error))
+
+    def test_kernel_counter_keys_keep_bounds_duplicates_and_numeric_validation(self):
+        self.require_envelope()
+        for key in ("core_sched..force_idle_usec", ".core_sched", "core_sched.", "core-sched.force_idle_usec",
+                    "core_sched/force_idle_usec", "c" * 41):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                envelope.counters("usage_usec 1\n" + key + " 0\n", ("usage_usec",))
+        for value in ("-1", "NaN", "1" * 21):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                envelope.counters("usage_usec 1\ncore_sched.force_idle_usec " + value + "\n", ("usage_usec",))
+        with self.assertRaises(ValueError):
+            envelope.counters("usage_usec 1\ncore_sched.force_idle_usec 0\ncore_sched.force_idle_usec 0\n", ("usage_usec",))
+        with self.assertRaises(ValueError):
+            envelope.counters("core_sched.force_idle_usec 0\n", ("usage_usec",))
+
     def test_result_samples_include_failed_case_closure_and_raw_output(self):
         self.require_envelope()
         class Failure(unittest.TestCase):
