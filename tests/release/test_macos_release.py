@@ -188,6 +188,7 @@ class NativeBuilderTests(unittest.TestCase):
                     shutil.copytree(source, repo / name,
                                     ignore=shutil.ignore_patterns("build", "__pycache__", ".asm", ".DS_Store"))
                 elif source.is_file():
+                    (repo / name).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, repo / name)
             def git(*args):
                 return subprocess.check_output(["git", "-C", str(repo), *args], stderr=subprocess.PIPE).decode().strip()

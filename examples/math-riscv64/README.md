@@ -139,15 +139,37 @@ Their Linux execution remains unrun.
 
 | Local artifact | SHA-256 |
 | --- | --- |
-| Assembled Linux example | `014eb0b69a3a775af22d7cf5080c15a216014cc0333ff180d9ae5a362213eb44` |
+| Example source, `src/main.s` | `2622f405e65e6e62410225264b318791b5c9b6ee4a30654caa28ffbbf9ad158a` |
+| Assembled Linux example | `b1400275fe2331578e5b1ea60114e449909d9e250911c9eb2b4cf919833eaad8` |
 | Assembled Linux caller test | `29ac421b0252906a99df8e37506ff6d274530af56e243f8690d2e486ceaeb8c9` |
 | Executed machine-mode caller | `270868bd20b2b69e4b53b7e40cd23e7fb649d8fd7bdf6ec3ab91083eec4f317a` |
 
 These are local validation artifacts, not published release artifacts.
 The test rejected deliberate signed-comparison and interrupted-write regressions in temporary source copies.
 
-Earlier attempts exposed three limitations.
+Earlier attempts exposed these limitations.
 Apple Clang 17 had no RISC-V backend.
 The initial LLVM caller used an unsupported forward-expression immediate.
 The initial machine-mode harness started at the library function and timed out after 15 seconds.
 The current caller uses an end pointer, and the machine-mode harness places its entry point at the load address.
+
+GNU cross-assembly failed in [CI run 41940119622](https://github.com/stubbi/asm/actions/runs/41940119622).
+The `li` instructions rejected message-length operands expressed as label differences.
+Moving the message definitions earlier did not fix [CI run 41941162062](https://github.com/stubbi/asm/actions/runs/41941162062).
+The source now uses numeric `.equ` constants for both `li` operands.
+The message contains 17 bytes, and the diagnostic contains 69 bytes.
+Assembler `.if` checks compare each declared length with its immutable bytes.
+Deliberately incorrect lengths caused assembler failures in temporary source copies.
+The strict GNU flags remain `--fatal-warnings -march=rv64i -mabi=lp64`.
+Local LLVM assembly and machine-mode execution passed after this change.
+GNU assembly and Linux process execution then passed in [CI run 41942637379](https://github.com/stubbi/asm/actions/runs/41942637379).
+That run checked source commit `07a6a909814846ea1f6e9cad56659b5c633215ac` on 2026-11-05.
+Ubuntu supplied GNU Binutils `2.42-4ubuntu2.10` and QEMU user mode `8.2.2+ds-0ubuntu1.18`.
+The example, all 457 caller cases, and the unwritable-output check passed under QEMU's Linux process environment.
+These results establish emulated Linux execution; physical RISC-V64 Linux qualification remains unavailable.
+
+The GNU assembler documents [`.equ`](https://sourceware.org/binutils/docs/as/Equ.html) and [`.if`](https://sourceware.org/binutils/docs/as/If.html).
+These directive rules were checked on 2026-11-05.
+
+The earlier LLVM example digests were `014eb0b69a3a775af22d7cf5080c15a216014cc0333ff180d9ae5a362213eb44` and `5a8095b8a97e269c86b5715f21b035de6dce893b1fd4f18940c310e70216a19b`.
+Neither local build established GNU assembler compatibility.

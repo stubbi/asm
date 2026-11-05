@@ -62,6 +62,10 @@ class MacHelloTests(unittest.TestCase):
     def test_execution_modes_ignore_python_process_architecture(self):
         if not ARM_HARDWARE:
             self.skipTest("This regression requires Apple Silicon")
+        probe = subprocess.run(["/usr/bin/arch", "-x86_64", "/usr/bin/true"],
+                               capture_output=True, timeout=10)
+        if probe.returncode:
+            self.skipTest("This regression also requires the optional Rosetta runtime")
         name = f"{__package__}._hello_process_metadata" if __package__ else "_hello_process_metadata"
         output = io.StringIO()
         with patch("platform.machine", return_value="x86_64"):
