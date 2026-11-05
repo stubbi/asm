@@ -1,56 +1,41 @@
-name: Assembly server
+# Temporary diagnostic only. Restore the workflow from commit
+# 5992c3016f6a0ba972665054b5b4856659336d31 after the selected native RED run.
+# Original workflow blob: 3b209e45bae4b61032ba906005664173ebd19c3f.
+name: Assembly server admission RED (temporary)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: assembly-server-${{ github.ref }}
-  cancel-in-progress: true
+  group: assembly-server-admission-red-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  test:
-    name: Test package and runtime (${{ matrix.target }}, native)
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, target: x86_64-linux }
-          - { runner: ubuntu-24.04-arm, target: aarch64-linux }
-    runs-on: ${{ matrix.runner }}
+  native-red:
+    name: Inspect eight-reader admission (AMD64 native)
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      ASM_TEST_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Assemble each Linux runtime source without execution
+      - name: Record diagnostic source and host
         shell: bash
-        timeout-minutes: 2
-        working-directory: server
         run: |
           set -euo pipefail
-          clang --version
-          ASM_OBJECTS="$RUNNER_TEMP/asm-server-source-objects"
-          mkdir -m 700 "$ASM_OBJECTS"
-          for target in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu; do
-            case "$target" in
-              x86_64-linux-gnu) source_dir=.; target_flags=() ;;
-              aarch64-linux-gnu) source_dir=aarch64; target_flags=() ;;
-              riscv64-linux-gnu) source_dir=riscv64; target_flags=(-march=rv64gc -mabi=lp64d) ;;
-            esac
-            for source in runtime config; do
-              clang --target="$target" "${target_flags[@]}" -x assembler-with-cpp \
-                -DASM_SOURCE_REVISION="\"$GITHUB_SHA\"" -c "$source_dir/$source.s" \
-                -o "$ASM_OBJECTS/$target-$source.o"
-            done
-          done
+          test "$(uname -s)/$(uname -m)" = Linux/x86_64
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -m 700 "$RUNNER_TEMP/asm-admission-red-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/asm-admission-red-evidence/source-revision.txt"
+          sha256sum server/runtime.s server/config.s server/abi-check.c server/Makefile \
+            server/catalog/reader-guard.sql server/catalog/read-exports.sql \
+            server/test_runtime.py server/test_capacity.py .github/workflows/assembly-server.yml \
+            > "$RUNNER_TEMP/asm-admission-red-evidence/source-files.sha256"
+          { uname -a; gcc --version; python3 --version; openssl version; } \
+            > "$RUNNER_TEMP/asm-admission-red-evidence/host-tools.txt"
       - name: Install native build prerequisites
         run: |
           sudo apt-get update
@@ -104,107 +89,86 @@ jobs:
             --with-openssl --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
           make -j2
           make install
-      - name: Build the native Asm CLI
-        run: make
-      - name: Exercise native-library CLI builds and failures
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/server-port-evidence"
-          PYTHONPATH=tests python3 -m unittest test_native_link -v \
-            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/native-link-tests.log"
-      - name: Package the server source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 experiments/assembly-server/package.py --target "$ASM_TEST_TARGET" \
-            --output "$RUNNER_TEMP/asm-server-project"
-          python3 tools/registry.py pack "$RUNNER_TEMP/asm-server-project" \
-            --name stubbi/asm-server --version 0.1.0 --target "$ASM_TEST_TARGET" \
-            --output "$RUNNER_TEMP/asm-server-source.tar.gz"
-          mkdir "$RUNNER_TEMP/asm-server-source"
-          tar -xzf "$RUNNER_TEMP/asm-server-source.tar.gz" -C "$RUNNER_TEMP/asm-server-source"
-      - name: Build and test the extracted server package
+      - name: Run the existing sixteen canonical runtime tests
+        id: basics
         shell: bash
         timeout-minutes: 3
         run: |
           set -euo pipefail
           ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
-          make -C "$RUNNER_TEMP/asm-server-source" test \
-            ASM="$GITHUB_WORKSPACE/build/asm" \
-            MHD_PREFIX="$ASM_DEPS/mhd" \
-            PG_PREFIX="$ASM_DEPS/postgres" \
-            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/reference-tests.log"
-      - name: Test the hosted assembly canonical exports
-        shell: bash
-        timeout-minutes: 3
-        run: |
-          set -euo pipefail
-          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
-          make -C server test TARGET="$ASM_TEST_TARGET" \
-            BUILD="$RUNNER_TEMP/hosted-server-build" SOURCE_REVISION="$GITHUB_SHA" \
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-admission-red-evidence"
+          set +e
+          make -C server test TARGET=x86_64-linux \
+            BUILD="$RUNNER_TEMP/asm-admission-red-build" SOURCE_REVISION="$GITHUB_SHA" \
             MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" \
-            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/hosted-tests.log"
-      - name: Check canonical catalog publication with PostgreSQL TLS
+            2>&1 | tee "$ASM_EVIDENCE/basics.log"
+          ASM_STATUS=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${ASM_STATUS[0]}" > "$ASM_EVIDENCE/basics.exit"
+          test "${ASM_STATUS[1]}" -eq 0
+          exit "${ASM_STATUS[0]}"
+      - name: Observe the candidate capacity result without retry
+        id: capacity
+        if: ${{ !cancelled() && (steps.basics.outcome == 'success' || steps.basics.outcome == 'failure') }}
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 1
         run: |
           set -euo pipefail
           ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-admission-red-evidence"
+          export ASM_SERVER_BINARY="$RUNNER_TEMP/asm-admission-red-build/asm-hub"
+          export ASM_SERVER_SOURCE_REVISION="$GITHUB_SHA"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so.5"
           export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
-          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
-          make hosted-registry-test
-      - name: Check build failure preserves both executables
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/test_server_build_failures.py \
-            --reference "$RUNNER_TEMP/asm-server-source" \
-            --hosted "$GITHUB_WORKSPACE/server" \
-            --hosted-build "$RUNNER_TEMP/hosted-server-build" \
-            --asm "$GITHUB_WORKSPACE/build/asm" --target "$ASM_TEST_TARGET" \
-            --mhd-prefix "$RUNNER_TEMP/asm-server-reference/mhd" \
-            --pg-prefix "$RUNNER_TEMP/asm-server-reference/postgres" \
-            --revision "$GITHUB_SHA" \
-            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/build-failure-tests.log"
-      - name: Record target artifact identities
+          set +e
+          python3 server/test_capacity.py 2>&1 | tee "$ASM_EVIDENCE/capacity.log"
+          ASM_STATUS=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${ASM_STATUS[0]}" > "$ASM_EVIDENCE/capacity.exit"
+          test "${ASM_STATUS[1]}" -eq 0
+          exit "${ASM_STATUS[0]}"
+      - name: Record outcomes and the exact diagnostic executable
         if: always()
         shell: bash
         env:
-          ASM_JOB_STATUS: ${{ job.status }}
+          ASM_BASICS_OUTCOME: ${{ steps.basics.outcome }}
+          ASM_CAPACITY_OUTCOME: ${{ steps.capacity.outcome }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/server-port-evidence"
-          python3 tools/record_server_ports.py \
-            --target "$ASM_TEST_TARGET" --execution native --revision "$GITHUB_SHA" \
-            --job-status "$ASM_JOB_STATUS" --asm "$GITHUB_WORKSPACE/build/asm" \
-            --reference "$RUNNER_TEMP/asm-server-source/build/app" \
-            --hosted "$RUNNER_TEMP/hosted-server-build/asm-hub" \
-            --archive "$RUNNER_TEMP/asm-server-source.tar.gz" \
-            --output "$RUNNER_TEMP/server-port-evidence/qualification.json"
-      - name: Retain passed and failed port evidence
+          mkdir -p "$RUNNER_TEMP/asm-admission-red-evidence"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          binary = Path(os.environ["RUNNER_TEMP"]) / "asm-admission-red-build/asm-hub"
+          record = {
+              "source_revision": os.environ["GITHUB_SHA"],
+              "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+              "workflow_revision": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "target": "x86_64-linux",
+              "execution": "native",
+              "basics_outcome": os.environ["ASM_BASICS_OUTCOME"],
+              "capacity_outcome": os.environ["ASM_CAPACITY_OUTCOME"],
+              "expected_red_assertion": "The ninth request opened another database connection.",
+              "classification": "Inspect raw logs; a setup, timing, or fixture failure is not the expected native RED.",
+              "binary": {"present": binary.is_file()},
+          }
+          if binary.is_file():
+              record["binary"].update(bytes=binary.stat().st_size,
+                                      sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
+          output = Path(os.environ["RUNNER_TEMP"]) / "asm-admission-red-evidence/outcomes.json"
+          output.write_text(json.dumps(record, indent=2) + "\n")
+          PY
+      - name: Retain successful checks and all failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: server-port-${{ matrix.target }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: admission-red-amd64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/server-port-evidence/
-            ${{ github.workspace }}/build/asm
-            ${{ runner.temp }}/asm-server-source/build/app
-            ${{ runner.temp }}/hosted-server-build/asm-hub
-            ${{ runner.temp }}/asm-server-source.tar.gz
+            ${{ runner.temp }}/asm-admission-red-evidence/
+            ${{ runner.temp }}/asm-admission-red-build/asm-hub
           if-no-files-found: error
           retention-days: 7
-
-  required:
-    name: Test the assembly server reference
-    permissions: {}
-    if: ${{ always() }}
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 1
-    steps:
-      - name: Require both native qualification jobs
-        env:
-          SERVER_TEST_RESULT: ${{ needs.test.result }}
-        run: test "$SERVER_TEST_RESULT" = success || { printf '%s\n' 'Native server qualification did not succeed. Inspect both target jobs.' >&2; exit 1; }

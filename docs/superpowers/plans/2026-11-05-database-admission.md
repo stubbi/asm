@@ -12,13 +12,17 @@
 
 ## Checkpoint and bounded specification
 
-This is a plan and test-only candidate, dated 5 November 2026.
+This is a plan, test-only candidate, and temporary diagnostic workflow, dated 5 November 2026.
 It contains no admission implementation or native runtime result.
-It does not authorize publication, CI, image changes, or deployment.
+The workflow patch awaits coordinator review before one selected native RED job.
+No push or dispatch has occurred.
+It does not authorize publication, image changes, or deployment.
 
 The source inspected is canonical HTTP commit `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
 The public main inspected is `7efb4b7b543018d68e5c5801e5f4b7eef74772b5`.
 The checkpoint branch is `codex/db-admission`.
+The coordinator's coherent reconciliation is `7e67d7131377590b924d07191ccb174b51bf22c2`.
+The checkpoint adopted it through normal merge `5992c3016f6a0ba972665054b5b4856659336d31`.
 
 The operator audit reports an ignored `ASM_DATABASE_POOL_SIZE=8` variable.
 That variable does not establish a runtime limit.
@@ -65,9 +69,13 @@ This task must not copy or modify that startup implementation.
 A normal merge of public main was attempted in the isolated checkpoint.
 Ten files conflicted, including both non-x86 ports, runtime tests, image sources, and workflows.
 The merge was aborted without resolving or committing product files.
-The test-only checkpoint therefore retains the exact canonical base.
+That initial test-only checkpoint retained the exact canonical base.
 
-Before implementation, the runtime owner must perform a coherent normal merge.
+The runtime owner subsequently supplied the coherent reconciliation recorded above.
+Its normal merge into this checkpoint completed without conflicts.
+Both plan and capacity test were retained.
+No product assembly changed during that merge.
+The new RISC-V PIC fixes in public PR #42 remain outside this reconciliation.
 Do not rebase the shared canonical source.
 Keep both literal-prefix guards in `server/guard.sql` and `experiments/assembly-server/guard.sql`.
 Keep the deceptive-schema regressions for `pgxtemp_`, `pgxtempx`, `pgxtoast_temp_`, and `pgxtoastxtempx`.
@@ -124,7 +132,8 @@ The proposed local flag fits existing unused frame storage:
 | `server/aarch64/runtime.s` | 80-byte frame; X19-X21 hold arguments, X22 the deadline, X23 the connection, X24 the result; bound/phase at SP+64/SP+72 | 32 bits at SP+68 |
 | `server/riscv64/runtime.s` | 80-byte frame; S1-S3 hold arguments, S4 the deadline, S5 the connection, S6 the result, S7 the bound, S8 the phase; RA at SP+64 | 32 bits at SP+72 |
 
-Recheck these offsets after the required source merge.
+These offsets remained unchanged in the coherent source merge.
+Recheck them after any later port change.
 The existing argument and return contracts of `database_query` remain unchanged.
 Its routine comment must identify the new shared counter and local ownership flag.
 
@@ -179,6 +188,44 @@ That tolerance does not change the implementation's two-second deadline.
 Nine subsequent successful requests verify same-process recovery and catch success-path slot leaks.
 A second fresh eight-holder wave detects even a partial timeout-path slot leak.
 The gate tracks each wave separately because old fixture sockets can outlive the native deadline.
+
+### Temporary manual native gate
+
+The temporary patch uses the registered `.github/workflows/assembly-server.yml` path on `codex/db-admission` only.
+It accepts `workflow_dispatch` only and selects one native AMD64 `ubuntu-24.04` job.
+It requests `contents: read` and does not retain checkout credentials.
+It contains no publishing, signing, deployment, or private infrastructure operation.
+
+The pinned dependency recipes remain unchanged.
+The job runs the existing sixteen canonical runtime tests first.
+It then runs the candidate capacity test without retries.
+The candidate runs after either baseline success or failure, provided the baseline step actually ran.
+Baseline failures remain failures of the job.
+No failure is converted to success or automatically classified as the intended RED.
+
+Each test step retains its raw output and exit status.
+An always-run receipt records step outcomes, source identity, and the executable digest when the executable exists.
+The artifact retains that receipt, logs, source-file digests, host/tool information, and the exact diagnostic executable.
+Its retention period is seven days; collect the evidence before that period ends.
+
+The intended RED requires sixteen baseline tests to pass and the candidate to fail at the ninth-connection assertion.
+A setup, fixture, timeout, crash, or holder-precondition failure is a separate failed result.
+The 0.8, 0.5, and 2.8 second assertions remain unchanged.
+The unrelated RISC-V gates are excluded from this diagnostic, not treated as passing.
+
+The original workflow is preserved by Git blob `3b209e45bae4b61032ba906005664173ebd19c3f`.
+Its SHA-256 is `ecbcbb4e97b58d3993dfd66d53ff61941ad80977dfcbe6d3ac6562ab7c654a17`.
+A local copy is `/private/tmp/asm-admission-original-3b209e45.yml`.
+Restore the workflow before any implementation integration or public pull request:
+
+```sh
+git restore --source=5992c3016f6a0ba972665054b5b4856659336d31 -- .github/workflows/assembly-server.yml
+```
+
+`actionlint` passed on the temporary workflow locally.
+That check does not establish successful dependency builds or native runtime execution.
+The workflow uses GitHub's documented [status functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions) and [read-only permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+These references were checked on 5 November 2026.
 
 ## Task 2: Implement and check the three native ports
 
