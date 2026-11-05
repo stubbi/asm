@@ -229,14 +229,14 @@ class MacReferenceIoTests(unittest.TestCase):
 
     def exercise(self, target, arch, kind="hello"):
         mode = self.require_runtime(arch)
-        source = ROOT / "examples" / f"{kind}-{target}-macos" / "src/main.s"
+        source = ROOT / "examples" / kind / "targets" / f"{target}-macos" / "src/main.s"
         with tempfile.TemporaryDirectory(prefix="macos-hello-io-") as temporary:
             work = Path(temporary)
             body = work / "body.o"
             common = ["-arch", arch, "-mmacosx-version-min=15.0"]
             # Only the entry-point name changes. The package body is not rewritten.
             self.compile([*common, "-x", "assembler-with-cpp", "-D_main=_hello_main",
-                          "-c", str(source), "-o", str(body)], cwd=source.parent.parent)
+                          "-c", str(source), "-o", str(body)], cwd=ROOT / "examples" / kind)
             digests = {}
             for name, (events, expected_result, errno_calls) in write_scenarios(16 if kind == "hello" else 17).items():
                 with self.subTest(target=target, scenario=name):

@@ -72,6 +72,14 @@ class SiteTests(unittest.TestCase):
         self.assertTrue(set(self.page.references).issubset(set(self.page.ids)))
         self.assertEqual(len(self.page.headings), 1)
 
+    def test_github_example_source_links_exist_in_the_checkout(self):
+        html = (SITE / "index.html").read_text()
+        links = re.findall(r'https://github\.com/stubbi/asm/(?:tree|blob)/main/(examples/[^"#?]+)', html)
+        self.assertTrue(links)
+        for relative in links:
+            with self.subTest(source=relative):
+                self.assertTrue((ROOT / relative).exists(), f"The source link is missing: {relative}")
+
     def test_search_controls_have_visible_labels(self):
         self.assertTrue(self.page.input_ids)
         self.assertTrue(set(self.page.input_ids).issubset(set(self.page.labels)))

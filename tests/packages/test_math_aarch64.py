@@ -65,11 +65,13 @@ class MathAarch64Tests(unittest.TestCase):
         )
 
     def exercise(self, macos):
-        package = ROOT / "examples" / ("math-aarch64-macos" if macos else "math-aarch64")
+        package = ROOT / "examples/math"
+        target = "aarch64-macos" if macos else "aarch64-linux"
+        prefix = f"targets/{target}/"
         with tempfile.TemporaryDirectory(prefix="asm-math-aarch64-") as directory:
             demo, tests = Path(directory) / "demo", Path(directory) / "tests"
-            self.build(package, "src/main.s", demo, macos)
-            self.build(package, "tests/main.s", tests, macos)
+            self.build(package, prefix + "src/main.s", demo, macos)
+            self.build(package, prefix + "tests/main.s", tests, macos)
             runner = []
             if not macos and not (platform.system() == "Linux" and ARM_HOST):
                 configured = os.environ.get("ASM_AARCH64_LINUX_RUNNER")
@@ -93,7 +95,7 @@ class MathAarch64Tests(unittest.TestCase):
             self.assertEqual(result.stdout, b"")
             self.assertEqual(result.stderr, b"")
             # A read-only descriptor makes write fail with EBADF.
-            with (package / "src/min.s").open("rb") as read_only:
+            with (package / prefix / "src/min.s").open("rb") as read_only:
                 result = subprocess.run(
                     runner + [str(demo)], stdout=read_only,
                     stderr=subprocess.PIPE, timeout=10,
