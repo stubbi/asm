@@ -1350,7 +1350,7 @@ wait_database:
 
 /* a0=fixed SQL or NULL for guard only; a1=count; a2=borrowed parameters;
  * a3=positive byte bound <=MAX_JSON. Returns owned PGresult or NULL in a0.
- * Frame80 saves s1-s8 and ra. One TLS connection executes BEGIN READ ONLY,
+ * Frame 80 saves s1-s8 and ra. One TLS connection executes BEGIN READ ONLY,
  * the canonical guard, then optional SQL. All stages drain and share one
  * absolute two-second deadline. PQfinish closes/rolls back the transaction;
  * an accepted result survives until the caller's PQclear. No shared state. */
@@ -1570,7 +1570,7 @@ ignore_notice:
     ret
 
 
-/* No inputs. a0=1 only after the exact canonical guard passed. Frame16 saves
+/* No inputs. a0=1 only after the exact canonical guard passed. Frame 16 saves
  * ra; owns the returned result until PQclear. Caller-saved registers change. */
 database_ready:
     addi sp, sp, -16
@@ -1738,8 +1738,8 @@ query_value:
 
 
 /* MHD callback: a1=connection,a2=path,a3=method,a7=request-state pointer.
- * a0=MHD_Result. Frame112 saves s1-s6/ra; header/query/parameter workspaces
- * occupy56..95. Borrows request strings only here. A catalog result is owned
+ * a0=MHD_Result. Frame 112 saves s1-s6/ra; header/query/parameter workspaces
+ * occupy 56..95. Borrows request strings only here. A catalog result is owned
  * until MHD copies it, then always cleared. No PGconn is shared or cached. */
 handle_request:
     addi sp, sp, -112
@@ -1934,7 +1934,7 @@ handle_request:
 
 
 /* a0=connection,a1=status,a2=NUL fixed JSON <=MAX_REPLY. a0=MHD_Result.
- * Frame32 saves s1-s3/ra. The common path copies borrowed bytes. */
+ * Frame 32 saves s1-s3/ra. The common path copies borrowed bytes. */
 queue_json:
     addi sp, sp, -32
     sd s1, 0(sp)
@@ -1970,7 +1970,7 @@ queue_json:
     ret
 
 /* a0=connection,a1=status,a2=borrowed bytes,a3=length<=MAX_JSON,a4=fixed type.
- * a0=MHD_Result. Frame64 saves s1-s6/ra. MHD copies before return; every path
+ * a0=MHD_Result. Frame 64 saves s1-s6/ra. MHD copies before return; every path
  * destroys an allocated response. Allocation/queue/header failure closes HTTP. */
 queue_response:
     addi sp, sp, -64

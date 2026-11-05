@@ -454,7 +454,7 @@ wait_database:
 
 /* x0=fixed SQL or NULL for guard only, w1=count, x2=parameters,
  * w3=positive byte bound <=MAX_JSON. x0=owned PGresult or NULL; caller clears.
- * Frame 80 saves x19-x24; local bound/phase occupy offsets64/72.
+ * Frame 80 saves x19-x24; local bound/phase occupy offsets 64/72.
  * One TLS connection sends BEGIN READ ONLY, guard, then optional fixed SQL.
  * Every command drains; all I/O shares one absolute two-second deadline.
  * PQfinish closes the transaction; an accepted PGresult remains owned. */
@@ -737,7 +737,7 @@ header_bound:
     ret
 
 /* x0=connection, w1=status, x2=NUL fixed JSON body <=MAX_REPLY.
- * w0=MHD_Result. Frame48 saves x19-x21. The common response path copies bytes. */
+ * w0=MHD_Result. Frame 48 saves x19-x21. The common response path copies bytes. */
 queue_json:
     stp x29, x30, [sp, #-48]!
     mov x29, sp
@@ -768,7 +768,7 @@ queue_json:
     ret
 
 /* x0=connection,w1=status,x2=borrowed bytes,x3=length<=MAX_JSON,x4=fixed type.
- * w0=MHD_Result. Frame64 saves x19-x23 and stores type at56.
+ * w0=MHD_Result. Frame 64 saves x19-x23 and stores type at 56.
  * MHD copies before return. Every path destroys its response; failure closes HTTP. */
 queue_response:
     stp x29, x30, [sp, #-64]!

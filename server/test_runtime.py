@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Python runs tests only. It is not a registry application backend.
 """
 import http.client
+import concurrent.futures
 from contextlib import contextmanager
 import fcntl
 import json
@@ -226,6 +227,15 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual(self.request(path, method="POST")[0], 405)
                 self.assertEqual(self.request(path, body=b"x")[0], 400)
                 self.assertEqual(self.request(path + "?route=untrusted")[0], 400)
+
+    def test_concurrent_exports_keep_independent_response_ownership(self):
+        paths = list(self.exports) * 2
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as clients:
+            responses = list(clients.map(self.raw_request, paths))
+        for path, (code, _, body) in zip(paths, responses):
+            with self.subTest(path=path):
+                self.assertEqual(code, 200)
+                self.assertEqual(body, self.exports[path])
 
     @contextmanager
     def export_view(self, select):
