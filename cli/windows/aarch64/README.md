@@ -99,7 +99,8 @@ PE validation checks the exact size, machine, headers, alignments, directory bou
 It rejects writable executable sections.
 This check does not authenticate a publisher or establish general code safety.
 The shared updater retains its exact signed manifest, artifact, source commit, signer, repository, and workflow bindings.
-Windows finalization uses a retained source handle and `FileRenameInfoEx` with POSIX replacement semantics.
+Windows finalization uses retained source and parent handles with native `FileRenameInformationEx` and POSIX replacement semantics.
+The rename leaf rejects device names, stream names, separators, and trailing aliases.
 A native test must establish actual replacement of an executing image and preservation after failure.
 
 ## Evidence and remaining qualification
@@ -127,10 +128,10 @@ The capture check includes an empty peek, child completion, one pending byte, an
 The shim uses test APIs and a controlled clock.
 It does not establish Windows API, filesystem, or runtime behavior.
 
-The third native Windows candidate ran 45 test methods at commit `df155c30858f41e4e5cbd2089bcc1442dccb669c`.
-Its evidence records 17 passing methods and 41 failure records, including subtests.
-Project creation passed.
-Linker arguments, lock creation, source fixtures, and dependent workflows failed.
+The fourth native Windows candidate ran 45 test methods at commit `e9d3bb2fa4cd8f45eff0e11787c62ebf946a1cd3`.
+Its evidence records 22 passing methods and 24 failure records, including subtests.
+Project creation and compiler invocation passed.
+Build finalization, valid executable acceptance, source decompression, and dependent workflows failed.
 Those results do not qualify this target.
 The current corrections still require a fresh native run.
 Cross-assembly does not establish command behavior, DACL compatibility, filesystem race behavior, SDK discovery, or active-image replacement.
@@ -148,6 +149,8 @@ Run the additional controlled host checks:
 python3 cli/windows/aarch64/security_test.py --output build/windows/aarch64/security-evidence.json
 python3 cli/windows/aarch64/environment_test.py --output build/windows/aarch64/environment-evidence.json
 python3 cli/windows/aarch64/contracts_test.py --output build/windows/aarch64/contracts-evidence.json
+python3 cli/windows/aarch64/image_test.py --output build/windows/aarch64/image-evidence.json
+python3 cli/windows/aarch64/metadata_test.py --output build/windows/aarch64/metadata-evidence.json
 ```
 
 The security shim executes the production owner and DACL routines with eleven controlled cases.
@@ -158,8 +161,14 @@ Two restored boundary defects fail during actual shim execution.
 Cross-object inspection verifies even addresses for native UTF-16 literals.
 Removing the lock-name alignment produces an odd address in the retained regression object.
 These shims do not establish Windows authorization, process creation, or NTFS behavior.
-The running-image binding currently remains a release-blocking review concern.
-A pathname from GetModuleFileNameW does not independently establish the original mapped image's file identity.
+The updater now checks the retained executable handle against the process creation image through runtime-resolved `NtQueryInformationProcess` class 44.
+The handle includes execute and synchronization rights.
+Only exact status zero succeeds.
+Missing APIs and unsupported results require manual installation; an observed identity mismatch preserves both files.
+The native fixture observed original-file status zero and replacement-file status `C0000001`.
+This internal Windows API is an explicit platform assumption.
+The adapter still requires the native positive and displaced-image regressions.
+A pathname from GetModuleFileNameW cannot replace this identity check.
 
 ## Primary references
 
@@ -182,3 +191,12 @@ The compiler review consulted these LLVM references on 5 November 2026:
 
 - [Clang configuration files](https://clang.llvm.org/docs/UsersManual.html#configuration-files)
 - [Clang linker selection](https://clang.llvm.org/docs/Toolchain.html#linker)
+
+The PE parser uses the shared installation contract: one means valid, and zero means invalid.
+Publication adapts that result to its separate zero-on-success contract.
+The retained native fourth executable passes the corrected host parser check.
+Corrupt DOS bytes, a foreign machine, and truncation fail that check.
+Release metadata tests bind the exact Windows `.exe` asset name, size, and digest.
+These host checks do not authenticate provenance or establish Windows file authorization.
+The full prepared source-package validator accepts the raw TAR fixture on the host.
+Native decompression remains unresolved; the next native diagnostic records gzip status and captured byte counts.

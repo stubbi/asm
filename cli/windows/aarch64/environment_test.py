@@ -24,7 +24,7 @@ def main():
              abi_test.region(abi_test.ROOT / 'cli/aarch64/asm.s', 'copy_string:', '/* Input: x0=file descriptor;'),
              abi_test.region(HERE / 'files.s', 'win_is_absolute:', '/* x0=validated C:/'),
              abi_test.region(HERE / 'files.s', 'win_slashes:', '/* x0=bounded UTF16'),
-             (HERE / 'update.s').read_text().split('win_prepare_verifier_environment:')[1]]
+             (HERE / 'update.s').read_text().split('win_prepare_verifier_environment:')[1].split('/* x0=retained self_current_fd')[0]]
     parts[-1] = 'win_prepare_verifier_environment:' + parts[-1]
     text = '\n.text\n'.join(parts) + r'''
 .text

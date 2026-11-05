@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * PE32+ ARM64 executable validation. No mapping or execution occurs.
  * Input x0=path, x1=exact expected size (64..67108864).
- * Output w9=0 valid, 1 invalid. Preserves x19-x24; stack=112 plus adapters.
+ * Output w9=1 valid, 0 invalid. Preserves x19-x24; stack=112 plus adapters.
  * Checks DOS/PE signatures, Machine/optional header, section table arithmetic,
  * raw/virtual section ranges, no writable executable section, and an entry
  * inside a file-backed executable section. Requires ASLR and non-exec data.
@@ -240,17 +240,17 @@ validate_host_elf:
     b.ne .Lpe_section
     ldr x10, [sp, #80]
     cbz x10, .Lpe_bad
-    mov x21, #0
+    mov x21, #1
     b .Lpe_close
 .Lpe_bad:
-    mov x21, #1
+    mov x21, #0
 .Lpe_close:
     mov x0, x20
     ARM_CALL arm_close
     mov x9, x21
     b .Lpe_return
 .Lpe_unopened:
-    mov x9, #1
+    mov x9, #0
 .Lpe_return:
     ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
@@ -291,7 +291,9 @@ win_pub_validate_pe:
     ARM_RESTORE x0
     cbz w9, .Lwin_pub_foreign
     ARM_ADDR x0, registry_temp_payload
-    b validate_host_elf
+    ARM_CALL validate_host_elf
+    eor w9, w9, #1              /* publication uses0 valid, host gate uses1 */
+    ret
 .Lwin_pub_foreign:
     /* Only three explicit Linux target IDs may enter the ELF container gate.
      * Foreign Windows and macOS declarations never authorize an ELF file. */

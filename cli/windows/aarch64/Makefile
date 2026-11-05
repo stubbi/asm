@@ -8,7 +8,7 @@ OBJECT := $(ROOT)/build/windows/aarch64/asm.obj
 BINARY := $(ROOT)/build/asm-aarch64-windows.exe
 INPUTS := $(wildcard $(ROOT)/cli/aarch64/*.s $(ROOT)/cli/aarch64/*.inc *.s) $(ROOT)/tools/windows_arm64.py
 
-.PHONY: all test abi-test security-test contracts-test clean
+.PHONY: all test abi-test security-test contracts-test image-test clean
 all: $(BINARY)
 
 $(SOURCE): $(INPUTS)
@@ -33,6 +33,10 @@ security-test:
 
 contracts-test:
 	$(PYTHON) contracts_test.py --output $(ROOT)/build/windows/aarch64/contracts-evidence.json
+
+image-test:
+	$(PYTHON) image_test.py --output $(ROOT)/build/windows/aarch64/image-evidence.json
+	$(PYTHON) metadata_test.py --output $(ROOT)/build/windows/aarch64/metadata-evidence.json
 
 clean:
 	$(PYTHON) -c "from pathlib import Path; [Path(p).unlink(missing_ok=True) for p in ['$(SOURCE)', '$(OBJECT)', '$(BINARY)']]"

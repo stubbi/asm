@@ -5,7 +5,7 @@
 /* x0=source root, x1=source name, x2=destination root, x6=dest name,
  * x4=1 no-replace or 0 replace. x9=0 or negative errno. Source/destination
  * paths remain borrowed. Rename info capacity=8248, path WCHAR capacity4096.
- * FileRenameInfoEx with POSIX semantics preserves held destination identities.
+ * Native FileRenameInformationEx uses the same held-parent contract as x64.
  * A failed rename leaves the destination bytes intact. Stack=112 plus helpers.
  */
 win_rename:
@@ -69,13 +69,10 @@ win_rename:
     add x0, x0, #1
     b 1b
 .Lwr_build:
-    cbz x23, .Lwr_close_parent
-    sub x10, x23, #1
-    ldrh w11, [x24, x10, lsl #1]
-    cmp w11, #46
-    b.eq .Lwr_close_parent
-    cmp w11, #32
-    b.eq .Lwr_close_parent
+    mov x0, x24
+    lsl x1, x23, #1
+    ARM_CALL win_leaf_name
+    cbz w9, .Lwr_close_parent
     ARM_ADDR x2, win_rename_info
     mov w10, #2                  /* FILE_RENAME_FLAG_POSIX_SEMANTICS */
     cbnz x21, 2f
@@ -93,11 +90,12 @@ win_rename:
     add x1, x1, #2
     b 3b
 4:  mov x0, x22
-    mov w1, #22                 /* FileRenameInfoEx */
+    add x1, sp, #80              /* IO_STATUS_BLOCK, separate from saved state */
     add x3, x23, #20
-    bl SetFileInformationByHandle
-    cbnz w0, .Lwr_ok
-    ARM_CALL win_error
+    mov w4, #65                  /* FileRenameInformationEx, same held parents */
+    bl NtSetInformationFile
+    cbz w0, .Lwr_ok
+    ARM_CALL win_nt_error
     b .Lwr_finish
 .Lwr_ok:
     mov x9, #0
@@ -584,6 +582,50 @@ win_component_name:
     ret
 9:  mov w9, #0
     ret
+/* x0=borrowed UTF16 basename, x1=explicit byte length. w9=1 valid/0 invalid.
+ * Preserve inputs and all nonvolatile registers; x2/x9-x13/NZCV scratch.
+ * Require1..255 WCHARs, no separator, stream, DOS device or trailing alias.
+ * This common leaf gate runs before retained-parent rename mutation. */
+win_leaf_name:
+    cbz x1, .Lwleaf_bad
+    cmp x1, #510
+    b.hi .Lwleaf_bad
+    tbnz x1, #0, .Lwleaf_bad
+    mov x2, #0
+.Lwleaf_scan:
+    ldrh w10, [x0, x2]
+    cmp w10, #32
+    b.lo .Lwleaf_bad
+    cmp w10, #47
+    b.eq .Lwleaf_bad
+    cmp w10, #92
+    b.eq .Lwleaf_bad
+    cmp w10, #58
+    b.eq .Lwleaf_bad
+    cmp w10, #34
+    b.eq .Lwleaf_bad
+    cmp w10, #42
+    b.eq .Lwleaf_bad
+    cmp w10, #63
+    b.eq .Lwleaf_bad
+    cmp w10, #124
+    b.eq .Lwleaf_bad
+    cmp w10, #60
+    b.eq .Lwleaf_bad
+    cmp w10, #62
+    b.eq .Lwleaf_bad
+    add x2, x2, #2
+    cmp x2, x1
+    b.lo .Lwleaf_scan
+    cmp w10, #32
+    b.eq .Lwleaf_bad
+    cmp w10, #46
+    b.eq .Lwleaf_bad
+    b win_component_name
+.Lwleaf_bad:
+    mov w9, #0
+    ret
+
 /* Extra Windows archive name gate, after the shared bounded ASCII path gate.
  * x0=validatedrelativepath, w9=0 valid/1 invalid. No input is changed.
  */

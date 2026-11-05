@@ -108,6 +108,43 @@ _main:
     ldr x11, [x10, #8]
     ARM_IMM x12, 0x4404
     REQUIRE_EQ x11, x12
+    /* Rename uses the retained source and destination parent in class65. */
+    mov x0, #-100
+    ARM_ADDR x1, abi_rename_source
+    mov x2, #-100
+    ARM_ADDR x6, abi_rename_destination
+    mov x4, #0
+    ARM_CALL win_rename
+    REQUIRE_EQ x9, #0
+    ARM_ADDR x10, abi_rename_status
+    ARM_IMM x11, 0xc0000022
+    str x11, [x10]
+    mov x0, #-100
+    ARM_ADDR x1, abi_rename_source
+    mov x2, #-100
+    ARM_ADDR x6, abi_rename_destination
+    mov x4, #0
+    ARM_CALL win_rename
+    cmn x9, #13
+    b.ne abi_failed
+    ARM_ADDR x10, abi_rename_status
+    str xzr, [x10]
+    mov x0, #-100
+    ARM_ADDR x1, abi_rename_source
+    mov x2, #-100
+    ARM_ADDR x6, abi_rename_reserved
+    mov x4, #0
+    ARM_CALL win_rename
+    cmn x9, #22
+    b.ne abi_failed
+    mov x0, #-100
+    ARM_ADDR x1, abi_rename_source
+    mov x2, #-100
+    ARM_ADDR x6, abi_rename_stream
+    mov x4, #0
+    ARM_CALL win_rename
+    cmn x9, #22
+    b.ne abi_failed
     /* unlink must not delete directories; rmdir must reject regular files. */
     ARM_ADDR x10, abi_file_attributes
     mov w11, #16
@@ -595,6 +632,42 @@ SetCurrentDirectoryW:
     API_CLOBBER
     mov x0, #1
     ret
+arm_open:
+    ARM_ADDR x10, win_rename_utf8
+    REQUIRE_EQ x0, x10
+    ARM_IMM x10, O_DIRECTORY + O_CLOEXEC + O_NOFOLLOW
+    REQUIRE_EQ x1, x10
+    API_CLOBBER
+    mov x9, #0x4400
+    ret
+NtSetInformationFile:
+    ARM_IMM x10, 0x4404
+    REQUIRE_EQ x0, x10
+    REQUIRE_EQ x3, #32
+    REQUIRE_EQ x4, #65
+    ARM_ADDR x10, win_rename_info
+    REQUIRE_EQ x2, x10
+    ldr w10, [x2]
+    REQUIRE_EQ w10, #3
+    ldr x10, [x2, #8]
+    ARM_IMM x11, 0x4400
+    REQUIRE_EQ x10, x11
+    ldr w10, [x2, #16]
+    REQUIRE_EQ w10, #12
+    ARM_ADDR x11, abi_rename_leaf
+    mov x12, #0
+1:  add x10, x2, #20
+    ldrh w13, [x10,x12]
+    ldrh w14, [x11,x12]
+    REQUIRE_EQ w13, w14
+    add x12,x12,#2
+    cmp x12,#12
+    b.lo 1b
+    stp xzr,xzr,[x1]
+    API_CLOBBER
+    ARM_ADDR x10,abi_rename_status
+    ldr w0,[x10]
+    ret
 win_open:
     ARM_ADDR x10, abi_probe_test
     ldr x11, [x10]
@@ -668,7 +741,11 @@ GetTickCount64:
 Sleep:
     b abi_failed
 win_nt_error:
-    b abi_failed
+    ARM_IMM w10,0xc0000022
+    REQUIRE_EQ w0,w10
+    API_CLOBBER
+    mov x9,#-13
+    ret
 .data
 .p2align 3
 abi_next_handle: .quad 0x7000
@@ -722,3 +799,18 @@ abi_extended_cwd: .hword 92,92,63,92,67,58,92,119,111,114,107,0
 abi_ordinary_cwd: .hword 67,58,92,119,111,114,107,0
 
 abi_dot_component: .hword 46,0
+
+.data
+.p2align 3
+abi_rename_status: .quad 0
+abi_rename_source: .asciz "build/.asm-1/main.o"
+abi_rename_destination: .asciz "build/main.o"
+.p2align 1
+abi_rename_leaf: .hword 109,97,105,110,46,111,0
+.p2align 3
+win_rename_utf8: .space 4096
+win_rename_w: .space 8192
+win_rename_info: .space 8248
+
+abi_rename_reserved: .asciz "build/CON"
+abi_rename_stream: .asciz "build/main.o:stream"

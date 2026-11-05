@@ -161,3 +161,48 @@ win_localappdata_prefix: .asciz "LOCALAPPDATA="
 .p2align 3
 win_profile_environment: .skip 8192
 win_localappdata_environment: .skip 8192
+
+.text
+/* x0=retained self_current_fd with FILE_EXECUTE|SYNCHRONIZE and read rights.
+ * x9=0 exact creation image, -116 observed mismatch, -95 unsupported/error.
+ * Preserve x0-x7/x19-x29; stack128. Runtime-resolve only loaded ntdll's fixed
+ * NtQueryInformationProcess. Class44 consumes an INPUT pointer to our handle,
+ * exactly8bytes. Accept only STATUS_SUCCESS0; never use a pathname fallback.
+ * The native Windows11 fixture observed class44 match and mismatch results.
+ * This adapter still needs native qualification; class44 is no Win32 promise.
+ */
+win_image_matches:
+    WIN_SAVE
+    sub sp, sp, #32
+    str x0, [sp]
+    ARM_ADDR x0, win_ntdll_name
+    bl GetModuleHandleW
+    cbz x0, .Lwim_unsupported
+    ARM_ADDR x1, win_image_query_name
+    bl GetProcAddress
+    cbz x0, .Lwim_unsupported
+    mov x16, x0
+    mov x0, #-1
+    mov w1, #44
+    mov x2, sp
+    mov w3, #8
+    mov x4, #0
+    blr x16
+    cbz w0, .Lwim_match
+    ARM_IMM w10, 0xc0000001
+    cmp w0, w10
+    b.ne .Lwim_unsupported
+    mov x9, #-116
+    b .Lwim_done
+.Lwim_match:
+    mov x9, #0
+    b .Lwim_done
+.Lwim_unsupported:
+    mov x9, #-95
+.Lwim_done:
+    add sp, sp, #32
+    WIN_RETURN
+.section .rdata,"dr"
+.p2align 1
+win_ntdll_name: .hword 110,116,100,108,108,46,100,108,108,0
+win_image_query_name: .asciz "NtQueryInformationProcess"

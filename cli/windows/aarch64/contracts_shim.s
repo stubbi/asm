@@ -46,7 +46,7 @@ validate_host_elf:
     b.ne contracts_fail
     cmp x1, #1234
     b.ne contracts_fail
-    mov w9, #20
+    mov w9, #1
     ret
 .data
 registry_host: .asciz "aarch64-windows"
@@ -76,6 +76,6 @@ source_cases:
     .quad source_stream,0, source_reserved,0, source_device,0, source_dot,0
     .quad source_space,0, source_response,0, source_parent,0, source_backslash,0, 0,0
 target_cases:
-    .quad registry_host,20, registry_x86_64,10, registry_aarch64,10, registry_riscv64,10
+    .quad registry_host,0, registry_x86_64,10, registry_aarch64,10, registry_riscv64,10
     .quad foreign_windows,1, foreign_mac,1, foreign_x86_mac,1, unknown_target,1, 0,0
 win_path_w: .space 8192

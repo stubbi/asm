@@ -37,6 +37,7 @@ def source_text():
              region(HERE / 'platform.s', 'win_nt_component:', '\narm_open:'),
              region(HERE / 'platform.s', 'arm_probe_fd_stat:', 'arm_lstat:'),
              region(HERE / 'platform.s', 'arm_unlink:', '/* Rename uses source HANDLE'),
+             region(HERE / 'files.s', 'win_rename:', '/* x0=bounded, NUL-terminated UTF16'),
              region(HERE / 'files.s', 'win_drive_view:', '/* x0=owned UTF8 buffer'),
              region(HERE / 'files.s', 'win_fchdir:', '/* One kernel directory'),
              region(HERE / 'files.s', 'win_getdents:', '\n/* x0=HANDLE, x1=flock'),

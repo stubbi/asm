@@ -477,7 +477,10 @@ win_nt_component:
     tst x20, #WIN_OPEN_IDENTITY
     b.eq 9f
     ARM_IMM x1, 0x100080         /* SYNC + FILE_READ_ATTRIBUTES only */
-9:  tst x20, #WIN_OPEN_DELETE
+9:  tst x20, #WIN_OPEN_IMAGE
+    b.eq 7f
+    ARM_IMM x1, 0x1200a9         /* original read/stat rights + FILE_EXECUTE */
+7:  tst x20, #WIN_OPEN_DELETE
     b.eq 8f
     ARM_IMM x1, 0x130080         /* DELETE/SYNC/READ_CONTROL/attributes */
 8:  tst x20, #64

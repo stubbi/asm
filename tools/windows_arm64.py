@@ -141,6 +141,9 @@ def prepare(source: Path) -> str:
             '    .quad self_locale_environment, self_lang_environment\n    .quad win_profile_environment, win_localappdata_environment')
         text = routine(text, 'self_capture', 'self_verifier_missing', (LOCAL / 'capture.s').read_text())
         text = text.replace('/usr/bin/gh', 'C:/Program Files/GitHub CLI/gh.exe').replace('/dev/null', 'NUL')
+    if source.name == 'self_update_metadata.s':
+        text = replace_once(text, 'smp_host_suffix: .asciz "-aarch64-windows"',
+                            'smp_host_suffix: .asciz "-aarch64-windows.exe"')
     if source.name == 'self_update.s':
         text = text.replace('/.local/bin/asm"', '/.local/bin/asm.exe"')
         begin = text.index('\nself_commit_update:')
@@ -156,6 +159,13 @@ def prepare(source: Path) -> str:
         text = text.replace('ARM_CALL arm_readlink', 'ARM_CALL win_read_running_image')
         text = text.replace('ARM_ADDR x16, self_proc_exe\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC',
             'ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC')
+        text = replace_once(text,
+            '    ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC + O_NONBLOCK',
+            '    ARM_ADDR x16, self_exe_path\n    mov x0, x16\n    ARM_IMM w10, O_CLOEXEC + O_NONBLOCK + WIN_OPEN_IMAGE')
+        text = replace_once(text,
+            '    ARM_ADDR x16, self_current_fd\n    str x9, [x16]\n    mov x0, x9',
+            '    ARM_ADDR x16, self_current_fd\n    str x9, [x16]\n    mov x0, x9\n    ARM_CALL win_image_matches\n    cmn x9, #116\n    b.eq self_changed\n    cbnz x9, win_image_binding_error\n    ARM_ADDR x16, self_current_fd\n    ldr x0, [x16]')
+        text += '\n.text\nwin_image_binding_error:\n    ARM_ADDR x0, win_image_binding_message\n    mov w1, #1\n    b self_fail\n.section .rdata,"dr"\nwin_image_binding_message: .asciz "cannot bind the running image on this Windows version; install the verified release manually"\n'
         begin = text.index('    ARM_ADDR x16, self_parent_fd\n    ldr x10, [x16]\n    mov x0, x10\n    ARM_ADDR x16, self_filesystem_stat')
         end = text.index('.Lself_local_filesystem:', begin)
         text = text[:begin] + '    ARM_ADDR x16, self_parent_fd\n    ldr x0, [x16]\n    ARM_CALL win_require_ntfs\n    cbnz x9, self_filesystem_error\n' + text[end:]
@@ -180,6 +190,7 @@ def prepare(source: Path) -> str:
         text = text.replace('native_runtime_prefix: .asciz "-Wl,-rpath,"', 'native_runtime_prefix: .asciz "-L"')
         text += '\n.section .rdata,"dr"\nwin_native_hardening: .asciz "-Wl,/dynamicbase,/nxcompat,/Brepro"\n'
     if source.name == 'platform.inc':
+        text += '\n.equ WIN_OPEN_IMAGE, 0x20000000\n'
         text = text.replace('    str x30, [sp, #-16]!\n    bl', '    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n    bl')
         text = text.replace('    ldr x30, [sp], #16', '    ldp x29, x30, [sp], #16')
     text = re.sub(r'^\.include "([^"]+)"', lambda m: prepare(ROOT / m[1]), text, flags=re.M)
