@@ -134,7 +134,15 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     call copy_string
 ''')
         text = replace_routine(text, 'registry_valid_target', 'registry_valid_kind', '''registry_valid_target:
-    jmp pub_project_valid_target
+    /* Reuse the canonical seven-target table; registry rows forbid aliases.
+     * rm_named_target returns a pointer, while this interface requires 1/0. */
+    sub rsp, 8
+    call rm_named_target
+    add rsp, 8
+    test rax, rax
+    setnz al
+    movzx eax, al
+    ret
 ''')
         text += '\n.section .rodata\nwin_registry_linux: .asciz "x86_64-linux"\n'
     if source.name == 'programs.s':
@@ -340,9 +348,11 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     ret
 .Lwin_pub_linux_container:
 ''', 1)
-        anchor = '    .quad registry_host, 4, registry_aarch64, 8, registry_riscv64, 16, registry_macos, 32'
-        assert text.count(anchor) == 1
-        text = text.replace(anchor, anchor.replace('registry_host', 'win_registry_linux'))
+        # Publication now delegates recipe/target validation to the shared
+        # manifest parser. Its canonical target table needs no host rewrite.
+        # Fail if that delegation changes instead of restoring a private table.
+        anchor = '    mov rdx, [rip + pub_project_target]\n    call rm_parse_manifest\n'
+        assert text.count(anchor) == 1, 'shared publication manifest parser'
         text = replace_routine(text, 'pub_validate_elf', 'pub_hash_payload', '''pub_validate_elf:
     push rdi
     push rsi

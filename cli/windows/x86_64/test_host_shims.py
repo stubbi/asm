@@ -13,6 +13,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -46,6 +47,16 @@ def fixture_pe(sections=((1, 0x1000, 512, 512), (1, 0x2000, 512, 1024)), *, imag
         struct.pack_into('<IIII', data, nt + 264 + i * 40 + 8, *section)
         struct.pack_into('<I', data, nt + 264 + i * 40 + 36, 0x60000020 if i == 0 else 0x40000040)
     return data
+
+
+class GeneratorIntegration(unittest.TestCase):
+    def test_generator_prepares_the_current_canonical_cli(self):
+        with tempfile.TemporaryDirectory(prefix='asm-windows-x64-generator-') as temporary:
+            destination = Path(temporary) / 'current.s'
+            result = subprocess.run([sys.executable, str(ROOT / 'tools/windows_x64.py'),
+                                     '--output', str(destination)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertGreater(destination.stat().st_size, 0)
 
 
 class HostShims(unittest.TestCase):
@@ -601,14 +612,70 @@ win_path_wide: .space 8192
             assembly += rows[0] + '\n'
         driver = '#include <stdio.h>\nextern const char* canonical_target(const char*);\nint main(int n,char**a){const char*p=canonical_target(a[1]);puts(p?p:"invalid");}\n'
         cls.build('canonical-target',assembly,driver,['canonical_target'])
-        assembly = cls.macros + block(cls.prepared,'pub_project_valid_target','pub_project_reset_entry')
+        assembly = cls.macros + block(cls.prepared,'registry_valid_target','registry_valid_kind')
+        assembly += '\n' + block(cls.prepared,'rm_named_target','rm_horizontal')
         assembly += '\n' + block(cls.prepared,'streq','strlen')
-        assembly += '\n.global registry_target_case\nregistry_target_case:\n    jmp pub_project_valid_target\n.data\n'
-        for name in ['win_registry_linux','registry_aarch64','registry_riscv64','registry_macos','pub_project_x86_macos','pub_project_x86_windows','pub_project_arm_windows']:
+        assembly += '''
+.global registry_target_case
+registry_target_case:
+    jmp registry_valid_target
+.global named_target_case
+named_target_case:
+    sub rsp,8
+    call rm_named_target
+    add rsp,8
+    test rax,rax
+    jz 1f
+    mov eax,edx
+1:  ret
+.data
+'''
+        for name in ['target_x86','target_arm','target_riscv','target_macos','target_macos_x86','target_windows_x86','target_windows_arm']:
             assembly += re.findall(r'^' + name + r': .+$',cls.prepared,re.M)[0] + '\n'
-        assembly += cls.prepared[cls.prepared.index('pub_project_targets:\n'):cls.prepared.index('pub_readme_names:')]
-        driver = '#include <stdio.h>\nextern long registry_target_case(const char*);\nint main(int n,char**a){printf("%ld\\n",registry_target_case(a[1]));}\n'
-        cls.build('registry-target',assembly,driver,['registry_target_case'])
+        assembly += cls.prepared[cls.prepared.index('rm_target_names:\n'):cls.prepared.index('rm_empty:')]
+        driver = '#include <stdio.h>\nextern long registry_target_case(const char*),named_target_case(const char*);\nint main(int n,char**a){printf("%ld %ld\\n",registry_target_case(a[1]),named_target_case(a[1]));}\n'
+        cls.build('registry-target',assembly,driver,['registry_target_case','named_target_case'])
+
+        # Exercise the real publication dispatch. PE/ELF readers are separate
+        # fixtures; these bounded stubs expose which reader can receive input.
+        start = cls.prepared.index('pub_validate_elf:\n')
+        end = cls.prepared.index('.Lwin_pub_linux_container:\n',start)
+        assembly = cls.macros + cls.prepared[start:end] + '''
+.Lwin_pub_linux_container:
+    inc dword ptr [rip + elf_calls]
+    xor eax,eax
+    ret
+.global publication_target_case
+publication_target_case:
+    mov [rip + pe_valid],esi
+    mov esi,4096
+    jmp pub_validate_elf
+validate_host_elf:
+    inc dword ptr [rip + pe_calls]
+    mov eax,[rip + pe_valid]
+    ret
+.global publication_counts
+publication_counts:
+    mov eax,[rip + pe_calls]
+    imul eax,eax,10
+    add eax,[rip + elf_calls]
+    ret
+'''
+        assembly += block(cls.prepared,'cross_tools','cross_build_project')
+        assembly += '''
+.global foreign_build_case
+foreign_build_case:
+    jmp cross_tools
+die:
+    mov eax,esi
+    ret
+'''
+        assembly += block(cls.prepared,'streq','strlen') + '\n.data\n'
+        for name in ['registry_host','win_registry_linux','registry_aarch64','registry_riscv64','registry_macos','cross_unsupported_error']:
+            assembly += re.findall(r'^' + name + r': .+$',cls.prepared,re.M)[0] + '\n'
+        assembly += 'registry_temp_payload: .asciz "candidate.exe"\nregistry_expected_size: .quad 4096\npe_calls: .long 0\nelf_calls: .long 0\npe_valid: .long 0\n'
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern int publication_target_case(const char*,int),publication_counts(void),foreign_build_case(void);\nint main(int n,char**a){int r=publication_target_case(a[1],atoi(a[2]));printf("%d %d %d\\n",r,publication_counts(),foreign_build_case());}\n'
+        cls.build('publication-target',assembly,driver,['publication_target_case','publication_counts','foreign_build_case'])
 
 
     def test_windows_manifest_source_rejects_streams_devices_and_aliases(self):
@@ -625,10 +692,24 @@ win_path_wide: .space 8192
             self.assertEqual(self.run_fixture('canonical-target',target).stdout.strip(),target)
         self.assertEqual(self.run_fixture('canonical-target','x86_64-pc-windows-msvc').stdout.strip(),'x86_64-windows')
         self.assertEqual(self.run_fixture('canonical-target','made-up').stdout.strip(),'invalid')
-        for target in ['x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos','x86_64-macos','x86_64-windows','aarch64-windows']:
-            self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'1')
-        for target in ['made-up','x86_64-pc-windows-msvc']:
-            self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'0')
+        for target, mask in [('x86_64-linux',4),('aarch64-linux',8),('riscv64-linux',16),('aarch64-macos',32),('x86_64-macos',64),('x86_64-windows',128),('aarch64-windows',256)]:
+            result = self.run_fixture('registry-target',target)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(result.stdout.strip(),f'1 {mask}')
+        for target in ['','made-up','x86_64-pc-windows-msvc','x86_64-windows-extra','X86_64-WINDOWS','target.x86_64-windows','riscv64-windows']:
+            result = self.run_fixture('registry-target',target)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(result.stdout.strip(),'0 0')
+
+    def test_publication_keeps_target_specific_readers_and_foreign_build_refusal(self):
+        cases = [('x86_64-windows',1,'0 10 2'),('x86_64-windows',0,'1 10 2')]
+        cases += [(target,1,'0 1 2') for target in ['x86_64-linux','aarch64-linux','riscv64-linux']]
+        cases += [(target,1,'1 0 2') for target in ['aarch64-windows','aarch64-macos','x86_64-macos','made-up','x86_64-pc-windows-msvc']]
+        for target, pe_valid, expected in cases:
+            with self.subTest(target=target,pe_valid=pe_valid):
+                result = self.run_fixture('publication-target',target,str(pe_valid))
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.strip(),expected)
 
 
     @classmethod
