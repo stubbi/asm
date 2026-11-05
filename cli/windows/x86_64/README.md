@@ -2,9 +2,10 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Five native Windows runs executed the CLI and retained failed runtime results.
-The fifth run passed 40 of 45 runtime methods.
-Archive workflows and successful updater replacement still failed; the displaced-image fixture also reported an error.
+Six native Windows runs executed the CLI and retained failed runtime results.
+The sixth run passed 44 of 45 runtime methods.
+Archive lifecycle, inventory, device aliases, and image displacement now pass their native cases.
+Successful updater replacement remains the one failing method.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -137,7 +138,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, thirty focused checks passed on macOS.
+On 2026-11-05, thirty-two focused checks passed on macOS.
 The assembly fixtures execute through Rosetta with deterministic API shims.
 Other checks inspect produced COFF layouts, Clang behavior, and diagnostic failures.
 They do not establish Windows API behavior or native filesystem effects.
@@ -267,7 +268,36 @@ Its test transport and verifier enforce arguments but validate no real signature
 It records raw rename, DACL, and flush API results alongside each commit syscall result.
 The logger preserves the API return value and thread error value across trace writes.
 A deterministic error-clobber case failed before that preservation change and now passes.
-Successful replacement still needs native confirmation; no replacement fallback has been added.
+The [sixth native run](https://github.com/stubbi/asm/actions/runs/42033134716) reached all three provenance bindings.
+Opening, protecting, flushing, and closing the candidate succeeded.
+The final `NtSetInformationFile` returned `C0000022` (`STATUS_ACCESS_DENIED`).
+The adapter returned an error and preserved the prior executable.
+Ordinary installed-program replacement passed in the same run.
+
+A source-derived constructor check records source delete access, the held destination directory, flags three, and information class 65.
+It also records the exact `asm.exe` name, fourteen-byte name length, thirty-four-byte request, and descriptor cleanup.
+These host observations establish the constructed request, not Windows rename compatibility.
+Microsoft documents an executing-file restriction alongside the POSIX open-handle flags.
+That restriction is a hypothesis for the remaining failure, not a measured kernel diagnosis.
+No backup swap, unmap finalizer, or replacement fallback has been added to production.
+
+`rename_probe.py` compares identical owned ordinary and suspended-image targets.
+It queries actual granted access, attributes, file identities, final paths, digests, and native completion status.
+The child remains suspended and is never resumed.
+A private kill-on-close job and bounded termination waits retain process ownership.
+Only disposable files are mutated; the supplied CLI is read-only input.
+An invalid probe remains an error and does not establish target support.
+
+Run the native comparison separately:
+
+```text
+python cli/windows/x86_64/rename_probe.py --binary build/asm-x86_64-windows.exe --evidence build/windows-evidence/x64-rename-comparison.json
+```
+
+The evidence destination must not exist.
+The existing native diagnostic driver also collects this comparison before its updater case.
+Native comparison and isolated unmap experiments remain pending.
+
 
 NTFS POSIX rename replacement of the running CLI still needs a native test.
 If Windows refuses that operation, a separately reviewed completion helper is required.

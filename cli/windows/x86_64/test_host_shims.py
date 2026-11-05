@@ -82,6 +82,7 @@ class HostShims(unittest.TestCase):
         cls.build_arc_stage_protection()
         cls.build_device_names()
         cls.build_diagnostic_last_error()
+        cls.build_rename_constructor()
 
     @classmethod
     def tearDownClass(cls):
@@ -629,6 +630,90 @@ win_path_wide: .space 8192
         for target in ['made-up','x86_64-pc-windows-msvc']:
             self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'0')
 
+
+    @classmethod
+    def build_rename_constructor(cls):
+        assembly = cls.macros + block(cls.platform_source,'win_rename','win_open_parent')
+        assembly += '\n.text\n' + block(cls.platform_source,'win_component_safe','win_prepare_verifier_environment')
+        assembly += r"""
+.text
+.global rename_request
+rename_request:
+    WFRAME
+    mov [rip + test_rename_status], edi
+    mov r8, rsi
+    mov edi, 11
+    lea rsi, [rip + test_source]
+    mov edx, 9
+    lea r10, [rip + test_destination]
+    call win_rename
+    WLEAVE
+.global rename_observation
+rename_observation:
+    lea rax, [rip + test_observation]
+    ret
+win_open:
+    mov [rip + test_observation], rdx
+    mov eax, 3
+    ret
+win_handle:
+    mov eax, 101
+    cmp edi, 3
+    je 1f
+    mov eax, 202
+1:  ret
+win_open_parent:
+    mov [rip + test_observation + 64], rdi
+    mov eax, 4
+    ret
+win_wide:
+    xor eax, eax
+1:  movzx ecx, byte ptr [rdi + rax]
+    mov [rsi + rax*2], cx
+    inc eax
+    test ecx, ecx
+    jnz 1b
+    ret
+NtSetInformationFile:
+    mov [rip + test_observation + 8], rcx
+    mov rax, [r8 + 8]
+    mov [rip + test_observation + 16], rax
+    mov eax, [r8]
+    mov [rip + test_observation + 24], rax
+    mov eax, [r8 + 16]
+    mov [rip + test_observation + 32], rax
+    mov [rip + test_observation + 40], r9
+    mov rax, [rsp + 40]
+    mov [rip + test_observation + 48], rax
+    mov eax, [rip + test_rename_status]
+    ret
+win_nt_error:
+    mov rax, -13
+    ret
+win_syscall:
+    inc qword ptr [rip + test_observation + 56]
+    xor eax, eax
+    ret
+.data
+.p2align 3
+test_observation: .space 72
+test_rename_status: .long 0
+test_source: .asciz "payload"
+test_destination: .asciz "asm.exe"
+.p2align 3
+win_parent_basename: .quad test_destination
+win_rename_info: .space 8216
+"""
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long rename_request(long,long);\nextern const unsigned long long* rename_observation(void);\nint main(int n,char**a){long r=rename_request(strtoul(a[1],0,0),atoi(a[2]));const unsigned long long*p=rename_observation();printf("%ld",r);for(int i=0;i<9;i++)printf(" %llu",p[i]);puts("");}\n'
+        cls.build('rename-constructor',assembly,driver,['rename_request','rename_observation'])
+
+    def test_actual_rename_constructor_uses_one_held_root_and_required_flags(self):
+        for status,result in [(0,0),(0xc0000022,-13)]:
+            for no_replace,flags in [(0,3),(1,2)]:
+                with self.subTest(status=status,no_replace=no_replace):
+                    r = self.run_fixture('rename-constructor',str(status),str(no_replace))
+                    self.assertEqual(r.returncode,0,r.stderr)
+                    self.assertEqual(r.stdout.strip(),f'{result} 268435456 101 202 {flags} 14 34 65 2 9')
 
     @classmethod
     def build_diagnostic_last_error(cls):
@@ -1350,6 +1435,22 @@ class DiagnosticEvidence(unittest.TestCase):
                 artifact,index,raw = self.module.source_fixture(work,project)
             self.assertNotIn(b'\r',index.read_bytes())
             self.assertEqual(index.read_bytes().splitlines()[0],b'# asm-registry-v1')
+
+    def test_native_rename_probe_uses_the_exact_windows_abi_layout(self):
+        import ctypes
+        spec = importlib.util.spec_from_file_location('native_rename_probe',LOCAL / 'rename_probe.py')
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        expected = {'UnicodeString':16,'ObjectAttributes':48,'IoStatus':16,
+                    'FileInformation':52,'Startup':104,'ProcessInformation':24}
+        for name,size in expected.items():
+            self.assertEqual(ctypes.sizeof(getattr(probe,name)),size)
+        data,length = probe.rename_buffer(0x1234,'asm.exe')
+        self.assertEqual(length,34)
+        self.assertEqual(probe.U32.from_buffer(data,0).value,3)
+        self.assertEqual(probe.PTR.from_buffer(data,8).value,0x1234)
+        self.assertEqual(probe.U32.from_buffer(data,16).value,14)
+        self.assertEqual(data.raw[20:36],'asm.exe'.encode('utf-16-le')+b'\0\0')
 
     def test_os_error_and_later_exception_preserve_collected_rows(self):
         report = {'commands': []}

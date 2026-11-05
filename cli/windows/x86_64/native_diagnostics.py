@@ -391,6 +391,13 @@ def main():
                     report['security'] = api_security([
                         *reversed(installation.parents), installation, new_project,
                         new_project / 'asm.toml', new_project / 'src/main.s'])
+                    report['rename_probe'] = {}
+                    spec = importlib.util.spec_from_file_location('owned_rename_probe', LOCAL / 'rename_probe.py')
+                    probe = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(probe)
+                    probe.run(binary, set_fixture_user_owner, api_security, report['rename_probe'])
+                    if any(row.get('stage') != 'complete' or row.get('cleanup_error') for row in report['rename_probe']['cases']):
+                        report['collection_failed'] = True
                     update_probe(report, binary)
     result = collect_evidence(args.evidence, report, collect)
     print('Adapter diagnostic evidence:', args.evidence)
