@@ -55,6 +55,10 @@ make
 ./build/asm-doom
 ```
 
+The executable and build evidence use separate atomic renames.
+An interruption or concurrent path change can leave a mismatched pair.
+Failed staging or path-type checks preserve both previous files.
+
 The game shows a controls menu over the first Freedoom map.
 Press Enter to resume play.
 Use Escape to open the menu and release the mouse.

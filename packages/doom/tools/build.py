@@ -16,6 +16,12 @@ from build_sdl import build, build_environment
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
+def check_destination(path, description):
+    """Refuse an existing link or non-file; this check does not prevent races."""
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise SystemExit(f'The build {description} is not a regular file path. Choose another output path.')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=pathlib.Path, default=ROOT / 'build/asm-doom')
@@ -24,8 +30,11 @@ def main():
     if platform.system() != 'Darwin' or platform.machine() != 'arm64':
         parser.error('This build requires Apple Silicon macOS 15 or later.')
     args.output = args.output.absolute()
-    if args.output.is_symlink() or (args.output.exists() and not args.output.is_file()):
-        raise SystemExit('The build output is not a regular file path. Choose another output path.')
+    evidence_output = args.output.parent / 'build-evidence.json'
+    if args.output == evidence_output:
+        raise SystemExit('The executable and build evidence need different output paths.')
+    check_destination(args.output, 'output')
+    check_destination(evidence_output, 'evidence output')
     data = ROOT / 'assets/freedoom1.wad.zlib'
     metadata = json.loads((ROOT / 'assets/freedoom.json').read_text())
     compressed = data.read_bytes()
@@ -100,11 +109,21 @@ def main():
                     'notices': {p: hashlib.sha256(content).hexdigest() for p, content in notice_bytes.items()},
                     'freedoom': metadata, 'sdl': dependency,
                     'engine_origin': 'handwritten AArch64 assembly; no generated engine assembly or C engine objects'}
+        staged_evidence = stage / 'build-evidence.json'
+        staged_evidence.write_text(json.dumps(evidence, indent=2) + '\n')
         if args.release and (subprocess.check_output([*git, 'rev-parse', 'HEAD'], cwd=repository, text=True, env=git_environment).strip() != commit
                              or subprocess.check_output([*git, 'status', '--porcelain'], cwd=repository, text=True, env=git_environment)):
             raise SystemExit('The Git checkout changed during the release build.')
+        check_destination(args.output, 'output')
+        check_destination(evidence_output, 'evidence output')
+        # Each rename is atomic. The pair is sequential, with no unsafe rollback.
+        # A failure after the first rename can leave new bytes with old evidence.
         os.replace(destination, args.output)
-        (args.output.parent / 'build-evidence.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        try:
+            os.replace(staged_evidence, evidence_output)
+        except OSError as error:
+            raise SystemExit(f'The executable was replaced, but its build evidence was not published: {error}. '
+                             'Rebuild both output files.') from error
 
 
 if __name__ == '__main__':

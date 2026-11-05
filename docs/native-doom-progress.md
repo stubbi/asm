@@ -22,6 +22,7 @@ No public game release or catalog record exists at this checkpoint.
 - The run contained 270 native CLI cases, 18 reference-package cases, 97 registry cases, 78 release cases, and 20 site cases.
 - Four reference-package cases and 12 release cases reported their documented host or tool skips.
 - The integrated game package passed 119 cases after the notice and pickup/lift corrections.
+- The final build-publication correction passed the expanded 125-case package gate.
 - Its checkpoint executable SHA-256 is `8640aa2d5bd8ae93962f2431aa3ea284021d71fdff5981a69473904c9b396080`.
 - Resource cases cover all 36 bundled maps, every wall texture, malformed data, full COLORMAP bounds, and opaque palette 255.
 - Campaign movement cases cover 288 fresh directions and 1,152 forward ticks across all 36 maps.
@@ -54,6 +55,9 @@ Complete campaign traversal, vanilla demos, and arbitrary external WADs remain u
 - Repeated lift activation lost the original return height.
 - Pickups ignored the player's vertical reach.
 - Inherited compiler variables could change the selected SDK or compiler behavior.
+- The builder replaced an earlier executable before a predictable evidence-write failure.
+- Staged evidence and destination checks now preserve earlier files for those failure paths.
+- Separate output renames still permit a mismatched pair after interruption or late finalization failure.
 
 Regression checks and current source address these findings as implementation progresses.
 The final evidence must state any remaining gaps explicitly.
