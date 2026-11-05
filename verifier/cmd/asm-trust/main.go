@@ -113,14 +113,7 @@ func readJSON(path string, limit int64) ([]byte, error) {
 }
 
 func signer(path string) (signature.Signer, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if info.Mode().Perm()&0077 != 0 {
-		return nil, errors.New("private key permissions must be 0600 or stricter")
-	}
-	data, err := read(path, 16384)
+	data, err := readPrivateKey(path)
 	if err != nil {
 		return nil, err
 	}
