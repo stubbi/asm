@@ -1,0 +1,70 @@
+name: Observe native Windows bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-native-probes]
+    paths:
+      - '.github/workflows/windows-bootstrap-probes.yml'
+      - 'tools/windows_bootstrap_smoke.py'
+      - 'tests/windows/test_bootstrap_smoke_driver.py'
+      - 'tools/windows_bootstrap.py'
+      - 'tools/windows-install.ps1.in'
+      - 'tools/windows_layout.py'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Observe ${{ matrix.target }} bootstrap
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-windows
+            machine: x64
+            runner: windows-2025
+          - target: aarch64-windows
+            machine: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Locate the installed Windows SDK
+        env:
+          ASM_MACHINE: ${{ matrix.machine }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10\Lib'
+          $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory |
+            Where-Object { Test-Path -LiteralPath "$($_.FullName)\um\$env:ASM_MACHINE\kernel32.lib" } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (!$sdk) { throw 'The matching Windows SDK is absent.' }
+          "LIB=$($sdk.FullName)\um\$env:ASM_MACHINE" >> $env:GITHUB_ENV
+      - name: Check the probe refusal gates
+        run: |
+          python -m unittest discover -s tests/windows -p test_bootstrap_smoke_driver.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Observe source installation without executing the candidate
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_bootstrap_smoke.py --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --output build/bootstrap-smoke
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain every observed result and available byte
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-bootstrap-${{ matrix.target }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: build/bootstrap-smoke/
+          if-no-files-found: error
+          retention-days: 14
