@@ -31,7 +31,7 @@ def main():
         parser.error('This build requires Apple Silicon macOS 15 or later.')
     args.output = args.output.absolute()
     evidence_output = args.output.parent / 'build-evidence.json'
-    if args.output == evidence_output:
+    if args.output.name.casefold() == evidence_output.name.casefold():
         raise SystemExit('The executable and build evidence need different output paths.')
     check_destination(args.output, 'output')
     check_destination(evidence_output, 'evidence output')

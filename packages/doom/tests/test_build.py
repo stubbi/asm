@@ -42,7 +42,7 @@ def _cached_sdl(module):
 class BuildTests(unittest.TestCase):
     def test_evidence_paths_are_rejected_before_build_tools(self):
         module = _build_module('doom_evidence_destination_test')
-        for kind in ('directory', 'symlink', 'collision'):
+        for kind in ('directory', 'symlink', 'collision', 'uppercase_collision'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
                 directory = pathlib.Path(temporary)
                 destination = directory / 'asm-doom'
@@ -59,6 +59,8 @@ class BuildTests(unittest.TestCase):
                     evidence.write_bytes(b'previous evidence')
                 names = sorted(path.name for path in directory.iterdir())
                 output = evidence if kind == 'collision' else destination
+                if kind == 'uppercase_collision':
+                    output = directory / 'BUILD-EVIDENCE.JSON'
                 with patch.object(module, 'build', side_effect=AssertionError('SDL ran before evidence preflight')), \
                         patch.object(module.subprocess, 'run', side_effect=AssertionError('A tool ran before evidence preflight')), \
                         patch.object(sys, 'argv', ['build.py', '--output', str(output)]), \
