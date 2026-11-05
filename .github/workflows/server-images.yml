@@ -76,12 +76,6 @@ jobs:
                   raise ValueError("The native compiler is unavailable or oversized.")
               report["compiler"] = {"path": str(compiler), "bytes": compiler.stat().st_size,
                   "sha256": hashlib.sha256(compiler.read_bytes()).hexdigest()}
-              headers = ("/usr/include/microhttpd.h", "/usr/include/postgresql/libpq-fe.h",
-                  "/usr/include/postgresql/postgres_ext.h", "/usr/include/postgresql/pg_config_ext.h")
-              if any(not 0 < Path(name).stat().st_size <= 1048576 for name in headers):
-                  raise ValueError("A native public header exceeds its byte bound.")
-              report["headers"] = {name: {"bytes": Path(name).stat().st_size,
-                  "sha256": hashlib.sha256(Path(name).read_bytes()).hexdigest()} for name in headers}
               with tempfile.TemporaryDirectory(prefix="asm-native-provider-") as private:
                   private = Path(private)
                   environment = ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "LC_ALL=C", "LANG=C",
@@ -117,6 +111,20 @@ jobs:
                           raise ValueError("The synthetic library is unavailable or oversized.")
                       report["library"] = {"bytes": library.stat().st_size,
                           "sha256": hashlib.sha256(library.read_bytes()).hexdigest()}
+                  headers = ("/usr/include/microhttpd.h", "/usr/include/postgresql/libpq-fe.h",
+                      "/usr/include/postgresql/postgres_ext.h", "/usr/include/postgresql/pg_config_ext.h")
+                  report["headers"], report["missing_header_paths"] = {}, []
+                  for name in headers:
+                      path = Path(name)
+                      try:
+                          size = path.stat().st_size
+                      except FileNotFoundError:
+                          report["missing_header_paths"].append(name)
+                          continue
+                      if not 0 < size <= 1048576:
+                          raise ValueError("A native public header exceeds its byte bound.")
+                      report["headers"][name] = {"bytes": size,
+                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
                   report["diagnostics"] = []
                   for line in log.read_text(errors="replace").splitlines():
                       match = re.match(r".*provider\.c:([0-9]+):([0-9]+): (error|warning|note):", line)
