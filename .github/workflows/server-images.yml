@@ -146,7 +146,7 @@ jobs:
           test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB" \
-            gcc-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
+            gcc-riscv64-linux-gnu libc6-dev-riscv64-cross libmicrohttpd-dev libpq-dev
           printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
           if ! test -e /proc/sys/fs/binfmt_misc/register; then
             sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
@@ -162,9 +162,21 @@ jobs:
             /usr/bin/qemu-riscv64-static --version
             dpkg-query --show qemu-user-static systemd
             dpkg-query --show gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libmicrohttpd-dev libpq-dev
+            dpkg-query --show libc6-dev-riscv64-cross libc6-riscv64-cross
             /usr/bin/riscv64-linux-gnu-gcc --version
             sha256sum /usr/bin/riscv64-linux-gnu-gcc
             sha256sum /usr/bin/qemu-riscv64-static
+            sha256sum /usr/riscv64-linux-gnu/include/dlfcn.h \
+              /usr/riscv64-linux-gnu/include/bits/wordsize.h \
+              /usr/riscv64-linux-gnu/include/pthread.h /usr/riscv64-linux-gnu/include/stdint.h \
+              /usr/riscv64-linux-gnu/include/time.h /usr/riscv64-linux-gnu/include/errno.h
+            for ASM_CRT_FILE in Scrt1.o crti.o crtn.o crtbeginS.o crtendS.o; do
+              ASM_CRT_PATH=$(/usr/bin/riscv64-linux-gnu-gcc "-print-file-name=$ASM_CRT_FILE")
+              test "$ASM_CRT_PATH" != "$ASM_CRT_FILE"
+              test -f "$ASM_CRT_PATH"
+              readlink -f "$ASM_CRT_PATH"
+              sha256sum -- "$ASM_CRT_PATH"
+            done
           } > "$ASM_EVIDENCE/environment.txt"
       - name: Check trace forwarding, source capture, and bounded build tooling
         timeout-minutes: 1
