@@ -139,6 +139,46 @@ class NativePublishTests(unittest.TestCase):
                 self.cli(code=1)
                 self.assertFalse(self.output.exists())
 
+    def test_native_library_manifest_and_repeated_artifacts_clear_optional_fields(self):
+        files = source_files()
+        fields = b'link = "c"\nlibraries = "microhttpd pq pthread"\ncheck = "abi-check.c"\n'
+        files["asm.toml"] = (files["asm.toml"][0] + fields, 0o644)
+        files["abi-check.c"] = (b'_Static_assert(sizeof(void *) == 8, "LP64");\n', 0o644)
+        self.artifact.write_bytes(registry.make_archive(files))
+        standalone = self.work / "standalone.tar.gz"
+        standalone.write_bytes(registry.make_archive(source_files(target="aarch64-linux")))
+        artifacts = [("x86_64-linux", "source", self.artifact, self.url),
+                     ("aarch64-linux", "source", standalone, self.url.replace("math-0.1.0", "standalone"))]
+        for ordered in (artifacts, list(reversed(artifacts))):
+            with self.subTest(targets=[item[0] for item in ordered]):
+                self.cli(self.arguments(artifacts=ordered))
+                record = registry.validate_manifest(json.loads(self.output.read_bytes()))
+                for original, artifact in zip(ordered, record["artifacts"]):
+                    registry.validate_artifact(original[2].read_bytes(), record, artifact)
+                self.output.unlink()
+
+    def test_native_library_fields_reject_invalid_values_and_missing_checker(self):
+        invalid = ['link = ""', 'link = "static"', 'libraries = "pq"', 'check = "abi-check.c"',
+                   'link = "c"\nlibraries = ""', 'link = "c"\ncheck = ""',
+                   'link = "c"\nlibraries = "pq  pthread"', 'link = "c"\nlibraries = "-lpq"',
+                   'link = "c"\nlibraries = "PQ"', 'link = "c"\nlibraries = "pq/pthread"',
+                   'link = "c"\nlibraries = " pq"', 'link = "c"\nlibraries = "pq "',
+                   'link = "c"\nlibraries = "a b c d e f g h i"',
+                   'link = "c"\nlibraries = "' + "a" * 32 + '"',
+                   'link = "c"\nlibraries = "' + "a" * 256 + '"',
+                   'link = "c"\ncheck = "../abi-check.c"', 'link = "c"\ncheck = "abi-check.s"',
+                   'link = "c"\nlink = "c"', 'link = "c"\nlibraries = "pq"\nlibraries = "pq"',
+                   'link = "c"\ncheck = "abi-check.c"\ncheck = "abi-check.c"',
+                   'link = "c"\nunknown = "pq"',
+                   'link = "c"\ncheck = "abi-check.c"']
+        for fields in invalid:
+            with self.subTest(fields=fields):
+                files = source_files()
+                files["asm.toml"] = (files["asm.toml"][0] + (fields + "\n").encode(), 0o644)
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+
     def test_duplicate_or_ambiguous_manifest_fields_fail(self):
         candidates = [b'[package]\nname="math"\nname="math"\nversion="0.1.0"\n[build]\nsource="src/math.s"\ntarget="x86_64-linux"\n',
                       b'[package]\nname="math"\nversion="0.1.0"\n[build]\nsource="../outside.s"\ntarget="x86_64-linux"\n',

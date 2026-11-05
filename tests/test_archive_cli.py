@@ -14,7 +14,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import IS_MACOS, IS_ARM64, ASM_FLAGS
+from host import IS_MACOS, IS_ARM64, IS_RISCV64, CLI_ASM_FLAGS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +100,7 @@ class NativeArchiveTests(unittest.TestCase):
         cls.build = tempfile.TemporaryDirectory(prefix="archive-harness-", dir=ROOT / "build")
         directory = Path(cls.build.name)
         (directory / "harness.s").write_text(
+            (ROOT / "tests/riscv64/archive_harness.s").read_text() if IS_RISCV64 else
             (ROOT / "tests/aarch64/archive_harness.s").read_text() if IS_ARM64 else HARNESS)
         if IS_MACOS:
             import sys
@@ -117,10 +118,10 @@ class NativeArchiveTests(unittest.TestCase):
                             "-o", str(cls.binary), str(directory / "harness.s")], check=True)
             return
         sources = [(directory / "harness.s", directory / "harness.o")]
-        if not IS_ARM64:
+        if not (IS_ARM64 or IS_RISCV64):
             sources.append((ROOT / "cli/archive.s", directory / "archive.o"))
         for source, output in sources:
-            subprocess.run(["as", *ASM_FLAGS, "--fatal-warnings", "-o", str(output), str(source)],
+            subprocess.run(["as", *CLI_ASM_FLAGS, "--fatal-warnings", "-o", str(output), str(source)],
                            cwd=ROOT, check=True)
         cls.binary = directory / "archive-test"
         subprocess.run(["ld", "-z", "noexecstack", "--build-id=none", "-o", str(cls.binary),

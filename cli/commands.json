@@ -35,6 +35,7 @@
     "add",
     "update",
     "remove",
+    "resolve",
     "lock",
     "sync",
     "publish",

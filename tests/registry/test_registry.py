@@ -1,6 +1,7 @@
 """Registry contract tests. No network access is required."""
 
 import copy
+import contextlib
 import gzip
 import hashlib
 import importlib.util
@@ -203,6 +204,164 @@ class RegistryTests(unittest.TestCase):
             files = {path: data for path, (data, _) in project_files().items() if path != removed}
             with self.assertRaises(registry.RegistryError):
                 registry.validate_project(files, "stubbi/hello", "0.1.0", "x86_64-linux")
+
+    def resolution_files(self, metadata):
+        files = {path: data for path, (data, _) in project_files().items()}
+        files["asm.toml"] += metadata.encode()
+        return files
+
+    def check_resolution(self, metadata):
+        registry.validate_project(self.resolution_files(metadata), "stubbi/hello", "0.1.0", "x86_64-linux")
+
+    def test_resolution_metadata_accepts_ranges_and_feature_edges(self):
+        self.check_resolution('''
+[resolution]
+schema = "1"
+[dependencies]
+"stubbi/core" = ">=1.2.0, <2.0.0"
+"stubbi/optional" = { version = "^0.2.3", optional = true, default-features = false, features = ["base"] }
+[features]
+default = ["fast"]
+fast = ["dep:stubbi/optional", "stubbi/core/simd"]
+empty = []
+''')
+        for requirement in ("*", "1.2.3", "^1.2.3", "~1.2.3", "=1.2.3", ">1.2.3", "<= 2.0.0",
+                            ">=0.0.0, <=2147483647.2147483647.2147483647"):
+            with self.subTest(requirement=requirement):
+                self.check_resolution('[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = '
+                                      + json.dumps(requirement) + '\n')
+
+    def test_resolution_requires_its_explicit_supported_schema(self):
+        for metadata in ('[dependencies]\n"stubbi/core" = "1.2.3"\n', '[features]\nfast = []\n',
+                         '[resolution]\nschema = "2"\n', '[resolution]\nschema = 1\n',
+                         '[resolution]\nextra = "1"\n', '[resolution]\nschema = "1"\nextra = true\n'):
+            with self.subTest(metadata=metadata), self.assertRaises(registry.RegistryError):
+                self.check_resolution(metadata)
+
+    def test_resolution_rejects_unsupported_or_unbounded_ranges(self):
+        for requirement in ("", "1.2", "01.2.3", "1.2.3-beta", "1.2.3+build", "1.x", "1.2.3 || 2.0.0",
+                            "1.2.2147483648", "^1.2.3, <2.0.0", "1.2.3, 2.0.0", ">=1.0.0,", " >=1.0.0",
+                            ",".join([">=1.0.0"] * 9), ">=" + "1" * 126):
+            with self.subTest(requirement=requirement), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = '
+                                      + json.dumps(requirement) + '\n')
+
+    def test_resolution_rejects_unknown_keys_and_invalid_dependency_shapes(self):
+        for entry in ('"stubbi/core" = { optional = true }', '"stubbi/core" = { version = "1.2.3", extra = true }',
+                      '"stubbi/core" = { version = "1.2.3", optional = "true" }',
+                      '"stubbi/core" = { version = "1.2.3", default-features = 1 }',
+                      '"stubbi/core" = { version = "1.2.3", features = "simd" }', '"stubbi/core" = []',
+                      '"stubbi/core" = { version = "1.2.3", version = "2.0.0" }',
+                      '"stubbi/core" = "1.2.3"\n"stubbi/core" = "2.0.0"',
+                      '"Stubbi/core" = "1.2.3"', '"stubbi/a--b" = "1.2.3"'):
+            with self.subTest(entry=entry), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n[dependencies]\n' + entry + '\n')
+        for metadata in ('[unknown]\nvalue = "x"\n', '[package.extra]\nvalue = "x"\n',
+                         '[build]\nsource = "src/main.s"\ntarget = "x86_64-linux"\nextra = "x"\n'):
+            with self.subTest(metadata=metadata), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n' + metadata)
+
+    def test_resolution_rejects_invalid_or_duplicate_feature_names(self):
+        for name in ("Fast", "-fast", "1fast", "a" * 33, "fast.name", "fast/name"):
+            with self.subTest(name=name), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n[features]\n' + json.dumps(name) + ' = []\n')
+        for entry in ('[features]\nfast = ["fast", "fast"]\n',
+                      '[dependencies]\n"stubbi/core" = { version = "1.2.3", features = ["simd", "simd"] }\n',
+                      '[dependencies]\n"stubbi/core" = { version = "1.2.3", features = ["SIMD"] }\n'):
+            with self.subTest(entry=entry), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n' + entry)
+
+    def test_resolution_rejects_missing_feature_references_and_local_cycles(self):
+        for entry in ('[features]\nfast = ["missing"]\n', '[features]\nfast = ["fast"]\n',
+                      '[features]\nfirst = ["second"]\nsecond = ["first"]\n',
+                      '[features]\nfast = ["dep:stubbi/missing"]\n',
+                      '[features]\nfast = ["stubbi/missing/simd"]\n',
+                      '[features]\nfast = ["dep:stubbi/core"]\n',
+                      '[features]\nfast = ["stubbi/core/SIMD"]\n'):
+            with self.subTest(entry=entry), self.assertRaises(registry.RegistryError):
+                self.check_resolution('[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = "1.2.3"\n' + entry)
+
+    def test_resolution_limits_manifest_dependency_and_feature_sizes(self):
+        schema = '[resolution]\nschema = "1"\n'
+        self.check_resolution(schema + '[features]\n' + ''.join(f'f{i} = []\n' for i in range(64)))
+        self.check_resolution(schema + '[dependencies]\n' + ''.join(f'"stubbi/p{i}" = "*"\n' for i in range(64)))
+        external_features = lambda count: ','.join('"stubbi/core/f' + str(i) + '"' for i in range(count))
+        feature_prefix = schema + '[dependencies]\n"stubbi/core" = "*"\n[features]\nfast = ['
+        self.check_resolution(feature_prefix + external_features(64) + ']\n')
+        files = self.resolution_files(schema)
+        files["asm.toml"] += b"#" + b"x" * (8190 - len(files["asm.toml"]) - 1)
+        registry.validate_project(files, "stubbi/hello", "0.1.0", "x86_64-linux")
+        files["asm.toml"] += b"x"
+        with self.assertRaises(registry.RegistryError):
+            registry.validate_project(files, "stubbi/hello", "0.1.0", "x86_64-linux")
+        for metadata in (schema + '[features]\n' + ''.join(f'f{i} = []\n' for i in range(65)),
+                         schema + '[dependencies]\n' + ''.join(f'"stubbi/p{i}" = "*"\n' for i in range(65)),
+                         feature_prefix + external_features(65) + ']\n',
+                         schema + '[dependencies]\n"stubbi/core" = { version = "*", features = ['
+                         + ','.join('"f' + str(i) + '"' for i in range(65)) + '] }\n',
+                         schema + '#' + 'x' * 8190 + '\n'):
+            with self.subTest(metadata=metadata[:120]), self.assertRaises(registry.RegistryError):
+                self.check_resolution(metadata)
+
+    def test_resolution_uses_the_native_single_line_ascii_toml_subset(self):
+        for metadata in ('[resolution]\nschema = \'1\'\n', '[resolution]\nschema = """1"""\n',
+                         '[resolution]\nschema = "\\u0031"\n', '[resolution]\nschema = "1"\n[features]\nfast = [\n]\n',
+                         '[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = {\nversion = "1.2.3"\n}\n',
+                         '[resolution]\nschema = "1"\n[dependencies."stubbi/core"]\nversion = "1.2.3"\n',
+                         '[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = { version = "1.2.3", features = ["s\\u0069md"] }\n',
+                         '[resolution]\nschema = "1"\n# non-ASCII: é\n'):
+            with self.subTest(metadata=metadata), self.assertRaises(registry.RegistryError):
+                self.check_resolution(metadata)
+
+    def test_legacy_source_manifest_keeps_its_previous_validation_contract(self):
+        self.check_resolution('#' + 'x' * 8190 + '\n[custom]\nnote = "existing metadata"\n')
+
+    def test_invalid_resolution_preserves_pack_and_publication_destinations(self):
+        files = self.resolution_files('[resolution]\nschema = "9"\n')
+        source = self.root / "source"
+        for relative, data in files.items():
+            path = source / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        output = self.root / "existing"
+        output.write_bytes(b"preserve existing bytes")
+        artifact = self.root / "hello.tar.gz"
+        artifact.write_bytes(registry.make_archive({path: (data, 0o644) for path, data in files.items()}))
+        commands = (["pack", str(source), "--output", str(output), "--name", "stubbi/hello", "--version", "0.1.0",
+                     "--target", "x86_64-linux"],
+                    ["prepare", "--name", "stubbi/hello", "--version", "0.1.0", "--summary", "An example.",
+                     "--license", "MIT", "--repository", "https://github.com/stubbi/asm", "--commit", "a" * 40,
+                     "--artifact", "x86_64-linux", "source", str(artifact),
+                     "https://github.com/stubbi/asm/releases/download/v0.1.0/hello.tar.gz", "--output", str(output)])
+        for arguments in commands:
+            with self.subTest(command=arguments[0]), contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(registry.main(arguments), 1)
+                self.assertEqual(output.read_bytes(), b"preserve existing bytes")
+
+    def test_resolution_publication_retains_source_bytes_and_v1_metadata(self):
+        files = self.resolution_files('[resolution]\nschema = "1"\n[dependencies]\n"stubbi/core" = "^1.0.0"\n')
+        source = self.root / "source"
+        for relative, data in files.items():
+            path = source / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        artifact = self.root / "hello.tar.gz"
+        output = self.root / "release.json"
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(registry.main(["pack", str(source), "--output", str(artifact), "--name", "stubbi/hello",
+                                           "--version", "0.1.0", "--target", "x86_64-linux"]), 0)
+            self.assertEqual(registry.main(["prepare", "--name", "stubbi/hello", "--version", "0.1.0",
+                "--summary", "An example.", "--license", "MIT", "--repository", "https://github.com/stubbi/asm",
+                "--commit", "a" * 40, "--artifact", "x86_64-linux", "source", str(artifact),
+                "https://github.com/stubbi/asm/releases/download/v0.1.0/hello.tar.gz", "--output", str(output)]), 0)
+        self.assertEqual(registry.read_archive(artifact.read_bytes())["asm.toml"], files["asm.toml"])
+        record = json.loads(output.read_bytes())
+        self.assertEqual(record["schema"], 1)
+        self.assertEqual(set(record), {"schema", "name", "version", "summary", "license", "source", "artifacts", "yanked"})
+        self.assertEqual(record["artifacts"][0]["sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest())
+        tsv, _ = registry.make_indexes([record])
+        self.assertTrue(tsv.startswith("# asm-registry-v1\n"))
+        self.assertEqual(len(tsv.splitlines()[1].split("\t")), 8)
 
     def test_source_collection_rejects_symlinks_and_hardlinks(self):
         (self.root / "outside").write_text("private")
@@ -514,6 +673,53 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(len(package["versions"]), 3)
         self.assertEqual(package["versions"][1]["evidence"]["artifacts"], "validated")
         self.assertEqual(package["versions"][1]["evidence"]["formal"], "not-run")
+
+    def test_generated_artifacts_do_not_alias_immutable_release_records(self):
+        record, _ = release()
+        original = copy.deepcopy(record)
+        _, index = registry.make_indexes([record])
+        index["packages"][0]["versions"][0]["artifacts"][0]["dependency_metadata"] = {"schema": 1}
+        self.assertEqual(record, original)
+
+    def test_dependency_export_preserves_native_indexes_and_published_records(self):
+        record, data = release()
+        original = copy.deepcopy(record)
+        before, _ = registry.make_indexes([record])
+        metadata = {}
+        registry.validate_artifact(data, record, record["artifacts"][0], dependency_metadata=metadata)
+        after, index = registry.make_indexes([record], {(record["name"], record["version"])}, dependency_metadata=metadata)
+        self.assertEqual(after, before)
+        self.assertEqual(record, original)
+        registry.check_immutable([record], [original])
+        exported = index["packages"][0]["versions"][0]["artifacts"][0]
+        self.assertEqual(exported["dependency_metadata"]["dependencies"], [])
+        exported["dependency_metadata"]["dependencies"].append({"name": "untrusted/change"})
+        _, regenerated = registry.make_indexes([record], {(record["name"], record["version"])}, dependency_metadata=metadata)
+        self.assertEqual(regenerated["packages"][0]["versions"][0]["artifacts"][0]["dependency_metadata"]["dependencies"], [])
+
+    def test_dependency_export_rejects_forged_or_mismatched_source_bindings(self):
+        record, data = release()
+        artifact = record["artifacts"][0]
+        digest = artifact["sha256"]
+        metadata = {}
+        registry.validate_artifact(data, record, artifact, dependency_metadata=metadata)
+        checked = {(record["name"], record["version"])}
+        for forged in ({digest: {"schema": 1, "source_sha256": digest, "dependencies": [], "features": {}}},
+                       {"0" * 64: metadata[digest]}):
+            with self.subTest(metadata=forged), self.assertRaises(registry.RegistryError):
+                registry.make_indexes([record], checked, dependency_metadata=forged)
+        with self.assertRaises(registry.RegistryError):
+            registry.make_indexes([record], dependency_metadata=metadata)
+        for field, value in (("target", "aarch64-linux"), ("bytes", artifact["bytes"] + 1), ("kind", "executable")):
+            candidate = copy.deepcopy(record)
+            candidate["artifacts"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(registry.RegistryError):
+                registry.make_indexes([candidate], checked, dependency_metadata=metadata)
+
+    def test_checked_flag_alone_does_not_invent_dependency_declarations(self):
+        record, _ = release()
+        _, index = registry.make_indexes([record], {(record["name"], record["version"])})
+        self.assertNotIn("dependency_metadata", index["packages"][0]["versions"][0]["artifacts"][0])
 
     def test_indexes_preserve_each_version_license(self):
         legacy, _ = release("0.1.0")

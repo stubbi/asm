@@ -72,6 +72,10 @@ def prepare(source: Path) -> str:
         text = text.replace('.quad registry_sha256sum, registry_sha_status, registry_sha_check, 0, 0',
                             '.quad registry_sha256sum, mac_sha256_option, registry_sha_status, registry_sha_check, 0, 0')
         text += '\n.data\nmac_sha256_option: .asciz "-a256"\n'
+    if source.name == 'native_link.s':
+        native_platform = '.equ NATIVE_LINK_MACOS, 0'
+        assert text.count(native_platform) == 1
+        text = text.replace(native_platform, '.equ NATIVE_LINK_MACOS, 1')
     if source.name == 'publish.s':
         text = text.replace('ARM_CALL pub_validate_elf', 'ARM_CALL mac_pub_validate_executable')
         text += (ROOT / 'cli/macos/publish.s').read_text()

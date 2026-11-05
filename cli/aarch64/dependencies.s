@@ -39,6 +39,7 @@ dependency_prepare_selection:
     ARM_SAVE x21
     ARM_SAVE x22
     ARM_CALL read_manifest
+    ARM_CALL res_legacy_guard
     ARM_ADDR x16, dependency_new_record
     mov x0, x16
     ARM_ADDR x16, registry_selected
@@ -262,6 +263,9 @@ dependency_finish_add:
     mov w0, w10
     ARM_CALL dependency_paths
     ARM_CALL dependency_accept_payload
+    ARM_ADDR x16, rm_archive_metadata
+    ldr x10, [x16]
+    cbnz x10, res_use_resolve_error
     ARM_ADDR x16, dependency_replace_row
     ldr x10, [x16]
     mov x0, x10
@@ -1106,7 +1110,7 @@ dependency_write_string:
  * compared byte-for-byte to its extracted cache, including unexpected members.
  * Output: returns with a shared project lock held until build completion.
  * Does not fetch, resolve new versions, execute code or modify source caches. */
-verify_project_dependencies:
+verify_legacy_project_dependencies:
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
@@ -1222,6 +1226,7 @@ cmd_lock:
 cmd_remove:
     ARM_CALL dependency_parse_name
     ARM_CALL read_manifest
+    ARM_CALL res_legacy_guard
     ARM_IMM w10, 6
     mov w0, w10
     eor w1, w1, w1
@@ -1323,7 +1328,7 @@ dependency_parse_name:
 /* Sync downloads locked exact URLs. It never reads a newer registry index.
  * --artifact FILE is an offline input only when the lock has one dependency.
  * Existing extracted source must match; sync does not discard local edits. */
-cmd_sync:
+cmd_sync_legacy:
 .Ldep_sync_args:
     ARM_CALL next_arg
     tst x9, x9

@@ -3,6 +3,7 @@
  * See LICENSE and LICENSING.md for the terms and scope.
  */
 .include "cli/aarch64/platform.inc"
+.include "cli/aarch64/resolution_manifest.s"
 .global _start
 .global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
@@ -397,6 +398,9 @@ common_option:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lopt_locked
+    mov x9, x19
+    ARM_CALL native_link_option
+    cbnz w9, .Lopt_yes
     mov x0, x19
     ARM_ADDR x16, opt_help
     mov x1, x16
@@ -1017,7 +1021,8 @@ init_rollback:
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
 /* Input: cwd is the project. Output: package_* buffers contain validated fields.
  * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source=256. Failure exits without build
+ * include NUL: name=65, version/target=64, source/native fields=256.
+ * Failure exits without build
  * changes. Stack: 64 saved bytes plus nested calls; all callee-saved restored. */
 read_manifest:
     ARM_SAVE x21
@@ -1105,408 +1110,45 @@ read_manifest:
     strb w10, [x16]
     mov x0, x21
     ARM_CALL arm_close
-    ARM_ADDR x16, manifest_buffer
-    mov x21, x16
-    eor w22, w22, w22
-    tst w22, w22
-    eor w23, w23, w23
-    tst w23, w23
-    eor w24, w24, w24
-    tst w24, w24
-.Lmanifest_line:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 9
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 13
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 35
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_comment
-    and w10, w9, #255
-    ARM_IMM w11, 91
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_section
-    mov x0, x21
-    eor w3, w3, w3
-    tst w3, w3
-.Lmanifest_key:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 97
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo .Lmanifest_key_end
-    and w10, w9, #255
-    ARM_IMM w11, 122
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.hi .Lmanifest_key_end
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_IMM w11, 32
-    cmp w3, w11
-    b.hi manifest_error
-    b .Lmanifest_key
-.Lmanifest_key_end:
-    tst w3, w3
-    b.eq manifest_error
-    ARM_ADDR x16, key_buffer
-    mov x1, x16
-    eor w2, w2, w2
-    tst w2, w2
-.Lmanifest_key_copy:
-    mov x16, x0
-    add x16, x16, x2
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    mov x16, x1
-    add x16, x16, x2
-    strb w10, [x16]
-    ARM_IMM w11, 1
-    adds w2, w2, w11
-    cmp w2, w3
-    b.lo .Lmanifest_key_copy
-    ARM_IMM w10, 0
-    mov x16, x1
-    add x16, x16, x2
-    strb w10, [x16]
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    ARM_IMM w11, 61
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne manifest_error
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    ARM_IMM w11, 34
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne manifest_error
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_name
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_name
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_version
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_version
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_source
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_source
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_target
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_target
-    b manifest_error
-.Lfield_name:
-    ARM_IMM w11, 1
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_name
-    mov x0, x16
-    ARM_IMM w10, 64
-    mov w1, w10
-    ARM_IMM w10, 1
-    mov w2, w10
-    b .Lfield_read
-.Lfield_version:
-    ARM_IMM w11, 1
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_version
-    mov x0, x16
-    ARM_IMM w10, 63
-    mov w1, w10
-    ARM_IMM w10, 2
-    mov w2, w10
-    b .Lfield_read
-.Lfield_source:
-    ARM_IMM w11, 2
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_source
-    mov x0, x16
-    ARM_IMM w10, 255
-    mov w1, w10
-    ARM_IMM w10, 4
-    mov w2, w10
-    b .Lfield_read
-.Lfield_target:
-    ARM_IMM w11, 2
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_target
-    mov x0, x16
-    ARM_IMM w10, 63
-    mov w1, w10
-    ARM_IMM w10, 8
-    mov w2, w10
-.Lfield_read:
-    tst w23, w2
-    b.ne manifest_error
-    orr w23, w23, w2
-    tst w23, w23
-    eor w3, w3, w3
-    tst w3, w3
-.Lfield_chars:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 34
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lfield_end
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 127
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 92
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq manifest_error
-    cmp w3, w1
-    b.hs manifest_error
-    and w10, w9, #255
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    b .Lfield_chars
-.Lfield_end:
-    tst w3, w3
-    b.eq manifest_error
-    ARM_IMM w10, 0
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lline_end
-.Lmanifest_section:
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    eor w3, w3, w3
-    tst w3, w3
-.Lsection_chars:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 93
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lsection_end
-    and w10, w9, #255
-    ARM_IMM w11, 97
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 122
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.hi manifest_error
-    ARM_IMM w11, 31
-    cmp w3, w11
-    b.hs manifest_error
-    and w10, w9, #255
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lsection_chars
-.Lsection_end:
-    ARM_IMM w10, 0
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, section_package
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lsection_package
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, section_build
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.eq manifest_error
-    ARM_IMM w11, 2
-    tst w24, w11
-    b.ne manifest_error
-    ARM_IMM w11, 2
-    orr w24, w24, w11
-    tst w24, w24
-    ARM_IMM w10, 2
-    mov w22, w10
-    b .Lline_end
-.Lsection_package:
-    ARM_IMM w11, 1
-    tst w24, w11
-    b.ne manifest_error
-    ARM_IMM w11, 1
-    orr w24, w24, w11
-    tst w24, w24
-    ARM_IMM w10, 1
-    mov w22, w10
-.Lline_end:
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 35
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_comment
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    b manifest_error
-.Lmanifest_skip:
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lmanifest_line
-.Lmanifest_comment:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne .Lmanifest_comment
-    b .Lmanifest_line
-.Lmanifest_finish:
-    ARM_IMM w11, 15
-    cmp w23, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_name
-    mov x0, x16
-    ARM_CALL valid_name
-    tst w9, w9
-    b.eq manifest_error
-    ARM_ADDR x16, package_version
-    mov x0, x16
-    ARM_CALL valid_version
-    tst w9, w9
-    b.eq manifest_error
-    ARM_ADDR x16, package_source
-    mov x0, x16
-    ARM_CALL valid_source
-    tst w9, w9
-    b.eq manifest_error
-    ARM_ADDR x16, package_target
-    mov x0, x16
+    ARM_ADDR x0, rm_root_original
+    ARM_ADDR x1, manifest_buffer
+    ARM_CALL copy_string
+    ARM_ADDR x0, manifest_buffer
+    ARM_ADDR x1, rm_root_metadata
+    ARM_CALL rm_parse_manifest
+    cbnz w9, manifest_error
+    ARM_ADDR x0, package_name
+    ARM_ADDR x16, rm_root_metadata + 24
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_version
+    ARM_ADDR x16, rm_root_metadata + 32
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_source
+    ARM_ADDR x16, rm_root_metadata + 40
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_target
+    ARM_ADDR x16, rm_root_metadata + 48
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_link
+    ARM_ADDR x16, rm_root_metadata + RM_LINK
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_libraries
+    ARM_ADDR x16, rm_root_metadata + RM_LIBRARIES
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_check
+    ARM_ADDR x16, rm_root_metadata + RM_CHECK
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_CALL native_link_check_options
+    ARM_ADDR x0, package_target
     ARM_CALL validate_target
-    tst w9, w9
-    b.eq unsupported_target
+    cbz w9, unsupported_target
     ARM_RESTORE x24
     ARM_RESTORE x23
     ARM_RESTORE x22
@@ -1521,37 +1163,6 @@ manifest_error:
     ARM_IMM w10, 1
     mov w1, w10
     b die
-
-/* Input/output: x21 is the bounded manifest parser cursor. Advances over SP,
- * TAB and CR. Scratch: x9. This parser helper intentionally updates x21. */
-skip_horizontal:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lhorizontal_next
-    and w10, w9, #255
-    ARM_IMM w11, 9
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lhorizontal_next
-    and w10, w9, #255
-    ARM_IMM w11, 13
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne .Lhorizontal_end
-.Lhorizontal_next:
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b skip_horizontal
-.Lhorizontal_end:
-    ret
 
 /* Input: x0=project name. Output: w9=1 for [a-z][a-z0-9-]{0,63}, else zero.
  * Scratch: x9/x3. Registry namespace validation is a separate stricter rule. */
@@ -1812,6 +1423,9 @@ valid_source:
 /* Build outputs in a fresh process-specific staging directory, then rename
  * completed artifacts into place. Never pass project paths through a shell. */
 cmd_build:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1825,6 +1439,9 @@ cmd_build:
     ARM_CALL report
     b exit_ok
 cmd_run:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1875,6 +1492,9 @@ cmd_run:
     mov w0, w9
     b exit_code
 cmd_test:
+    ARM_ADDR x16, native_allow
+    mov w10, #1
+    strb w10, [x16]
     ARM_IMM w10, 1
     ARM_ADDR x16, allow_locked
     strb w10, [x16]
@@ -1961,6 +1581,8 @@ build_project:
     ARM_ADDR x16, binary_suffix
     mov x1, x16
     ARM_CALL copy_string
+    ARM_CALL native_link_compile_check
+    cbnz w9, build_child_error
     ARM_ADDR x16, as_path
     mov x9, x16
     ARM_ADDR x16, child_argv
@@ -2009,6 +1631,13 @@ build_project:
     ARM_CALL spawn_wait
     tst w9, w9
     b.ne build_child_error
+    ARM_ADDR x16, package_link
+    ldrb w10, [x16]
+    cbz w10, .Lbuild_standalone_link
+    ARM_CALL native_link_build
+    cbnz w9, build_child_error
+    b .Lbuild_linked
+.Lbuild_standalone_link:
     ARM_ADDR x16, ld_path
     mov x9, x16
     ARM_ADDR x16, child_argv
@@ -2043,6 +1672,7 @@ build_project:
     ARM_CALL spawn_wait
     tst w9, w9
     b.ne build_child_error
+.Lbuild_linked:
     ARM_ADDR x16, stage_object
     mov x0, x16
     ARM_ADDR x16, object_output
@@ -2145,7 +1775,8 @@ unsigned_decimal:
     mov x9, x1
     ret
 
-/* Spawn a fixed executable with explicit argv, inherit env and file streams.
+/* Spawn a fixed executable with explicit argv and inherited file streams.
+ * Compiler drivers use a fixed environment; application children inherit env.
  * Return child's exit code, or 128+signal; never turn a failed exec into success. */
 /* Input: x0=executable path, x1=NUL-terminated argv pointer array. All pointers
  * remain owned by the parent. Output: w9=0..255; fork/wait/exec failure is 127.
@@ -2196,10 +1827,10 @@ spawn_wait:
     b .Lspawn_return
 .Lspawn_child:
     mov x0, x21
+    ARM_CALL native_link_child_environment
+    mov x2, x9
+    mov x0, x21
     mov x1, x22
-    ARM_ADDR x16, envp
-    ldr x10, [x16]
-    mov x2, x10
     ARM_CALL arm_execve
     ARM_IMM w10, 127
     mov w0, w10
@@ -2294,6 +1925,7 @@ commands:
     .quad command_clean, cmd_clean, command_target, cmd_targets
     .quad command_targets, cmd_targets, command_status, cmd_status
     .quad command_add, cmd_add, command_remove, cmd_remove
+    .quad command_resolve, cmd_resolve
     .quad command_search, cmd_search, command_publish, cmd_publish
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
@@ -2318,6 +1950,7 @@ command_target: .asciz "target"
 command_targets: .asciz "targets"
 command_status: .asciz "status"
 command_add: .asciz "add"
+command_resolve: .asciz "resolve"
 command_remove: .asciz "remove"
 command_search: .asciz "search"
 command_info: .asciz "info"
@@ -2367,12 +2000,6 @@ stage_prefix: .asciz "build/.asm-"
 object_suffix: .asciz "/main.o"
 binary_suffix: .asciz "/app"
 default_name: .asciz "app"
-key_name: .asciz "name"
-key_version: .asciz "version"
-key_source: .asciz "source"
-key_target: .asciz "target"
-section_package: .asciz "package"
-section_build: .asciz "build"
 newline: .asciz "\n"
 error_prefix: .asciz "asm: "
 error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
@@ -2426,6 +2053,7 @@ help_text:
     .ascii "  installed        List recorded installed programs\n"
     .ascii "  upgrade <pkg[@v]> Upgrade a recorded program\n"
     .ascii "  uninstall <pkg>  Uninstall an unchanged recorded program\n"
+    .ascii "  resolve          Resolve declared dependency ranges and features\n"
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
@@ -2441,6 +2069,7 @@ help_text:
     .ascii "  help             Show this help\n\n"
     .ascii "Options: --target aarch64-linux, --json, --no-color, --help\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
+    .ascii "Native builds: --include-dir PATH and --library-dir PATH (repeat up to eight).\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
     .ascii "JSON describes Asm's own output; child output is passed through.\n"
     .ascii "For registry options, use asm search --help.\n"
@@ -2448,9 +2077,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"aarch64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"aarch64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss
@@ -2469,12 +2098,14 @@ number_buffer: .skip 32
 stage_dir: .skip 64
 stage_object: .skip 96
 stage_binary: .skip 96
-key_buffer: .skip 64
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
 package_target: .skip 64
 manifest_buffer: .skip 8192
+rm_root_original: .skip 8192
+.balign 8
+rm_root_metadata: .skip RM_SIZE
 json_mode: .skip 1
 allow_locked: .skip 1
 require_lock: .skip 1
@@ -2493,11 +2124,13 @@ made_test: .skip 1
 
 /* Keep one assembler translation unit so the CLI can build itself with the
  * standard single-source asm.toml. GNU as resolves .include from project cwd. */
+.include "cli/aarch64/native_link.s"
 .include "cli/aarch64/programs.s"
 .include "cli/aarch64/registry.s"
 .include "cli/aarch64/elf.s"
 .include "cli/aarch64/archive.s"
 .include "cli/aarch64/dependencies.s"
+.include "cli/aarch64/resolver.s"
 .include "cli/aarch64/publish.s"
 .include "cli/aarch64/self_update.s"
 .include "cli/aarch64/self_update_verify.s"

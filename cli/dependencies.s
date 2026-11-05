@@ -30,6 +30,7 @@ dependency_prepare_selection:
     push r12
     push r13
     call read_manifest
+    call res_legacy_guard
     lea rdi, [rip + dependency_new_record]
     mov rsi, [rip + registry_selected]
     mov ecx, 8
@@ -143,6 +144,8 @@ dependency_finish_add:
     mov edi, 1
     call dependency_paths
     call dependency_accept_payload
+    cmp qword ptr [rip + rm_archive_metadata], 0
+    jne res_use_resolve_error
     mov rdi, [rip + dependency_replace_row]
     test rdi, rdi
     jnz .Ldep_replace_record
@@ -707,7 +710,7 @@ dependency_write_string:
  * compared byte-for-byte to its extracted cache, including unexpected members.
  * Output: returns with a shared project lock held until build completion.
  * Does not fetch, resolve new versions, execute code or modify source caches. */
-verify_project_dependencies:
+verify_legacy_project_dependencies:
     push rbx
     push r12
     push r13
@@ -785,6 +788,7 @@ cmd_lock:
 cmd_remove:
     call dependency_parse_name
     call read_manifest
+    call res_legacy_guard
     mov edi, 6
     xor esi, esi
     call dependency_acquire
@@ -852,7 +856,7 @@ dependency_parse_name:
 /* Sync downloads locked exact URLs. It never reads a newer registry index.
  * --artifact FILE is an offline input only when the lock has one dependency.
  * Existing extracted source must match; sync does not discard local edits. */
-cmd_sync:
+cmd_sync_legacy:
 .Ldep_sync_args:
     call next_arg
     test rax, rax
