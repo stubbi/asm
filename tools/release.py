@@ -478,9 +478,11 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                           artifact(cli, f"asm-{version}-x86_64-linux", "x86_64-linux", "executable", base),
                           artifact(cli_archive, f"asm-{version}-source.tar.gz", "x86_64-linux", "source", base),
                       ]}
+        hello_manifest = tomllib.loads(files["examples/hello/asm.toml"][0].decode("utf-8"))
+        hello_source_path = "examples/hello" if "target" in hello_manifest else "examples"
         hello_record = {"schema": 1, "name": owner + "/hello", "version": version,
                         "summary": "A small Linux assembly program that writes a greeting.",
-                        "license": "MIT", "source": {"repository": repository, "commit": commit, "path": "examples"},
+                        "license": "MIT", "source": {"repository": repository, "commit": commit, "path": hello_source_path},
                         "yanked": False, "artifacts": []}
         builds = {"asm": {"target": "x86_64-linux", "command": ["make", "build/asm", "ARCH=x86_64", "AS=as", "LD=ld"],
                            "reproducibility": "Two clean builds produced identical bytes.",

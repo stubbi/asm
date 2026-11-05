@@ -5,7 +5,7 @@ The project root contains its manifest and MIT [license](../../LICENSE).
 Start the manual build commands below in this target directory.
 The assembler include path points to the project root.
 
-This source package is `math` checkout version `0.5.0` for `aarch64-macos`.
+This source package is `math` version `0.6.0` for `aarch64-macos`.
 It supplies `asm_u64_min` for AArch64, macOS 15 or later, and the Apple arm64 ABI.
 An ABI defines register, stack, call, and data-layout rules.
 The routine uses baseline Armv8-A integer instructions.

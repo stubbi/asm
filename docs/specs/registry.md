@@ -35,7 +35,7 @@ target = "x86_64-linux"
 
 The native CLI accepts a small TOML subset. The publication record is separate. Registry validation checks that the project name, version, and target agree with that record. It also requires the declared assembly source, a README, and a license file.
 
-Unreleased source builds also accept `[target.<id>]` tables with independent source, test, and native-library fields.
+Asm 0.6.0 also accepts `[target.<id>]` tables with independent source, test, and native-library fields.
 The [multi-target contract](../multi-target-projects.md) defines the seven declaration IDs, target selection, output paths, and v2 locks.
 All declared inputs, including inactive implementations, must be valid and present in the source archive.
 Registry artifact target support uses the six targets listed below.
@@ -91,10 +91,11 @@ A valid commit string alone does not prove that the source exists. `pack-git` re
 
 ## Targets
 
-The registry describes three Linux targets and Apple Silicon macOS.
-Asm 0.5.0 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
-Each CLI builds projects for its own host target.
-Released 0.5.0 CLIs recognize the four original registry targets.
+Catalog validation recognizes three Linux targets, Apple Silicon macOS, and two Windows targets.
+Asm 0.6.0 has native CLIs for x86-64 Linux, AArch64 Linux, and AArch64 macOS 15 or later.
+Each CLI selects its native host target by default and supports explicit standalone Linux cross builds.
+Each CLI can fetch artifacts for other registry targets.
+Released 0.5.0 CLIs and the 0.6.0 profile recognize the four original registry targets.
 Their compatibility feeds exclude new Windows target rows.
 The example README files give the commands for GNU cross assemblers and linkers.
 
@@ -103,7 +104,7 @@ Target names do not yet encode every ISA extension, ABI revision, dialect, or li
 The AArch64 and RISC-V examples have been assembled, linked, and run under QEMU user-mode emulation.
 That result is distinct from a test on physical hardware.
 A native RISC-V CLI, cross-target native-library sysroots, and library ABI selection remain future work.
-Unreleased source builds support standalone Linux cross builds and target-specific direct dependency locks.
+Asm 0.6.0 supports standalone Linux cross builds and target-specific direct dependency locks.
 
 macOS executables use thin arm64 Mach-O, the Apple ABI, PIE, and a non-executable stack.
 Native validation checks bounded commands, segment protections, entry points, deployment requirements, and the code signature.
@@ -307,7 +308,7 @@ The native commands are:
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.2.0 --target x86_64-linux --kind source --output hello.tar.gz
+asm fetch stubbi/hello@0.6.0 --target x86_64-linux --kind source --output hello.tar.gz
 ```
 
 Without `@version`, fetch chooses the highest published numeric version that has the requested target and kind.
@@ -339,29 +340,46 @@ This example requires Linux x86-64 because `stubbi/math` uses the System V AMD64
 Use an exact version to add a source dependency:
 
 ```sh
-asm add stubbi/math@0.2.0
+asm add stubbi/math@0.6.0 --target x86_64-linux
 asm lock
 asm build --locked
 ```
 
-Add accepts source packages for the CLI's native build target: `x86_64-linux`, `aarch64-linux`, or `aarch64-macos`.
+Add accepts source packages for the selected project target.
+Without `--target`, it selects the native host target.
+The selected source artifact must use a supported registry target.
 It checks the artifact before extraction and writes `asm.lock` after extraction succeeds.
 It runs no package code.
 
-The lock starts with `# asm-lock-v1` and a `# registry ORIGIN` line. Its remaining rows use the eight native-index fields. One row identifies each direct dependency. A lock uses one registry origin. Local test indexes use the origin `local`.
+Native-only legacy projects retain `# asm-lock-v1` locks with one row for each direct dependency.
+Named-target projects and foreign-target legacy projects use `# asm-lock-v2` with one row for each package and target pair.
+Both formats retain the `# registry ORIGIN` line and eight native-index fields.
+A lock uses one registry origin; local test indexes use `local`.
 
-The source cache is `.asm/packages/<owner>/<name>/<version>/<target>`. The original archive is `.asm/cache/<sha256>.tar.gz`. Builds verify locked archive hashes and compare every extracted file with its archive content. Changed, missing, or unexpected members cause an error.
+The source cache is `.asm/packages/<owner>/<name>/<version>/<target>`.
+The original archive is `.asm/cache/<sha256>.tar.gz`.
+Builds validate all lock metadata and verify the selected target's archive hashes and extracted source files.
+Changed, missing, or unexpected selected-target members cause an error.
+Missing inactive caches do not prevent a selected-target build.
 
-Normal builds verify dependencies when a lock exists. `--locked` also rejects a missing lock. `asm lock` checks the existing lock and cache; it does not resolve newer versions.
+Normal builds verify dependencies when a lock exists.
+`--locked` also rejects a missing lock.
+`asm lock --target TARGET` checks that target's existing selection and cache; it does not resolve newer versions.
 
-`asm sync` restores exact locked artifacts through their recorded URLs. It does not query a newer index. It retains local cache edits and reports a mismatch instead of discarding them.
+`asm sync --target TARGET` restores that target's exact locked artifacts through their recorded URLs.
+It does not query a newer index.
+It retains local cache edits and reports a mismatch instead of discarding them.
 
-`asm update owner/name@version` selects an explicit replacement version. `asm remove owner/name` removes its lock entry and retains cache files. Failed updates preserve the prior lock. Advisory file locks coordinate Asm processes in the same project.
+`asm update owner/name@version --target TARGET` selects an explicit replacement version for that target.
+`asm remove owner/name --target TARGET` removes its lock entry and retains cache files.
+Both commands preserve selections for other targets.
+Failed updates preserve the prior lock.
+Advisory file locks coordinate Asm processes in the same project.
 
 The assembler receives `.asm/packages` as an include directory. For the math example, use:
 
 ```asm
-.include "stubbi/math/0.2.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.6.0/x86_64-linux/targets/x86_64-linux/src/min.s"
 ```
 
 Lock checks cover declared dependencies. Assembly source can also select other local files through includes or data directives. This is not a hermetic build sandbox. Source caches should remain unchanged; copy a package elsewhere before editing it.

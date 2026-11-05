@@ -1,7 +1,8 @@
 # Multi-target projects
 
-Status: unreleased source-checkout capability.
-Published Asm 0.5.0 binaries do not support this extension.
+Status: Asm 0.6.0 project contract.
+Earlier published binaries do not support this extension.
+The [release notes](releases/0.6.0.md) state the publication gates and artifact scope.
 
 ## One project and explicit implementations
 

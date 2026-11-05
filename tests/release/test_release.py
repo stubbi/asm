@@ -534,6 +534,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.metadata["builds"]["asm"]["version_check"]["status"], "pass")
         self.assertEqual(self.metadata["builds"]["asm_targets"]["aarch64-linux"]["version_check"]["status"], "pass")
         self.assertEqual(self.metadata["cli_hosts"], ["x86_64-linux", "aarch64-linux"])
+        hello = next(record for record in self.records if record["name"] == "stubbi/hello")
+        self.assertEqual(hello["source"]["path"], "examples/hello")
         cli = next(record for record in self.records if record["name"] == "stubbi/asm")
         self.assertEqual({item["target"] for item in cli["artifacts"] if item["kind"] == "executable"},
                          {"x86_64-linux", "aarch64-linux"})

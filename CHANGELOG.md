@@ -1,11 +1,16 @@
 # Change log
 
-## Unreleased
+## 0.6.0
 
 - Consolidate hello and math into one project each, with seven target subdirectories and one manifest.
 - Add selected-target standalone Linux builds, isolated outputs, and test builds without execution.
 - Add target-specific exact dependencies in v2 locks while retaining v1 compatibility.
 - Validate every project recipe and lock row before changing artifacts or dependency state.
+- Reject response-file source and checker paths before invoking build tools.
+- Link assembly projects against named native libraries with optional compile-only ABI checks.
+- Preserve native manifest syntax, v1 locks, legacy archive limits, and earlier published release bytes.
+
+See the [release notes](docs/releases/0.6.0.md) and [multi-target project contract](docs/multi-target-projects.md).
 
 ## Website dependency display
 

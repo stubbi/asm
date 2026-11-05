@@ -6,7 +6,7 @@ People must receive a compatible artifact without losing access through an older
 The governing principles are dependable reuse, explicit targets, and trust earned through evidence.
 A catalog target does not declare a CLI host, a native runtime result, or a deployed server.
 
-## Current release
+## Published 0.5.0 baseline
 
 [Asm 0.5.0](https://github.com/stubbi/asm/releases/tag/v0.5.0) uses source commit `1f1530db38eb7326ba149addf3f0b45f2f3ac026`.
 The [release workflow](https://github.com/stubbi/asm/actions/runs/41935096978) qualified the three current CLI hosts.
@@ -37,7 +37,8 @@ Assembly, emulation, native execution, release publication, and deployment estab
 The [release notes](releases/0.5.0.md) declare ISA, operating system, ABI, and CPU requirements separately.
 Linux CI uses Ubuntu 24.04; a separate minimum kernel version remains unqualified.
 Apple Silicon support requires macOS 15 or later.
-No new host follows from the prospective 0.6.0 version number.
+The README identifies the latest release and its supported hosts.
+Later host additions require a new version after independent qualification.
 
 ## Feed compatibility
 
