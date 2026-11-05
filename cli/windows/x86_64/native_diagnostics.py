@@ -16,11 +16,13 @@ import tarfile
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import time
+import traceback
 import sys
 import unittest
 
@@ -33,65 +35,105 @@ def diagnostic_source(module):
     return instrument_source(module.prepare(ROOT / 'cli/asm.s'))
 
 
+def checked_replace(body, anchor, replacement, context, count=1):
+    observed = body.count(anchor)
+    if observed != count:
+        raise ValueError(f'{context}: expected {count} diagnostic anchor(s), found {observed}: {anchor.strip()!r}')
+    return body.replace(anchor, replacement)
+
+
+def scoped_edit(source, begin, end, edit):
+    markers = ['\n' + name + ':\n' for name in (begin, end)]
+    for name, marker in zip((begin, end), markers):
+        if source.count(marker) != 1:
+            raise ValueError(f'{begin}: absent or ambiguous diagnostic boundary {name}')
+    first, last = (source.index(marker) for marker in markers)
+    if last <= first:
+        raise ValueError(f'{begin}: diagnostic boundary {end} precedes its routine')
+    return source[:first] + edit(source[first:last]) + source[last:]
+
+
+def trace_result(stage):
+    # The logger preserves RAX, LastError and the internal callee-saved
+    # registers. Keep its remaining integer/flags scratch state here, too.
+    return (f'    mov dword ptr [rip + win_diag_process_stage], {stage}\n'
+            '    pushfq\n    push rcx\n    push r11\n'
+            '    call win_diag_process_log\n'
+            '    pop r11\n    pop rcx\n    popfq\n')
+
+
+def trace_call(body, function, stage, context, count=1):
+    anchor = '    call ' + function + '\n'
+    return checked_replace(body, anchor, anchor + trace_result(stage), context, count)
+
+
 def instrument_source(source):
-    anchor = '    call NtCreateFile\n    test eax, eax\n'
-    if source.count(anchor) != 1:
-        raise ValueError('NtCreateFile diagnostic anchor changed')
-    source = source.replace(anchor, '''    call NtCreateFile
-    push rax
-    mov edi, eax
-    mov rsi, r13
-    mov edx, r15d
-    call win_diag_nt_log
-    pop rax
-    test eax, eax
-''')
-    anchor = '.Lwst_acl_done:\n    mov rcx, r14\n'
-    if source.count(anchor) != 1:
-        raise ValueError('stat diagnostic anchor changed')
-    source = source.replace(anchor, '''.Lwst_acl_done:
-    mov rdi, r13
-    call win_diag_stat_log
-    mov rcx, r14
-''')
-    begin = source.index('win_process:\n')
-    end = source.index('win_command_byte:\n', begin)
-    process = source[begin:end]
-    stages = ['win_wide','win_wide_command','win_build_environment','win_explicit_environment',
-              'CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW',
-              'InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW']
-    for number, name in enumerate(stages, 1):
-        process = process.replace('    call ' + name + '\n',
-            '    mov dword ptr [rip + win_diag_process_stage], ' + str(number) + '\n' +
-            '    call ' + name + '\n    call win_diag_process_log\n')
-    anchor = '    mov ebx, [rbp - 152]\n'
-    assert process.count(anchor) == 1
-    process = process.replace(anchor, anchor + '    mov eax, ebx\n    mov dword ptr [rip + win_diag_process_stage], 16\n    call win_diag_process_log\n')
-    source = source[:begin] + process + source[end:]
-    begin = source.index('win_decompress:\n')
-    end = source.index('win_download:\n', begin)
-    body = source[begin:end]
-    anchor = '    call win_process\n'
-    assert body.count(anchor) == 1
-    body = body.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], 12\n    call win_diag_process_log\n    push rax\n    mov eax, [rip + win_capture_length]\n    mov dword ptr [rip + win_diag_process_stage], 13\n    call win_diag_process_log\n    pop rax\n')
-    source = source[:begin] + body + source[end:]
-    for function, stage in [('arc_validate', 14), ('pub_check_project', 15)]:
-        anchor = '    call ' + function + '\n'
-        assert source.count(anchor) >= 1
-        source = source.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], ' + str(stage) + '\n    call win_diag_process_log\n')
-    for function, stage in [('NtSetInformationFile', 17), ('SetSecurityInfo', 18), ('FlushFileBuffers', 19)]:
-        anchor = '    call ' + function + '\n'
-        assert source.count(anchor) == 1
-        source = source.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], ' + str(stage) + '\n    call win_diag_process_log\n')
-    begin = source.index('self_commit_update:\n')
-    end = source.index('self_update_cleanup:\n', begin)
-    body = source[begin:end].split('    call win_syscall\n')
-    assert len(body) == 7, 'self commit syscall contract changed'
-    traced = body[0]
-    for index, remaining in enumerate(body[1:]):
-        traced += ('    call win_syscall\n    mov dword ptr [rip + win_diag_process_stage], ' +
-                   str(20+index) + '\n    call win_diag_process_log\n' + remaining)
-    source = source[:begin] + traced + source[end:]
+    # Each call belongs to a known routine. An additional use elsewhere must
+    # neither break the collector nor silently acquire instrumentation.
+    source = scoped_edit(source, 'win_nt_open', 'win_drive_path', lambda body:
+        checked_replace(body, '    call NtCreateFile\n    test eax, eax\n',
+            '    call NtCreateFile\n    pushfq\n    push rax\n    push rcx\n'
+            '    push r11\n    push rdi\n    push rsi\n    push rdx\n'
+            '    mov edi, eax\n    mov rsi, r13\n    mov edx, r15d\n'
+            '    call win_diag_nt_log\n    pop rdx\n    pop rsi\n    pop rdi\n'
+            '    pop r11\n    pop rcx\n    pop rax\n    popfq\n    test eax, eax\n', 'win_nt_open'))
+    source = scoped_edit(source, 'win_stat', 'win_protect', lambda body:
+        checked_replace(body, '.Lwst_acl_done:\n    mov rcx, r14\n',
+            '.Lwst_acl_done:\n    pushfq\n    push rax\n    push rcx\n'
+            '    push r11\n    push rdi\n    mov rdi, r13\n    call win_diag_stat_log\n'
+            '    pop rdi\n    pop r11\n    pop rcx\n    pop rax\n    popfq\n'
+            '    mov rcx, r14\n', 'win_stat'))
+
+    def process_trace(body):
+        stages = ['win_wide', 'win_wide_command', 'win_build_environment', 'win_explicit_environment',
+                  'CreatePipe', 'SetHandleInformation', 'win_inherit_duplicate', 'CreateFileW',
+                  'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'CreateProcessW']
+        for stage, function in enumerate(stages, 1):
+            body = trace_call(body, function, stage, 'win_process', 3 if function == 'win_inherit_duplicate' else 1)
+        anchor = '    mov ebx, [rbp - 152]\n'
+        return checked_replace(body, anchor, anchor + '    push rax\n    mov eax, ebx\n' +
+                               trace_result(16) + '    pop rax\n', 'win_process child exit')
+    source = scoped_edit(source, 'win_process', 'win_command_byte', process_trace)
+    source = scoped_edit(source, 'win_decompress', 'win_download', lambda body:
+        checked_replace(body, '    call win_process\n', '    call win_process\n' + trace_result(12) +
+            '    push rax\n    mov eax, [rip + win_capture_length]\n' + trace_result(13) +
+            '    pop rax\n', 'win_decompress'))
+    for begin, end, function, stage in [
+            ('validate_source_archive', 'source_archive_member', 'arc_validate', 14),
+            ('arc_operation_start', 'arc_close', 'arc_validate', 14),
+            ('validate_source_package', 'cmd_publish', 'pub_check_project', 15),
+            ('cmd_publish', 'pub_arg_value', 'pub_check_project', 15),
+            ('win_rename', 'win_open_parent', 'NtSetInformationFile', 17),
+            ('win_protect', 'win_ntfs', 'SetSecurityInfo', 18),
+            ('.Lws_sync', '.Lws_fchmod', 'FlushFileBuffers', 19),
+            ('win_managed_rename_fd', 'win_managed_same_fd', 'NtSetInformationFile', 26)]:
+        source = scoped_edit(source, begin, end,
+                             lambda body: trace_call(body, function, stage, begin))
+
+    # The shared entry now delegates to the managed implementation. Refuse an
+    # unrecognized shape instead of silently applying the old six-call trace.
+    source = scoped_edit(source, 'self_commit_update', 'self_update_cleanup', lambda body:
+        checked_replace(body, '    jmp win_managed_commit_update\n',
+                        '    jmp win_managed_commit_update\n', 'self_commit_update'))
+
+    def commit_trace(body):
+        for name, function, stage in [('payload_flush', 'win_syscall', 27),
+                                      ('record_write', 'win_syscall', 28),
+                                      ('record_flush', 'win_syscall', 29),
+                                      ('activation_rename', 'win_managed_rename_fd', 30)]:
+            label = '\nwin_managed_' + name + ':\n'
+            if body.count(label) != 1:
+                raise ValueError(f'win_managed_{name}: absent or ambiguous diagnostic boundary')
+            first = body.index(label)
+            # Test fault variants insert register-preserving observations before
+            # this call. Trace its result before the existing status check.
+            status = body.find('    test rax, rax\n', first)
+            if status < 0 or status - first > 4096:
+                raise ValueError(f'win_managed_{name}: diagnostic status check changed')
+            body = body[:first] + trace_call(body[first:status], function, stage,
+                                           'win_managed_' + name) + body[status:]
+        return body
+    source = scoped_edit(source, 'win_managed_commit_update', 'win_managed_update_cleanup', commit_trace)
     return source + '\n' + (LOCAL / 'diagnostic.s').read_text()
 
 
@@ -242,7 +284,10 @@ def collect_evidence(destination, report, operation):
         operation()
     except Exception as error:
         report['collection_failed'] = True
-        report['collection_error'] = {'type': type(error).__name__, 'message': str(error)[:1024]}
+        detail = ''.join(traceback.format_exception(type(error), error, error.__traceback__, limit=8))
+        report['collection_error'] = {'type': type(error).__name__,
+            'message': (str(error) or type(error).__name__)[:1024],
+            'traceback': detail[:8192], 'traceback_truncated': len(detail) > 8192}
     finally:
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open('x', encoding='utf-8') as output:
@@ -273,34 +318,16 @@ def source_fixture(work, project):
     return artifact, index, stream.getvalue()
 
 
-def update_probe(report, binary):
-    """Reuse the exact positive runtime fixture with separately traced CLI bytes.
-
-    The fixture enforces arguments and supplies bytes. It validates no real
-    signature and gives no production provenance qualification.
-    """
-    test_directory = ROOT / 'tests/windows'
-    previous = {key: os.environ.get(key) for key in ['ASM_WINDOWS_EXE','ASM_WINDOWS_TARGET']}
-    try:
-        os.environ['ASM_WINDOWS_EXE'] = str(binary)
-        os.environ['ASM_WINDOWS_TARGET'] = 'x86_64-windows'
-        sys.path.insert(0, str(test_directory))
-        spec = importlib.util.spec_from_file_location('x64_update_diagnostic_runtime', test_directory / 'test_runtime.py')
-        runtime = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(runtime)
-    finally:
-        if sys.path and sys.path[0] == str(test_directory):
-            sys.path.pop(0)
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
+def update_diagnostic_case(runtime):
+    """Keep the current runtime fixture; adapt only its diagnostic build/output."""
     class UpdateDiagnostic(runtime.SelfUpdateRuntimeTests):
         @classmethod
-        def build_cli(cls, source, name):
-            return super().build_cli(instrument_source(source), 'diagnostic-' + name)
+        def build_cli(cls, source, name, extra_objects=()):
+            # This candidate deliberately contains only the execution marker.
+            # Every complete CLI, including fault variants, must satisfy all
+            # instrumentation anchors instead of falling back on an exception.
+            traced = source if name == 'marker-next' else instrument_source(source)
+            return super().build_cli(traced, 'diagnostic-' + name, extra_objects)
 
         @classmethod
         def build_command(cls, argv):
@@ -309,18 +336,96 @@ def update_probe(report, binary):
                 command.insert(1, '--no-default-config')
             return super().build_command(command)
 
+        def cli(self, *args, cwd=None, code=0, env=None, binary=runtime.ASM, timeout=30):
+            argv = [str(binary), *map(str, args)]
+            started = time.monotonic()
+            failure = None
+            try:
+                raw = subprocess.run(argv, cwd=cwd or self.work, env=env or self.environment,
+                                     capture_output=True, timeout=timeout)
+            except subprocess.TimeoutExpired as error:
+                failure = error
+                raw = subprocess.CompletedProcess(argv, None, error.stdout or b'', error.stderr or b'')
+            except OSError as error:
+                failure = error
+                raw = subprocess.CompletedProcess(argv, None, b'', b'')
+            row = {'test': self.id(), 'argv': argv, 'cwd': str(cwd or self.work),
+                'exit_code': raw.returncode, 'stdout': captured_text(raw.stdout),
+                'stderr': captured_text(raw.stderr), 'stdout_hex': raw.stdout[:LIMIT].hex(),
+                'stderr_hex': raw.stderr[:LIMIT].hex(),
+                'output_truncated': len(raw.stdout) > LIMIT or len(raw.stderr) > LIMIT,
+                'seconds': round(time.monotonic() - started, 6)}
+            runtime.COMMANDS.append(row)
+            if failure is not None:
+                row['timed_out'] = isinstance(failure, subprocess.TimeoutExpired)
+                row['error'] = {'type': type(failure).__name__, 'message': str(failure)[:1024]}
+                raise failure
+            self.assertFalse(row['output_truncated'], 'Diagnostic output exceeded the retained byte bound.')
+            # Match the normal fixture's strict UTF-8/text handling. Raw bytes
+            # stay in the report even when decoding or an assertion fails.
+            stdout = raw.stdout.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+            stderr = raw.stderr.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+            framed = re.compile(r'(?:NT [0-9A-F]{8} component=[^\r\n]{0,900}|'
+                r'STAT mode=[0-9A-F]{8} owner=[0-9A-F]{8} links=[0-9A-F]{8}|'
+                r'PROC stage=000000(?:0[1-9A-F]|1[0-3A-E]) result=[0-9A-F]{8} error=[0-9A-F]{8})\n')
+            remaining = ''.join(line for line in stderr.splitlines(keepends=True) if not framed.fullmatch(line))
+            row['asserted_stderr'] = remaining
+            result = subprocess.CompletedProcess(argv, raw.returncode, stdout, remaining)
+            self.assertEqual(result.returncode, code, (argv, result.stdout, result.stderr))
+            if code == 0:
+                self.assertEqual(result.stderr, '')
+            elif code in (1, 2, 69):
+                self.assertNotEqual(result.stderr, '')
+            self.assertFalse(((cwd or self.work) / 'PACKAGE_EXECUTED').exists(),
+                             'Package management executed package code')
+            self.assertEqual(list((cwd or self.work).glob('.asm-registry-*')), [], 'A private stage remains')
+            return result
+    return UpdateDiagnostic
+
+
+def update_probe(report, binary):
+    """Reuse the exact positive runtime fixture with separately traced CLI bytes.
+
+    The fixture enforces arguments and supplies bytes. It validates no real
+    signature and gives no production provenance qualification.
+    """
+    test_directory = ROOT / 'tests/windows'
+    previous = {key: os.environ.get(key) for key in ['ASM_WINDOWS_EXE','ASM_WINDOWS_TARGET']}
+    previous_runtime = sys.modules.get('test_runtime')
+    previous_path = sys.path[:]
+    runtime = None
     result = unittest.TestResult()
-    suite = unittest.TestSuite([UpdateDiagnostic('test_update_replaces_exact_bytes_after_three_provenance_bindings')])
     try:
+        os.environ['ASM_WINDOWS_EXE'] = str(binary)
+        os.environ['ASM_WINDOWS_TARGET'] = 'x86_64-windows'
+        sys.path.insert(0, str(test_directory))
+        spec = importlib.util.spec_from_file_location('test_runtime', test_directory / 'test_runtime.py')
+        runtime = importlib.util.module_from_spec(spec)
+        sys.modules['test_runtime'] = runtime
+        spec.loader.exec_module(runtime)
+        case = update_diagnostic_case(runtime)
+        suite = unittest.TestSuite([case('test_update_replaces_exact_bytes_after_three_provenance_bindings')])
         suite.run(result)
     finally:
-        report['commands'].extend(runtime.COMMANDS)
-        report['update_probe_artifacts'] = runtime.TEST_ARTIFACTS
-        report['update_probe'] = {'outcome': 'pass' if result.wasSuccessful() else 'fail',
-            'tests_run': result.testsRun, 'native_qualification': False,
-            'scope': 'Test-only transport/verifier fixtures and instrumented assembly',
-            'failures': [{'test': str(test), 'detail': detail[:LIMIT]} for test,detail in result.failures],
-            'errors': [{'test': str(test), 'detail': detail[:LIMIT]} for test,detail in result.errors]}
+        if runtime is not None:
+            report['commands'].extend(getattr(runtime, 'COMMANDS', []))
+            report['update_probe_artifacts'] = getattr(runtime, 'TEST_ARTIFACTS', [])
+            report['update_probe'] = {'outcome': 'pass' if result.wasSuccessful() and result.testsRun == 1 and not result.skipped else 'fail',
+                'tests_run': result.testsRun, 'native_qualification': False,
+                'scope': 'Test-only transport/verifier fixtures and instrumented assembly',
+                'failures': [{'test': str(test), 'detail': detail[:LIMIT]} for test, detail in result.failures],
+                'errors': [{'test': str(test), 'detail': detail[:LIMIT]} for test, detail in result.errors],
+                'skipped': [{'test': str(test), 'reason': reason[:1024]} for test, reason in result.skipped]}
+        sys.path[:] = previous_path
+        if previous_runtime is None:
+            sys.modules.pop('test_runtime', None)
+        else:
+            sys.modules['test_runtime'] = previous_runtime
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def main():
@@ -336,6 +441,11 @@ def main():
 
     report['process_stages'].update({'12': 'gzip-capture-status', '13': 'gzip-capture-bytes', '14': 'tar-validation', '15': 'source-project-validation', '16': 'raw-child-exit-code'})
     report['process_stages'].update({'17': 'NtSetInformationFile-status', '18': 'SetSecurityInfo-error', '19': 'FlushFileBuffers-bool', '20': 'commit-open-result', '21': 'commit-protect-result', '22': 'commit-flush-result', '23': 'commit-close-result', '24': 'commit-rename-result', '25': 'commit-failure-close-result'})
+    # Stages 20..25 describe retained legacy reports; current managed builds
+    # use these explicit boundaries and the same raw native API observations.
+    report['process_stages'].update({'26': 'managed-NtSetInformationFile-status',
+        '27': 'managed-payload-flush-result', '28': 'managed-record-write-result',
+        '29': 'managed-record-flush-result', '30': 'managed-activation-rename-result'})
 
     def run(argv, **options):
         return run_recorded(report, argv, **options)
