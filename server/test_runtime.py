@@ -551,8 +551,16 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["error"]["message"], "Request metrics are unavailable. Restart the server.")
             self.assertEqual(self.metrics_request(port, "/health/live")[0], 200)
             self.assertEqual(log_path.read_bytes().count(b"asm-metrics-test: clock failure\n"), 1)
+        hostile_home = self.base / ("metrics-hostile-home-" + secrets.token_hex(4))
+        hostile_home.mkdir(mode=0o700)
+        ambient_passfile = hostile_home / ".pgpass"
+        ambient_passfile.write_text("*:*:*:*:synthetic-unused-password\n")
+        ambient_passfile.chmod(0o644)
+        passfile_directory = hostile_home / "passfile-directory"
+        passfile_directory.mkdir(mode=0o700)
         rejected = self.reject(expected=71, LD_PRELOAD=self.metrics_fault_library(), ASM_SERVER_BINARY=str(self.binary),
-                               ASM_METRICS_TEST_FAULT="mutex-init", ASM_METRICS_TEST_TARGET="about")
+                               ASM_METRICS_TEST_FAULT="mutex-init", ASM_METRICS_TEST_TARGET="about",
+                               HOME=str(hostile_home), PGPASSFILE=str(passfile_directory))
         self.assertEqual(rejected.stderr, b"asm-hub: request metrics could not start.\n")
 
     def test_metrics_aborts_preserve_queue_semantics(self):

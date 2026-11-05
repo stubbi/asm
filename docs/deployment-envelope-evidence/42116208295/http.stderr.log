@@ -1,0 +1,37 @@
+test_canonical_exports_preserve_exact_current_bytes_and_media_types (test_runtime.RuntimeTests.test_canonical_exports_preserve_exact_current_bytes_and_media_types) ... ok
+test_cli_and_bind_configuration_fail_closed (test_runtime.RuntimeTests.test_cli_and_bind_configuration_fail_closed) ... ok
+test_concurrent_exports_keep_independent_response_ownership (test_runtime.RuntimeTests.test_concurrent_exports_keep_independent_response_ownership) ... ok
+test_encrypted_client_key_never_prompts_on_an_open_terminal (test_runtime.RuntimeTests.test_encrypted_client_key_never_prompts_on_an_open_terminal) ... ok
+test_export_body_byte_limits_preserve_boundary_bytes (test_runtime.RuntimeTests.test_export_body_byte_limits_preserve_boundary_bytes) ... ok
+test_export_database_work_obeys_the_request_deadline (test_runtime.RuntimeTests.test_export_database_work_obeys_the_request_deadline) ... ok
+test_exports_reject_missing_null_duplicate_and_unready_results (test_runtime.RuntimeTests.test_exports_reject_missing_null_duplicate_and_unready_results) ... ok
+test_health_and_exact_source_identity (test_runtime.RuntimeTests.test_health_and_exact_source_identity) ... ok
+test_metrics_aborts_preserve_queue_semantics (test_runtime.RuntimeTests.test_metrics_aborts_preserve_queue_semantics) ... ok
+test_metrics_concurrent_scrapes_preserve_snapshots (test_runtime.RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots) ... ok
+test_metrics_database_delay_and_failed_request_timing (test_runtime.RuntimeTests.test_metrics_database_delay_and_failed_request_timing) ... ok
+test_metrics_errors_and_exactly_once_queue_accounting (test_runtime.RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting) ... ok
+test_metrics_fixed_exposition_and_route_labels (test_runtime.RuntimeTests.test_metrics_fixed_exposition_and_route_labels) ... ok
+test_metrics_queue_failures_preserve_ownership (test_runtime.RuntimeTests.test_metrics_queue_failures_preserve_ownership) ... FAIL
+test_new_connections_load_replaced_certificate_files (test_runtime.RuntimeTests.test_new_connections_load_replaced_certificate_files) ... ok
+test_private_configuration_file_is_required (test_runtime.RuntimeTests.test_private_configuration_file_is_required) ... ok
+test_reader_rejects_migrator_operator_and_wrong_tls_identities (test_runtime.RuntimeTests.test_reader_rejects_migrator_operator_and_wrong_tls_identities) ... ok
+test_readiness_checks_actual_permissions_after_start (test_runtime.RuntimeTests.test_readiness_checks_actual_permissions_after_start) ... ok
+test_stalled_database_handshake_has_a_deadline (test_runtime.RuntimeTests.test_stalled_database_handshake_has_a_deadline) ... ok
+test_tls_policy_rejects_ambient_options_and_ambiguous_connections (test_runtime.RuntimeTests.test_tls_policy_rejects_ambient_options_and_ambiguous_connections) ... ok
+test_unimplemented_write_routes_do_not_claim_success (test_runtime.RuntimeTests.test_unimplemented_write_routes_do_not_claim_success) ... ok
+test_z_sigterm_closes_the_listener_within_three_seconds (test_runtime.RuntimeTests.test_z_sigterm_closes_the_listener_within_three_seconds) ... ok
+
+======================================================================
+FAIL: test_metrics_queue_failures_preserve_ownership (test_runtime.RuntimeTests.test_metrics_queue_failures_preserve_ownership)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/qualification/server/test_runtime.py", line 556, in test_metrics_queue_failures_preserve_ownership
+    self.assertEqual(rejected.stderr, b"asm-hub: request metrics could not start.\n")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'WARNING: password file "/dev/null" is not[54 chars]t.\n' != b'asm-hub: request metrics could not start.\n'
+
+----------------------------------------------------------------------
+Ran 22 tests in 6.531s
+
+FAILED (failures=1)
+PostgreSQL 18.6 compatibility did not pass. Inspect the retained evidence.

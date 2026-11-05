@@ -83,7 +83,8 @@ db_key_dbname: .asciz "dbname"
 db_key_gss: .asciz "gssencmode"
 db_key_passfile: .asciz "passfile"
 disabled: .asciz "disable"
-null_file: .asciz "/dev/null"
+/* A non-directory prefix prevents password-file reads without warnings. */
+disabled_passfile: .asciz "/dev/null/asm-passfile-disabled"
 db_key_timeout: .asciz "connect_timeout"
 db_key_options: .asciz "options"
 db_key_application: .asciz "application_name"
@@ -100,7 +101,7 @@ export_sql:
 .section .data.rel.ro,"aw"
 .balign 8
 db_keys: .quad db_key_dbname, db_key_timeout, db_key_options, db_key_application, db_key_gss, db_key_passfile, 0
-db_values: .quad db_config, timeout_value, db_options, application_name, disabled, null_file, 0
+db_values: .quad db_config, timeout_value, db_options, application_name, disabled, disabled_passfile, 0
 
 mhd_options:
     .quad 1, 32768, 0

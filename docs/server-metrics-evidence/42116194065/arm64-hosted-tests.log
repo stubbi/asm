@@ -1,0 +1,69 @@
+make: Entering directory '/home/runner/work/asm/asm/server'
+"/home/runner/work/_temp/hosted-server-build/test-metrics"
+{"schema":1,"status":"pass","scope":"assembly-metrics-unit","checks":["zero_exposition","route_classification","bucket_boundaries","decimal_sum_and_capacity","queue_failure","parallel_snapshot","clock_failure_begin","clock_failure_finish","clock_invalid_timespec","clock_conversion_overflow","clock_backwards","overflow_count","overflow_request_counter","overflow_bucket","overflow_sum","overflow_queue_failure","mutex_init_failure","mutex_lock_failure","mutex_unlock_failure"]}
+ASM_SERVER_BINARY="/home/runner/work/_temp/hosted-server-build/asm-hub" ASM_SERVER_SOURCE_REVISION="68d9f54017bff6984616378feb16c215a69ff597" \
+ASM_PROTO_LIBPQ="/home/runner/work/_temp/asm-server-reference/postgres/lib/libpq.so.5" ASM_PROTO_PG_BINDIR="/home/runner/work/_temp/asm-server-reference/postgres/bin" \
+ASM_METRICS_TEST_DIRECTORY="/home/runner/work/_temp/hosted-server-build" \
+ASM_SERVER_CONNECT_NULL_FIXTURE="/home/runner/work/_temp/hosted-server-build/connect-null.so" \
+python3 -m unittest -v test_runtime test_capacity
+test_canonical_exports_preserve_exact_current_bytes_and_media_types (test_runtime.RuntimeTests.test_canonical_exports_preserve_exact_current_bytes_and_media_types) ... ok
+test_cli_and_bind_configuration_fail_closed (test_runtime.RuntimeTests.test_cli_and_bind_configuration_fail_closed) ... ok
+test_concurrent_exports_keep_independent_response_ownership (test_runtime.RuntimeTests.test_concurrent_exports_keep_independent_response_ownership) ... ok
+test_encrypted_client_key_never_prompts_on_an_open_terminal (test_runtime.RuntimeTests.test_encrypted_client_key_never_prompts_on_an_open_terminal) ... ok
+test_export_body_byte_limits_preserve_boundary_bytes (test_runtime.RuntimeTests.test_export_body_byte_limits_preserve_boundary_bytes) ... ok
+test_export_database_work_obeys_the_request_deadline (test_runtime.RuntimeTests.test_export_database_work_obeys_the_request_deadline) ... ok
+test_exports_reject_missing_null_duplicate_and_unready_results (test_runtime.RuntimeTests.test_exports_reject_missing_null_duplicate_and_unready_results) ... ok
+test_health_and_exact_source_identity (test_runtime.RuntimeTests.test_health_and_exact_source_identity) ... ok
+test_metrics_aborts_preserve_queue_semantics (test_runtime.RuntimeTests.test_metrics_aborts_preserve_queue_semantics) ... ok
+test_metrics_concurrent_scrapes_preserve_snapshots (test_runtime.RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots) ... ok
+test_metrics_database_delay_and_failed_request_timing (test_runtime.RuntimeTests.test_metrics_database_delay_and_failed_request_timing) ... ok
+test_metrics_errors_and_exactly_once_queue_accounting (test_runtime.RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting) ... ok
+test_metrics_fixed_exposition_and_route_labels (test_runtime.RuntimeTests.test_metrics_fixed_exposition_and_route_labels) ... ok
+test_metrics_queue_failures_preserve_ownership (test_runtime.RuntimeTests.test_metrics_queue_failures_preserve_ownership) ... FAIL
+test_new_connections_load_replaced_certificate_files (test_runtime.RuntimeTests.test_new_connections_load_replaced_certificate_files) ... ok
+test_private_configuration_file_is_required (test_runtime.RuntimeTests.test_private_configuration_file_is_required) ... ok
+test_reader_rejects_migrator_operator_and_wrong_tls_identities (test_runtime.RuntimeTests.test_reader_rejects_migrator_operator_and_wrong_tls_identities) ... ok
+test_readiness_checks_actual_permissions_after_start (test_runtime.RuntimeTests.test_readiness_checks_actual_permissions_after_start) ... ok
+test_stalled_database_handshake_has_a_deadline (test_runtime.RuntimeTests.test_stalled_database_handshake_has_a_deadline) ... ok
+test_tls_policy_rejects_ambient_options_and_ambiguous_connections (test_runtime.RuntimeTests.test_tls_policy_rejects_ambient_options_and_ambiguous_connections) ... ok
+test_unimplemented_write_routes_do_not_claim_success (test_runtime.RuntimeTests.test_unimplemented_write_routes_do_not_claim_success) ... ok
+test_z_sigterm_closes_the_listener_within_three_seconds (test_runtime.RuntimeTests.test_z_sigterm_closes_the_listener_within_three_seconds) ... ok
+test_aborted_database_handshakes_release_admission (test_capacity.CapacityTests.test_aborted_database_handshakes_release_admission)
+Closing admitted database sockets must release every slot before retry. ... ok
+test_eight_handshakes_refuse_ninth_and_recover_in_the_same_process (test_capacity.CapacityTests.test_eight_handshakes_refuse_ninth_and_recover_in_the_same_process)
+Catch absent admission, leaked permits, and a database-dependent live probe. ... ok
+test_guard_failures_release_admission_before_recovery (test_capacity.CapacityTests.test_guard_failures_release_admission_before_recovery)
+A refused reader guard must release its connection and admission. ... ok
+test_http_disconnects_release_admission_by_the_database_deadline (test_capacity.CapacityTests.test_http_disconnects_release_admission_by_the_database_deadline)
+Disconnects need eventual deadline cleanup, without immediate-cancel claims. ... ok
+test_http_response_abort_preserves_database_capacity (test_capacity.CapacityTests.test_http_response_abort_preserves_database_capacity)
+A partial maximum-size response must not retain database admission. ... ok
+test_invalid_results_release_admission_before_recovery (test_capacity.CapacityTests.test_invalid_results_release_admission_before_recovery)
+Null, duplicate, and oversized database results must not leak slots. ... ok
+test_null_connection_creation_releases_admission (test_capacity.CapacityTests.test_null_connection_creation_releases_admission)
+A null PGconn after admission must not leak a slot or require restart. ... ok
+test_replacement_acquisitions_overlap_individual_releases (test_capacity.CapacityTests.test_replacement_acquisitions_overlap_individual_releases)
+Four retained readers must stay bounded while six clients compete for released slots. ... ok
+test_sixteen_contending_requests_never_hold_more_than_eight_connections (test_capacity.CapacityTests.test_sixteen_contending_requests_never_hold_more_than_eight_connections)
+Concurrent acquisitions must preserve the same eight-connection maximum. ... ok
+test_statement_timeouts_release_admission_before_recovery (test_capacity.CapacityTests.test_statement_timeouts_release_admission_before_recovery)
+The one-second SQL timeout must remain distinct from the outer deadline. ... ok
+test_successful_reads_release_admission_repeatedly (test_capacity.CapacityTests.test_successful_reads_release_admission_repeatedly)
+Omitting the success-path release must exhaust the eight-slot budget. ... ok
+test_tls_failures_release_admission_before_recovery (test_capacity.CapacityTests.test_tls_failures_release_admission_before_recovery)
+TLS identity refusal must not consume slots across later requests. ... ok
+
+======================================================================
+FAIL: test_metrics_queue_failures_preserve_ownership (test_runtime.RuntimeTests.test_metrics_queue_failures_preserve_ownership)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/asm/asm/server/test_runtime.py", line 556, in test_metrics_queue_failures_preserve_ownership
+    self.assertEqual(rejected.stderr, b"asm-hub: request metrics could not start.\n")
+AssertionError: b'WARNING: password file "/dev/null" is not[54 chars]t.\n' != b'asm-hub: request metrics could not start.\n'
+
+----------------------------------------------------------------------
+Ran 34 tests in 87.063s
+
+FAILED (failures=1)
+make: *** [Makefile:92: test] Error 1
+make: Leaving directory '/home/runner/work/asm/asm/server'

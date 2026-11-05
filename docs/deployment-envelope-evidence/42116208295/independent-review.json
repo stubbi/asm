@@ -1,0 +1,95 @@
+{
+  "architecture": "amd64",
+  "attempt": 1,
+  "cleanup": {
+    "log_failures": [],
+    "preparation": "removed",
+    "reported_removed_containers": 41,
+    "state_failures": []
+  },
+  "execution": "native",
+  "files": {
+    "http.stderr.log": {
+      "bytes": 4018,
+      "sha256": "d035957f59d75a6056723b20c92abae23907e82ca00bd9ce17eed32a42cc3cec"
+    },
+    "http.stdout.log": {
+      "bytes": 479,
+      "sha256": "da97e97de88d5b5c3fa6029417cc19112b6217ed1a24b0704ba3878dd6ae29a8"
+    },
+    "qualification.json": {
+      "bytes": 13725,
+      "sha256": "e8a04a1d51c3d6edf6eaaf9749b0e55a97b9f4b87a7a851f0d2f056d63f5a1d3"
+    }
+  },
+  "first_failure": "RuntimeTests.test_metrics_queue_failures_preserve_ownership at server/test_runtime.py:556: exact stderr contains an additional password-file warning.",
+  "limits": [
+    "The raw unittest representation abbreviates the actual warning bytes. No full warning is reconstructed here.",
+    "The operator has a complete PostgreSQL 18.6, libpq 16.15, TLSv1.3 identity receipt. The failed HTTP part emitted no final identity or metrics-tool descriptor.",
+    "The fixed 1 CPU, 256 MiB, no-swap, 64 MiB tmpfs profile did not run. No cgroup closure, nine-cancellation, or in-flight response result exists.",
+    "Cleanup removal is reported by the owned harness. No cluster query or later Docker inspection was performed.",
+    "Earlier failed run 42111348191 remains retained. No private capacity, graceful drain, deployment, or cross-architecture claim follows."
+  ],
+  "ordinary": {
+    "complete_http_report_emitted": false,
+    "http_failed": 1,
+    "http_passed": 21,
+    "http_skipped": 0,
+    "http_tests_run": 22,
+    "macos_exclusions": [
+      {
+        "id": "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation",
+        "reason": "macOS extended ACL interface"
+      }
+    ],
+    "metrics_test_tool_hashes_retained": false,
+    "metrics_unit": {
+      "checks": [
+        "zero_exposition",
+        "route_classification",
+        "bucket_boundaries",
+        "decimal_sum_and_capacity",
+        "queue_failure",
+        "parallel_snapshot",
+        "clock_failure_begin",
+        "clock_failure_finish",
+        "clock_invalid_timespec",
+        "clock_conversion_overflow",
+        "clock_backwards",
+        "overflow_count",
+        "overflow_request_counter",
+        "overflow_bucket",
+        "overflow_sum",
+        "overflow_queue_failure",
+        "mutex_init_failure",
+        "mutex_lock_failure",
+        "mutex_unlock_failure"
+      ],
+      "schema": 1,
+      "scope": "assembly-metrics-unit",
+      "status": "pass"
+    },
+    "operator_applicable_passed": 22,
+    "operator_tests_run": 23
+  },
+  "original_artifact": {
+    "bytes": 161689,
+    "id": 13456082647,
+    "retained": "private collection; not duplicated in Git",
+    "sha256": "5f6aade9ee402f7d4b4196435c16eda9fccf6800950cfbd9a9e0e5caa45429d7"
+  },
+  "resource_profile": {
+    "cgroup_samples": 0,
+    "executed": false,
+    "nine_cancellation_assertion_executed": false,
+    "planned_cases": 37,
+    "preparation": "skipped",
+    "request_availability_records": 0
+  },
+  "run": "https://github.com/stubbi/asm/actions/runs/42116208295",
+  "schema": 1,
+  "source_parent": "68d9f54017bff6984616378feb16c215a69ff597",
+  "source_revision": "c7dbecc236dcf71b0c24e3416be8b7506ad8d28c",
+  "status": "fail",
+  "workflow_blob": "1cecf11010d4b2cd6e6803afb945bbbfd648a52c"
+}

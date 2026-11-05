@@ -177,7 +177,13 @@ Each identifier has a 63-byte limit.
 Certificate paths must be absolute and have a 1024-byte limit.
 
 The process removes all `PG*` environment variables before connections start.
-It fixes `passfile` to `/dev/null` and disables GSS encryption negotiation.
+It fixes `passfile` to `/dev/null/asm-passfile-disabled` and disables GSS encryption negotiation.
+This assumes the standard [Linux `/dev/null` character device](https://man7.org/linux/man-pages/man4/null.4.html).
+The child lookup fails because a path prefix is not a directory ([Linux `stat`](https://man7.org/linux/man-pages/man2/stat.2.html)).
+The explicit nonempty path prevents home-directory password-file fallback.
+Pinned [libpq 16.15 source](https://github.com/postgres/postgres/blob/7d3e000c5961a544302072058a1184e9a588837b/src/interfaces/libpq/fe-connect.c#L1183-L1218) selects only that path.
+Its [password-file reader](https://github.com/postgres/postgres/blob/7d3e000c5961a544302072058a1184e9a588837b/src/interfaces/libpq/fe-connect.c#L7121-L7130) silently returns no password when the lookup fails.
+These source rules were checked on 2026-11-05.
 Password fields, service files, custom connection options, and host lists are rejected.
 An encrypted client key is refused without an interactive password prompt.
 libpq performs TLS negotiation, CA validation, hostname validation, and client authentication.
@@ -350,6 +356,18 @@ The [original reports and shared failure log](../docs/server-metrics-evidence/42
 A local helper fixture reproduced the lookup's collision with a `# HELP` line.
 Test-driver correction `240c371342c7e06a9a561dded7381d734802fb0a` changes no assembly or runtime behavior.
 It has no complete native qualification result.
+
+The [joined native run 42116194065](../docs/server-metrics-evidence/42116194065/manifest.json) tested source `68d9f54017bff6984616378feb16c215a69ff597`.
+Native AMD64 and ARM64 each passed all nineteen metrics unit checks and 33 of 34 hosted cases.
+The exact startup-error assertion failed because libpq added a password-file warning.
+Its retained representation abbreviates the warning; full child stderr and metrics tool hashes are unavailable.
+Catalog publication and build-failure-preservation checks did not run.
+
+The [PostgreSQL 18 preflight record](../docs/deployment-envelope-evidence/42116208295/independent-review.json) retains source `c7dbecc236dcf71b0c24e3416be8b7506ad8d28c` and run `42116208295`.
+Its ordinary gate passed 43 applicable cases and failed the same startup-error assertion.
+One macOS ACL exclusion remained explicit.
+The planned 37-case resource profile did not run.
+Neither failed run qualifies the corrected passfile path or a resource envelope.
 
 The isolated metrics source `dc37fb2292614f07c81580b7723cac3fd3b4497b` retains the earlier inline child-publication check.
 Its result cannot establish the integrated publication gate.

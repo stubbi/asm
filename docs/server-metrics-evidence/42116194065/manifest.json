@@ -1,0 +1,157 @@
+{
+  "attempt": 1,
+  "files": {
+    "amd64-hosted-tests.log": {
+      "bytes": 7781,
+      "sha256": "81218ec8edbad244c40bf93cd375aed308110bd52b00fc2d67ea0be370fa082e"
+    },
+    "amd64-qualification.json": {
+      "bytes": 4380,
+      "sha256": "3cda3da43bc014900cfc75f141bd8588a80af33b70c57d432918a3a803b33504"
+    },
+    "arm64-hosted-tests.log": {
+      "bytes": 7781,
+      "sha256": "8f42998e4eb5e301e310ffd5b4574ebce5d5bf5da7010e7fedcb3121c6976b65"
+    },
+    "arm64-qualification.json": {
+      "bytes": 4379,
+      "sha256": "bac8811b59a5f07f75fa792bf00329a1242fc68b513023d8c9457f687aac78e9"
+    }
+  },
+  "first_failure": "RuntimeTests.test_metrics_queue_failures_preserve_ownership: exact startup stderr includes an additional password-file warning.",
+  "jobs": {
+    "amd64": {
+      "artifact": {
+        "api_bytes": 157729,
+        "api_digest": "sha256:3e0dd5807f1070bfe4059fcc25ad05c5a17baf708493a69dc33f827df644afa8",
+        "id": 13456261854
+      },
+      "complete_metrics_descriptor": false,
+      "execution": "native",
+      "host": {
+        "machine": "x86_64",
+        "node": "runnervm7aw5e",
+        "processor": "x86_64",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux",
+        "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026"
+      },
+      "hosted": {
+        "failed": 1,
+        "passed": 33,
+        "skipped": 0,
+        "tests_run": 34
+      },
+      "job_id": 127556368889,
+      "later_gates_skipped": [
+        "Check canonical catalog publication with PostgreSQL TLS",
+        "Check build failure preserves both executables"
+      ],
+      "metrics_test_tool_hashes_retained": false,
+      "metrics_unit": {
+        "checks": 19,
+        "status": "pass"
+      },
+      "native_link": {
+        "log_sha256": "aff9fdc736e23f8f687a16f173d084bf62cb7403acf25c011a791c5e94f8b219",
+        "status": "pass",
+        "tests": 11
+      },
+      "reference": {
+        "log_sha256": "429d579f4f536c108fbd5d15b0014f1f552482362fe3c17c2da0cced54672130",
+        "status": "pass",
+        "tests": 19
+      },
+      "runner_labels": [
+        "ubuntu-24.04"
+      ],
+      "target": "x86_64-linux"
+    },
+    "arm64": {
+      "artifact": {
+        "api_bytes": 164943,
+        "api_digest": "sha256:1d1f08395d0097e762fbd6323e2be2ac61001ed20c5cffcc657da5280f9e8779",
+        "id": 13457431170
+      },
+      "complete_metrics_descriptor": false,
+      "execution": "native",
+      "host": {
+        "machine": "aarch64",
+        "node": "runnervmkb2gk",
+        "processor": "aarch64",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux",
+        "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026"
+      },
+      "hosted": {
+        "failed": 1,
+        "passed": 33,
+        "skipped": 0,
+        "tests_run": 34
+      },
+      "job_id": 127556368916,
+      "later_gates_skipped": [
+        "Check canonical catalog publication with PostgreSQL TLS",
+        "Check build failure preserves both executables"
+      ],
+      "metrics_test_tool_hashes_retained": false,
+      "metrics_unit": {
+        "checks": 19,
+        "status": "pass"
+      },
+      "native_link": {
+        "log_sha256": "cc59c5ea9c6184676d5ad39216e8dac419ca687ee7281cde307070e800330ff5",
+        "status": "pass",
+        "tests": 11
+      },
+      "reference": {
+        "log_sha256": "ecc93bf440edf753608bea08d8512da5e2afbca003f09d36dc605f0f10118eb1",
+        "status": "pass",
+        "tests": 19
+      },
+      "runner_labels": [
+        "ubuntu-24.04-arm"
+      ],
+      "target": "aarch64-linux"
+    }
+  },
+  "limits": [
+    "The original hosted result is 33 passes and one failure on each native host; neither job qualified the source.",
+    "The raw logs contain the exact 19 named unit pass record. A complete hosted metrics descriptor and test-tool hashes are absent.",
+    "The unittest representation abbreviates the actual warning bytes. No full warning is reconstructed here.",
+    "Catalog publication and build-failure-preservation gates were skipped after the hosted failure.",
+    "Native execution is the CI job declaration and host report, not hardware attestation.",
+    "No image, resource-profile, deployment, recovery, throughput, or cross-architecture capacity claim follows."
+  ],
+  "metrics_unit": {
+    "checks": [
+      "zero_exposition",
+      "route_classification",
+      "bucket_boundaries",
+      "decimal_sum_and_capacity",
+      "queue_failure",
+      "parallel_snapshot",
+      "clock_failure_begin",
+      "clock_failure_finish",
+      "clock_invalid_timespec",
+      "clock_conversion_overflow",
+      "clock_backwards",
+      "overflow_count",
+      "overflow_request_counter",
+      "overflow_bucket",
+      "overflow_sum",
+      "overflow_queue_failure",
+      "mutex_init_failure",
+      "mutex_lock_failure",
+      "mutex_unlock_failure"
+    ],
+    "raw_record": "The identical complete named JSON record appears once in each retained hosted log.",
+    "schema": 1,
+    "scope": "assembly-metrics-unit",
+    "status": "pass"
+  },
+  "run": "https://github.com/stubbi/asm/actions/runs/42116194065",
+  "schema": 1,
+  "source_revision": "68d9f54017bff6984616378feb16c215a69ff597",
+  "status": "fail"
+}
