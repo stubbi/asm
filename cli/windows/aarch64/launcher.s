@@ -8,6 +8,7 @@
  * Stack224 plus explicit outgoing16; preserves x19-x29. Closes owned handles.
  */
 .text
+.equ WM_ARGV_MAX, 1023          /* complete argv capacity accepted by win_startup */
 .macro WM_QUOTE
     cbz x22, .Lwml_fail
     strh w10, [x21], #2
@@ -38,7 +39,7 @@ win_managed_launch:
 .Lwml_arg:
     ldr x0, [x19, x23, lsl #3]
     cbz x0, .Lwml_ready
-    cmp x23, #256
+    cmp x23, #WM_ARGV_MAX
     b.hs .Lwml_fail
     ARM_ADDR x1, win_arg_w
     mov x2, #16384

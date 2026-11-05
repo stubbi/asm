@@ -78,6 +78,9 @@ DeleteProcThreadAttributeList:
     API_CLOBBER
     ret
 CreateProcessW:
+    ARM_ADDR x10,created
+    mov x11,#1
+    str x11,[x10]
     ARM_ADDR x10,handler
     ldr x10,[x10]
     cmp x10,#1
@@ -251,27 +254,43 @@ bound: .quad 0
 handler: .quad 0
 resumed: .quad 0
 terminated: .quad 0
+created: .quad 0
 closed: .space 40
-argv0: .asciz "root.exe"
-argv1: .asciz "argument with spaces"
-argv2: .asciz ""
-.p2align 3
-args: .quad argv0,argv1,argv2,0
 win_exe_w: .space 8192
 win_arg_w: .space 32768
 win_command_w: .space 65536
+command_canary: .quad 0x12345678
 win_startup_info: .space 112
 win_inherited_handles: .space 24
 win_attribute_list: .space 1024
 win_process_info: .space 24
 '''
-    command='"root.exe" "argument with spaces" "" '+chr(0)
-    shim+='expected_command: .hword '+','.join(str(ord(c)) for c in command)+'\n'
+    basic_args=['root.exe','argument with spaces','']
+    basic_command='"root.exe" "argument with spaces" "" '+chr(0)
+    cases=[(name,basic_args,basic_command,False) for name in
+           ['full_dword','image_mismatch','resume_error','handler_error','wait_error','create_error']]
+    # Restoring the application-spawn limit here rejects supported complete CLI
+    # invocations. Compare every forwarded character, including the final token.
+    for count in (256,257,1023,1024):
+        args=['root.exe','run','--']+['a']*(count-4)+['tail']
+        command='"root.exe" "run" "--" '+'"a" '*(count-4)+'"tail" '+chr(0)
+        cases.append((f'argc_{count}',args,command,count==1024))
+    # Quoting expands each literal quote to two UTF-16 units. With root.exe,
+    # 16,376 quotes use all 32,766 available units; one more must fail safely.
+    for count in (16376,16377):
+        command='"root.exe" "'+'\\"'*count+'" '+chr(0)
+        cases.append((f'command_quotes_{count}',['root.exe','"'*count],command,count==16377))
     results={}
     with tempfile.TemporaryDirectory(prefix='asm-arm-launcher-') as tmp:
-        for case,name in enumerate(['full_dword','image_mismatch','resume_error','handler_error','wait_error','create_error']):
-            expected=0xc000013a if case==0 else -1
-            source=prefix+shim+f'''\n.text
+        for case,(name,args,command,early_reject) in enumerate(cases):
+            succeeds=not early_reject and (case==0 or case>=6)
+            expected=0xc000013a if succeeds else -1
+            data='\n.data\n'
+            for index,arg in enumerate(args):
+                data+=f'argv{index}: .asciz '+json.dumps(arg)+'\n'
+            data+='.p2align 3\nargs: .quad '+','.join(f'argv{i}' for i in range(len(args)))+',0\n'
+            data+='expected_command: .hword '+','.join(str(ord(c)) for c in command)+'\n'
+            source=prefix+shim+data+f'''\n.text
 .global _main
 _main:
     stp x29,x30,[sp,#-16]!
@@ -285,16 +304,33 @@ _main:
     ARM_IMM x10,{expected}
     cmp x9,x10
     b.ne failed
+    ARM_ADDR x10,command_canary
+    ldr x10,[x10]
+    ARM_IMM x11,0x12345678
+    cmp x10,x11
+    b.ne failed
+    ARM_ADDR x10,duplicates
+    ldr x10,[x10]
+    cmp x10,#{0 if early_reject else 3}
+    b.ne failed
+    ARM_ADDR x10,created
+    ldr x10,[x10]
+    cmp x10,#{int(not early_reject and case!=3)}
+    b.ne failed
     ARM_ADDR x10,closed
-    mov x11,#{3 if case in (3,5) else 5}
+    mov x11,#5
 1:  ldr x12,[x10],#8
-    cmp x12,#1
+    mov x13,#{0 if early_reject else 1}
+    cmp x11,#2
+    b.hi 2f
+    mov x13,#{0 if early_reject or case in (3,5) else 1}
+2:  cmp x12,x13
     b.ne failed
     subs x11,x11,#1
     b.ne 1b
     ARM_ADDR x10,resumed
     ldr x10,[x10]
-    cmp x10,#{int(case in (0,2,4))}
+    cmp x10,#{int(succeeds or case in (2,4))}
     b.ne failed
     ARM_ADDR x10,terminated
     ldr x10,[x10]
@@ -319,5 +355,5 @@ case_id: .quad {case}
 '''
             source=source.replace('adrp \\reg, \\symbol','adrp \\reg, (\\symbol)@PAGE').replace('add \\reg, \\reg, :lo12:\\symbol','add \\reg, \\reg, (\\symbol)@PAGEOFF')
             results[name]=abi_test.run_case(Path(tmp),name,source)
-    out={'scope':'actual ARM64 managed launcher with controlled APIs; child binding order, streams, infinite wait, full DWORD, termination/reaping and ownership; not Windows console qualification','result':'pass' if all(v.get('exit_code')==0 for v in results.values()) else 'fail','cases':results};a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(out,indent=2));return out['result']!='pass'
+    out={'scope':'actual ARM64 managed launcher with controlled APIs; complete argv through 1023 entries, count and quoted-command overflow rejection, child binding order, streams, infinite wait, full DWORD, termination/reaping and ownership; not Windows console qualification','result':'pass' if all(v.get('exit_code')==0 for v in results.values()) else 'fail','cases':results};a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(out,indent=2));return out['result']!='pass'
 if __name__=='__main__':raise SystemExit(main())
