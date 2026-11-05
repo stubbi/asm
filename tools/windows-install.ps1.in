@@ -1,0 +1,655 @@
+#requires -version 5.1
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Generated bootstrap infrastructure. Native Asm commands remain assembly.
+param([switch]$ReplaceExisting, [switch]$RepairLauncher)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$AsmSpecBase64 = '@@ASM_SPEC@@'
+
+try {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw 'This installer requires native Windows. Use the installer for your operating system.'
+    }
+    if (-not [Environment]::Is64BitProcess) {
+        throw 'Run this installer from 64-bit PowerShell.'
+    }
+    Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
+using System.Security.Principal;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace AsmBootstrapV1 {
+public static class Installer {
+    const uint Read = 0x80000000, Write = 0x40000000, Delete = 0x10000;
+    const uint ReadControl = 0x20000, Sync = 0x100000, ReadAttributes = 0x80;
+    const uint DirectoryAttribute = 0x10, ReparseAttribute = 0x400;
+    const int MaximumArtifact = 67108864;
+    static readonly string User = WindowsIdentity.GetCurrent().User.Value;
+    static readonly string SystemSid = "S-1-5-18", AdminSid = "S-1-5-32-544";
+    static readonly string InstallerSid = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
+    static readonly Encoding Ascii = Encoding.ASCII;
+
+    [StructLayout(LayoutKind.Sequential)] struct IoStatus { public IntPtr Status; public UIntPtr Information; }
+    [StructLayout(LayoutKind.Sequential)] struct UnicodeString { public ushort Length, MaximumLength; public IntPtr Buffer; }
+    [StructLayout(LayoutKind.Sequential)] struct ObjectAttributes {
+        public uint Length; public IntPtr Root, Name; public uint Attributes; public IntPtr Security, Quality;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct FileInfo {
+        public uint Attributes; public System.Runtime.InteropServices.ComTypes.FILETIME Creation, Access, Write;
+        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct DeviceInfo { public uint Type, Characteristics; }
+    [StructLayout(LayoutKind.Sequential)] struct Overlapped {
+        public IntPtr Internal, InternalHigh; public uint Offset, OffsetHigh; public IntPtr Event;
+    }
+    [DllImport("ntdll.dll")] static extern int NtCreateFile(out IntPtr file, uint access, ref ObjectAttributes attributes,
+        out IoStatus status, IntPtr allocation, uint fileAttributes, uint share, uint disposition, uint options, IntPtr ea, uint eaLength);
+    [DllImport("ntdll.dll")] static extern int NtSetInformationFile(IntPtr file, out IoStatus status, IntPtr info, uint length, uint kind);
+    [DllImport("ntdll.dll")] static extern int NtQueryVolumeInformationFile(IntPtr file, out IoStatus status,
+        out DeviceInfo info, uint length, uint kind);
+    [DllImport("ntdll.dll")] static extern int NtQueryDirectoryFile(IntPtr file, IntPtr evt, IntPtr routine, IntPtr context,
+        out IoStatus status, IntPtr buffer, uint length, uint kind, [MarshalAs(UnmanagedType.U1)] bool single,
+        IntPtr pattern, [MarshalAs(UnmanagedType.U1)] bool restart);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr file, out FileInfo info);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool ReadFile(IntPtr file, byte[] data, uint size, out uint done, IntPtr overlapped);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool WriteFile(IntPtr file, byte[] data, uint size, out uint done, IntPtr overlapped);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetFilePointerEx(IntPtr file, long distance, out long position, uint method);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool FlushFileBuffers(IntPtr file);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetVolumeInformationByHandleW(
+        IntPtr file, StringBuilder volume, uint volumeSize, out uint serial, out uint maximumComponent, out uint flags,
+        StringBuilder filesystem, uint filesystemSize);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern uint GetDriveTypeW(string root);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool IsWow64Process2(IntPtr process, out ushort machine, out ushort native);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool LockFileEx(IntPtr file, uint flags, uint reserved, uint low, uint high, ref Overlapped overlap);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool UnlockFileEx(IntPtr file, uint reserved, uint low, uint high, ref Overlapped overlap);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern uint GetSecurityInfo(IntPtr handle, uint kind, uint flags,
+        out IntPtr owner, out IntPtr group, out IntPtr dacl, out IntPtr sacl, out IntPtr descriptor);
+    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        string text, uint revision, out IntPtr descriptor, out uint bytes);
+    [DllImport("advapi32.dll")] static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+
+    static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    static bool Equal(byte[] a, byte[] b) {
+        if (a.Length != b.Length) return false;
+        for (int i=0; i<a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+    static string Join(string parent, string name) { return parent.EndsWith("\\",StringComparison.Ordinal) ? parent+name : parent+"\\"+name; }
+    static string ParentPath(string path, int slash) { return path.Substring(0,slash == 2 ? 3 : slash); }
+    static string Hex(byte[] data) {
+        using (SHA256 hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
+    }
+    static uint U32(byte[] data, int offset) { Require(offset >= 0 && offset <= data.Length-4, "The PE data is truncated."); return BitConverter.ToUInt32(data, offset); }
+    static ushort U16(byte[] data, int offset) { Require(offset >= 0 && offset <= data.Length-2, "The PE data is truncated."); return BitConverter.ToUInt16(data, offset); }
+    static bool Fits(ulong offset, ulong length, ulong total) { return offset <= total && length <= total-offset; }
+    static bool Overlap(ulong a, ulong sizeA, ulong b, ulong sizeB) { return sizeA != 0 && sizeB != 0 && a < b+sizeB && b < a+sizeA; }
+    static int[] Version(string text) {
+        Require(text != null && text.Length <= 32 && Regex.IsMatch(text, @"\A(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\z"), "A CLI version is not canonical.");
+        string[] fields = text.Split('.'); int[] result = new int[3];
+        for (int i=0; i<3; i++) Require(Int32.TryParse(fields[i], NumberStyles.None, CultureInfo.InvariantCulture, out result[i]), "A CLI version component exceeds its bound.");
+        return result;
+    }
+    static bool AtLeast(string value, string minimum) {
+        int[] a=Version(value), b=Version(minimum);
+        for (int i=0; i<3; i++) { if (a[i] != b[i]) return a[i] > b[i]; }
+        return true;
+    }
+    static bool Trusted(string sid) { return sid == User || sid == SystemSid || sid == AdminSid || sid == InstallerSid; }
+    static void Security(IntPtr file, bool privateOwner) {
+        IntPtr owner, group, dacl, sacl, descriptor;
+        Require(GetSecurityInfo(file, 1, 5, out owner, out group, out dacl, out sacl, out descriptor) == 0,
+            "Cannot read file ownership and access rules. Check the installation permissions.");
+        try {
+            uint size=GetSecurityDescriptorLength(descriptor);
+            Require(size > 0 && size <= 65536, "The file security descriptor exceeds its bound.");
+            byte[] data=new byte[size]; Marshal.Copy(descriptor, data, 0, data.Length);
+            RawSecurityDescriptor sd=new RawSecurityDescriptor(data, 0);
+            Require(sd.Owner != null && (privateOwner ? sd.Owner.Value == User : Trusted(sd.Owner.Value)),
+                "An installation object has an unexpected owner. Use your own protected HOME directory.");
+            Require(sd.DiscretionaryAcl != null && sd.DiscretionaryAcl.Count <= 256, "An installation object has missing or excessive access rules.");
+            foreach (GenericAce ace in sd.DiscretionaryAcl) {
+                if ((ace.AceFlags & AceFlags.InheritOnly) != 0) continue;
+                CommonAce simple=ace as CommonAce;
+                Require(simple != null && (simple.AceType == AceType.AccessAllowed || simple.AceType == AceType.AccessDenied),
+                    "An installation object has unsupported effective access rules.");
+                if (simple.AceType == AceType.AccessDenied) continue;
+                string sid=simple.SecurityIdentifier.Value;
+                if (Trusted(sid) || sid == "S-1-3-4") continue;
+                uint mutable=unchecked((uint)simple.AccessMask) & 0x500d0156U;
+                if (!privateOwner && sd.Owner.Value != User) mutable &= ~4U;
+                Require(mutable == 0, "Another user can change an installation path. Remove the unsafe access grant.");
+            }
+        } finally { LocalFree(descriptor); }
+    }
+    static string Normalize(string path) {
+        Require(path != null && path.Length > 0 && Encoding.UTF8.GetByteCount(path) <= 4096, "HOME or a source path is missing or too long.");
+        path=path.Replace('/', '\\');
+        if (path.Length >= 4 && path[0] == '\\' && Char.IsLetter(path[1]) && path[2] == ':') path=path.Substring(1);
+        Require(path.Length >= 3 && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' && path[2] == '\\',
+            "Use an absolute local drive path for HOME and the source artifact.");
+        Require(path.Length == 3 || path[path.Length-1] != '\\', "A path has an ambiguous trailing separator.");
+        string[] parts=path.Substring(3).Split('\\');
+        if (path.Length != 3) foreach (string part in parts) {
+            Require(part.Length > 0 && part != "." && part != ".." && !part.EndsWith(".", StringComparison.Ordinal) && !part.EndsWith(" ", StringComparison.Ordinal),
+                "A path contains an empty, traversal, or ambiguous component.");
+            foreach (char c in part) Require(c >= 32 && "<>:\"|?*".IndexOf(c) < 0, "A path contains a device, stream, or control character.");
+            string stem=part.Split('.')[0].ToUpperInvariant();
+            Require(!Regex.IsMatch(stem, @"\A(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9]|LPT[0-9])\z"), "A path contains a reserved Windows name.");
+        }
+        return Char.ToUpperInvariant(path[0])+path.Substring(1);
+    }
+    public static string NativeTarget() {
+        ushort process, native;
+        Require(IsWow64Process2(new IntPtr(-1), out process, out native), "Cannot identify the native Windows ISA. Use Windows 10 version 1709 or later.");
+        if (native == 0x8664) return "x86_64-windows";
+        if (native == 0xaa64) return "aarch64-windows";
+        throw new InvalidOperationException("This installer supports native Windows x64 and ARM64 only.");
+    }
+    sealed class Node : IDisposable {
+        public IntPtr Handle; public Node Parent; public string Name, Path; public bool Directory, PrivateOwner;
+        public FileInfo Identity;
+        public void Dispose() { if (Handle != IntPtr.Zero) { CloseHandle(Handle); Handle=IntPtr.Zero; } }
+        public void Check() {
+            FileInfo current;
+            Require(GetFileInformationByHandle(Handle, out current), "Cannot check a held installation object.");
+            Require((current.Attributes & ReparseAttribute) == 0 && ((current.Attributes & DirectoryAttribute) != 0) == Directory && (Directory || current.Links == 1),
+                "An installation object is a reparse point, special object, or linked file.");
+            Require(current.Volume == Identity.Volume && current.IndexHigh == Identity.IndexHigh && current.IndexLow == Identity.IndexLow,
+                "A held installation identity changed.");
+        }
+        public bool Same(Node other) { return Identity.Volume == other.Identity.Volume && Identity.IndexHigh == other.Identity.IndexHigh && Identity.IndexLow == other.Identity.IndexLow; }
+        public byte[] Bytes(int limit) {
+            Check(); FileInfo info;
+            Require(GetFileInformationByHandle(Handle, out info) && info.SizeHigh == 0 && info.SizeLow <= limit, "An installation file exceeds its byte bound.");
+            long position; Require(SetFilePointerEx(Handle, 0, out position, 0), "Cannot seek the held file.");
+            byte[] data=new byte[info.SizeLow]; int offset=0;
+            while (offset < data.Length) {
+                byte[] chunk=new byte[Math.Min(65536, data.Length-offset)]; uint done;
+                Require(ReadFile(Handle, chunk, (uint)chunk.Length, out done, IntPtr.Zero) && done > 0, "The held file is truncated or unreadable.");
+                Buffer.BlockCopy(chunk, 0, data, offset, (int)done); offset+=(int)done;
+            }
+            byte[] extra=new byte[1]; uint more;
+            Require(ReadFile(Handle, extra, 1, out more, IntPtr.Zero) && more == 0, "The held file grew during inspection.");
+            Check(); return data;
+        }
+        public void Append(byte[] data, int count) {
+            int offset=0;
+            while (offset < count) {
+                byte[] chunk=new byte[Math.Min(65536, count-offset)]; Buffer.BlockCopy(data, offset, chunk, 0, chunk.Length); uint done;
+                Require(WriteFile(Handle, chunk, (uint)chunk.Length, out done, IntPtr.Zero) && done > 0, "Cannot write the private staged file. Check available disk space.");
+                offset+=(int)done;
+            }
+        }
+        public void Flush() { Require(FlushFileBuffers(Handle), "Cannot flush the staged file. The selected CLI was preserved."); }
+        public void Rename(Node parent, string name, bool replace) {
+            string finalPath=Join(parent.Path,name);
+            byte[] encoded=Encoding.Unicode.GetBytes(name); IntPtr info=Marshal.AllocHGlobal(20+encoded.Length);
+            try {
+                for (int i=0; i<20+encoded.Length; i++) Marshal.WriteByte(info, i, 0);
+                Marshal.WriteInt32(info, replace ? 3 : 2); Marshal.WriteIntPtr(info, 8, parent.Handle);
+                Marshal.WriteInt32(info, 16, encoded.Length); Marshal.Copy(encoded, 0, IntPtr.Add(info, 20), encoded.Length);
+                IoStatus status;
+                Require(NtSetInformationFile(Handle, out status, info, (uint)(20+encoded.Length), 65) == 0,
+                    "Cannot publish the installation entry. Close Asm processes, check the destination, and retry.");
+                Parent=parent; Name=name; Path=finalPath;
+            } finally { Marshal.FreeHGlobal(info); }
+        }
+    }
+    static Node Open(Node parent, string name, bool directory, bool create, bool optional, bool privateOwner, uint access, uint share) {
+        IntPtr text=Marshal.StringToHGlobalUni(name), unicode=IntPtr.Zero, sd=IntPtr.Zero;
+        try {
+            UnicodeString value=new UnicodeString(); value.Length=checked((ushort)(name.Length*2)); value.MaximumLength=value.Length; value.Buffer=text;
+            unicode=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(UnicodeString))); Marshal.StructureToPtr(value, unicode, false);
+            if (create) {
+                uint size; string inheritance=directory ? "OICI" : "";
+                Require(ConvertStringSecurityDescriptorToSecurityDescriptorW("O:"+User+"D:P(A;"+inheritance+";FA;;;"+User+")(A;"+inheritance+";FA;;;SY)", 1, out sd, out size),
+                    "Cannot prepare private installation access rules.");
+            }
+            ObjectAttributes attributes=new ObjectAttributes(); attributes.Length=(uint)Marshal.SizeOf(typeof(ObjectAttributes));
+            attributes.Root=parent == null ? IntPtr.Zero : parent.Handle; attributes.Name=unicode; attributes.Attributes=0x1040; attributes.Security=sd;
+            IoStatus status; IntPtr handle;
+            int result=NtCreateFile(out handle, access|ReadControl|ReadAttributes|Sync, ref attributes, out status, IntPtr.Zero,
+                directory ? DirectoryAttribute : 0x80U, share, create ? 2U : 1U,
+                0x200020U | (directory ? 1U : 0x40U), IntPtr.Zero, 0);
+            if (optional && (result == unchecked((int)0xc0000034) || result == unchecked((int)0xc000003a))) return null;
+            Require(result == 0, create ? "A private staging destination already exists or cannot be created." : "Cannot open the protected installation path without reparse traversal.");
+            Node node=new Node(); node.Handle=handle; node.Parent=parent; node.Name=name; node.Directory=directory; node.PrivateOwner=privateOwner;
+            node.Path=parent == null ? name.Substring(4) : Join(parent.Path,name);
+            try {
+                Require(GetFileInformationByHandle(handle, out node.Identity), "Cannot read the held file identity.");
+                node.Check(); Security(handle, privateOwner); return node;
+            } catch { node.Dispose(); throw; }
+        } finally {
+            if (sd != IntPtr.Zero) LocalFree(sd);
+            if (unicode != IntPtr.Zero) Marshal.FreeHGlobal(unicode);
+            Marshal.FreeHGlobal(text);
+        }
+    }
+    sealed class Paths : IDisposable {
+        public List<Node> Held=new List<Node>();
+        public Node Keep(Node node) { if (node != null) Held.Add(node); return node; }
+        public Node Tree(string path, bool privateLast) {
+            path=Normalize(path); Node current=Keep(Open(null, "\\??\\"+path.Substring(0,3), true, false, false, false, 0x21, 7));
+            StringBuilder fs=new StringBuilder(32); uint serial, maximum, flags; IoStatus status; DeviceInfo device;
+            Require(GetDriveTypeW(path.Substring(0,3)) == 3 && GetVolumeInformationByHandleW(current.Handle, null, 0, out serial, out maximum, out flags, fs, 32)
+                && String.Equals(fs.ToString(), "NTFS", StringComparison.OrdinalIgnoreCase)
+                && NtQueryVolumeInformationFile(current.Handle, out status, out device, 8, 4) == 0 && (device.Characteristics & 0x10) == 0,
+                "The installation requires a local fixed NTFS volume.");
+            string[] parts=path.Substring(3).Split('\\');
+            for (int i=0; path.Length != 3 && i<parts.Length; i++) current=Keep(Open(current, parts[i], true, false, false, privateLast && i == parts.Length-1, 0x21, 7));
+            if (path.Length == 3 && privateLast) Security(current.Handle,true);
+            return current;
+        }
+        public Node Directory(Node parent, string name, bool create) {
+            Node node=Open(parent, name, true, false, true, true, 0x21|Delete, 7);
+            if (node == null && create) node=Open(parent, name, true, true, false, true, 0x21|Delete, 7);
+            Require(node != null, "An installation directory is missing. Run the installer to repair the layout."); return Keep(node);
+        }
+        public void Recheck() {
+            foreach (Node node in Held) {
+                if (node.Handle == IntPtr.Zero) continue;
+                node.Check();
+                if (node.Parent == null) {
+                    using (Node found=Open(null, node.Name, true, false, false, false, 0x21, 7)) Require(node.Same(found), "The drive path changed during installation.");
+                } else using (Node found=Open(node.Parent, node.Name, node.Directory, false, false, node.PrivateOwner, node.Directory ? 0x21U : Read, 7))
+                    Require(node.Same(found), "An installation path moved or changed. Restore it and retry.");
+            }
+        }
+        public void Dispose() { for (int i=Held.Count-1; i>=0; i--) Held[i].Dispose(); }
+    }
+    sealed class Metadata { public string Version, Minimum; public uint Protocol, MinimumProtocol, MaximumProtocol; }
+    static Metadata Pe(byte[] data, string target, string expected) {
+        Require(data.Length >= 64 && data.Length <= MaximumArtifact && data[0] == 77 && data[1] == 90, "The CLI is not a bounded PE executable.");
+        uint pe=U32(data, 60); Require(pe >= 64 && Fits(pe, 24, (ulong)data.Length), "The PE header is out of bounds."); int p=(int)pe;
+        Require(U32(data,p) == 0x4550 && U16(data,p+4) == (target == "x86_64-windows" ? 0x8664 : 0xaa64), "The CLI PE target does not match the native host.");
+        uint count=U16(data,p+6), flags=U16(data,p+22), opt=U16(data,p+20); int o=p+24;
+        Require(count >= 1 && count <= 96 && (flags & 0x22) == 0x22 && (flags & 0x3100) == 0 && opt >= 112 && opt <= 4096
+            && Fits((ulong)o,opt,(ulong)data.Length) && Fits((ulong)o+opt,count*40,(ulong)data.Length) && U16(data,o) == 0x20b,
+            "The CLI PE headers are malformed or unsupported.");
+        uint sectionAlignment=U32(data,o+32), fileAlignment=U32(data,o+36), imageSize=U32(data,o+56), headers=U32(data,o+60), entry=U32(data,o+16), directories=U32(data,o+108);
+        Require(sectionAlignment >= 4096 && (sectionAlignment & (sectionAlignment-1)) == 0 && fileAlignment >= 512 && fileAlignment <= 65536
+            && (fileAlignment & (fileAlignment-1)) == 0 && sectionAlignment >= fileAlignment && imageSize > 0 && imageSize%sectionAlignment == 0
+            && headers > 0 && headers%fileAlignment == 0 && headers <= data.Length && (ulong)o+opt+count*40 <= headers
+            && directories <= 16 && 112+directories*8 <= opt && (U16(data,o+70) & 0x100) != 0, "The CLI PE alignment or execution policy is invalid.");
+        List<ulong[]> sections=new List<ulong[]>(); int metadata=-1; bool initializedEntry=false;
+        for (int i=0; i<count; i++) {
+            int s=o+(int)opt+i*40; uint virtualSize=U32(data,s+8), address=U32(data,s+12), rawSize=U32(data,s+16), raw=U32(data,s+20), permissions=U32(data,s+36);
+            ulong mapped=Math.Max((ulong)virtualSize,rawSize);
+            Require(address >= headers && address%sectionAlignment == 0 && mapped > 0 && Fits(address,mapped,imageSize)
+                && (rawSize == 0 || (raw >= headers && raw%fileAlignment == 0 && rawSize%fileAlignment == 0 && Fits(raw,rawSize,(ulong)data.Length)))
+                && (permissions & 0xa0000000) != 0xa0000000, "The CLI PE section bounds or write/execute permissions are invalid.");
+            foreach (ulong[] previous in sections) Require(!Overlap(address,mapped,previous[0],previous[1]) && !Overlap(raw,rawSize,previous[2],previous[3]), "The CLI PE sections overlap.");
+            sections.Add(new ulong[] {address,mapped,raw,rawSize,virtualSize,permissions});
+            if (entry >= address && (ulong)entry-address < virtualSize && (ulong)entry-address < rawSize && (permissions & 0x20000000) != 0) initializedEntry=true;
+            if (Ascii.GetString(data,s,8) == ".asmmeta") {
+                Require(metadata == -1 && virtualSize == 64 && rawSize >= 64 && (permissions & 0x40000040) == 0x40000040 && (permissions & 0xa00000a0) == 0,
+                    "The CLI needs one bounded read-only metadata section."); metadata=(int)raw;
+            }
+        }
+        Require(initializedEntry && metadata >= 0, "The CLI lacks an initialized entry point or managed metadata.");
+        for (int i=0; i<directories; i++) {
+            uint address=U32(data,o+112+i*8), size=U32(data,o+116+i*8); if (address == 0 && size == 0) continue;
+            Require(address != 0 && size != 0, "The CLI PE data directory is incomplete.");
+            bool found=false;
+            if (i == 4) {
+                found=address%8 == 0 && Fits(address,size,(ulong)data.Length) && address >= headers;
+                foreach (ulong[] section in sections) if (Overlap(address,size,section[2],section[3])) found=false;
+            } else foreach (ulong[] section in sections) if (address >= section[0] && Fits((ulong)address-section[0],size,Math.Min(section[3],section[4]))) found=true;
+            Require(found, "The CLI PE data directory is out of initialized bounds.");
+        }
+        Require(Ascii.GetString(data,metadata,8) == "ASMCLI1\0" && U32(data,metadata+8) == 1, "The CLI metadata schema is invalid.");
+        Metadata result=new Metadata(); result.Protocol=U32(data,metadata+12); result.MinimumProtocol=U32(data,metadata+16); result.MaximumProtocol=U32(data,metadata+20);
+        Require(result.Protocol == 1 && result.MinimumProtocol == 1 && result.MaximumProtocol == 1, "The CLI needs a newer launcher protocol. Use its bootstrap installer.");
+        result.Version=U32(data,metadata+24)+"."+U32(data,metadata+28)+"."+U32(data,metadata+32);
+        result.Minimum=U32(data,metadata+36)+"."+U32(data,metadata+40)+"."+U32(data,metadata+44); Version(result.Version); Version(result.Minimum);
+        for (int i=48; i<64; i++) Require(data[metadata+i] == 0, "The CLI metadata reserved bytes are not zero.");
+        Require(expected == null || result.Version == expected, "The CLI metadata version differs from the selected release."); return result;
+    }
+    sealed class Selection { public string Version, Target, Sha, Minimum; public int Size; }
+    static Selection Record(byte[] data, string target) {
+        Require(data.Length > 0 && data.Length <= 256, "The active CLI record is missing or too large. Run launcher repair.");
+        foreach (byte b in data) Require(b < 128 && b != 0 && b != 13, "The active CLI record has an ambiguous encoding.");
+        string[] lines=Ascii.GetString(data).Split('\n');
+        Require(lines.Length == 3 && lines[0] == "# asm-cli-current-v1" && lines[2] == "", "The active CLI record has an invalid header or line count.");
+        string[] f=lines[1].Split('\t');
+        Require(f.Length == 6 && f[1] == target && f[4] == "1" && Regex.IsMatch(f[2], @"\A[1-9][0-9]{0,7}\z") && Regex.IsMatch(f[3], @"\A[0-9a-f]{64}\z"),
+            "The active CLI record has invalid fields.");
+        Version(f[0]); Version(f[5]); int size;
+        Require(Int32.TryParse(f[2], NumberStyles.None, CultureInfo.InvariantCulture, out size) && size >= 1 && size <= MaximumArtifact, "The active CLI size exceeds its bound.");
+        return new Selection {Version=f[0], Target=f[1], Size=size, Sha=f[3], Minimum=f[5]};
+    }
+    static byte[] Record(string version, string target, int size, string sha, string minimum) {
+        return Ascii.GetBytes("# asm-cli-current-v1\n"+version+"\t"+target+"\t"+size.ToString(CultureInfo.InvariantCulture)+"\t"+sha+"\t1\t"+minimum+"\n");
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct SecurityAttributes { public int Length; public IntPtr Descriptor; public int Inherit; }
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct StartupInfo {
+        public uint Size; public string Reserved, Desktop, Title; public uint X,Y,Width,Height,CharsX,CharsY,Fill,Flags;
+        public ushort Show, ReservedBytes; public IntPtr ReservedPointer, Input, Output, Error;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct StartupEx { public StartupInfo Info; public IntPtr Attributes; }
+    [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public uint Pid, Tid; }
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CreatePipe(out IntPtr read, out IntPtr write, ref SecurityAttributes security, uint size);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateFileW(string path, uint access,
+        uint share, ref SecurityAttributes security, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateJobObjectW(IntPtr security, string name);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job, int kind, IntPtr info, uint length);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateJobObject(IntPtr job, uint status);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, uint flags, ref IntPtr size);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, IntPtr attribute,
+        IntPtr value, IntPtr size, IntPtr previous, IntPtr returned);
+    [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CreateProcessW(string application,
+        StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment,
+        string directory, ref StartupEx startup, out ProcessInfo process);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process, out uint status);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool PeekNamedPipe(IntPtr pipe, IntPtr buffer, uint size, IntPtr read, out uint available, IntPtr left);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern uint GetWindowsDirectoryW(StringBuilder path, uint size);
+
+    static string Quote(string value) {
+        Require(value != null && value.IndexOf('\0') < 0, "A fixed tool argument contains NUL.");
+        StringBuilder result=new StringBuilder("\""); int slashes=0;
+        foreach (char c in value) {
+            if (c == '\\') { slashes++; continue; }
+            if (c == '"') result.Append('\\', slashes*2+1); else result.Append('\\', slashes);
+            slashes=0; result.Append(c);
+        }
+        return result.Append('\\', slashes*2).Append('"').ToString();
+    }
+    static string EnvironmentBlock(string home) {
+        StringBuilder windows=new StringBuilder(512);
+        Require(GetWindowsDirectoryW(windows,512) > 0 && String.Equals(windows.ToString(), @"C:\Windows", StringComparison.OrdinalIgnoreCase),
+            "The fixed tools require Windows at C:\\Windows.");
+        SortedDictionary<string,string> env=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        env["SystemRoot"]=windows.ToString(); env["WINDIR"]=windows.ToString(); env["PATH"]=@"C:\Windows\System32";
+        env["HOME"]=home; env["USERPROFILE"]=home; env["LOCALAPPDATA"]=home; env["TEMP"]=home; env["TMP"]=home;
+        env["GH_CONFIG_DIR"]=home+"\\gh"; env["XDG_CONFIG_HOME"]=home+"\\config"; env["XDG_CACHE_HOME"]=home+"\\cache";
+        env["GH_PROMPT_DISABLED"]="1"; env["GH_NO_UPDATE_NOTIFIER"]="1"; env["GH_NO_EXTENSION_UPDATE_NOTIFIER"]="1";
+        env["GIT_CONFIG_NOSYSTEM"]="1"; env["GIT_CONFIG_GLOBAL"]="NUL"; env["GIT_CONFIG_SYSTEM"]="NUL";
+        foreach (string key in new string[] {"HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","NO_PROXY","http_proxy","https_proxy","all_proxy","no_proxy"}) {
+            string value=Environment.GetEnvironmentVariable(key); if (value == null) continue;
+            Require(value.Length <= 4096 && value.IndexOfAny(new char[]{'\0','\r','\n'}) < 0, "A proxy setting is invalid. Correct it before installation.");
+            env[key]=value;
+        }
+        StringBuilder block=new StringBuilder(); foreach (KeyValuePair<string,string> field in env) block.Append(field.Key).Append('=').Append(field.Value).Append('\0');
+        return block.Append('\0').ToString();
+    }
+    static bool Drain(IntPtr pipe, Node sink, MemoryStream capture, int limit, ref int total) {
+        uint available;
+        if (!PeekNamedPipe(pipe,IntPtr.Zero,0,IntPtr.Zero,out available,IntPtr.Zero)) {
+            Require(Marshal.GetLastWin32Error() == 109, "Cannot receive bounded tool output."); return true;
+        }
+        if (available == 0) return false;
+        byte[] buffer=new byte[Math.Min(available,65536U)]; uint done;
+        Require(ReadFile(pipe,buffer,(uint)buffer.Length,out done,IntPtr.Zero) && done > 0, "Cannot read the tool output.");
+        Require(done <= limit-total, "The fixed tool exceeded its output byte limit."); total+=(int)done;
+        if (sink != null) sink.Append(buffer,(int)done); else if (capture != null) capture.Write(buffer,0,(int)done);
+        return false;
+    }
+    static byte[] Tool(string executable, string[] arguments, Node home, int seconds, int outputLimit, Node sink) {
+        // Only curl/gh enter this terminating job. No candidate or application
+        // enters a job or process created by the installer.
+        Stopwatch clock=Stopwatch.StartNew(); IntPtr job=IntPtr.Zero, outRead=IntPtr.Zero, outWrite=IntPtr.Zero,
+            errRead=IntPtr.Zero, errWrite=IntPtr.Zero, input=IntPtr.Zero, attributes=IntPtr.Zero,
+            handles=IntPtr.Zero, jobs=IntPtr.Zero, environment=IntPtr.Zero, limits=IntPtr.Zero;
+        ProcessInfo process=new ProcessInfo(); bool attributesReady=false;
+        using (Paths tools=new Paths()) using (MemoryStream stdout=new MemoryStream()) {
+            try {
+                Require(executable == @"C:\Windows\System32\curl.exe" || executable == @"C:\Program Files\GitHub CLI\gh.exe", "The bootstrap tool is not a fixed executable.");
+                string toolPath=Normalize(executable); int slash=toolPath.LastIndexOf('\\'); Node toolParent=tools.Tree(ParentPath(toolPath,slash),false);
+                tools.Keep(Open(toolParent,toolPath.Substring(slash+1),false,false,false,false,Read,1)); tools.Recheck();
+                SecurityAttributes security=new SecurityAttributes(); security.Length=Marshal.SizeOf(typeof(SecurityAttributes)); security.Inherit=1;
+                Require(CreatePipe(out outRead,out outWrite,ref security,0) && CreatePipe(out errRead,out errWrite,ref security,0)
+                    && SetHandleInformation(outRead,1,0) && SetHandleInformation(errRead,1,0), "Cannot create bounded tool pipes.");
+                input=CreateFileW(@"\\.\NUL",Read,7,ref security,3,0,IntPtr.Zero);
+                Require(input != new IntPtr(-1), "Cannot prepare the fixed tool input.");
+                job=CreateJobObjectW(IntPtr.Zero,null); Require(job != IntPtr.Zero,"Cannot create the private tool job.");
+                limits=Marshal.AllocHGlobal(144); for (int i=0;i<144;i++) Marshal.WriteByte(limits,i,0);
+                Marshal.WriteInt32(limits,16,0x2000); Require(SetInformationJobObject(job,9,limits,144),"Cannot contain verification tool descendants.");
+                IntPtr size=IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero,2,0,ref size);
+                Require(size.ToInt64() > 0 && size.ToInt64() <= 65536,"The process attribute size is invalid.");
+                attributes=Marshal.AllocHGlobal(size); Require(InitializeProcThreadAttributeList(attributes,2,0,ref size),"Cannot initialize private tool attributes."); attributesReady=true;
+                handles=Marshal.AllocHGlobal(24); Marshal.WriteIntPtr(handles,0,input); Marshal.WriteIntPtr(handles,8,outWrite); Marshal.WriteIntPtr(handles,16,errWrite);
+                jobs=Marshal.AllocHGlobal(8); Marshal.WriteIntPtr(jobs,job);
+                Require(UpdateProcThreadAttribute(attributes,0,new IntPtr(0x20002),handles,new IntPtr(24),IntPtr.Zero,IntPtr.Zero)
+                    && UpdateProcThreadAttribute(attributes,0,new IntPtr(0x2000d),jobs,new IntPtr(8),IntPtr.Zero,IntPtr.Zero),
+                    "This Windows version cannot assign the private tool job at process creation.");
+                StartupEx startup=new StartupEx(); startup.Info.Size=(uint)Marshal.SizeOf(typeof(StartupEx)); startup.Info.Flags=0x100;
+                startup.Info.Input=input; startup.Info.Output=outWrite; startup.Info.Error=errWrite; startup.Attributes=attributes;
+                StringBuilder command=new StringBuilder(Quote(executable)); foreach (string argument in arguments) command.Append(' ').Append(Quote(argument));
+                Require(command.Length < 32767,"The fixed tool command exceeds its Windows bound.");
+                environment=Marshal.StringToHGlobalUni(EnvironmentBlock(home.Path));
+                Require(CreateProcessW(executable,command,IntPtr.Zero,IntPtr.Zero,true,0x08080404,environment,home.Path,ref startup,out process),
+                    "Cannot start the fixed download or verification tool. Check its installation.");
+                CloseHandle(outWrite); outWrite=IntPtr.Zero; CloseHandle(errWrite); errWrite=IntPtr.Zero;
+                Require(ResumeThread(process.Thread) != 0xffffffff,"Cannot resume the contained verification tool.");
+                int outCount=0, errCount=0; bool outEnded=false, errEnded=false, exited=false; uint status=0;
+                while (!exited || !outEnded || !errEnded) {
+                    Require(clock.ElapsedMilliseconds < seconds*1000L,"The fixed tool exceeded its wall-clock deadline. Retry after checking the connection.");
+                    if (!outEnded) outEnded=Drain(outRead,sink,stdout,outputLimit,ref outCount);
+                    if (!errEnded) errEnded=Drain(errRead,null,null,65536,ref errCount);
+                    if (!exited && WaitForSingleObject(process.Process,10) == 0) {
+                        Require(GetExitCodeProcess(process.Process,out status),"Cannot read the fixed tool result.");
+                        exited=true; TerminateJobObject(job,1);
+                    }
+                    if (exited && (!outEnded || !errEnded)) System.Threading.Thread.Sleep(1);
+                }
+                Require(status == 0,"The fixed download or verification tool failed. The selected CLI was preserved.");
+                if (sink != null) sink.Flush(); return stdout.ToArray();
+            } finally {
+                if (job != IntPtr.Zero) TerminateJobObject(job,1);
+                if (process.Process != IntPtr.Zero) { WaitForSingleObject(process.Process,2000); CloseHandle(process.Process); }
+                if (process.Thread != IntPtr.Zero) CloseHandle(process.Thread);
+                foreach (IntPtr handle in new IntPtr[]{outRead,outWrite,errRead,errWrite,input,job}) if (handle != IntPtr.Zero && handle != new IntPtr(-1)) CloseHandle(handle);
+                if (attributesReady) DeleteProcThreadAttributeList(attributes);
+                foreach (IntPtr pointer in new IntPtr[]{attributes,handles,jobs,environment,limits}) if (pointer != IntPtr.Zero) Marshal.FreeHGlobal(pointer);
+            }
+        }
+    }
+    static void Fetch(string url, int limit, Node file, Node home) {
+        Tool(@"C:\Windows\System32\curl.exe",new string[]{"-q","--fail","--location","--silent","--show-error",
+            "--proto","=https","--proto-redir","=https","--max-time","120","--max-filesize",limit.ToString(CultureInfo.InvariantCulture),"--output","-",url},home,120,limit,file);
+    }
+    static Node FinishedFile(Paths held, Node writer, bool allowDelete) {
+        writer.Flush(); FileInfo identity=writer.Identity; Node parent=writer.Parent; string name=writer.Name; writer.Dispose();
+        Node reader=held.Keep(Open(parent,name,false,false,false,true,Read,allowDelete ? 5U : 1U));
+        Require(reader.Identity.Volume == identity.Volume && reader.Identity.IndexHigh == identity.IndexHigh && reader.Identity.IndexLow == identity.IndexLow,
+            "A staged file was displaced before inspection."); return reader;
+    }
+    static Node RenameReady(Paths held, Node reader) {
+        // Preserve a read hold while changing delete sharing. No writer can
+        // change the verified bytes between verification and publication.
+        Node guard=held.Keep(Open(reader.Parent,reader.Name,false,false,false,true,Read,5));
+        Require(reader.Same(guard),"The verified candidate moved before publication."); reader.Dispose();
+        Node result=held.Keep(Open(guard.Parent,guard.Name,false,false,false,true,Read|Delete,5));
+        Require(guard.Same(result),"The verified candidate changed before publication."); return result;
+    }
+    static Node NewFile(Paths held, Node parent, string name, byte[] data) {
+        Node writer=held.Keep(Open(parent,name,false,true,false,true,Read|Write,1)); writer.Append(data,data.Length);
+        return FinishedFile(held,writer,true);
+    }
+    static void Compatible(Metadata launcher, Metadata payload) {
+        Require(payload.Protocol >= launcher.MinimumProtocol && payload.Protocol <= launcher.MaximumProtocol && AtLeast(launcher.Version,payload.Minimum),
+            "The replacement launcher cannot start the active payload. Use a compatible bootstrap installer.");
+    }
+    sealed class State { public Node Store, Current, Payload; public byte[] RecordBytes; public Selection Selected; public Metadata Metadata; }
+    static State ExistingState(Paths held, Node store, string target) {
+        Node marker=held.Keep(Open(store,"layout",false,false,false,true,Read,5));
+        Require(Equal(marker.Bytes(20),Ascii.GetBytes("# asm-cli-layout-v1\n")),"The existing CLI store has an unfamiliar layout. It was preserved.");
+        Node current=held.Keep(Open(store,"current.tsv",false,false,false,true,Read,5)); byte[] record=current.Bytes(256); Selection selected=Record(record,target);
+        Node versions=held.Directory(store,"versions",false), version=held.Directory(versions,selected.Sha,false);
+        Node payload=held.Keep(Open(version,"asm.exe",false,false,false,true,Read,5)); byte[] bytes=payload.Bytes(MaximumArtifact);
+        Require(bytes.Length == selected.Size && Hex(bytes) == selected.Sha,"The selected CLI payload differs from its record. Restore it before repair.");
+        Metadata metadata=Pe(bytes,target,selected.Version); Require(metadata.Minimum == selected.Minimum,"The selection record and payload compatibility requirements differ.");
+        return new State {Store=store,Current=current,Payload=payload,RecordBytes=record,Selected=selected,Metadata=metadata};
+    }
+    static void Remove(Node node) {
+        IntPtr info=Marshal.AllocHGlobal(4);
+        try { Marshal.WriteInt32(info,3); IoStatus status; Require(NtSetInformationFile(node.Handle,out status,info,4,64) == 0,"Cannot remove a private temporary object."); }
+        finally { Marshal.FreeHGlobal(info); }
+    }
+    static void CleanTree(Node directory, ref int left, int depth, Stopwatch clock) {
+        Require(depth <= 16 && left > 0 && clock.ElapsedMilliseconds < 5000,"Private temporary cleanup reached its bound.");
+        IntPtr buffer=Marshal.AllocHGlobal(65536); bool restart=true;
+        try {
+            while (true) {
+                IoStatus status; int result=NtQueryDirectoryFile(directory.Handle,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,out status,buffer,65536,1,false,IntPtr.Zero,restart);
+                restart=false; if (result == unchecked((int)0x80000006)) break;
+                Require(result == 0 && status.Information.ToUInt64() >= 64 && status.Information.ToUInt64() <= 65536,"Cannot enumerate private temporary objects safely.");
+                int offset=0, returned=(int)status.Information.ToUInt64();
+                while (true) {
+                    Require(offset <= returned-64 && left-- > 0 && clock.ElapsedMilliseconds < 5000,"Private temporary cleanup reached its file or time bound.");
+                    uint next=unchecked((uint)Marshal.ReadInt32(buffer,offset)), flags=unchecked((uint)Marshal.ReadInt32(buffer,offset+56));
+                    int size=Marshal.ReadInt32(buffer,offset+60);
+                    Require(size > 0 && size <= 8192 && size%2 == 0 && size <= returned-offset-64,"A private temporary filename exceeds its bound.");
+                    string name=Marshal.PtrToStringUni(IntPtr.Add(buffer,offset+64),size/2);
+                    if (name != "." && name != "..") {
+                        Require(name.IndexOfAny(new char[]{'\\','/',':','\0'}) < 0 && (flags & ReparseAttribute) == 0,"A private temporary object has an unsafe name or reparse point.");
+                        bool childDirectory=(flags & DirectoryAttribute) != 0;
+                        using (Node child=Open(directory,name,childDirectory,false,false,false,(childDirectory ? 0x21U : Read)|Delete,7)) {
+                            if (childDirectory) CleanTree(child,ref left,depth+1,clock);
+                            Remove(child);
+                        }
+                    }
+                    if (next == 0) break;
+                    Require(next >= 64 && next%8 == 0 && next <= returned-offset-64,"The private directory enumeration is malformed."); offset+=(int)next;
+                }
+            }
+        } finally { Marshal.FreeHGlobal(buffer); }
+    }
+    public static string Install(string mode, string version, string target, int expectedBytes, string expectedSha,
+        string source, string url, string bundleUrl, string sourceCommit, bool replace, bool repair) {
+        Require(target == NativeTarget() && expectedBytes > 0 && expectedBytes <= MaximumArtifact && Regex.IsMatch(expectedSha,@"\A[0-9a-f]{64}\z"),
+            "The installer has no valid artifact for this native Windows target."); Version(version);
+        Require(mode == "source" || mode == "published","The bootstrap mode is invalid.");
+        if (mode == "published") {
+            string prefix="https://github.com/stubbi/asm/releases/download/v"+version;
+            Require(url == prefix+"/asm-"+version+"-"+target && bundleUrl == prefix+"/release-attestation.sigstore.json"
+                && sourceCommit != null && Regex.IsMatch(sourceCommit,@"\A[0-9a-f]{40}\z") && sourceCommit != new string('0',40),"The published artifact identity is invalid.");
+        }
+        string homeValue=Environment.GetEnvironmentVariable("HOME"); if (homeValue == null) homeValue=Environment.GetEnvironmentVariable("USERPROFILE");
+        Paths held=new Paths(); Node stage=null, lockFile=null; bool locked=false, committed=false; string result=null; Overlapped overlap=new Overlapped();
+        try {
+            Node home=held.Tree(homeValue,true), local=held.Directory(home,".local",true), bin=held.Directory(local,"bin",true);
+            lockFile=Open(bin,".asm.lock",false,false,true,true,Read|Write,7);
+            if (lockFile == null) lockFile=Open(bin,".asm.lock",false,true,false,true,Read|Write,7);
+            held.Keep(lockFile); Require(LockFileEx(lockFile.Handle,3,0,1,0,ref overlap),"Another Asm installation operation is active. Retry when it ends."); locked=true;
+            Node store=held.Keep(Open(bin,".asm-cli",true,false,true,true,0x21|Delete,7));
+            State state=store == null ? null : ExistingState(held,store,target);
+            Node root=held.Keep(Open(bin,"asm.exe",false,false,true,true,Read,5)); byte[] rootBytes=root == null ? null : root.Bytes(MaximumArtifact);
+            if (state != null && root != null && rootBytes.Length == expectedBytes && Hex(rootBytes) == expectedSha) {
+                Compatible(Pe(rootBytes,target,version),state.Metadata); held.Recheck();
+                Require(Equal(state.Current.Bytes(256),state.RecordBytes),"The active selection changed during validation.");
+                return "Asm "+version+" launcher is already installed at "+bin.Path+"\\asm.exe.";
+            }
+            if (state != null) {
+                Require(repair,"A managed CLI store already exists. Use -RepairLauncher to preserve its active payload.");
+                if (root != null) {
+                    bool known=true; try { Compatible(Pe(rootBytes,target,null),state.Metadata); } catch (InvalidOperationException) { known=false; }
+                    Require(known || replace,"The root command is unrelated or invalid. Add -ReplaceExisting only if you intend to replace it.");
+                }
+            } else {
+                Require(!repair,"A complete known CLI store is required for launcher repair. Restore the saved store first.");
+                Require(root == null || replace,"A different asm.exe command already exists. Use -ReplaceExisting only for deliberate replacement.");
+            }
+            held.Recheck();
+            stage=Open(bin,".asm-bootstrap-"+Guid.NewGuid().ToString("N"),true,true,false,true,0x21|Delete,7); held.Keep(stage);
+            Node candidateWriter=held.Keep(Open(stage,"launcher.exe",false,true,false,true,Read|Write,1));
+            Node verifier=held.Directory(stage,"verifier",true);
+            if (mode == "source") {
+                string path=Normalize(source); int slash=path.LastIndexOf('\\');
+                using (Paths sourcePaths=new Paths()) {
+                    Node parent=sourcePaths.Tree(ParentPath(path,slash),false);
+                    using (Node artifact=Open(parent,path.Substring(slash+1),false,false,false,false,Read,1)) {
+                        byte[] bytes=artifact.Bytes(MaximumArtifact); Require(bytes.Length == expectedBytes && Hex(bytes) == expectedSha,"The source artifact changed after installer generation. Generate the installer again.");
+                        Pe(bytes,target,version); sourcePaths.Recheck(); candidateWriter.Append(bytes,bytes.Length);
+                    }
+                }
+            } else Fetch(url,expectedBytes,candidateWriter,verifier);
+            Node candidate=FinishedFile(held,candidateWriter,false); byte[] candidateBytes=candidate.Bytes(MaximumArtifact);
+            Require(candidateBytes.Length == expectedBytes && Hex(candidateBytes) == expectedSha,"The downloaded CLI size or checksum differs from the selected release.");
+            Metadata candidateMetadata=Pe(candidateBytes,target,version);
+            if (mode == "published") {
+                byte[] ghVersion=Tool(@"C:\Program Files\GitHub CLI\gh.exe",new string[]{"--version"},verifier,5,4096,null);
+                Match gh=Regex.Match(Ascii.GetString(ghVersion),@"\Agh version ([0-9]+\.[0-9]+\.[0-9]+)(?: |\r?\n)");
+                Require(gh.Success && AtLeast(gh.Groups[1].Value,"2.93.0"),"Install stable GitHub CLI 2.93.0 or later at C:\\Program Files\\GitHub CLI\\gh.exe.");
+                Node bundleWriter=held.Keep(Open(stage,"release-attestation.sigstore.json",false,true,false,true,Read|Write,1));
+                Fetch(bundleUrl,1048576,bundleWriter,verifier); Node bundle=FinishedFile(held,bundleWriter,false); Require(bundle.Bytes(1048576).Length > 0,"The signed release bundle is empty.");
+                held.Recheck();
+                byte[] identity=Tool(@"C:\Program Files\GitHub CLI\gh.exe",new string[]{"attestation","verify",candidate.Path,"--repo","stubbi/asm",
+                    "--cert-identity","https://github.com/stubbi/asm/.github/workflows/release.yml@refs/heads/main",
+                    "--cert-oidc-issuer","https://token.actions.githubusercontent.com","--source-ref","refs/heads/main","--deny-self-hosted-runners",
+                    "--predicate-type","https://slsa.dev/provenance/v1","--bundle",bundle.Path,"--format","json","--jq",
+                    ".[].verificationResult.signature.certificate.sourceRepositoryIdentifier","--hostname","github.com","--source-digest",sourceCommit,"--signer-digest",sourceCommit},verifier,120,11,null);
+                Require(Equal(identity,Ascii.GetBytes("1441332955\n")),"The attestation did not identify exactly one approved repository.");
+            }
+            held.Recheck(); Require(Equal(candidate.Bytes(MaximumArtifact),candidateBytes),"The staged CLI changed during verification.");
+            if (state != null) Compatible(candidateMetadata,state.Metadata);
+            Node publish=RenameReady(held,candidate);
+            if (state == null) {
+                Require(AtLeast(candidateMetadata.Version,candidateMetadata.Minimum),"The initial launcher cannot start this payload. Use a compatible release.");
+                Node newStore=held.Directory(stage,"store",true), versions=held.Directory(newStore,"versions",true), versionDirectory=held.Directory(versions,expectedSha,true);
+                NewFile(held,versionDirectory,"asm.exe",candidateBytes); NewFile(held,newStore,"layout",Ascii.GetBytes("# asm-cli-layout-v1\n"));
+                byte[] record=Record(version,target,expectedBytes,expectedSha,candidateMetadata.Minimum); Require(record.Length <= 256,"The initial record exceeds its bound.");
+                NewFile(held,newStore,"current.tsv",record); held.Recheck(); newStore.Rename(bin,".asm-cli",false);
+            }
+            held.Recheck();
+            if (state != null) Require(Equal(state.Current.Bytes(256),state.RecordBytes),"The active selection changed before launcher repair.");
+            publish.Rename(bin,"asm.exe",root != null); committed=true; publish.Dispose();
+            result=(repair ? "Repaired" : "Installed")+" Asm "+version+" launcher at "+bin.Path+"\\asm.exe.";
+            if (mode == "source") result+=" Source build; publisher authentication was not checked.";
+        } finally {
+            if (locked) UnlockFileEx(lockFile.Handle,0,1,0,ref overlap);
+            if (stage != null) {
+                HashSet<Node> ancestors=new HashSet<Node>();
+                for (Node node=stage; node != null; node=node.Parent) ancestors.Add(node);
+                foreach (Node node in held.Held) if (!ancestors.Contains(node)) node.Dispose();
+                try {
+                    // Only this operation's exclusive private stage is visited.
+                    // A published store has already moved outside this tree.
+                    using (Node cleanup=Open(stage.Parent,stage.Name,true,false,false,true,0x21|Delete,7)) {
+                        Require(stage.Same(cleanup),"The private temporary directory moved."); int left=4096; CleanTree(cleanup,ref left,0,Stopwatch.StartNew()); Remove(cleanup);
+                    }
+                } catch { if (committed) result+=" Private temporary files remain; remove the .asm-bootstrap directory after inspection."; }
+            }
+            held.Dispose();
+        }
+        return result;
+    }
+}
+}
+'@
+    $asmSpecification = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($AsmSpecBase64)) | ConvertFrom-Json
+    $asmNativeTarget = [AsmBootstrapV1.Installer]::NativeTarget()
+    $asmArtifacts = @($asmSpecification.artifacts | Where-Object { $_.target -ceq $asmNativeTarget })
+    if ($asmArtifacts.Count -ne 1) { throw 'This release has no qualified artifact for the native Windows target.' }
+    $asmArtifact = $asmArtifacts[0]
+    $asmSource = $null; $asmUrl = $null; $asmBundle = $null; $asmCommit = $null
+    if ($asmSpecification.mode -ceq 'source') {
+        $asmSource = [string]$asmArtifact.path
+    } elseif ($asmSpecification.mode -ceq 'published') {
+        if ($asmSpecification.repository_id -ne 1441332955) { throw 'The release repository identity differs.' }
+        $asmUrl = [string]$asmArtifact.url; $asmBundle = [string]$asmSpecification.bundle_url; $asmCommit = [string]$asmSpecification.source_commit
+    } else { throw 'The bootstrap mode is invalid.' }
+    $asmResult = [AsmBootstrapV1.Installer]::Install([string]$asmSpecification.mode, [string]$asmSpecification.version,
+        $asmNativeTarget, [int]$asmArtifact.bytes, [string]$asmArtifact.sha256, $asmSource, $asmUrl, $asmBundle, $asmCommit,
+        [bool]$ReplaceExisting, [bool]$RepairLauncher)
+    [Console]::Out.WriteLine($asmResult)
+} catch {
+    [Console]::Error.WriteLine('Asm installer: ' + $_.Exception.GetBaseException().Message)
+    exit 1
+}
