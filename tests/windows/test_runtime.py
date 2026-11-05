@@ -150,6 +150,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         return archive_bytes(entries if entries is not None else [
             ("asm.toml", tarfile.REGTYPE, manifest),
             ("LICENSE", tarfile.REGTYPE, b"A deterministic test fixture.\n"),
+            ("README.md", tarfile.REGTYPE, b"Deterministic Windows source-package fixture.\n"),
             ("src/main.s", tarfile.REGTYPE, exit_source(0).encode()),
             ("src/min.s", tarfile.REGTYPE, routine),
         ])
@@ -374,11 +375,12 @@ class WindowsRuntimeTests(unittest.TestCase):
 
     def test_arguments_unsupported_target_and_missing_manifest_fail(self):
         for args in (("nosuchcommand",), ("new",), ("new", ""), ("build", "--mystery"),
-                     ("build", "--target", OTHER_TARGET), ("build", "--target", "riscv64-windows")):
+                     ("build", "--target", "riscv64-windows")):
             with self.subTest(args=args):
                 self.cli(*args, code=2)
         for command in ("build", "run", "test", "clean"):
             self.cli(command, code=1)
+        self.cli("build", "--target", OTHER_TARGET, code=1)
         project = self.project()
         manifest = project / "asm.toml"
         manifest.write_text(manifest.read_text().replace(TARGET, OTHER_TARGET))
@@ -690,6 +692,11 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.cli("install", PACKAGE, "--index", self.index, "--artifact", self.artifact,
                  "--output", link / "program.exe", code=1)
         self.assertEqual(list(outside.iterdir()), [])
+        # Use fresh state; the failed destination check may create private state.
+        self.home = self.work / "state home"
+        self.home.mkdir()
+        own_directory(self.home, self.work)
+        self.environment.update(HOME=str(self.home), USERPROFILE=str(self.home))
         state_parent = self.home / ".local/state"
         state_parent.mkdir(parents=True, exist_ok=True)
         own_home_directories(self.home, self.work)
@@ -887,6 +894,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         check.write_text('int main(void) { return 97; }\n')
         self.cli("build", cwd=project)
         self.assertEqual(self.cli("run", cwd=project).stdout, "native linked\n")
+        previous = output.read_bytes()
         for fields in ('link = "c"\nlibraries = "asmdoesnotexist"\n',
                        'link = "c"\nlibraries = "kernel32  ucrt"\n',
                        'link = "c"\ncheck = "../abi-check.c"\n'):
