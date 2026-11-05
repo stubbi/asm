@@ -28,6 +28,11 @@ DATA = "/run/asm-postgres18/data"
 PREPARATION = Path(".postgres18-fixture")
 FIXTURE = Path("/qualification/postgres18")
 FILES = {"ca.crt", "ca.key", "server.crt", "unrelated.crt"}
+LOG_PATH = "/run/asm-postgres18/postgres.log"
+LOG_LIMIT = 1048576
+IDENTITY_SQL = ("SELECT current_setting('server_version_num'),current_setting('data_directory'),"
+    "current_setting('asm_fixture.nonce'),(SELECT system_identifier::text FROM pg_catalog.pg_control_system()),"
+    "current_user,session_user,ssl,version FROM pg_catalog.pg_stat_ssl WHERE pid=pg_catalog.pg_backend_pid()")
 
 
 def need(condition, message):
@@ -101,6 +106,19 @@ def server_contract(rows, declaration):
             "system_identifier": identifier, "session_user": session, "tls_protocol": protocol}
 
 
+def postgres_log_bytes(admin, declaration, identity):
+    need(server_contract(admin.execute(IDENTITY_SQL), declaration) == identity,
+         "The database log source changed its owned identity.")
+    rows = admin.execute("SELECT pg_catalog.encode(pg_catalog.pg_read_binary_file('" + LOG_PATH +
+                         "',0,1048577),'hex')")
+    need(isinstance(rows, list) and len(rows) == 1 and len(rows[0]) == 1 and isinstance(rows[0][0], str) and
+         len(rows[0][0]) <= LOG_LIMIT * 2 and re.fullmatch(r"(?:[0-9a-f]{2})+", rows[0][0]),
+         "The owned database log is absent, malformed, or exceeds its bound.")
+    body = bytes.fromhex(rows[0][0])
+    body.decode("utf-8")
+    return body
+
+
 def postgres_factory(tls_type, database_type, declaration, identities):
     """Select this provider explicitly in image tests, leaving the 16.15 provider unchanged."""
     class OwnedPostgres18(tls_type):
@@ -124,10 +142,8 @@ def postgres_factory(tls_type, database_type, declaration, identities):
                         if time.monotonic() >= deadline:
                             raise
                         time.sleep(0.05)
-                rows = self.admin.execute("SELECT current_setting('server_version_num'),current_setting('data_directory'),"
-                    "current_setting('asm_fixture.nonce'),(SELECT system_identifier::text FROM pg_catalog.pg_control_system()),"
-                    "current_user,session_user,ssl,version FROM pg_catalog.pg_stat_ssl WHERE pid=pg_catalog.pg_backend_pid()")
-                identities.append(server_contract(rows, declaration))
+                self.identity = server_contract(self.admin.execute(IDENTITY_SQL), declaration)
+                identities.append(self.identity)
                 return self
             except BaseException:
                 self.close()
@@ -149,6 +165,9 @@ def postgres_factory(tls_type, database_type, declaration, identities):
             if self.temp is not None:
                 self.temp.cleanup()
                 self.temp = None
+
+        def postgres_log_bytes(self):
+            return postgres_log_bytes(self.admin, declaration, self.identity)
 
     return OwnedPostgres18
 

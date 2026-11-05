@@ -151,6 +151,8 @@ It does not test two-instance synchronous replication, failover, persistent volu
 Fresh fixture startup does not establish production startup behavior or recovery.
 Private application limits of one CPU and 256 MiB require separate qualification.
 Database connection admission remains a separate gate.
+The [fixed deployment envelope candidate](deployment-envelope.md) adds a separate shared driver/runtime resource check.
+It has no native result yet.
 It does not qualify ARM64 or RISC-V database images.
 The ordinary PostgreSQL 16.15 operator and server image gates remain required independently.
 Older `psql` compatibility is limited to the command paths exercised here.

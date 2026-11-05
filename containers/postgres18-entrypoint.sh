@@ -1,7 +1,13 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
-test "$#" = 0
+logging=()
+if test "$#" = 1 && test "$1" = --log-file; then
+    logging=(-c logging_collector=on -c log_destination=stderr -c log_directory=/run/asm-postgres18
+        -c log_filename=postgres.log -c log_file_mode=0600 -c log_rotation_age=0 -c log_rotation_size=0)
+else
+    test "$#" = 0
+fi
 test "$(id -u):$(id -g)" = 26:26
 bindir=/usr/lib/postgresql/18/bin
 for executable in postgres initdb; do
@@ -29,4 +35,4 @@ exec "$bindir/postgres" -D /run/asm-postgres18/data -p 5432 \
     -c "asm_fixture.nonce=$nonce" -c max_connections=64 -c shared_buffers=256MB \
     -c work_mem=4MB -c maintenance_work_mem=64MB -c effective_cache_size=512MB \
     -c max_worker_processes=0 -c max_parallel_workers=0 -c temp_file_limit=32768 \
-    -c log_statement=none -c log_min_error_statement=panic
+    -c log_statement=none -c log_min_error_statement=panic "${logging[@]}"

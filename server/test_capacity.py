@@ -441,8 +441,7 @@ class CapacityTests(unittest.TestCase):
 
     def test_statement_timeouts_release_admission_before_recovery(self):
         """The one-second SQL timeout must remain distinct from the outer deadline."""
-        log = self.cluster.base / "postgres.log"
-        before = log.stat().st_size
+        before = len(self.cluster.postgres_log_bytes())
         select_sql = ("SELECT route,body,sha256,media_type,revision,acceptance_commit FROM {source} "
                       "CROSS JOIN (SELECT pg_catalog.pg_sleep(3)) AS stalled")
         with self.export_view(select_sql):
@@ -451,7 +450,7 @@ class CapacityTests(unittest.TestCase):
                 self.assert_unavailable(response)
                 self.assertGreater(elapsed, 0.7, "The request failed before reaching the stalled SQL statement.")
                 self.assertLess(elapsed, 1.8, "The request waited for the two-second outer deadline.")
-        messages = log.read_bytes()[before:]
+        messages = self.cluster.postgres_log_bytes()[before:]
         self.assertGreaterEqual(messages.count(b"canceling statement due to statement timeout"), 9,
                                 "The owned database did not confirm all nine statement cancellations.")
         self.assert_full_capacity_after_recovery()

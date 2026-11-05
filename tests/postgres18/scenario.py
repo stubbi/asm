@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -18,6 +19,7 @@ import test_postgres18_image as harness
 
 
 def run(mode):
+    constrained = mode.startswith("envelope-")
     declaration = harness.fixture.prepare(harness.fixture.PREPARATION, "a" * 40)
     schema = ROOT / "server/catalog/schema.sql"
     Path("server/catalog").mkdir(parents=True)
@@ -52,25 +54,38 @@ def run(mode):
             user = arguments[arguments.index("--user") + 1]
             name = arguments[arguments.index("--name") + 1]
             executable = arguments[arguments.index("--entrypoint") + 1] if "--entrypoint" in arguments else None
-            value = {"Id": identity, "Name": "/" + name, "Image": next(value for value in arguments if value.startswith("sha256:")),
+            memory = arguments[arguments.index("--memory") + 1]
+            cpus = arguments[arguments.index("--cpus") + 1]
+            image = next(value for value in arguments if value.startswith("sha256:"))
+            value = {"Id": identity, "Name": "/" + name, "Image": image,
                      "Config": {"User": user, "Labels": {"asm.qualification.nonce": declaration["nonce"]}},
                      "HostConfig": {"ReadonlyRootfs": True, "NetworkMode": arguments[arguments.index("--network") + 1],
                          "PortBindings": {}, "CapDrop": ["ALL"], "CapAdd": None, "SecurityOpt": ["no-new-privileges"],
-                         "Privileged": False, "PidsLimit": 128, "Memory": 2147483648 if user == "26:26" else 536870912,
-                         "NanoCpus": 2000000000}, "Mounts": [], "State": {"Running": True},
+                         "Privileged": False, "PidsLimit": 128, "Memory": {"2g": 2147483648, "512m": 536870912, "256m": 268435456}[memory],
+                         "NanoCpus": {"1": 1000000000, "2": 2000000000}[cpus]}, "Mounts": [],
+                     "State": {"Running": True, "ExitCode": 0, "OOMKilled": False},
                      "probe": arguments[-1] if executable == "/bin/cat" else None,
+                     "executable": executable, "arguments": arguments[arguments.index(image) + 1:],
                      "suite": arguments[arguments.index("--suite") + 1] if "--suite" in arguments else None}
+            if constrained and user == "65532:65532":
+                value["HostConfig"].update(MemorySwap=268435456, Tmpfs={"/tmp": "rw,nosuid,nodev,noexec,size=64m,uid=65532,gid=65532,mode=0700"})
             containers[identity] = value
             body = identity.encode()
         elif operation == "container":
             body = json.dumps([containers[arguments[-1]]]).encode()
         elif operation == "start":
             value = containers[arguments[-1]]
-            if value["probe"]:
+            if value["executable"] == "/usr/bin/stat":
+                body = b"444:0:0:1024\n"
+            elif value["executable"] == "/usr/bin/sha256sum":
+                body = ("c" * 64 + "  /qualification/fixtures/connect-null.so\n").encode()
+            elif value["probe"]:
                 if mode == "terminate":
                     os.kill(os.getpid(), signal.SIGTERM)
                 body = (Path(".postgres18-fixture/server") / Path(value["probe"]).name).read_bytes()
             elif value["suite"]:
+                if mode == "envelope-timeout":
+                    raise subprocess.TimeoutExpired(arguments, 180, output=b"retained bounded request evidence\n", stderr=b"controlled timeout\n")
                 suite = value["suite"]
                 database_id = value["HostConfig"]["NetworkMode"].split(":", 1)[1]
                 report = {"schema": 1, "status": "pass", "scope": "selected-cnpg18-compatibility", "suite": suite,
@@ -79,14 +94,45 @@ def run(mode):
                           "database": {"server_version_num": 180006, "data_directory": harness.fixture.DATA,
                               "nonce": declaration["nonce"], "system_identifier": str(7452238960987612345 + int(database_id, 16)),
                               "session_user": "asm_fixture_admin", "tls_protocol": "TLSv1.3"}}
+                if constrained:
+                    counts = {"baseline": 16, "capacity": 12, "envelope": 3}
+                    modules = {"baseline": "test_runtime.RuntimeTests", "capacity": "test_capacity.CapacityTests", "envelope": "test_envelope.EnvelopeTests"}
+                    cases = [modules[suite] + ".test_case_" + str(number) for number in range(counts[suite])]
+                    phases = ["before-suite"] + [phase + case for case in cases for phase in ("before:", "after:")] + ["after-suite"]
+                    files = {"memory.max": "268435456\n", "memory.current": "48000000\n", "memory.peak": "64000000\n",
+                        "memory.swap.max": "0\n", "memory.swap.current": "0\n", "cpu.max": "100000 100000\n",
+                        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+                        "memory.events.local": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+                        "cpu.stat": "usage_usec 100\nuser_usec 60\nsystem_usec 40\nnr_periods 4\nnr_throttled 1\nthrottled_usec 1000\n"}
+                    samples = [{"phase": phase, "monotonic_ns": number + 1, "files": dict(files)} for number, phase in enumerate(phases)]
+                    requests = [{"path": "/health/ready", "valid_request": True, "status": 503, "body_bytes": 132, "outcome": "refused", "elapsed_ns": 1000}]
+                    report.update(scope="selected-cnpg18-deployment-envelope", tests_run=counts[suite], profile="deployment-envelope",
+                        measurement_scope="Python driver and assembly runtime share one constrained cgroup; PostgreSQL is separate.",
+                        cgroup=samples, cases=cases, requests=requests, availability={"valid_requests": 1, "availability_failures": 1},
+                        fixture={"path": "/qualification/fixtures/connect-null.so", "sha256": "c" * 64, "bytes": 1024, "mode": "0444", "uid": 0, "gid": 0})
+                    if mode == "envelope-missing-sample":
+                        report["cgroup"].pop()
+                    elif mode == "envelope-fixture-change":
+                        report["fixture"]["sha256"] = "d" * 64
+                    elif mode == "envelope-fixture-type":
+                        report["fixture"]["uid"] = False
+                    elif mode == "envelope-availability-type":
+                        report["availability"]["availability_failures"] = True
+                    elif mode == "envelope-oom":
+                        value["State"]["OOMKilled"] = True
                 body = (harness.PREFIX + json.dumps(report) + "\n").encode()
             else:
                 body = b""
         elif operation == "exec":
+            if arguments[-1] == "/run/asm-postgres18/postgres.log":
+                return SimpleNamespace(returncode=1 if mode == "envelope-log-fail" else 0,
+                    stdout=b"canceling statement due to statement timeout\n" * 9, stderr=b"controlled owned file log\n")
             body = b"accepting connections\n"
         elif operation == "logs":
             return SimpleNamespace(returncode=1 if mode == "logs-fail" else 0, stdout=b"", stderr=b"controlled database log result\n")
         elif operation == "rm":
+            if mode == "envelope-cleanup-fail":
+                raise ValueError("Controlled owned cleanup failure.")
             removed.append(arguments[-1])
             body = b""
         else:
@@ -100,7 +146,7 @@ def run(mode):
                 patch.object(harness, "database_files", return_value={"postgres": "a" * 64}), \
                 patch.object(harness.operator, "runtime_files", return_value={"psql": "b" * 64}), \
                 patch.object(harness.server, "runtime_files", return_value={"asm-hub": "c" * 64}):
-            harness.qualify(SimpleNamespace(revision="a" * 40, output="evidence"))
+            harness.qualify(SimpleNamespace(revision="a" * 40, output="evidence", profile="deployment-envelope" if constrained else "compatibility"))
     except ValueError:
         return 1
     finally:

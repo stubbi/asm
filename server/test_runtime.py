@@ -38,6 +38,14 @@ def free_port():
 
 class TlsPostgres(LocalPostgres):
     """Add certificates only to the disposable cluster owned by LocalPostgres."""
+    def postgres_log_bytes(self):
+        with (self.base / "postgres.log").open("rb") as source:
+            body = source.read(1048577)
+        if not body or len(body) > 1048576:
+            raise ValueError("The owned PostgreSQL log is absent or exceeds one MiB.")
+        body.decode("utf-8")
+        return body
+
     def openssl(self, *args):
         subprocess.run(["openssl", *args], cwd=self.base, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)

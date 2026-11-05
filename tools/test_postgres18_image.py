@@ -27,6 +27,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import postgres18_fixture as fixture
 import postgres18_docker
+import deployment_envelope as envelope
 import registry
 from postgres18_fixture import need
 import test_operator_image as operator
@@ -143,7 +144,9 @@ def derived_contract(base, derived, files, derived_files):
     need(files == derived_files, "The qualification image changed a loaded runtime dependency.")
 
 
-def container_contract(value, name, image, nonce, user, network):
+def container_contract(value, name, image, nonce, user, network, profile="compatibility"):
+    need(profile in {"compatibility", envelope.PROFILE}, "Select a fixed qualification profile.")
+    constrained = profile == envelope.PROFILE and user == "65532:65532"
     config, host = value.get("Config", {}), value.get("HostConfig", {})
     need(re.fullmatch(r"[0-9a-f]{64}", value.get("Id", "")) and value.get("Name") == "/" + name and
          value.get("Image") == image and config.get("User") == user and
@@ -151,8 +154,10 @@ def container_contract(value, name, image, nonce, user, network):
     need(host.get("ReadonlyRootfs") is True and host.get("Privileged") is False and
          host.get("NetworkMode") == network and not host.get("PortBindings") and
          host.get("CapDrop") == ["ALL"] and not host.get("CapAdd") and
-         host.get("PidsLimit") == 128 and host.get("NanoCpus") == 2000000000 and
-         host.get("Memory") == (2147483648 if user == "26:26" else 536870912) and
+         host.get("PidsLimit") == 128 and host.get("NanoCpus") == (1000000000 if constrained else 2000000000) and
+         host.get("Memory") == (2147483648 if user == "26:26" else 268435456 if constrained else 536870912) and
+         (not constrained or host.get("MemorySwap") == 268435456 and host.get("Tmpfs") == {
+             "/tmp": "rw,nosuid,nodev,noexec,size=64m,uid=65532,gid=65532,mode=0700"}) and
          host.get("SecurityOpt") in (["no-new-privileges"], ["no-new-privileges:true"]) and
          not value.get("Mounts"), "The owned container isolation differs.")
     return value["Id"]
@@ -167,7 +172,7 @@ def remove_container(record, nonce):
         return
     values = registry.strict_json(result.stdout)
     need(isinstance(values, list) and len(values) == 1, "Cleanup container identity is ambiguous.")
-    actual = container_contract(values[0], record["name"], record["image"], nonce, record["user"], record["network"])
+    actual = container_contract(values[0], record["name"], record["image"], nonce, record["user"], record["network"], record.get("profile", "compatibility"))
     need(record["id"] is None or actual == record["id"], "The owned container ID changed.")
     command(["docker", "rm", "--force", actual], timeout=10)
 
@@ -187,13 +192,19 @@ def cleanup_contract(results):
     need(all(result.get("status") == "removed" for result in results), "Owned resource cleanup failed; the gate failed.")
 
 
-def report_contract(value, suite, revision, nonce, migration):
-    need(isinstance(value, dict) and set(value) == {"schema", "status", "scope", "suite", "source_revision", "tests_run",
-         "not_applicable", "applicable_tests_skipped", "client_libpq_version", "database", "migration_sha384"},
+def report_contract(value, suite, revision, nonce, migration, profile="compatibility", expected_fixture=None):
+    need(profile in {"compatibility", envelope.PROFILE}, "Select a fixed qualification profile.")
+    constrained = profile == envelope.PROFILE
+    fields = {"schema", "status", "scope", "suite", "source_revision", "tests_run",
+              "not_applicable", "applicable_tests_skipped", "client_libpq_version", "database", "migration_sha384"}
+    if constrained:
+        fields |= {"profile", "measurement_scope", "cgroup", "cases", "fixture", "requests", "availability"}
+    need(isinstance(value, dict) and set(value) == fields,
          "The compatibility report fields differ.")
     need(type(value["schema"]) is int and value["schema"] == 1 and value["status"] == "pass" and
-         value["scope"] == "selected-cnpg18-compatibility" and value["suite"] == suite and value["source_revision"] == revision and
-         type(value["tests_run"]) is int and value["tests_run"] >= (23 if suite == "operator" else 16) and
+         value["scope"] == (envelope.SCOPE if constrained else "selected-cnpg18-compatibility") and
+         value["suite"] == suite and value["source_revision"] == revision and
+         type(value["tests_run"]) is int and value["tests_run"] >= (envelope.SUITES[suite][2] if constrained else 23 if suite == "operator" else 16) and
          type(value["applicable_tests_skipped"]) is int and value["applicable_tests_skipped"] == 0 and
          type(value["client_libpq_version"]) is int and value["client_libpq_version"] == 160015 and
          value["migration_sha384"] == migration, "The compatibility report identity, versions, migration, or coverage differs.")
@@ -208,12 +219,53 @@ def report_contract(value, suite, revision, nonce, migration):
          database["session_user"] == "asm_fixture_admin" and database["tls_protocol"] in {"TLSv1.2", "TLSv1.3"} and
          isinstance(database["system_identifier"], str) and re.fullmatch(r"[1-9][0-9]{0,19}", database["system_identifier"]) and
          int(database["system_identifier"]) < 2 ** 64, "The compatibility report lacks its actual owned TLS database identity.")
+    if constrained:
+        need(value["profile"] == envelope.PROFILE and value["measurement_scope"] == envelope.MEASUREMENT_SCOPE and
+             isinstance(value["cases"], list) and len(value["cases"]) == value["tests_run"] and
+             all(isinstance(case, str) and len(case) <= 512 and case.startswith(envelope.SUITES[suite][0] + "." +
+                 envelope.SUITES[suite][1] + ".test_") for case in value["cases"]), "The fixed envelope report scope or cases differ.")
+        need(expected_fixture is not None and server.typed_equal(value["fixture"], expected_fixture), "The admission failure fixture binding differs.")
+        envelope.validate_snapshots(value["cgroup"], value["cases"])
+        need(value["requests"] and server.typed_equal(value["availability"], envelope.request_contract(value["requests"])),
+             "The actual request availability results are absent or differ.")
     return value
 
 
-def base_security(user, network, *, database=False):
-    return ["--read-only", "--network", network, "--user", user, "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g" if database else "512m", "--cpus", "2"]
+def base_security(user, network, *, database=False, profile="compatibility"):
+    need(profile in {"compatibility", envelope.PROFILE}, "Select a fixed qualification profile.")
+    constrained = profile == envelope.PROFILE and not database
+    arguments = ["--read-only", "--network", network, "--user", user, "--cap-drop", "ALL",
+                 "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory",
+                 "2g" if database else "256m" if constrained else "512m", "--cpus", "1" if constrained else "2"]
+    return arguments + (["--memory-swap", "256m"] if constrained else [])
+
+
+def load_profile_suite(name, factory):
+    need(name in envelope.SUITES, "Select a fixed envelope test module.")
+    module = __import__(envelope.SUITES[name][0])
+    cls = getattr(module, envelope.SUITES[name][1])
+    cls.postgres_factory = staticmethod(factory)
+    records = []
+    original = cls.raw_request.__func__
+    def observed(selected, path, method="GET", body=None):
+        valid = method == "GET" and body is None and path in {
+            "/health/live", "/health/ready", "/api/v2/status", *registry_admin_routes()}
+        return envelope.observe(records, path, lambda: original(selected, path, method, body), valid=valid)
+    cls.raw_request = classmethod(observed)
+    cls.request_records = records
+    os.environ["ASM_SERVER_CONNECT_NULL_FIXTURE"] = server.FIXTURE_PATH
+    return unittest.defaultTestLoader.loadTestsFromModule(module)
+
+
+def registry_admin_routes():
+    return ("/registry/v1/index.tsv", "/registry/v1/index-macos.tsv", "/registry/v1/index-all.tsv", "/registry/v1/index.json")
+
+
+def admission_fixture(image, runner):
+    mode = runner(image, "-c", "%a:%u:%g:%s", server.FIXTURE_PATH, entrypoint="/usr/bin/stat").decode()
+    fields = runner(image, server.FIXTURE_PATH, entrypoint="/usr/bin/sha256sum").decode().split()
+    need(len(fields) == 2 and fields[1] == server.FIXTURE_PATH, "The fixed admission fixture digest is unavailable.")
+    return server.fixture_descriptor(mode, fields[0])
 
 
 def database_files(image, runner):
@@ -250,7 +302,17 @@ def inside(args):
     import test_runtime
     identities = []
     factory = fixture.postgres_factory(test_runtime.TlsPostgres, test_runtime.Database, declaration, identities)
-    if args.suite == "operator":
+    constrained = getattr(args, "profile", "compatibility") == envelope.PROFILE
+    if constrained:
+        os.environ.update(ASM_SERVER_BINARY="/usr/local/bin/asm-hub", ASM_SERVER_SOURCE_REVISION=args.revision)
+        suite = load_profile_suite(args.suite, factory)
+        minimum = envelope.SUITES[args.suite][2]
+        mode = Path(server.FIXTURE_PATH).lstat()
+        import stat
+        need(stat.S_ISREG(mode.st_mode), "The fixed admission fixture must be a regular file.")
+        fixture_evidence = server.fixture_descriptor(f"{stat.S_IMODE(mode.st_mode):o}:{mode.st_uid}:{mode.st_gid}:{mode.st_size}",
+            hashlib.sha256(Path(server.FIXTURE_PATH).read_bytes()).hexdigest())
+    elif args.suite == "operator":
         sys.path.insert(0, "/qualification/tests/hosted_registry")
         import test_database
         test_database.CatalogDatabaseTests.postgres_factory = staticmethod(factory)
@@ -266,7 +328,8 @@ def inside(args):
         minimum = 16
     count = suite.countTestCases()
     need(count >= minimum, "The complete compatibility suite is unavailable.")
-    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
+    samples = []
+    result = envelope.run_suite(suite, samples) if constrained else unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
     exclusions = operator.test_contract(result, count)
     need(args.suite == "operator" or not exclusions, "An HTTP compatibility assertion was excluded.")
     need(len(identities) == 1, "The suite did not establish exactly one owned database identity.")
@@ -274,6 +337,13 @@ def inside(args):
               "source_revision": args.revision, "tests_run": result.testsRun, "not_applicable": exclusions,
               "applicable_tests_skipped": 0, "client_libpq_version": 160015, "database": identities[0],
               "migration_sha384": hashlib.sha384(Path("/qualification/server/catalog/schema.sql").read_bytes()).hexdigest()}
+    if constrained:
+        cls = getattr(sys.modules[envelope.SUITES[args.suite][0]], envelope.SUITES[args.suite][1])
+        cases = [sample["phase"][len("before:"):] for sample in samples if sample["phase"].startswith("before:")]
+        envelope.validate_snapshots(samples, cases)
+        report.update(scope=envelope.SCOPE, profile=envelope.PROFILE, measurement_scope=envelope.MEASUREMENT_SCOPE,
+                      cgroup=samples, cases=cases, fixture=fixture_evidence, requests=cls.request_records,
+                      availability=envelope.request_contract(cls.request_records))
     print(PREFIX + json.dumps(report, sort_keys=True))
 
 
@@ -284,6 +354,9 @@ def qualify(args):
 
 def qualify_owned(args, termination):
     need(platform.system() == "Linux" and platform.machine() == "x86_64", "Use the native Linux AMD64 runner.")
+    profile = getattr(args, "profile", "compatibility")
+    need(profile in {"compatibility", envelope.PROFILE}, "Select a fixed qualification profile.")
+    constrained = profile == envelope.PROFILE
     output = Path(args.output)
     output.mkdir(mode=0o700)
     report = {"schema": 1, "status": "fail", "scope": "selected-cnpg18-compatibility", "source_revision": args.revision,
@@ -292,6 +365,12 @@ def qualify_owned(args, termination):
               "resources": {"database_memory_bytes": 2147483648, "application_memory_bytes": 536870912,
                             "cpus_per_container": 2, "pids_per_container": 128, "tmpfs_bytes_per_container": 536870912}}
     records, owned = {}, []
+    if constrained:
+        report.update(scope=envelope.SCOPE, profile=profile, measurement_scope=envelope.MEASUREMENT_SCOPE)
+        report["resources"].update(application_memory_bytes=268435456, application_cpus=1,
+                                   application_swap_bytes=0, application_tmpfs_bytes=67108864,
+                                   database_cpus=2, database_tmpfs_bytes=536870912)
+        del report["resources"]["cpus_per_container"], report["resources"]["tmpfs_bytes_per_container"]
     preparation_identity = None
 
     def remove(identity):
@@ -306,11 +385,12 @@ def qualify_owned(args, termination):
     def create(image, user, network, *, database=False, suite=None, entrypoint=None, arguments=()):
         name = "asm-postgres18-" + uuid.uuid4().hex
         records[name] = {"name": name, "id": None, "image": image, "user": user, "network": network,
+                         "profile": profile, "suite": suite,
                          "purpose": "database" if database and entrypoint is None else "application" if suite else "probe"}
         owned.append(name)
         temporary = "/run/asm-postgres18:rw,nosuid,nodev,noexec,size=512m,uid=26,gid=26,mode=0700" if database else \
-                    "/tmp:rw,nosuid,nodev,noexec,size=512m,uid=65532,gid=65532,mode=0700"
-        argv = ["docker", "create", "--name", name, "--platform", "linux/amd64", *base_security(user, network, database=database),
+                    "/tmp:rw,nosuid,nodev,noexec,size=" + ("64m" if constrained else "512m") + ",uid=65532,gid=65532,mode=0700"
+        argv = ["docker", "create", "--name", name, "--platform", "linux/amd64", *base_security(user, network, database=database, profile=profile),
                 "--tmpfs", temporary, "--label", "asm.qualification.nonce=" + declaration["nonce"]]
         if entrypoint is not None or not database:
             argv += ["--entrypoint", entrypoint or "/usr/bin/python3"]
@@ -319,9 +399,13 @@ def qualify_owned(args, termination):
             argv += list(arguments)
         elif not database:
             argv += ["-I", "/qualification/tools/test_postgres18_image.py", "--inside", "--suite", suite, "--revision", args.revision]
+            if constrained:
+                argv += ["--profile", profile]
+        elif constrained:
+            argv += ["--log-file"]
         identity = command(argv).stdout.decode().strip()
         need(re.fullmatch(r"[0-9a-f]{64}", identity), "Docker did not return an exact owned container ID.")
-        actual = container_contract(inspect("container", identity), name, image, declaration["nonce"], user, network)
+        actual = container_contract(inspect("container", identity), name, image, declaration["nonce"], user, network, profile)
         need(actual == identity, "Docker returned a different owned container ID.")
         records[name]["id"] = identity
         return identity
@@ -352,7 +436,8 @@ def qualify_owned(args, termination):
         report["database_image"] = {"reference": fixture.DATABASE_IMAGE, "index_digest": fixture.INDEX,
             "platform_digest": fixture.PLATFORM, "config_digest": fixture.CONFIG, "qualification_image_id": database["Id"],
             "runtime_files": dependencies}
-        for suite, names in IMAGES.items():
+        selected = [(suite, IMAGES["http"]) for suite in envelope.SUITES] if constrained else IMAGES.items()
+        for suite, names in selected:
             runtime, original, qualifier = [inspect("image", name) for name in names]
             if suite == "operator":
                 for value in (runtime, original, qualifier):
@@ -366,6 +451,10 @@ def qualify_owned(args, termination):
             files = get_files(runtime["Id"])
             derived_contract(runtime, original, files, get_files(original["Id"]))
             derived_contract(original, qualifier, files, get_files(qualifier["Id"]))
+            expected_fixture = None
+            if constrained:
+                expected_fixture = admission_fixture(original["Id"], probe)
+                need(expected_fixture == admission_fixture(qualifier["Id"], probe), "The derived image changed the admission fixture.")
             database_id = create(database["Id"], "26:26", "none", database=True)
             command(["docker", "start", database_id])
             deadline = time.monotonic() + 30
@@ -378,21 +467,26 @@ def qualify_owned(args, termination):
                 time.sleep(0.05)
             app_id = create(qualifier["Id"], "65532:65532", "container:" + database_id, suite=suite)
             try:
-                result = command(["docker", "start", "--attach", app_id], timeout=300, check=False)
-            except subprocess.TimeoutExpired as error:
-                (output / (suite + ".stdout.log")).write_bytes(error.stdout or b"")
-                (output / (suite + ".stderr.log")).write_bytes(error.stderr or b"")
+                result = command(["docker", "start", "--attach", app_id], timeout=180 if constrained else 300, check=False)
+            except (subprocess.TimeoutExpired, CommandFailure, QualificationTerminated) as error:
+                (output / (suite + ".stdout.log")).write_bytes(getattr(error, "stdout", None) or b"")
+                (output / (suite + ".stderr.log")).write_bytes(getattr(error, "stderr", None) or b"")
                 raise
             (output / (suite + ".stdout.log")).write_bytes(result.stdout)
             (output / (suite + ".stderr.log")).write_bytes(result.stderr)
+            if constrained:
+                state = inspect("container", app_id)
+                (output / (suite + ".container.json")).write_text(json.dumps(state, sort_keys=True) + "\n")
+                need(not state.get("State", {}).get("OOMKilled") and state.get("State", {}).get("ExitCode") == 0,
+                     "The shared driver/runtime container failed or was OOM-killed.")
             need(result.returncode == 0, "A real compatibility suite failed; retain its first failure.")
             reports = [registry.strict_json(line[len(PREFIX):]) for line in result.stdout.decode().splitlines() if line.startswith(PREFIX)]
             need(len(reports) == 1, "Expected exactly one complete compatibility report.")
             migration = hashlib.sha384(Path("server/catalog/schema.sql").read_bytes()).hexdigest()
-            report_contract(reports[0], suite, args.revision, declaration["nonce"], migration)
+            report_contract(reports[0], suite, args.revision, declaration["nonce"], migration, profile, expected_fixture)
             report["suites"].append(dict(reports[0], runtime_image_id=runtime["Id"], qualification_image_id=qualifier["Id"],
                                          database_container_id=database_id, runtime_files=files))
-        need(len({value["database"]["system_identifier"] for value in report["suites"]}) == 2, "The suites did not use fresh database clusters.")
+        need(len({value["database"]["system_identifier"] for value in report["suites"]}) == (3 if constrained else 2), "The suites did not use fresh database clusters.")
         report["status"] = "pass"
     except Exception as error:
         report["failure"] = {"error": type(error).__name__, "message": str(error) if isinstance(error, ValueError) else "Qualification failed; inspect stage logs."}
@@ -402,13 +496,26 @@ def qualify_owned(args, termination):
     finally:
         termination["cleanup"] = True
         for record in records.values():
+            if constrained and record["id"] is not None and record["purpose"] == "application":
+                try:
+                    state = inspect("container", record["id"])
+                    container_contract(state, record["name"], record["image"], declaration["nonce"], record["user"], record["network"], profile)
+                    (output / (record["suite"] + ".container.json")).write_text(json.dumps(state, sort_keys=True) + "\n")
+                except Exception as error:
+                    report.setdefault("state_failures", []).append({"identity": record["id"], "error": type(error).__name__})
             if record["id"] is not None and record["purpose"] == "database":
                 try:
                     container_contract(inspect("container", record["id"]), record["name"], record["image"],
-                                       declaration["nonce"], record["user"], record["network"])
+                                       declaration["nonce"], record["user"], record["network"], profile)
                     logs = command(["docker", "logs", record["id"]], check=False)
                     (output / (record["name"] + ".database.log")).write_bytes(logs.stdout + logs.stderr)
                     need(logs.returncode == 0, "Owned database log retrieval failed.")
+                    if constrained:
+                        file_log = command(["docker", "exec", record["id"], "/bin/cat", fixture.LOG_PATH], check=False)
+                        (output / (record["name"] + ".database.file.log")).write_bytes(file_log.stdout)
+                        (output / (record["name"] + ".database.file.stderr.log")).write_bytes(file_log.stderr)
+                        need(file_log.returncode == 0 and 0 < len(file_log.stdout) <= fixture.LOG_LIMIT,
+                             "The owned database file log is absent or exceeds its bound.")
                 except Exception as error:
                     report.setdefault("log_failures", []).append({"identity": record["id"], "error": type(error).__name__})
                     if isinstance(error, (CommandFailure, subprocess.TimeoutExpired)):
@@ -422,7 +529,7 @@ def qualify_owned(args, termination):
             except Exception as error:
                 report["preparation_cleanup"] = "error"
                 report["preparation_cleanup_error"] = type(error).__name__
-        if any(value["status"] != "removed" for value in report["cleanup"]) or report.get("preparation_cleanup") != "removed" or report.get("log_failures"):
+        if any(value["status"] != "removed" for value in report["cleanup"]) or report.get("preparation_cleanup") != "removed" or report.get("log_failures") or report.get("state_failures"):
             report["status"] = "fail"
         if termination["signal"] is not None:
             report["status"] = "fail"
@@ -437,20 +544,22 @@ def main():
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--cleanup-preparation", action="store_true")
     parser.add_argument("--inside", action="store_true")
-    parser.add_argument("--suite", choices=("operator", "http"))
+    parser.add_argument("--suite", choices=("operator", "http", *envelope.SUITES))
+    parser.add_argument("--profile", choices=("compatibility", envelope.PROFILE), default="compatibility")
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output")
     args = parser.parse_args()
     need(re.fullmatch(r"[0-9a-f]{40}", args.revision) and args.revision != "0" * 40, "Supply an exact source revision.")
     if args.cleanup_preparation:
-        need(not args.prepare and not args.inside and not args.suite and not args.output, "Cleanup accepts no execution or target options.")
+        need(not args.prepare and not args.inside and not args.suite and not args.output and args.profile == "compatibility", "Cleanup accepts no execution or target options.")
         identity, nonce = fixture.preparation_owner(fixture.PREPARATION)
         fixture.remove_preparation(fixture.PREPARATION, identity, nonce)
     elif args.prepare:
-        need(not args.inside and not args.suite and not args.output, "Preparation accepts no execution or target options.")
+        need(not args.inside and not args.suite and not args.output and args.profile == "compatibility", "Preparation accepts no execution or target options.")
         fixture.prepare(fixture.PREPARATION, args.revision)
     elif args.inside:
         need(args.suite and not args.output, "Select the fixed image suite.")
+        need(args.suite in (envelope.SUITES if args.profile == envelope.PROFILE else ("operator", "http")), "The suite does not belong to this fixed profile.")
         inside(args)
     else:
         need(args.output and not args.suite, "Supply a new evidence directory.")
