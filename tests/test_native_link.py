@@ -226,6 +226,24 @@ class NativeLinkTests(unittest.TestCase):
                                  + 'link = "c"\n')
         self.assertEqual(self.cli("run").stdout, "native linked\n")
 
+    def test_inactive_target_response_file_inputs_preserve_existing_binary(self):
+        self.cli("build")
+        binary = self.work / "build/app"
+        before = binary.read_bytes()
+        foreign = "aarch64-linux" if TARGET == "x86_64-linux" else "x86_64-linux"
+        selected = ('[package]\nname = "native"\nversion = "0.1.0"\n'
+                    f'[target.{TARGET}]\nsource = "main.s"\nlink = "c"\n')
+        for fields in ('source = "src/@main.s"\n',
+                       'source = "src/main.s"\ntest = "tests/@main.s"\n',
+                       'source = "src/main.s"\nlink = "c"\ncheck = "abi/@check.c"\n'):
+            with self.subTest(fields=fields):
+                self.manifest.write_text(selected + f'[target.{foreign}]\n' + fields)
+                result = self.cli("build", success=False)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("invalid or missing asm.toml", result.stderr)
+                self.assertEqual(binary.read_bytes(), before)
+                self.assertFalse(list((self.work / "build").glob(".asm-*")))
+
     def test_hidden_c_checker_is_compiled_without_execution(self):
         (self.work / ".c").write_text(
             '#include <stdio.h>\nint main(void) {\n'
