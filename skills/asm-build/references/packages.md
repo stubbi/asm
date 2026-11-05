@@ -31,14 +31,14 @@ For incompatible or missing metadata, retain the unknown and investigate the sou
 3. Use `asm fetch` for a separate download or `asm add` for a reviewed direct source dependency.
 4. Inspect source before executing builds or tests that consume it.
 5. Keep exact dependency versions and artifact SHA-256 digests in the lock file or equivalent record.
-6. Use `asm lock` to check a native project's selection.
+6. Use `asm lock --target TARGET` to check the selected target's dependencies.
 7. Use `asm build --locked`, `asm test --locked`, and `asm run --locked` when the project has locked dependencies.
-8. Use `asm sync` to restore the existing selection in another checkout.
+8. Use `asm sync --target TARGET` to restore that target's selection in another checkout.
 
 For example, this Linux x86-64 reference dependency uses the System V AMD64 ABI:
 
 ```sh
-asm add stubbi/math@0.4.0 --target x86_64-linux
+asm add stubbi/math@0.6.0 --target x86_64-linux
 asm lock
 asm build --locked
 asm test --locked
@@ -46,6 +46,7 @@ asm run --locked
 ```
 
 The consumer must explicitly include and call `asm_u64_min` using its documented register contract.
+The 0.6.0 include path is `stubbi/math/0.6.0/x86_64-linux/targets/x86_64-linux/src/min.s`.
 The reference consumer prints `min(12, 37) = 12`.
 These commands alone do not add the call or establish that output.
 Preserve package notices and the version-specific license.

@@ -2,7 +2,7 @@
 # Use make to select the native Linux or Apple Silicon macOS implementation.
 [package]
 name = "asm"
-version = "0.5.0"
+version = "0.6.0"
 
 [build]
 source = "cli/asm.s"

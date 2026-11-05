@@ -16,12 +16,14 @@ The [assembly server experiment](../experiments/assembly-server/README.md) is pu
 The Rust behavioral reference remains unpublished.
 The proposed latency and workload targets are not measured capacity.
 
-## Current release: 0.5.0
+## Current release: 0.6.0
 
 The code now contains:
 
 - Native CLIs for x86-64 Linux, ARM64 Linux, and Apple Silicon macOS 15 or later.
   Each CLI supports project creation, build, run, test, and diagnostics.
+- Named project implementations, standalone Linux cross builds, and target-specific direct dependencies in v2 locks.
+- Optional native-library linking and compile-only ABI checks on the native host.
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
 - Local installation inventory, upgrades, and uninstall for recorded executables.
 - Native source-archive validation, extraction, and cache comparison.
@@ -71,8 +73,12 @@ Transitive resolution, version ranges, feature selection, and solver diagnostics
 
 ## More hosts and package interfaces
 
+Asm 0.6.0 supports named target implementations, standalone Linux cross builds, and target-specific direct dependency locks.
+The [project contract](multi-target-projects.md) separates declarations, supported builds, native execution, and registry artifacts.
+The reference projects keep implementations in target subdirectories.
+
 - Add native CLI ports beyond the current Linux and Apple Silicon macOS hosts.
-- Add general cross-build support.
+- Qualify cross-target native-library sysroots and additional destination platforms.
 - Describe ABI, object format, assembler dialect, and required ISA extensions in metadata.
 - Separate host tools from target libraries.
 - Record exported symbols and register clobbers.

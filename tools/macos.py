@@ -25,6 +25,18 @@ def prepare(source: Path) -> str:
     if source.name == 'asm.s':
         text = text.replace('/usr/bin/sha256sum', '/usr/bin/shasum').replace('GNU as + ld', 'Apple clang + libSystem').replace('GNU as and ld', 'Apple clang')
         text = text.replace('/usr/bin/as', '/usr/bin/clang').replace('/usr/bin/ld', '/usr/bin/clang')
+        # Build-target lists are independent of the native host identity.
+        import json
+        build_targets = ['x86_64-linux', 'aarch64-linux', 'riscv64-linux', 'aarch64-macos']
+        target_report = {'host': 'aarch64-macos', 'targets': build_targets}
+        line = 'targets_json: .asciz ' + json.dumps(json.dumps(target_report, separators=(',', ':')) + '\n')
+        text = re.sub(r'^targets_json:.*$', lambda match: line, text, flags=re.M)
+        target_text = 'aarch64-macos (host; Apple clang + libSystem)\nx86_64-linux (cross; LLVM)\naarch64-linux (cross; LLVM)\nriscv64-linux (cross; LLVM)\n'
+        text = re.sub(r'^targets_text:.*$', lambda match: 'targets_text: .asciz ' + json.dumps(target_text), text, flags=re.M)
+        match = re.search(r'(status_json:\n\s*\.asciz )(.+)', text)
+        status = json.loads(json.loads(match[2]))
+        status['targets'] = build_targets
+        text = text[:match.start(2)] + json.dumps(json.dumps(status, separators=(',', ':')) + '\n') + text[match.end(2):]
         start = '''_main:
     ARM_ADDR x16, argc
     str x0, [x16]
@@ -72,6 +84,14 @@ def prepare(source: Path) -> str:
         text = text.replace('.quad registry_sha256sum, registry_sha_status, registry_sha_check, 0, 0',
                             '.quad registry_sha256sum, mac_sha256_option, registry_sha_status, registry_sha_check, 0, 0')
         text += '\n.data\nmac_sha256_option: .asciz "-a256"\n'
+    if source.name == 'cross_build.s':
+        text = text.replace('.equ CROSS_MACOS, 0', '.equ CROSS_MACOS, 1')
+    if source.name == 'native_link.s':
+        # Keep Apple compiler flags explicit. Linux hardening options do not
+        # describe the Apple linker or the arm64 macOS deployment contract.
+        native_platform = '.equ NATIVE_LINK_MACOS, 0'
+        assert text.count(native_platform) == 1
+        text = text.replace(native_platform, '.equ NATIVE_LINK_MACOS, 1')
     if source.name == 'publish.s':
         text = text.replace('ARM_CALL pub_validate_elf', 'ARM_CALL mac_pub_validate_executable')
         text += (ROOT / 'cli/macos/publish.s').read_text()

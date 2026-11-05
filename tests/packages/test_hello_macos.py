@@ -24,7 +24,7 @@ ARM_HARDWARE = is_apple_silicon()
 class MacHelloTests(unittest.TestCase):
     def exercise(self, target, arch):
         with tempfile.TemporaryDirectory() as temporary:
-            source = ROOT / "examples" / f"hello-{target}-macos" / "src/main.s"
+            source = ROOT / "examples/hello/targets" / f"{target}-macos" / "src/main.s"
             output = Path(temporary) / "hello"
             subprocess.run(["/usr/bin/clang", "-arch", arch, "-mmacosx-version-min=15.0",
                             "-Wl,-no_uuid", "-o", str(output), str(source)],

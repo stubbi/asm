@@ -42,10 +42,13 @@ def minimal_arm_elf():
     return bytes(data)
 
 
-def arm_native_evidence(commit, version, binary):
+def arm_native_evidence(commit, version, binary, *, selected_target=False):
     """Synthetic consumer fixture; no native execution or qualification claim."""
+    targets = (["x86_64-linux", "aarch64-linux", "riscv64-linux"]
+               if selected_target else ["aarch64-linux"])
     return {
-        "schema": 1, "source_commit": commit, "version": version, "target": "aarch64-linux",
+        "schema": 2 if selected_target else 1,
+        "source_commit": commit, "version": version, "target": "aarch64-linux",
         "asset": {"file": f"asm-{version}-aarch64-linux", "bytes": len(binary),
                   "sha256": hashlib.sha256(binary).hexdigest()},
         "platform": {"system": "Linux", "machine": "aarch64", "kernel": "6.8.0-fixture",
@@ -53,7 +56,7 @@ def arm_native_evidence(commit, version, binary):
         "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
         "version_check": {"status": "pass", "runner": "native", "stdout": f"asm {version} (aarch64-linux)\n", "exit_code": 0},
         "targets_check": {"status": "pass", "runner": "native",
-                          "result": {"host": "aarch64-linux", "targets": ["aarch64-linux"]}, "exit_code": 0},
+                          "result": {"host": "aarch64-linux", "targets": targets}, "exit_code": 0},
         "tests": {"status": "pass", "command": ["make", "test"], "suite": "tests", "tests_run": 4,
                   "skipped": 0, "exit_code": 0, "output_sha256": hashlib.sha256(b"synthetic test output").hexdigest()},
         "tool_versions": {"make": "GNU Make fixture", "as": "GNU assembler fixture",
@@ -76,8 +79,8 @@ class ArmNativeInputTests(unittest.TestCase):
     def write(self, evidence):
         (self.directory / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
 
-    def read(self):
-        return release.read_native_release(self.directory, self.commit, self.version, "aarch64-linux")
+    def read(self, **kwargs):
+        return release.read_native_release(self.directory, self.commit, self.version, "aarch64-linux", **kwargs)
 
     def test_exact_arm_bytes_and_complete_native_evidence_are_accepted(self):
         try:
@@ -86,6 +89,54 @@ class ArmNativeInputTests(unittest.TestCase):
             self.fail(f"exact ARM64 native input was refused: {error}")
         self.assertEqual(binary, self.binary)
         self.assertEqual(evidence, self.evidence)
+
+    def test_selected_target_arm_receipt_accepts_exactly_the_three_linux_targets(self):
+        selected = copy.deepcopy(self.evidence)
+        selected["schema"] = 2
+        selected["targets_check"]["result"]["targets"] = [
+            "x86_64-linux", "aarch64-linux", "riscv64-linux"]
+        self.write(selected)
+        try:
+            binary, evidence = self.read()
+        except registry.RegistryError as error:
+            self.fail(f"canonical selected-target Linux receipt was refused: {error}")
+        self.assertEqual(binary, self.binary)
+        self.assertEqual(evidence, selected)
+        self.assertEqual(self.read(expected_build_targets=[
+            "x86_64-linux", "aarch64-linux", "riscv64-linux"])[1], selected)
+
+    def test_selected_target_arm_receipt_rejects_noncanonical_target_lists(self):
+        for targets in (["x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-linux"],
+                        ["aarch64-linux"], ["aarch64-linux", "x86_64-linux", "riscv64-linux"],
+                        ["x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"]):
+            with self.subTest(targets=targets):
+                evidence = copy.deepcopy(self.evidence)
+                evidence["schema"] = 2
+                evidence["targets_check"]["result"]["targets"] = targets
+                self.write(evidence)
+                with self.assertRaisesRegex(registry.RegistryError, "native target evidence did not pass"):
+                    self.read()
+
+    def test_legacy_arm_receipt_keeps_its_native_only_target_contract(self):
+        self.assertEqual(self.read(expected_build_targets=["aarch64-linux"])[1], self.evidence)
+        evidence = copy.deepcopy(self.evidence)
+        evidence["targets_check"]["result"]["targets"] = [
+            "x86_64-linux", "aarch64-linux", "riscv64-linux"]
+        self.write(evidence)
+        with self.assertRaisesRegex(registry.RegistryError, "native target evidence did not pass"):
+            self.read()
+
+    def test_arm_receipt_schema_cannot_replace_the_source_build_contract(self):
+        for schema, targets, source_targets in (
+                (1, ["aarch64-linux"], ["x86_64-linux", "aarch64-linux", "riscv64-linux"]),
+                (2, ["x86_64-linux", "aarch64-linux", "riscv64-linux"], ["aarch64-linux"])):
+            with self.subTest(schema=schema):
+                evidence = copy.deepcopy(self.evidence)
+                evidence["schema"] = schema
+                evidence["targets_check"]["result"]["targets"] = targets
+                self.write(evidence)
+                with self.assertRaisesRegex(registry.RegistryError, "different source build contract"):
+                    self.read(expected_build_targets=source_targets)
 
     def test_wrong_identity_incomplete_native_checks_and_missing_kernel_are_rejected(self):
         mutations = [(None, "source_commit", "b" * 40), (None, "version", "0.5.1"),
@@ -206,7 +257,7 @@ class ArmNativeProducerTests(unittest.TestCase):
              mock.patch.object(release.os, "getuid", return_value=0), \
              mock.patch.object(release.os, "geteuid", return_value=0), \
              mock.patch.object(release, "resolve_commit", return_value="a" * 40), \
-             mock.patch.object(registry, "git_files", return_value={"cli/commands.json": (b'{"version":"0.5.0"}', 0o644)}), \
+             mock.patch.object(registry, "git_files", return_value={"cli/commands.json": (b'{"version":"0.5.0","build_mode":"native host"}', 0o644)}), \
              mock.patch.object(release, "command", side_effect=fake_command), \
              mock.patch.object(release, "tool_version", side_effect=lambda name, *unused: name + " fixture"):
             return release.build_native_release(self.directory, self.directory / "qualified", target="aarch64-linux")
@@ -246,7 +297,7 @@ class ArmReleaseFanInTests(unittest.TestCase):
         self.repo.mkdir()
         files = {"LICENSE": "MIT License\nFixture only.\n", "README.md": "# Fixture\n",
                  "asm.toml": '[package]\nname="asm"\nversion="0.5.0"\n[build]\nsource="cli/asm.s"\ntarget="x86_64-linux"\n',
-                 "cli/commands.json": '{"version":"0.5.0","license":"MIT","hosts":["x86_64-linux","aarch64-linux"]}',
+                 "cli/commands.json": '{"version":"0.5.0","license":"MIT","build_mode":"native host","hosts":["x86_64-linux","aarch64-linux"]}',
                  "cli/asm.s": "# Synthetic fixture; never assembled.\n",
                  "examples/hello/LICENSE": "MIT License\nFixture only.\n",
                  "examples/hello/README.md": "# Fixture\n",
@@ -277,7 +328,8 @@ class ArmReleaseFanInTests(unittest.TestCase):
              mock.patch.object(release.platform, "machine", return_value="x86_64"), \
              mock.patch.object(release, "tool_version", return_value="fixture tool"), \
              mock.patch.object(release, "build_cli", side_effect=fixture_cli), \
-             mock.patch.object(release, "compile_hello", return_value=(self.x86, {"runtime": {"status": "pass"}})), \
+             mock.patch.object(release, "compile_hello", return_value=(self.x86, {
+                 "runtime": {"status": "pass"}, "source_path": "examples/hello"})), \
              mock.patch.object(release, "command", return_value=b"asm 0.5.0 (x86_64-linux)\n"):
             return release.build_release(self.repo, output, native_inputs={"aarch64-linux": self.native}, **kwargs)
 
@@ -304,6 +356,31 @@ class ArmReleaseFanInTests(unittest.TestCase):
                 output = self.directory / mutation
                 with self.assertRaises(registry.RegistryError):
                     self.build(output)
+                self.assertFalse(output.exists())
+
+    def test_source_build_contract_mismatch_is_rejected_before_build_or_output(self):
+        for mode, schema, targets in (
+                ("selected target; native libraries require the native host", 1, ["aarch64-linux"]),
+                ("native host", 2, ["x86_64-linux", "aarch64-linux", "riscv64-linux"])):
+            with self.subTest(mode=mode, schema=schema):
+                path = self.repo / "cli/commands.json"
+                commands = json.loads(path.read_text())
+                commands["build_mode"] = mode
+                path.write_text(json.dumps(commands) + "\n")
+                git(self.repo, "add", "cli/commands.json")
+                git(self.repo, "-c", "user.name=Release fixture", "-c", "user.email=fixture@example.invalid",
+                    "-c", "commit.gpgsign=false", "commit", "-qm", "Set synthetic source build contract")
+                evidence = copy.deepcopy(self.evidence)
+                evidence.update(source_commit=git(self.repo, "rev-parse", "HEAD"), schema=schema)
+                evidence["targets_check"]["result"]["targets"] = targets
+                (self.native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
+                output = self.directory / f"wrong-source-contract-schema-{schema}"
+                with mock.patch.object(release.platform, "system", return_value="Linux"), \
+                     mock.patch.object(release.platform, "machine", return_value="x86_64"), \
+                     mock.patch.object(release, "command") as command:
+                    with self.assertRaisesRegex(registry.RegistryError, "different source build contract"):
+                        release.build_release(self.repo, output, native_inputs={"aarch64-linux": self.native})
+                    command.assert_not_called()
                 self.assertFalse(output.exists())
 
     def test_legacy_macos_input_can_coexist_without_widening_hosts(self):
@@ -390,9 +467,6 @@ class ReleaseTests(unittest.TestCase):
         shutil.copytree(ROOT / "examples/hello", cls.repo / "examples/hello", ignore=shutil.ignore_patterns("build"))
         if (ROOT / "examples/math").is_dir():
             shutil.copytree(ROOT / "examples/math", cls.repo / "examples/math", ignore=shutil.ignore_patterns("build"))
-        for directory in ("hello-aarch64", "hello-riscv64"):
-            if (ROOT / "examples" / directory).is_dir():
-                shutil.copytree(ROOT / "examples" / directory, cls.repo / "examples" / directory, ignore=shutil.ignore_patterns("build"))
         shutil.copytree(ROOT / "site", cls.repo / "site")
         shutil.copytree(ROOT / "skills/asm-build", cls.repo / "skills/asm-build")
         (cls.repo / "README.md").write_text("# Release test fixture\n\nUses the project's actual assembly sources.\n")
@@ -414,7 +488,7 @@ class ReleaseTests(unittest.TestCase):
         cls.arm_input = cls.base / "native-arm-input"
         cls.arm_input.mkdir()
         cls.arm_binary = minimal_arm_elf()
-        cls.arm_evidence = arm_native_evidence(cls.commit, cls.version, cls.arm_binary)
+        cls.arm_evidence = arm_native_evidence(cls.commit, cls.version, cls.arm_binary, selected_target=True)
         (cls.arm_input / cls.arm_evidence["asset"]["file"]).write_bytes(cls.arm_binary)
         (cls.arm_input / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(cls.arm_evidence))
         cls.first = cls.base / "first-release"
@@ -460,6 +534,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.metadata["builds"]["asm"]["version_check"]["status"], "pass")
         self.assertEqual(self.metadata["builds"]["asm_targets"]["aarch64-linux"]["version_check"]["status"], "pass")
         self.assertEqual(self.metadata["cli_hosts"], ["x86_64-linux", "aarch64-linux"])
+        hello = next(record for record in self.records if record["name"] == "stubbi/hello")
+        self.assertEqual(hello["source"]["path"], "examples/hello")
         cli = next(record for record in self.records if record["name"] == "stubbi/asm")
         self.assertEqual({item["target"] for item in cli["artifacts"] if item["kind"] == "executable"},
                          {"x86_64-linux", "aarch64-linux"})
@@ -493,7 +569,7 @@ class ReleaseTests(unittest.TestCase):
         native = self.case_dir / "native-input"
         native.mkdir()
         binary = minimal_macho()
-        evidence = native_evidence(commit, self.version, binary)
+        evidence = native_evidence(commit, self.version, binary, selected_target=True)
         filename = evidence["asset"]["file"]
         (native / filename).write_bytes(binary)
         (native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
