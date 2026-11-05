@@ -97,6 +97,15 @@ The separate x86-64 diagnostic collector also failed obsolete source anchors.
 These setup failures provide no managed CLI runtime result.
 Both independent Windows package jobs passed seven cases; the Linux reference job passed 24 cases.
 The [evidence record](windows-native-evidence.json) retains the source, report digests, and earlier failed runs.
+
+The second managed [run 42111645129](https://github.com/stubbi/asm/actions/runs/42111645129) used source `bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb`.
+Both jobs passed 27 preflight checks and executed all 118 runtime methods, with no skips.
+x86-64 passed 106 methods; ARM64 passed 112 methods.
+Failure records can exceed failed methods because a method can contain several subtests.
+The remaining defects concern update initialization, failure cleanup, argument limits, path-refusal file effects, and a child-test setup error.
+Both native Windows package jobs and the Linux reference package job passed.
+Neither CLI target has full native qualification.
+
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.

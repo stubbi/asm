@@ -1495,16 +1495,190 @@
         "file": "build/integration-evidence/windows-managed-first-audit.json",
         "sha256": "353f1607f73e409732ce32b662cac66b83a776ef859da0acd7dce4bfbb70e32b"
       }
+    },
+    {
+      "iteration": 2,
+      "run_id": 42111645129,
+      "url": "https://github.com/stubbi/asm/actions/runs/42111645129",
+      "event": "workflow_dispatch",
+      "source_commit": "bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb",
+      "source_tree": "4bfa10d97267638fb98f2eca2ddda8b2f7446ec7",
+      "outcome": "fail",
+      "native_cli_qualification": false,
+      "preflight": "Both jobs pass 27 preflight methods and build the native CLI.",
+      "targets": [
+        {
+          "path": "build/windows-managed-second-native/native-windows-cli-aarch64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/runtime.json",
+          "sha256": "60059a8bd3e140c0160038e6c39b308442c8d1034364d5cfe6975f388d36c58e",
+          "target": "aarch64-windows",
+          "tests_run": 118,
+          "passing_methods": 112,
+          "nonpassing_methods": 6,
+          "record_counts": {
+            "pass": 112,
+            "fail": 8,
+            "error": 1
+          },
+          "failed_methods": [
+            "test_managed_child_binding.ManagedChildBindingTests.test_refused_suspended_payload_is_never_resumed_and_is_reaped",
+            "test_managed_runtime.ManagedRuntimeTests.test_launcher_preserves_literal_arguments_through_startup_capacity",
+            "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+            "test_runtime.SelfUpdateRuntimeTests.test_incompatible_verified_candidate_preserves_selection_and_launcher",
+            "test_runtime.SelfUpdateRuntimeTests.test_write_and_flush_failures_preserve_selected_bytes_after_verification",
+            "test_runtime.WindowsRuntimeTests.test_resolver_artifact_paths_are_absolute_or_relative_without_drive_ambiguity"
+          ],
+          "artifact": {
+            "file": "asm-aarch64-windows.exe",
+            "bytes": 165376,
+            "sha256": "f258d01f85b55e5f8234ccce0a2c0b38147b1bb16c793f77ca05452d4e4a3966",
+            "pe_machine": 43620,
+            "sha256_after_tests": "f258d01f85b55e5f8234ccce0a2c0b38147b1bb16c793f77ca05452d4e4a3966"
+          },
+          "source_commit": "bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb",
+          "qualification": false,
+          "unittest_summary": {
+            "failures": 8,
+            "errors": 1,
+            "seconds": 391.968
+          }
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-cli-x86_64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/runtime.json",
+          "sha256": "175cee7e47ca0adad6c40dc4e4b83c44b57dc1fc115f1eba2503f70caaba8f59",
+          "target": "x86_64-windows",
+          "tests_run": 118,
+          "passing_methods": 106,
+          "nonpassing_methods": 12,
+          "record_counts": {
+            "pass": 106,
+            "fail": 14,
+            "error": 2
+          },
+          "failed_methods": [
+            "test_managed_child_binding.ManagedChildBindingTests.test_refused_suspended_payload_is_never_resumed_and_is_reaped",
+            "test_managed_runtime.ManagedRuntimeTests.test_launcher_preserves_literal_arguments_through_startup_capacity",
+            "test_runtime.SelfUpdateRuntimeTests.test_existing_digest_payload_corruption_and_hardlink_are_preserved",
+            "test_runtime.SelfUpdateRuntimeTests.test_existing_exact_digest_payload_is_reused_after_verification",
+            "test_runtime.SelfUpdateRuntimeTests.test_final_replacement_failure_preserves_running_image_after_verification",
+            "test_runtime.SelfUpdateRuntimeTests.test_held_old_snapshot_and_new_record_open_select_their_own_versions",
+            "test_runtime.SelfUpdateRuntimeTests.test_incompatible_verified_candidate_preserves_selection_and_launcher",
+            "test_runtime.SelfUpdateRuntimeTests.test_launcher_repair_uses_actual_version_and_preserves_old_selection",
+            "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings",
+            "test_runtime.SelfUpdateRuntimeTests.test_verified_update_never_executes_candidate_before_activation",
+            "test_runtime.SelfUpdateRuntimeTests.test_write_and_flush_failures_preserve_selected_bytes_after_verification",
+            "test_runtime.WindowsRuntimeTests.test_resolver_artifact_paths_are_absolute_or_relative_without_drive_ambiguity"
+          ],
+          "artifact": {
+            "file": "asm-x86_64-windows.exe",
+            "bytes": 121344,
+            "sha256": "6d8ee16c9c282f93617bafa105fe9604a4f99a4fa0fd8d6283fb28108d187e79",
+            "pe_machine": 34404,
+            "sha256_after_tests": "6d8ee16c9c282f93617bafa105fe9604a4f99a4fa0fd8d6283fb28108d187e79"
+          },
+          "source_commit": "bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb",
+          "qualification": false,
+          "unittest_summary": {
+            "failures": 11,
+            "errors": 5,
+            "seconds": 345.721
+          }
+        }
+      ],
+      "other_reports": [
+        {
+          "path": "build/windows-managed-second-native/linux-reference-packages-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/results.json",
+          "sha256": "2bb30d288fa242e3999d5d72ccdea1e3c562d9c8fef6c73f4e961d73848d9bde",
+          "outcome": "pass",
+          "update_probe_outcome": null,
+          "collection_failed": null,
+          "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU"
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-cli-aarch64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/primary-unmap-probe.json",
+          "sha256": "5f4cdcbec9f49f484ed5e38aac509c9edfa326ce2825db6ae7107b9cc8917dd7",
+          "outcome": null,
+          "update_probe_outcome": null,
+          "collection_failed": null,
+          "scope": "native section/file operations on never-resumed copies; no CLI command qualification"
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-packages-aarch64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/packages.json",
+          "sha256": "55949b0b13f3aa4ddb542e8ad6d0e7abae922eec343c52cc66b339bf8349f6bb",
+          "outcome": "pass",
+          "update_probe_outcome": null,
+          "collection_failed": null,
+          "scope": "packages"
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-packages-x86_64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/packages.json",
+          "sha256": "a96b9c5465407d6b8f833d11d5af77413deefc251b209b047256f000632ca9fe",
+          "outcome": "pass",
+          "update_probe_outcome": null,
+          "collection_failed": null,
+          "scope": "packages"
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-cli-x86_64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/x64-adapter-diagnostics.json",
+          "sha256": "09142864a40c62bbf1529b0ca259c0e41e4c8d88d9984f3edc295b8df3c1aeec",
+          "outcome": null,
+          "update_probe_outcome": "fail",
+          "collection_failed": null,
+          "scope": null
+        },
+        {
+          "path": "build/windows-managed-second-native/native-windows-cli-x86_64-windows-bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb/windows-evidence/primary-unmap-probe.json",
+          "sha256": "4cebb38533de874d41faa3907cca91cc55f285446ede3f016222373c76710794",
+          "outcome": null,
+          "update_probe_outcome": null,
+          "collection_failed": null,
+          "scope": "native section/file operations on never-resumed copies; no CLI command qualification"
+        }
+      ],
+      "measured_failures": [
+        "x86-64 updates stop before provenance. The native diagnostic records an unset verifier parent path.",
+        "ARM64 failed updates leave an owned stage directory while candidate or record handles remain open.",
+        "x86-64 startup rejects 1,023 arguments. Both startup error paths lack a useful stderr diagnostic.",
+        "The ARM64 overflow fixture expects status 1; the documented startup implementation returns status 2.",
+        "Both drive-relative artifact refusals create .asm/operation.lock before rejecting the argument.",
+        "Both child-image fixtures fail because the artifact-recording method collides with an instance Path."
+      ],
+      "audit": {
+        "file": "build/integration-evidence/windows-managed-second-audit.json",
+        "sha256": "37e296408fa6bcc5f9f1c9c04da336f4ff26df482eb26382160aae09e49ed280"
+      },
+      "raw_logs": [
+        {
+          "path": "build/integration-evidence/windows-managed-second-failed.log",
+          "sha256": "70bdd775697488f9a187e80063aef4a6766216c2b98818b583acc4ce4a10d790"
+        },
+        {
+          "path": "build/integration-evidence/windows-managed-second-watch.log",
+          "sha256": "63b67e7cd5ff16902992a874a2bd425351771ad70aa4b7ff21cb72678aba6835"
+        },
+        {
+          "path": "build/integration-evidence/windows-managed-second-full.log",
+          "sha256": "5ba3e14d875f404a9eb5d8ebe7c885ee1e43e6c918d774116c8ecd814ff7312b"
+        },
+        {
+          "path": "build/integration-evidence/windows-managed-second-artifact-api.json",
+          "sha256": "a853cb1589cb03cadf9b62621d7d89a94caebc99d0d88cf5086b38e9c22d3740"
+        }
+      ],
+      "record_classification_limit": "The driver labels subtest exceptions as fail records; the raw unittest summary classifies three x64 subtest exceptions as errors. Preserve both counts."
     }
   ],
   "current": {
-    "source_commit": "688ea1dbdf125b75adcd628c09f02170184857ff",
-    "run_id": 42089978999,
-    "layout": "The user approved the versioned layout on 5 November 2026. Assembly implementation and source-installer fixtures exist.",
+    "source_commit": "bb9bb5a2e68ad67c7d10112add41abeac9b5e2bb",
+    "run_id": 42111645129,
+    "layout": "The approved versioned layout is implemented in assembly; full native qualification remains incomplete.",
     "expected_runtime_methods_per_target": 118,
-    "runtime_methods_executed_per_target": 0,
+    "runtime_methods_executed_per_target": 118,
+    "passing_methods": {
+      "aarch64-windows": 112,
+      "x86_64-windows": 106
+    },
     "native_cli_qualification": false,
-    "remaining_failure": "Both native CLI jobs stop at the unit harness build. The separate x64 diagnostic collector also needs current-source adaptation.",
+    "remaining_failure": "Update initialization and failure cleanup, argument limits and diagnostics, early path refusal, and the child fixture require corrections.",
     "separate_package_jobs": "Both native Windows package scopes pass seven cases. The Linux reference scope passes 24 cases, with ARM64 and RISC-V execution under QEMU."
   }
 }

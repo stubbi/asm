@@ -129,15 +129,16 @@ They do not change published host support.
 | Linux x86-64 and ARM64 servers | Qualified source was integrated into the same `main` revision. Both combined PR 42 [native package checks](https://github.com/stubbi/asm/actions/runs/42042426289) passed. | Deployment and recovery have separate gates. |
 | RISC-V64 server | The PR 42 [emulated image check](https://github.com/stubbi/asm/actions/runs/42042426266) passed. The [extracted package](https://github.com/stubbi/asm/actions/runs/42042426725) built, then passed 17 of 19 tests. | Diagnose the connection-limit failure and simultaneous-search error. Pass all 19 extracted-package cases. |
 | RISC-V64 CLI | The PR 42 [full-system Linux guest](https://github.com/stubbi/asm/actions/runs/42042426214) passed 356 CLI and 49 focused cases without skips. | Integrate qualified source after the separate server gate passes. Physical hardware and release admission remain unqualified. |
-| Windows x86-64 CLI | The eighth native run passed 45 of 46 direct-layout methods; updater replacement failed. | Pass the current 118-case managed suite on native x86-64 Windows. |
-| Windows ARM64 CLI | The eighth native run passed 45 of 46 direct-layout methods; updater replacement failed. | Pass the current 118-case managed suite on native ARM64 Windows. |
+| Windows x86-64 CLI | The second managed run passed 106 of 118 methods; qualification remains incomplete. | Pass the current 118-case managed suite on native x86-64 Windows. |
+| Windows ARM64 CLI | The second managed run passed 112 of 118 methods; qualification remains incomplete. | Pass the current 118-case managed suite on native ARM64 Windows. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
 The sixth Windows result used source `540620a9c8ed14fc5904d07c16dda0430cf9fcb1` in [run 42033134716](https://github.com/stubbi/asm/actions/runs/42033134716).
 Subtests can produce multiple failure records for one method.
-The [Windows record](windows-native-evidence.json) retains eight failed direct-layout runs and the first managed run.
-The managed run stopped in preflight; it executed none of the 118 runtime cases on either target.
+The [Windows record](windows-native-evidence.json) retains eight failed direct-layout runs and two managed runs.
+The first managed run stopped in preflight.
+The second executed all 118 methods on both targets, with no skips.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
 
