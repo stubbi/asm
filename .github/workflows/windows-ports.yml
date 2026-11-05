@@ -126,6 +126,14 @@ jobs:
         run: |
           python cli/windows/x86_64/native_diagnostics.py --toolchain-bin 'C:\Program Files\LLVM\bin' --evidence build/windows-evidence/x64-adapter-diagnostics.json
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Measure replacement of owned suspended image copies
+        if: always() && matrix.scope == 'cli'
+        timeout-minutes: 3
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_unmap_probe.py --asm "build/asm-$env:ASM_TARGET.exe" --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --toolchain-bin 'C:\Program Files\LLVM\bin' --evidence build/windows-evidence/primary-unmap-probe.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Run the independent native reference-package contract
         if: matrix.scope == 'packages'
         env:
