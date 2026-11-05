@@ -84,7 +84,7 @@ It cannot produce native qualification evidence.
 
 ## Observable acceptance checks
 
-The [runtime suite](../tests/windows/test_runtime.py) runs 40 test cases through native PE executables.
+The [runtime suite](../tests/windows/test_runtime.py) runs 44 test cases through native PE executables.
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.
@@ -93,6 +93,7 @@ They check exit codes, standard output, standard error, and file effects.
 | --- | --- |
 | Command interface | Version, help, license, doctor, target, status, argument errors, and closed-output failures |
 | First project | Create, initialize, build, run, test, and clean with visible output |
+| Target selection | Named native source/test paths, no-run tests, inactive recipe rejection, and target-specific v2 locks |
 | Process control | Literal arguments, spaces, Unicode, an empty `PATH`, and child failures |
 | Preservation | Existing projects, partial initialization, failed assembly, failed checks, and failed links preserve files |
 | Manifest and index | Duplicate fields, malformed records, unsupported targets, embedded NUL bytes, and input bounds fail |

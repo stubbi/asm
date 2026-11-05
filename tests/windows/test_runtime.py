@@ -216,6 +216,65 @@ class WindowsRuntimeTests(unittest.TestCase):
             self.assertIn(notice, "\n".join(line[2:] if line.startswith("# ") else ""
                                            for line in source.splitlines()))
 
+    def test_named_native_target_uses_its_source_and_test_paths(self):
+        project = self.project()
+        manifest = project / "asm.toml"
+        source = project / "selected.s"
+        test = project / "selected-test.s"
+        source.write_bytes((project / "src/main.s").read_bytes())
+        test.write_bytes((project / "tests/main.s").read_bytes())
+        (project / "src/main.s").write_text("invalid inactive default source\n")
+        (project / "tests/main.s").write_text("invalid inactive default test\n")
+        manifest.write_text(f'[package]\nname="hello"\nversion="0.1.0"\n'
+                            f'[target.{TARGET}]\nsource="selected.s"\ntest="selected-test.s"\n')
+        self.assertEqual(self.cli("run", "--target", TARGET, cwd=project).stdout, "Hello from asm!\n")
+        self.assertTrue(json.loads(self.cli("test", "--target", TARGET, "--json", cwd=project).stdout)["ok"])
+        self.assertTrue((project / "build/app.exe").is_file())
+        self.assertTrue((project / "build/test.exe").is_file())
+
+    def test_native_no_run_builds_the_test_without_execution(self):
+        project = self.project()
+        (project / "tests/main.s").write_text(marker_source(73))
+        report = json.loads(self.cli("test", "--no-run", "--json", cwd=project).stdout)
+        self.assertEqual(report, {"ok": True, "artifact": "build/test.exe", "executed": False})
+        self.assertTrue((project / "build/test.exe").is_file())
+        self.assertFalse((project / "PACKAGE_EXECUTED").exists())
+
+    def test_invalid_inactive_target_preserves_the_native_output(self):
+        project = self.project()
+        self.cli("build", cwd=project)
+        previous = (project / "build/app.exe").read_bytes()
+        native = (f'[package]\nname="hello"\nversion="0.1.0"\n'
+                  f'[target.{TARGET}]\nsource="src/main.s"\n')
+        inactive = f'[target.{OTHER_TARGET}]\n'
+        for recipe in ('source="../outside.s"\n', 'source="@options.s"\n',
+                       'source="src/main.s"\nunknown="value"\n'):
+            with self.subTest(recipe=recipe):
+                (project / "asm.toml").write_text(native + inactive + recipe)
+                self.cli("build", cwd=project, code=1)
+                self.assertEqual((project / "build/app.exe").read_bytes(), previous)
+                self.assertFalse(list((project / "build").glob(".asm-stage-*")))
+
+    def test_v2_lock_preserves_an_inactive_target_without_its_cache(self):
+        project = self.project()
+        (project / "asm.toml").write_text(
+            f'[package]\nname="hello"\nversion="0.1.0"\n'
+            f'[target.{TARGET}]\nsource="src/main.s"\n'
+            f'[target.{OTHER_TARGET}]\nsource="src/main.s"\n')
+        self.payload(self.source_fixture())
+        self.add(project)
+        lock = project / "asm.lock"
+        self.assertTrue(lock.read_bytes().startswith(b"# asm-lock-v2\n"))
+        foreign = self.metadata(b"inactive cache is deliberately absent", target=OTHER_TARGET, version="0.2.0")
+        lock.write_bytes(lock.read_bytes() + foreign.encode())
+        self.consumer(project)
+        self.cli("run", "--locked", cwd=project)
+        self.assertEqual(json.loads(self.cli("lock", "--json", cwd=project).stdout)["dependencies"], 1)
+        self.assertFalse((project / f".asm/packages/{PACKAGE}/0.2.0/{OTHER_TARGET}").exists())
+        self.cli("remove", PACKAGE, cwd=project)
+        self.assertIn(foreign.encode(), lock.read_bytes())
+        self.assertEqual(json.loads(self.cli("lock", "--json", cwd=project).stdout)["dependencies"], 0)
+
     def test_fixed_tools_work_with_an_empty_path(self):
         project = self.project()
         env = dict(self.environment, PATH="")
