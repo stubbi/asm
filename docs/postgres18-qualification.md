@@ -1,13 +1,13 @@
 # Selected PostgreSQL 18 compatibility
 
-Status: unexecuted qualification candidate, 5 November 2026.
+Status: native AMD64 preflight passed at the recorded source, 5 November 2026.
 
 This gate checks canonical catalog compatibility with the database image selected by the private deployment manifest.
 The user outcome is inspectable SQL, TLS, role, operator, and HTTP evidence for that exact image.
 The governing principles are dependable reuse, evidence tied to exact bytes, and bounded resource use.
 
-No PostgreSQL 18 compatibility result exists yet.
-Local contract tests do not establish database or container behavior.
+The measured result below covers its exact preflight source and image identities.
+Local contract tests alone do not establish database or container behavior.
 The current PostgreSQL 16.15 qualification remains separate.
 
 | Binding | Required value |
@@ -22,6 +22,33 @@ The current PostgreSQL 16.15 qualification remains separate.
 Public registry metadata supplied these bindings on 5 November 2026.
 The gate checks the local image config, selected index, actual server version, and fresh database identity.
 The [pinned upstream source](https://github.com/cloudnative-pg/postgres-containers/blob/4c2710a78328becdadf708ca6d9cb3fb61f3f5ee/Dockerfile) identifies the PostgreSQL operand image.
+
+## Measured preflight
+
+[Run 42073391909](https://github.com/stubbi/asm/actions/runs/42073391909) passed on 5 November 2026.
+It tested [source `1d9d60eb33643640b5358ca04f3340b5264e4d65`](https://github.com/stubbi/asm/commit/1d9d60eb33643640b5358ca04f3340b5264e4d65) through one native Linux AMD64 job.
+Its [retained reports and logs](https://github.com/stubbi/asm/actions/runs/42073391909/artifacts/13437068798) bind the source, selected database image, application image IDs, and runtime hashes.
+The original [qualification receipt](postgres18-compatibility-evidence.json) is retained here without byte changes.
+Its SHA-256 is `cf6929c22a755f995ea2011abd60eb3f2e681b2547ff091da7475b05bcc1da84`.
+
+All 38 applicable cases passed: 22 operator and catalog cases, plus 16 canonical HTTP cases.
+One declared macOS extended ACL case was inapplicable on Linux.
+No applicable case was skipped.
+Both fresh database fixtures reported server `180006`, client libpq `160015`, and TLS 1.3.
+Their database system identifiers differed.
+All 33 owned containers and the private preparation were removed.
+No database log or cleanup failure was reported.
+
+Applications used two CPUs and 512 MiB each.
+The separate database fixture used two CPUs and 2 GiB.
+These are fixture compatibility results, not private deployment capacity measurements.
+
+Compared with permanent source base `6db61512563dd0de024abedcb4735f0e847bfe13`, the preflight changed only the registered `assembly-server.yml` workflow.
+It used the permanent manual workflow's exact bytes.
+The permanent branch excludes that temporary replacement and records this result through documentation and the retained receipt.
+Source-bundle HEAD, `SOURCE.json`, image labels, compiled HTTP identity, fixtures, and reports use the tested preflight revision.
+A different permanent revision changes revision metadata and source-bundle bytes.
+This result covers the recorded preflight artifacts; it does not qualify future image builds.
 
 ## Isolation and scope
 
@@ -68,19 +95,17 @@ A failed database log request makes the gate fail.
 It removes only resources with the expected image, name, nonce, identity, and isolation settings.
 Private preparation directories are trusted local parents; their identity checks do not establish a general filesystem isolation boundary.
 
-## Run the candidate
+## Run the gate
 
-The new `Selected PostgreSQL 18 compatibility` workflow is an unregistered candidate.
-GitHub requires its registration on the default branch before `workflow_dispatch` can select it.
+The manual workflow must be present on the default branch before GitHub can dispatch it.
 Its job has repository read permission and no publication step.
 It builds the fixed application tags and three compatibility targets.
 It does not run on pull requests or pushes.
 
-The first diagnostic requires a separately reviewed temporary replacement of the registered `assembly-server.yml` workflow.
-Copy the candidate's exact workflow bytes into that path on the diagnostic branch.
-Keep publication absent from the temporary workflow.
-Select one native run after review.
-The candidate does not require a pull request solely to register a temporary diagnostic.
+The recorded first diagnostic used a separately reviewed temporary replacement of the registered `assembly-server.yml` workflow.
+That temporary workflow had no publication step.
+It remains outside the permanent branch.
+The diagnostic did not require a pull request solely to register a temporary workflow.
 
 For local fixture contract checks, use Python 3 and OpenSSL.
 OpenSSL creates temporary test certificates.
@@ -105,11 +130,27 @@ Successful evidence contains `"status": "pass"`, both suite results, exact image
 Failure evidence retains the first reported failure and available logs.
 An existing evidence directory is preserved.
 
+## Retained development failures
+
+The development record retains the initial certificate-path failure and its correction in `83a82f21`.
+Review then exposed output, termination cleanup, database log, and ambient Docker selection failures.
+Commit `d8155f3d` corrected those boundaries and added observable regression checks.
+
+A later endpoint test reached its three-second deadline; its cause remains unknown.
+Commit `94c2d779` changed only that test fixture's startup, while preserving the deadline and assertions.
+An outdated mock also attempted two failing read-only Docker inspection commands during development.
+Neither command created resources.
+An earlier PostgreSQL 16.15 hosted test invocation lacked the reviewed fixture paths; no SQL case ran.
+The later 28-contract checks and native preflight do not erase these earlier results.
+
 ## Remaining limits
 
 This gate does not connect to the private cluster or qualify CloudNativePG reconciliation.
 Forced process or host termination can prevent cleanup and evidence retention.
 It does not test two-instance synchronous replication, failover, persistent volumes, backup, restore, capacity, or public deployment.
+Fresh fixture startup does not establish production startup behavior or recovery.
+Private application limits of one CPU and 256 MiB require separate qualification.
+Database connection admission remains a separate gate.
 It does not qualify ARM64 or RISC-V database images.
 The ordinary PostgreSQL 16.15 operator and server image gates remain required independently.
 Older `psql` compatibility is limited to the command paths exercised here.
