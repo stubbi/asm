@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import ctypes
 from datetime import datetime, timezone
 import hashlib
@@ -15,6 +16,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
+import signal
 import subprocess
 import sys
 import time
@@ -23,6 +26,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import postgres18_fixture as fixture
+import postgres18_docker
 import registry
 from postgres18_fixture import need
 import test_operator_image as operator
@@ -32,20 +36,98 @@ PREFIX = "ASM_POSTGRES18_QUALIFICATION="
 IMAGES = {"operator": ("asm-operator:runtime-amd64", "asm-operator:qualification-amd64", "asm-postgres18:operator"),
           "http": ("asm-server:runtime-amd64", "asm-server:qualification-amd64", "asm-postgres18:http")}
 DATABASE = "asm-postgres18:database"
+STDOUT_LIMIT = 4 * 1024 * 1024
+STDERR_LIMIT = 1024 * 1024
 
 
 class CommandFailure(ValueError):
-    def __init__(self, result):
-        super().__init__("A qualification command failed; inspect the retained stage log.")
+    def __init__(self, result, message="A qualification command failed; inspect the retained stage log."):
+        super().__init__(message)
         self.stdout, self.stderr = result.stdout, result.stderr
 
 
+def bounded_result(arguments, *, timeout, environment=None):
+    """Use the operator's nonblocking selector pattern while retaining bounded diagnostics."""
+    output, errors = bytearray(), bytearray()
+    selector = selectors.DefaultSelector()
+    process, completed = None, False
+    deadline = time.monotonic() + timeout
+    try:
+        blocked = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        try:
+            process = subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, env=environment, start_new_session=True)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+        for stream, buffer, limit in ((process.stdout, output, STDOUT_LIMIT), (process.stderr, errors, STDERR_LIMIT)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, (buffer, limit))
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(arguments, timeout, output=bytes(output), stderr=bytes(errors))
+            events = selector.select(remaining)
+            if not events:
+                raise subprocess.TimeoutExpired(arguments, timeout, output=bytes(output), stderr=bytes(errors))
+            for key, _ in events:
+                buffer, limit = key.data
+                chunk = os.read(key.fd, min(65536, limit - len(buffer) + 1))
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                remaining_bytes = limit - len(buffer)
+                buffer.extend(chunk[:remaining_bytes])
+                if len(chunk) > remaining_bytes:
+                    result = subprocess.CompletedProcess(arguments, None, bytes(output), bytes(errors))
+                    raise CommandFailure(result, "Qualification output exceeded its byte limit.")
+        try:
+            returncode = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            raise subprocess.TimeoutExpired(arguments, timeout, output=bytes(output), stderr=bytes(errors))
+        completed = True
+        return subprocess.CompletedProcess(arguments, returncode, bytes(output), bytes(errors))
+    except QualificationTerminated as error:
+        error.stdout, error.stderr = bytes(output), bytes(errors)
+        raise
+    finally:
+        selector.close()
+        if process is not None:
+            if not completed or process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait(timeout=3)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+
 def command(arguments, *, timeout=20, check=True):
-    result = subprocess.run(arguments, capture_output=True, timeout=timeout)
-    need(len(result.stdout) <= 4 * 1024 * 1024 and len(result.stderr) <= 1024 * 1024, "Qualification output exceeds its limit.")
+    with postgres18_docker.invocation(arguments) as (fixed_arguments, environment):
+        result = bounded_result(fixed_arguments, timeout=timeout, environment=environment)
     if check and result.returncode != 0:
         raise CommandFailure(result)
     return result
+
+
+class QualificationTerminated(ValueError):
+    pass
+
+
+@contextmanager
+def termination_guard():
+    state = {"signal": None, "cleanup": False}
+    def terminate(signum, frame):
+        state["signal"] = signum
+        if not state["cleanup"]:
+            raise QualificationTerminated("Qualification received SIGTERM; cleanup is required.")
+    previous = signal.signal(signal.SIGTERM, terminate)
+    try:
+        yield state
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def inspect(kind, name):
@@ -196,6 +278,11 @@ def inside(args):
 
 
 def qualify(args):
+    with termination_guard() as termination:
+        return qualify_owned(args, termination)
+
+
+def qualify_owned(args, termination):
     need(platform.system() == "Linux" and platform.machine() == "x86_64", "Use the native Linux AMD64 runner.")
     output = Path(args.output)
     output.mkdir(mode=0o700)
@@ -309,10 +396,11 @@ def qualify(args):
         report["status"] = "pass"
     except Exception as error:
         report["failure"] = {"error": type(error).__name__, "message": str(error) if isinstance(error, ValueError) else "Qualification failed; inspect stage logs."}
-        if isinstance(error, (CommandFailure, subprocess.TimeoutExpired)):
-            (output / "failure.stdout.log").write_bytes(error.stdout or b"")
-            (output / "failure.stderr.log").write_bytes(error.stderr or b"")
+        if isinstance(error, (CommandFailure, subprocess.TimeoutExpired, QualificationTerminated)):
+            (output / "failure.stdout.log").write_bytes(getattr(error, "stdout", b"") or b"")
+            (output / "failure.stderr.log").write_bytes(getattr(error, "stderr", b"") or b"")
     finally:
+        termination["cleanup"] = True
         for record in records.values():
             if record["id"] is not None and record["purpose"] == "database":
                 try:
@@ -320,8 +408,12 @@ def qualify(args):
                                        declaration["nonce"], record["user"], record["network"])
                     logs = command(["docker", "logs", record["id"]], check=False)
                     (output / (record["name"] + ".database.log")).write_bytes(logs.stdout + logs.stderr)
+                    need(logs.returncode == 0, "Owned database log retrieval failed.")
                 except Exception as error:
                     report.setdefault("log_failures", []).append({"identity": record["id"], "error": type(error).__name__})
+                    if isinstance(error, (CommandFailure, subprocess.TimeoutExpired)):
+                        (output / (record["name"] + ".database.failure.stdout.log")).write_bytes(error.stdout or b"")
+                        (output / (record["name"] + ".database.failure.stderr.log")).write_bytes(error.stderr or b"")
         report["cleanup"] = cleanup_owned(owned, remove)
         if preparation_identity is not None:
             try:
@@ -332,6 +424,9 @@ def qualify(args):
                 report["preparation_cleanup_error"] = type(error).__name__
         if any(value["status"] != "removed" for value in report["cleanup"]) or report.get("preparation_cleanup") != "removed" or report.get("log_failures"):
             report["status"] = "fail"
+        if termination["signal"] is not None:
+            report["status"] = "fail"
+            report.setdefault("failure", {"error": "QualificationTerminated", "message": "Qualification received SIGTERM; cleanup was required."})
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         (output / "qualification.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     need(report["status"] == "pass", "PostgreSQL 18.6 compatibility failed; retain the complete evidence directory.")

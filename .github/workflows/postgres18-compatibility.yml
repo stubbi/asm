@@ -29,11 +29,12 @@ jobs:
           mkdir -m 700 "$RUNNER_TEMP/asm-postgres18-evidence"
           {
             uname -a
-            docker version
-            docker buildx version
             openssl version
           } > "$RUNNER_TEMP/asm-postgres18-evidence/environment.txt"
           make postgres18-contract-test 2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/contracts.log"
+          python3 -I tools/postgres18_docker.py environment --revision "$GITHUB_SHA" \
+            --output "$RUNNER_TEMP/asm-postgres18-evidence" \
+            2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/docker-environment.log"
           python3 tools/operator_source.py create --repository . --revision "$GITHUB_SHA" --output .operator-source
           python3 -I tools/test_postgres18_image.py --prepare --revision "$GITHUB_SHA"
       - name: Build unchanged application targets and their isolated compatibility qualifiers
@@ -41,21 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           git --no-replace-objects -c core.fsmonitor=false -c core.hooksPath=/dev/null diff --exit-code "$GITHUB_SHA" -- .
-          for application in operator server; do
-            for target in runtime qualification; do
-              docker build --platform linux/amd64 --file "containers/$application.Dockerfile" \
-                --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target "$target" \
-                --tag "asm-$application:$target-amd64" . \
-                2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/build-$application-$target.log"
-            done
-          done
-          docker pull --platform linux/amd64 ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390 \
-            2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/database-pull.log"
-          for target in operator http database; do
-            docker build --platform linux/amd64 --file containers/postgres18.Dockerfile \
-              --target "$target" --tag "asm-postgres18:$target" . \
-              2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/build-postgres18-$target.log"
-          done
+          python3 -I tools/postgres18_docker.py build --revision "$GITHUB_SHA" \
+            --output "$RUNNER_TEMP/asm-postgres18-evidence" \
+            2>&1 | tee "$RUNNER_TEMP/asm-postgres18-evidence/docker-builds.log"
       - name: Exercise owned SQL, TLS, roles, image commands, and canonical HTTP
         timeout-minutes: 12
         shell: bash

@@ -32,6 +32,12 @@ The database has no network interface beyond its isolated loopback interface.
 Its application qualifier shares that owned network namespace.
 No host port, persistent volume, Docker socket, production target, or production credential is accepted.
 
+Host Docker commands require the root-owned `/usr/bin/docker` executable and `/var/run/docker.sock` Unix socket.
+The gate rejects ambient Docker and builder selection variables before it creates Docker resources.
+Each command uses a new private configuration directory and an explicit local endpoint.
+Saved Docker contexts cannot select another daemon.
+Workflow inspection, builds, pulls, and cleanup use this same boundary.
+
 A fresh synthetic certificate authority binds each prepared run.
 A fixed declaration binds its nonce, source commit, server version, and certificate digests.
 The test provider checks the actual server identity before fixture SQL runs.
@@ -53,6 +59,12 @@ These checks bind the tested programs; they do not claim general reproducible bu
 Each suite uses a new owned PostgreSQL cluster.
 The gate requires different database system identifiers.
 The gate retains failed checks and cleanup errors.
+It bounds standard output to 4 MiB and standard error to 1 MiB while reading each child process.
+On overflow or timeout, it kills the child process group.
+It then reaps the direct child.
+It retains the bounded output buffers from a failed command.
+SIGTERM follows the failure, cleanup, and evidence path.
+A failed database log request makes the gate fail.
 It removes only resources with the expected image, name, nonce, identity, and isolation settings.
 Private preparation directories are trusted local parents; their identity checks do not establish a general filesystem isolation boundary.
 
@@ -96,6 +108,7 @@ An existing evidence directory is preserved.
 ## Remaining limits
 
 This gate does not connect to the private cluster or qualify CloudNativePG reconciliation.
+Forced process or host termination can prevent cleanup and evidence retention.
 It does not test two-instance synchronous replication, failover, persistent volumes, backup, restore, capacity, or public deployment.
 It does not qualify ARM64 or RISC-V database images.
 The ordinary PostgreSQL 16.15 operator and server image gates remain required independently.

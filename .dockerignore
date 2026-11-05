@@ -17,6 +17,7 @@
 !tools/prepare_operator.py
 !tools/test_operator_image.py
 !tools/postgres18_fixture.py
+!tools/postgres18_docker.py
 !tools/test_postgres18_image.py
 !.postgres18-fixture/
 !.postgres18-fixture/app/

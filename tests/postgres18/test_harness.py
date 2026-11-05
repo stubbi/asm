@@ -19,6 +19,16 @@ import test_postgres18_image as harness
 
 
 class HarnessTests(unittest.TestCase):
+    def setUp(self):
+        popen = subprocess.Popen
+        def local_children_only(arguments, *args, **kwargs):
+            if Path(arguments[0]).name == "docker":
+                raise AssertionError("Local contract tests must not execute Docker.")
+            return popen(arguments, *args, **kwargs)
+        guard = patch.object(subprocess, "Popen", side_effect=local_children_only)
+        guard.start()
+        self.addCleanup(guard.stop)
+
     def container(self):
         return {"Id": "1" * 64, "Name": "/asm-postgres18-test", "Image": "sha256:" + "2" * 64,
                 "Config": {"User": "26:26", "Labels": {"asm.qualification.nonce": "3" * 64}},
@@ -108,6 +118,54 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(failure.exception.stdout, b"first stdout\n")
         self.assertEqual(failure.exception.stderr, b"first stderr\n")
 
+    def test_live_output_overflow_kills_and_reaps_the_child_with_bounded_buffers(self):
+        for stream, limit in (("stdout", 4194304), ("stderr", 1048576)):
+            with self.subTest(stream=stream), tempfile.TemporaryDirectory() as temporary:
+                marker = Path(temporary) / "child.pid"
+                source = "import os,pathlib,sys,time;pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));sys." + stream + \
+                         ".buffer.write(b'x'*6291456);sys." + stream + ".flush();time.sleep(10)"
+                with self.assertRaises(harness.CommandFailure) as failure:
+                    harness.command([sys.executable, "-c", source, str(marker)], timeout=0.5)
+                self.assertLessEqual(len(failure.exception.stdout), 4194304)
+                self.assertLessEqual(len(failure.exception.stderr), 1048576)
+                self.assertEqual(len(getattr(failure.exception, stream)), limit)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(int(marker.read_text()), 0)
+
+    def test_timeout_preserves_only_bounded_output_and_reaps_the_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "child.pid"
+            source = "import os,pathlib,sys,time;pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));print('before timeout',flush=True);time.sleep(10)"
+            with self.assertRaises(subprocess.TimeoutExpired) as failure:
+                harness.command([sys.executable, "-c", source, str(marker)], timeout=0.2)
+            self.assertEqual(failure.exception.stdout, b"before timeout\n")
+            self.assertLessEqual(len(failure.exception.stderr or b""), 1048576)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(int(marker.read_text()), 0)
+
+    def test_sigterm_runs_the_actual_qualification_cleanup_and_writes_failure_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name("scenario.py")), "terminate"],
+                                    cwd=temporary, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr.decode())
+            report = json.loads((Path(temporary) / "evidence/qualification.json").read_text())
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["failure"]["error"], "QualificationTerminated")
+            resources = json.loads((Path(temporary) / "scenario-resources.json").read_text())
+            self.assertEqual(set(resources["created"]), set(resources["removed"]))
+            self.assertFalse((Path(temporary) / ".postgres18-fixture").exists())
+
+    def test_missing_database_logs_fail_an_otherwise_successful_actual_qualification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name("scenario.py")), "logs-fail"],
+                                    cwd=temporary, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr.decode())
+            report = json.loads((Path(temporary) / "evidence/qualification.json").read_text())
+            self.assertEqual(len(report["suites"]), 2)
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(len(report["log_failures"]), 2)
+            self.assertTrue(all(value["status"] == "removed" for value in report["cleanup"]))
+
     def test_uncertain_creation_requires_successful_absence_check_before_cleanup_passes(self):
         record = {"id": None, "name": "asm-postgres18-test", "image": "sha256:" + "2" * 64,
                   "user": "26:26", "network": "none"}
@@ -115,9 +173,12 @@ class HarnessTests(unittest.TestCase):
             operations = []
             def docker(arguments, **options):
                 operations.append(arguments[2])
-                return SimpleNamespace(returncode=1 if arguments[2] == "inspect" else listing_status,
-                                       stdout=b"", stderr=b"controlled daemon failure")
-            with self.subTest(listing_status=listing_status), patch.object(harness.subprocess, "run", side_effect=docker):
+                result = SimpleNamespace(returncode=1 if arguments[2] == "inspect" else listing_status,
+                                         stdout=b"", stderr=b"controlled daemon failure")
+                if options.get("check", True) and result.returncode:
+                    raise harness.CommandFailure(result)
+                return result
+            with self.subTest(listing_status=listing_status), patch.object(harness, "command", side_effect=docker):
                 if listing_status:
                     with self.assertRaises(harness.CommandFailure):
                         harness.remove_container(record, "3" * 64)
