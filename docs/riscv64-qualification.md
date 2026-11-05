@@ -77,6 +77,22 @@ An emulation difference that prevents a required assertion remains a failed chec
 QEMU can combine distinct guest resource-limit operations into the host `prlimit64` call.
 Complete syscall-failure qualification can therefore require a full-system guest or a native host.
 
+The separate full-system workflow boots a hash-pinned Ubuntu RISC-V guest.
+Its guest uses native Python and tools against the emulated Linux kernel.
+This preserves the original syscall-denial assertions without host syscall translation.
+The guest qualifier uses the following interface:
+
+```sh
+python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode emulated --emulation-kind system --emulator-provenance build/riscv64-system-provenance.json --evidence build/riscv64-qualification.json
+```
+
+System mode requires root Linux RISC-V guest Python and bounded host-provided provenance.
+The provenance binds the emulator, pinned images, and exact guest source commit.
+The outer runner must bind the copied guest report and executable digest.
+A provenance file alone does not establish that a virtual machine executed.
+This mode always reports `native_qualified: false` and `release_qualified: false`.
+Full-system execution remains pending until its complete retained gate passes.
+
 The workflow runs the suite as root in a protected copy below `/tmp`.
 This includes real cross-user checks without trusting a writable checkout ancestor.
 The repository token has read-only contents permission.
@@ -120,7 +136,13 @@ The third [CI run](https://github.com/stubbi/asm/actions/runs/41941931995) passe
 Its complete CLI suite ran 293 tests with 68 failures and two errors.
 Most failures stopped at absolute path checks before transport or update operations.
 The global cross-sysroot prefix redirected the guest root during those checks.
-The runner correction and native response-file guard require another complete run.
+The sixth [CI run](https://github.com/stubbi/asm/actions/runs/41943502913) passed the corrected root and library setup.
+Its real C-library probe and all 12 focused checks passed.
+The complete CLI suite ran 295 tests with six failures and no errors.
+Three failure entries came from one ELF fixture assumption and its inventory cascade.
+The fixture now selects the actual load segment before mutating its permissions.
+Three entries concern guest syscall-denial checks that user-mode emulation cannot reproduce.
+The unchanged checks require the full-system gate.
 These failed outcomes remain in the attempt record.
 
 ## Primary references

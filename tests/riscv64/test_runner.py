@@ -57,6 +57,36 @@ class QualificationRunnerTests(unittest.TestCase):
             artifact.write_bytes(data)
             self.assertEqual(module.elf_contract(artifact)["elf_machine"], 243)
 
+    def test_system_provenance_is_bounded_and_bound_to_guest_source(self):
+        module = runner_module()
+        commit = "a" * 40
+        record = {"schema": 1, "execution_mode": "emulated", "emulation_kind": "system",
+                  "emulator": {"path": "/usr/bin/qemu-system-riscv64", "sha256": "b" * 64,
+                               "version": "QEMU emulator", "arguments": ["-machine", "virt"]},
+                  "images": {name: {"url": "https://example.invalid/" + name,
+                                    "sha256": "c" * 64, "bytes": 100}
+                             for name in ("rootfs", "kernel", "initrd")},
+                  "source": {"commit": commit, "bundle_sha256": "d" * 64}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "provenance.json"
+            path.write_text(json.dumps(record))
+            result = module.system_emulator_provenance(path, commit)
+            self.assertEqual(result["record"], record)
+            self.assertTrue(result["host_provided"])
+            with self.assertRaises(ValueError):
+                module.system_emulator_provenance(path, "e" * 40)
+            for field, value in (("execution_mode", "native"), ("emulation_kind", "user")):
+                changed = {**record, field: value}
+                path.write_text(json.dumps(changed))
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    module.system_emulator_provenance(path, commit)
+            path.write_text('{"schema":1,"schema":1}')
+            with self.assertRaises(ValueError):
+                module.system_emulator_provenance(path, commit)
+            path.write_bytes(b" " * 65537)
+            with self.assertRaises(ValueError):
+                module.system_emulator_provenance(path, commit)
+
     def test_absent_artifact_is_a_failure_with_unrun_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence = Path(directory) / "evidence.json"

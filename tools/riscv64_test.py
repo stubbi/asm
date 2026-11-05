@@ -86,6 +86,48 @@ def source_identity():
             "manifest": entries}
 
 
+def system_emulator_provenance(path, commit):
+    """Read bounded host-provided evidence; it never configures guest execution."""
+    path = Path(path)
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+        raise ValueError("System emulator provenance must be a regular file of at most 64 KiB")
+
+    def unique_fields(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError("System emulator provenance has duplicate fields")
+            result[name] = value
+        return result
+
+    record = json.loads(path.read_bytes(), object_pairs_hook=unique_fields)
+    if (not isinstance(record, dict) or type(record.get("schema")) is not int or record["schema"] != 1
+            or record.get("execution_mode") != "emulated" or record.get("emulation_kind") != "system"):
+        raise ValueError("System emulator provenance has the wrong schema or execution scope")
+    hexadecimal = lambda value, count: isinstance(value, str) and re.fullmatch(r"[0-9a-f]{%d}" % count, value)
+    source = record.get("source")
+    if (not isinstance(source, dict) or source.get("commit") != commit
+            or not hexadecimal(commit, 40) or not hexadecimal(source.get("bundle_sha256"), 64)):
+        raise ValueError("System emulator provenance does not bind the guest source")
+    emulator = record.get("emulator")
+    if (not isinstance(emulator, dict) or not hexadecimal(emulator.get("sha256"), 64)
+            or not isinstance(emulator.get("path"), str) or not emulator["path"].startswith("/")
+            or not isinstance(emulator.get("version"), str) or not emulator["version"]
+            or not isinstance(emulator.get("arguments"), list)
+            or not all(isinstance(item, str) and len(item) <= 4096 for item in emulator["arguments"])):
+        raise ValueError("System emulator provenance needs an exact emulator identity")
+    images = record.get("images")
+    if not isinstance(images, dict):
+        raise ValueError("System emulator provenance needs pinned guest images")
+    for name in ("rootfs", "kernel", "initrd"):
+        image = images.get(name)
+        if (not isinstance(image, dict) or not hexadecimal(image.get("sha256"), 64)
+                or not isinstance(image.get("url"), str) or not image["url"].startswith("https://")
+                or type(image.get("bytes")) is not int or not 0 < image["bytes"] <= 2147483648):
+            raise ValueError("System emulator provenance needs pinned guest images")
+    return {"sha256": digest(path), "origin": "host-provided", "host_provided": True, "record": record}
+
+
 def run(command, log, *, environment=None, timeout=30):
     start = time.monotonic()
     with log.open("wb") as stream:
@@ -119,6 +161,8 @@ def main(arguments=None):
     parser.add_argument("--asm", required=True, type=Path)
     parser.add_argument("--execution-mode", choices=("native", "emulated"), required=True)
     parser.add_argument("--evidence", required=True, type=Path)
+    parser.add_argument("--emulation-kind", choices=("user", "system"), default="user")
+    parser.add_argument("--emulator-provenance", type=Path)
     parser.add_argument("--suite-timeout", type=int, default=1200)
     args = parser.parse_args(arguments)
     artifact = args.asm.resolve()
@@ -128,6 +172,7 @@ def main(arguments=None):
     logs.mkdir(exist_ok=True)
     names = ("artifact", "runtime", "toolchain", "make_test", "focused_tests", "artifact_binding")
     report = {"schema": 1, "target": "riscv64-linux", "execution_mode": args.execution_mode,
+              "emulation_kind": args.emulation_kind if args.execution_mode == "emulated" else None,
               "started_at": datetime.now(timezone.utc).isoformat(), "outcome": "fail",
               "native_qualified": False, "release_qualified": False,
               "host": {"system": platform.system(), "machine": platform.machine(),
@@ -147,7 +192,15 @@ def main(arguments=None):
             raise ValueError("RISC-V Linux qualification requires a Linux runtime")
         if args.execution_mode == "native" and platform.machine().lower() != "riscv64":
             raise ValueError("Native qualification requires a RISC-V64 host")
-        if args.execution_mode == "emulated":
+        if args.emulation_kind == "system":
+            if args.execution_mode != "emulated" or platform.machine().lower() != "riscv64" or os.geteuid() != 0:
+                raise ValueError("Full-system checks require root Linux RISC-V64 guest Python and emulated scope")
+            if args.emulator_provenance is None:
+                raise ValueError("Full-system checks require host-provided emulator provenance")
+            report["emulator_provenance"] = system_emulator_provenance(args.emulator_provenance,
+                                                                      report["source"]["commit"])
+            report["emulator"] = report["emulator_provenance"]["record"]["emulator"]
+        elif args.execution_mode == "emulated":
             report["emulator"] = tool_identity(Path("/usr/bin/qemu-riscv64"))
         report["checks"][current] = run([str(artifact), "targets", "--json"], logs / "runtime.log")
         if report["checks"][current]["outcome"] != "pass":
@@ -182,7 +235,8 @@ def main(arguments=None):
             raise ValueError("The fixed assembler/linker paths did not produce an executable RV64I/LP64 program")
         # A sysroot prefix also rewrites open("/") and invalidates descriptor walks.
         # The disposable runner exposes the real target loader/library paths.
-        if args.execution_mode == "emulated" and os.environ.get("QEMU_LD_PREFIX") != "/":
+        if (args.execution_mode == "emulated" and args.emulation_kind == "user"
+                and os.environ.get("QEMU_LD_PREFIX") != "/"):
             raise ValueError("Emulated filesystem checks require QEMU_LD_PREFIX=/")
         with tempfile.TemporaryDirectory(prefix="asm-riscv64-c-probe-") as temporary:
             work = Path(temporary)
