@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 import importlib.util
 import json
+import os
 import struct
 from pathlib import Path
 import subprocess
@@ -13,6 +14,37 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+
+
+def fixture_git(repository, *arguments):
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+                       GIT_AUTHOR_NAME="Source fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
+                       GIT_COMMITTER_NAME="Source fixture", GIT_COMMITTER_EMAIL="fixture@example.invalid")
+    return subprocess.check_output(["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+                                    "-c", "core.attributesFile=/dev/null", "-C", str(repository), *arguments],
+                                   env=environment, stderr=subprocess.PIPE, timeout=15)
+
+
+def bundle_checkout(directory, attributes="", relative="sample.txt"):
+    source, checkout = Path(directory) / "source", Path(directory) / "checkout"
+    source.mkdir()
+    fixture_git(source, "init", "-q")
+    fixture_git(source, "config", "core.autocrlf", "false")
+    (source / ".gitattributes").write_text(attributes)
+    sample = source / relative
+    sample.parent.mkdir(parents=True, exist_ok=True)
+    sample.write_bytes(b"first\n$Id$\n")
+    fixture_git(source, "add", ".")
+    fixture_git(source, "commit", "-qm", "Record original source")
+    bundle = Path(directory) / "source.bundle"
+    fixture_git(source, "bundle", "create", str(bundle), "HEAD")
+    checkout.mkdir()
+    fixture_git(checkout, "init", "-q")
+    fixture_git(checkout, "fetch", "-q", str(bundle), "HEAD")
+    fixture_git(checkout, "checkout", "-q", "--detach", "FETCH_HEAD")
+    return source, checkout
 
 
 def runner_module():
@@ -32,6 +64,67 @@ def elf_fixture():
 
 
 class QualificationRunnerTests(unittest.TestCase):
+    def test_original_bundle_checkout_binds_bytes_and_executable_modes(self):
+        module = runner_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source, checkout = bundle_checkout(directory)
+            module.ROOT = checkout
+            report = module.source_identity()
+            self.assertTrue(report["clean"])
+            self.assertEqual(report["commit"], fixture_git(source, "rev-parse", "HEAD").decode().strip())
+            entry = next(item for item in report["manifest"] if item["path"] == "sample.txt")
+            self.assertEqual(entry["mode"], 0o644)
+
+    def test_clean_bundle_checkout_cannot_change_original_bytes(self):
+        module = runner_module()
+        for attribute in ("*.txt text eol=crlf\n", "*.txt ident\n"):
+            with self.subTest(attribute=attribute), tempfile.TemporaryDirectory() as directory:
+                source, checkout = bundle_checkout(directory, attribute)
+                self.assertEqual(fixture_git(checkout, "status", "--porcelain=v1"), b"")
+                original = fixture_git(source, "cat-file", "blob", "HEAD:sample.txt")
+                self.assertNotEqual((checkout / "sample.txt").read_bytes(), original)
+                module.ROOT = checkout
+                with self.assertRaisesRegex(ValueError, "original commit.*sample.txt"):
+                    module.source_identity()
+
+    def test_clean_git_status_cannot_hide_changed_executable_mode(self):
+        module = runner_module()
+        with tempfile.TemporaryDirectory() as directory:
+            _, checkout = bundle_checkout(directory)
+            fixture_git(checkout, "config", "core.filemode", "false")
+            (checkout / "sample.txt").chmod(0o755)
+            self.assertEqual(fixture_git(checkout, "status", "--porcelain=v1"), b"")
+            module.ROOT = checkout
+            with self.assertRaisesRegex(ValueError, "original commit.*sample.txt"):
+                module.source_identity()
+
+    def test_clean_bundle_checkout_cannot_omit_tracked_excluded_paths(self):
+        module = runner_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source, checkout = bundle_checkout(directory, "build/*.txt text eol=crlf\n", "build/sample.txt")
+            self.assertEqual(fixture_git(checkout, "status", "--porcelain=v1"), b"")
+            original = fixture_git(source, "cat-file", "blob", "HEAD:build/sample.txt")
+            self.assertNotEqual((checkout / "build/sample.txt").read_bytes(), original)
+            module.ROOT = checkout
+            with self.assertRaisesRegex(ValueError, "unsupported tracked paths.*build/sample.txt"):
+                module.source_identity()
+
+    def test_replaced_commit_cannot_supply_qualification_source(self):
+        module = runner_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source, _ = bundle_checkout(directory)
+            original = fixture_git(source, "rev-parse", "HEAD").decode().strip()
+            (source / "sample.txt").write_bytes(b"replacement\n")
+            fixture_git(source, "add", "sample.txt")
+            fixture_git(source, "commit", "-qm", "Record replacement")
+            replacement = fixture_git(source, "rev-parse", "HEAD").decode().strip()
+            fixture_git(source, "replace", original, replacement)
+            fixture_git(source, "reset", "--hard", original)
+            self.assertEqual(fixture_git(source, "status", "--porcelain=v1"), b"")
+            module.ROOT = source
+            with self.assertRaisesRegex(ValueError, "original commit.*sample.txt"):
+                module.source_identity()
+
     def test_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds(self):
         module = runner_module()
         with tempfile.TemporaryDirectory() as directory:

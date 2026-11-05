@@ -341,13 +341,13 @@ def execute(args, report):
             private = Path(temporary)
             runner = Runner(output, private)
             try:
-                runner.run(["git", "rev-parse", "HEAD"], "source-commit.log")
-                runner.run(["git", "status", "--porcelain=v1"], "source-status.log")
+                runner.run(["git", "--no-replace-objects", "rev-parse", "HEAD"], "source-commit.log")
+                runner.run(["git", "--no-replace-objects", "status", "--porcelain=v1"], "source-status.log")
                 if ((output / "source-commit.log").read_text().strip() != args.commit
                         or (output / "source-status.log").read_text().strip()):
                     raise ValueError("Host checkout must be clean and match the requested commit")
                 bundle = private / "source.bundle"
-                runner.run(["git", "bundle", "create", str(bundle), "HEAD"], "source-bundle.log", 120)
+                runner.run(["git", "--no-replace-objects", "bundle", "create", str(bundle), "HEAD"], "source-bundle.log", 120)
                 if bundle.stat().st_size > 536870912:
                     raise ValueError("Source bundle exceeds 512 MiB")
                 report["source"].update(clean=True, bundle_sha256=digest(bundle), bundle_bytes=bundle.stat().st_size)
@@ -403,10 +403,10 @@ def execute(args, report):
                            "uname -a\ncat /etc/os-release\ndpkg-query -W\n"
                            "test $(uname -m) = riscv64\n", "guest-provision.log", LIMITS["provision_seconds"])
                 runner.copy_in(bundle, "/home/asmci/source.bundle", "source-transfer.log")
-                runner.ssh(f"sudo -n mkdir -m 755 {GUEST}\nsudo -n git -C {GUEST} init -q\n"
-                           f"sudo -n git -C {GUEST} fetch -q /home/asmci/source.bundle HEAD\n"
-                           f"sudo -n git -C {GUEST} checkout -q --detach FETCH_HEAD\n"
-                           f"test $(sudo -n git -C {GUEST} rev-parse HEAD) = {args.commit}\n"
+                runner.ssh(f"sudo -n mkdir -m 755 {GUEST}\nsudo -n git --no-replace-objects -C {GUEST} init -q\n"
+                           f"sudo -n git --no-replace-objects -C {GUEST} fetch -q /home/asmci/source.bundle HEAD\n"
+                           f"sudo -n git --no-replace-objects -C {GUEST} checkout -q --detach FETCH_HEAD\n"
+                           f"test $(sudo -n git --no-replace-objects -C {GUEST} rev-parse HEAD) = {args.commit}\n"
                            f"sudo -n mkdir -p {GUEST}/build\n", "guest-source.log", 180)
                 runner.copy_in(provenance_path, "/home/asmci/provenance.json", "provenance-transfer.log")
                 runner.ssh(f"sudo -n install -m 644 /home/asmci/provenance.json {GUEST}/build/riscv64-system-provenance.json\n",

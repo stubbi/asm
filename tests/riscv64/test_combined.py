@@ -68,6 +68,18 @@ class CombinedQualificationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.runner.result_contract(bad)
 
+    def test_source_receipt_rejects_legacy_mode_free_digest_schema(self):
+        self.assertTrue(hasattr(self.runner, "input_contract"), "Runtime inputs have no versioned digest contract")
+        inputs = {"schema": 2, "hosted_revision": self.runner.HOSTED_REVISION,
+                  "package_revision": self.runner.PACKAGE_REVISION}
+        self.runner.input_contract(inputs)
+        for schema in (1, 2.0, "2", True, None):
+            with self.subTest(schema=schema):
+                with self.assertRaises(ValueError):
+                    self.runner.input_contract({**inputs, "schema": schema})
+        with self.assertRaises(ValueError):
+            self.runner.input_contract({key: value for key, value in inputs.items() if key != "schema"})
+
     def test_failed_guest_setup_retains_failure_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "qualification.json"
@@ -247,6 +259,140 @@ class CombinedResourceBoundsTests(unittest.TestCase):
                         self.runner.collect_file(emit, "qualification.json", destination,
                                                  {"bytes": 0, "files": 0}, max_bytes=16)
                     self.assertEqual(list(destination.iterdir()), [])
+
+
+class CombinedSourceBindingTests(unittest.TestCase):
+    def setUp(self):
+        CombinedQualificationTests.setUp(self)
+        self.temporary = tempfile.TemporaryDirectory(prefix="combined-source-binding-")
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name)
+        self.repo = self.work / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Source fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("config", "core.filemode", "true")
+        self.original = {"LICENSE": (b"fixture license\n", 0o644),
+                         ".dockerignore": (b"fixture boundary\n", 0o644),
+                         "containers/server.Dockerfile": (b"FROM fixture\n", 0o644),
+                         "tools/registry.py": (b"# fixture registry\n", 0o644)}
+        for prefix in ("", "server/", "experiments/assembly-server/"):
+            self.original.update({prefix + "source.s": (b"original $Format:%H$\n", 0o644),
+                                  prefix + "retained.s": (b"retained source\n", 0o644),
+                                  prefix + "tool.sh": (b"#!/bin/sh\nexit 0\n", 0o755)})
+        for name, (data, mode) in self.original.items():
+            path = self.repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(mode)
+        self.git("add", ".")
+        self.git("commit", "-qm", "original source")
+        self.commit = self.git("rev-parse", "HEAD")
+        for name in self.original:
+            (self.repo / name).write_bytes(b"replacement source\n")
+            (self.repo / name).chmod(0o644)
+        self.git("add", ".")
+        self.git("commit", "-qm", "replacement source")
+        self.changed = self.git("rev-parse", "HEAD")
+        # Deliberately leave changed worktree bytes outside the selected commit.
+        self.git("update-ref", "HEAD", self.commit)
+
+    def git(self, *arguments):
+        return subprocess.check_output(["git", "-c", "core.hooksPath=/dev/null", "-C", str(self.repo),
+                                        *arguments], text=True, stderr=subprocess.STDOUT, timeout=10).strip()
+
+    def assert_original_contexts(self):
+        from unittest import mock
+        import tarfile
+        selections = {"hosted": ("containers/server.Dockerfile", ".dockerignore", "server", "LICENSE"),
+                      "package-source": ("experiments/assembly-server", "tools/registry.py", "LICENSE"),
+                      "candidate": ()}
+        receipts = []
+        with mock.patch.object(self.runner, "ROOT", self.repo), mock.patch.object(self.runner, "HOSTED_REVISION", self.commit), mock.patch.object(self.runner, "PACKAGE_REVISION", self.commit):
+            for number in range(2):
+                output = self.work / ("context-" + str(number))
+                self.runner.prepare_context(output, self.commit)
+                receipt = json.loads((output / "input-manifest.json").read_text())
+                self.assertEqual(receipt["schema"], 2)
+                self.runner.input_contract(receipt)
+                receipts.append(receipt)
+                for name, paths in selections.items():
+                    expected = {path: value for path, value in self.original.items()
+                                if not paths or any(path == prefix or path.startswith(prefix + "/") for prefix in paths)}
+                    actual = {path.relative_to(output / name).as_posix():
+                              (path.read_bytes(), path.stat().st_mode & 0o777)
+                              for path in (output / name).rglob("*") if path.is_file()}
+                    self.assertEqual(actual, expected, name + " did not use the original committed bytes and modes")
+                    record = receipt["archives"][name]
+                    self.assertEqual(record["commit"], self.commit)
+                    self.assertEqual(record["sha256"], self.runner.sha256(output / (name + ".tar")))
+                    self.assertEqual(record["tree_sha256"], self.runner.tree_digest(output / name))
+                    with tarfile.open(output / (name + ".tar"), "r:") as archive:
+                        archived = {item.name: (archive.extractfile(item).read(), item.mode)
+                                    for item in archive if item.isfile()}
+                    self.assertEqual(archived, expected)
+                    tool = output / name / ("tool.sh" if name == "candidate" else
+                                            "server/tool.sh" if name == "hosted" else
+                                            "experiments/assembly-server/tool.sh")
+                    tool.chmod(0o644)
+                    self.assertNotEqual(self.runner.tree_digest(output / name), record["tree_sha256"],
+                                        "The source receipt did not bind its executable mode")
+                    tool.chmod(0o755)
+        self.assertEqual(receipts[0], receipts[1], "Source tar receipts must be deterministic")
+
+    def test_commit_replacements_cannot_change_any_context(self):
+        self.git("replace", self.commit, self.changed)
+        self.assert_original_contexts()
+
+    def test_filtered_tracked_paths_cannot_silently_disappear_from_contexts(self):
+        from unittest import mock
+        original = self.commit
+        for number, relative in enumerate(("build/hidden.s", "server/build/hidden.s",
+                                            "experiments/assembly-server/build/hidden.s")):
+            with self.subTest(path=relative):
+                self.git("reset", "--hard", original)
+                path = self.repo / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"committed source must not disappear\n")
+                self.git("add", "-f", "--", relative)
+                self.git("commit", "-qm", "Record unsupported tracked path")
+                commit = self.git("rev-parse", "HEAD")
+                output = self.work / ("unsupported-context-" + str(number))
+                with mock.patch.object(self.runner, "ROOT", self.repo), \
+                        mock.patch.object(self.runner, "HOSTED_REVISION", commit), \
+                        mock.patch.object(self.runner, "PACKAGE_REVISION", commit):
+                    with self.assertRaisesRegex(ValueError, "unsupported tracked"):
+                        self.runner.prepare_context(output, commit)
+                self.assertFalse((output / "input-manifest.json").exists())
+
+    def test_tree_replacements_cannot_change_any_context(self):
+        self.git("replace", self.git("--no-replace-objects", "rev-parse", self.commit + "^{tree}"),
+                 self.git("--no-replace-objects", "rev-parse", self.changed + "^{tree}"))
+        self.assert_original_contexts()
+
+    def test_blob_replacements_cannot_change_any_context(self):
+        self.git("replace", self.git("--no-replace-objects", "rev-parse", self.commit + ":source.s"),
+                 self.git("--no-replace-objects", "rev-parse", self.changed + ":source.s"))
+        self.assert_original_contexts()
+
+    def test_committed_export_attributes_cannot_filter_or_expand_sources(self):
+        self.git("reset", "--hard", self.commit)
+        attributes = "**/retained.s export-ignore\nretained.s export-ignore\n**/source.s export-subst\nsource.s export-subst\n"
+        (self.repo / ".gitattributes").write_text(attributes)
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "committed archive attributes")
+        self.commit = self.git("rev-parse", "HEAD")
+        self.original[".gitattributes"] = (attributes.encode(), 0o644)
+        self.assert_original_contexts()
+
+    def test_untracked_info_attributes_cannot_filter_or_expand_sources(self):
+        (self.repo / ".git/info/attributes").write_text("**/retained.s export-ignore\nretained.s export-ignore\n**/source.s export-subst\nsource.s export-subst\n")
+        self.assert_original_contexts()
+
+    def test_untracked_worktree_attributes_cannot_change_sources(self):
+        (self.repo / ".gitattributes").write_text("** export-ignore\n")
+        self.assert_original_contexts()
 
 
 if __name__ == "__main__":

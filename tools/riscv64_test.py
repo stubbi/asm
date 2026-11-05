@@ -19,6 +19,8 @@ import sys
 import tempfile
 import time
 
+import registry
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -67,7 +69,24 @@ def elf_contract(path):
 
 def source_identity():
     def git(*args):
-        return subprocess.check_output(["git", *args], cwd=ROOT, timeout=15)
+        return subprocess.check_output(["git", "--no-replace-objects", *args], cwd=ROOT, timeout=15)
+    commit = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+    tracked = git("ls-tree", "-r", "--name-only", "--full-tree", "-z", commit).split(b"\0")
+    if len(tracked) - 1 > registry.MAX_FILES:
+        raise ValueError("Source commit exceeds the tracked file limit")
+    tracked = {os.fsdecode(path) for path in tracked if path}
+    # Checkout attributes and core.filemode can hide changed bytes or modes.
+    # Reuse the bounded source reader and compare the original Git objects.
+    original = registry.git_files(ROOT, commit, ".")
+    # Packaging exclusions cannot narrow a whole-checkout source claim.
+    if tracked != original.keys():
+        unsupported = sorted(tracked.symmetric_difference(original))
+        raise ValueError(f"Source commit contains unsupported tracked paths: {unsupported[0]}")
+    for relative, (expected, expected_mode) in original.items():
+        actual = registry.read_regular(ROOT, relative)
+        mode = 0o755 if (ROOT / relative).stat().st_mode & 0o111 else 0o644
+        if actual != expected or mode != expected_mode:
+            raise ValueError(f"Source checkout differs from the original commit: {relative}")
     paths = git("ls-files", "-c", "-o", "--exclude-standard", "-z").split(b"\0")
     entries = []
     for raw in sorted(set(paths) - {b""}):
@@ -76,12 +95,14 @@ def source_identity():
         if path.is_symlink():
             entries.append({"path": relative, "symlink": os.readlink(path)})
         elif path.is_file():
-            entries.append({"path": relative, "sha256": digest(path), "bytes": path.stat().st_size})
+            info = path.stat()
+            entries.append({"path": relative, "sha256": digest(path), "bytes": info.st_size,
+                            "mode": 0o755 if info.st_mode & 0o111 else 0o644})
         else:
             entries.append({"path": relative, "absent": True})
     encoded = json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
     status = git("status", "--porcelain=v1").decode()
-    return {"commit": git("rev-parse", "HEAD").decode().strip(), "clean": not status,
+    return {"commit": commit, "clean": not status,
             "status": status.splitlines(), "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
             "manifest": entries}
 

@@ -8,6 +8,7 @@ import argparse
 import ast
 from datetime import datetime, timezone
 import ctypes
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -30,6 +31,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 HOSTED_REVISION = "4fe2c25277ed40a163b48b727ab814225d227cf8"
 PACKAGE_REVISION = "04c93b3f0200173298d24f22a06393bc359a1af0"
+INPUT_SCHEMA = 2  # tree_sha256 binds sorted path, content SHA-256, and permission bits.
 SUITE_FILES = {"test_fixture.py": 2, "test_server.py": 14,
                "test_runtime_versions.py": 1, "test_package.py": 2}
 
@@ -160,7 +162,8 @@ def sha256(path):
 
 
 def tree_digest(directory):
-    entries = [(path.relative_to(directory).as_posix(), sha256(path))
+    """Hash schema 2 sorted [POSIX path, content SHA-256, permission bits] JSON arrays."""
+    entries = [(path.relative_to(directory).as_posix(), sha256(path), path.stat().st_mode & 0o7777)
                for path in sorted(directory.rglob("*")) if path.is_file()]
     return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
 
@@ -201,6 +204,14 @@ def result_contract(result):
         raise ValueError("The collected report lacks the scoped, complete 19-test server result.")
 
 
+def input_contract(inputs):
+    schema = inputs.get("schema")
+    if type(schema) is not int or schema != INPUT_SCHEMA:
+        raise ValueError("Use source receipt schema 2, which binds file bytes and permission modes.")
+    if inputs["hosted_revision"] != HOSTED_REVISION or inputs["package_revision"] != PACKAGE_REVISION:
+        raise ValueError("The qualification input commits do not match the reviewed pins.")
+
+
 def command(arguments, *, cwd=None, timeout=30):
     with tempfile.TemporaryDirectory(prefix="asm-combined-command-") as temporary:
         log = Path(temporary) / "output"
@@ -211,33 +222,58 @@ def command(arguments, *, cwd=None, timeout=30):
         return subprocess.CompletedProcess(arguments, 0, stdout=data, stderr=b"")
 
 
-def prepare_context(destination, revision):
-    if not re.fullmatch(r"[0-9a-f]{40}", revision) or revision == "0" * 40:
-        raise ValueError("Use an exact nonzero candidate commit.")
-    if command(["git", "rev-parse", "HEAD"], cwd=ROOT).stdout.decode().strip() != revision:
+def _materialize_context(destination, revision, repository, hosted_revision, package_revision):
+    """Reuse the release reader to select original blobs and executable modes."""
+    import registry
+    import release
+
+    candidate = release.resolve_commit(repository, revision)
+    if candidate != revision or release.resolve_commit(repository, "HEAD") != revision:
         raise ValueError("The candidate revision must match the workflow checkout.")
+    hosted = release.resolve_commit(repository, hosted_revision)
+    package = release.resolve_commit(repository, package_revision)
     destination.mkdir(parents=True, exist_ok=False)
-    inputs = {"schema": 1, "candidate_revision": revision,
-              "hosted_revision": HOSTED_REVISION, "package_revision": PACKAGE_REVISION,
-              "archives": {}}
-    selections = (("hosted", HOSTED_REVISION, ("containers/server.Dockerfile", ".dockerignore", "server", "LICENSE")),
-                  ("package-source", PACKAGE_REVISION, ("experiments/assembly-server", "tools/registry.py", "LICENSE")),
-                  ("candidate", revision, ()))
+    inputs = {"schema": INPUT_SCHEMA, "candidate_revision": candidate,
+              "hosted_revision": hosted, "package_revision": package, "archives": {}}
+    selections = (("hosted", hosted, ("containers/server.Dockerfile", ".dockerignore", "server", "LICENSE")),
+                  ("package-source", package, ("experiments/assembly-server", "tools/registry.py", "LICENSE")),
+                  ("candidate", candidate, ()))
     for name, commit, paths in selections:
-        archive = destination / (name + ".tar")
-        with archive.open("wb") as stream:
-            subprocess.run(["git", "archive", "--format=tar", commit, *paths], cwd=ROOT,
-                           stdout=stream, check=True, timeout=60)
+        files = registry.git_files(repository, commit, ".", list(paths) or None)
+        tracked = registry.git_output(repository, "ls-tree", "-r", "--name-only", "-z",
+                                      "--full-tree", commit, "--", *paths).split(b"\0")
+        tracked = [path.decode("ascii") for path in tracked if path]
+        if (len(tracked) > registry.MAX_FILES or len(tracked) != len(files)
+                or set(tracked) != set(files)):
+            missing = sorted(set(tracked).symmetric_difference(files))[:4]
+            raise ValueError(f"The {name} source has unsupported tracked paths: {missing!r}")
         target = destination / name
-        target.mkdir()
-        with tarfile.open(archive) as source:
-            # Git commits are fixed inputs. Still reject links and special members.
-            if any(not (member.isdir() or member.isfile()) for member in source.getmembers()):
-                raise ValueError("Qualification source archives must contain regular files and directories.")
-            source.extractall(target, filter="data")
+        release.materialize(files, target)
+        archive = destination / (name + ".tar")
+        # The shared writer is deterministic USTAR wrapped in gzip. Keep the
+        # existing plain .tar receipts by expanding only its bounded own output.
+        archive.write_bytes(gzip.decompress(registry.make_archive(files)))
         inputs["archives"][name] = {"commit": commit, "sha256": sha256(archive),
                                      "tree_sha256": tree_digest(target), "bytes": archive.stat().st_size}
     write_report(destination / "input-manifest.json", inputs)
+
+
+def prepare_context(destination, revision):
+    if not re.fullmatch(r"[0-9a-f]{40}", revision) or revision == "0" * 40:
+        raise ValueError("Use an exact nonzero candidate commit.")
+    # registry.git_output has no per-call deadline. Bound the shared reader as
+    # one process group, including every Git child, without a second Git reader.
+    worker = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+              "from riscv64_combined import _materialize_context; "
+              "_materialize_context(Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4]), sys.argv[5], sys.argv[6])")
+    with tempfile.TemporaryDirectory(prefix="asm-combined-source-") as temporary:
+        log = Path(temporary) / "source.log"
+        result = bounded_process([sys.executable, "-c", worker, str(Path(__file__).resolve().parent),
+                                  str(destination.absolute()), revision, str(ROOT), HOSTED_REVISION, PACKAGE_REVISION],
+                                 log, timeout=120)
+        if result["outcome"] != "pass":
+            detail = log.read_text(errors="replace")[-2048:]
+            raise ValueError(f"Source materialization failed ({result['failure'] or result['exit_code']}): {detail}")
 
 
 def initial_report():
@@ -264,8 +300,7 @@ def inside(output):
         if platform.system() != "Linux" or platform.machine() != "riscv64" or os.geteuid() != 65532:
             raise ValueError("Use the RISC-V Linux guest as UID 65532.")
         inputs = json.loads(Path("/inputs/input-manifest.json").read_text())
-        if inputs["hosted_revision"] != HOSTED_REVISION or inputs["package_revision"] != PACKAGE_REVISION:
-            raise ValueError("The qualification input commits do not match the reviewed pins.")
+        input_contract(inputs)
         report["inputs"] = inputs
         for name in ("candidate", "package-source"):
             if tree_digest(Path("/inputs") / name) != inputs["archives"][name]["tree_sha256"]:
