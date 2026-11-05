@@ -31,13 +31,15 @@ Existing invocations continue using their old payload.
 An error before activation preserves the selected version and its bytes.
 The update does not execute the downloaded candidate.
 
-Adapt the existing Python bootstrap front end for Windows verification, private staging, and layout publication.
+Extend the existing Python build tools to generate a Windows PowerShell bootstrap installer.
+The installed user's bootstrap runtime is PowerShell, not Python.
+The current generators emit POSIX shell installers; the Windows installer is new work.
+It performs verification, private staging, and layout publication.
 Installation and updating must never execute the candidate, including after verification.
 There is no new candidate-executed installation command.
 Reuse the existing explicit source-install boundary for a deliberately source-built artifact.
-Python remains an installer prerequisite, not a CLI runtime or package backend.
 Use the existing fixed GitHub verifier and its required identity and source bindings.
-The native installed CLI requires no Python or shell backend.
+Python remains a build-tool dependency; the native installed CLI requires no Python or shell backend.
 Refuse an existing unrelated command unless the user supplies an explicit replacement option.
 Source builds outside the managed installation continue to execute their own checkout bytes.
 
@@ -85,7 +87,9 @@ The digest selects a fixed derived path; the record cannot supply an executable 
 The builder may choose the exact record encoding and routine boundaries.
 The specification must fix those details before implementation.
 Record limits and failure values must remain explicit in the assembly contracts.
-Keep the layout marker, bootstrap version, and required protocol in that canonical bounded format.
+The marker identifies the layout schema; the selection record stores the payload's compatibility requirements.
+Read the actual launcher's version and supported protocols from its held, image-bound PE metadata.
+Do not treat a stored historical bootstrap version as authority after launcher repair.
 
 ## Installation and launch
 
