@@ -135,7 +135,7 @@ def main():
     except (ValueError, OSError) as error:
         report["artifacts"]["source_archive"] = {"status": "fail", "reason": str(error)}
     directory = args.output.parent
-    for name, minimum in (("native-link", 9), ("reference", 19), ("hosted", 11)):
+    for name, minimum in (("native-link", 10), ("reference", 19), ("hosted", 11)):
         try:
             report["tests"][name] = tests(directory / (name + "-tests.log"), minimum)
         except (OSError, ValueError) as error:
