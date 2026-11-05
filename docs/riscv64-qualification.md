@@ -62,6 +62,10 @@ The workflow uses QEMU user-mode emulation on an isolated Ubuntu runner.
 A registered binary-format handler allows Python and the CLI to execute RISC-V ELF files directly.
 The workflow selects GNU cross-tools at the CLI's fixed paths.
 It installs RISC-V libc headers and startup objects for the linked-project tests.
+The runner exposes the target loader and multiarch libraries at their standard paths.
+It sets `QEMU_LD_PREFIX=/` so descriptor walks use the actual filesystem root.
+A cross-sysroot prefix redirects guest `open("/")` and invalidates these checks.
+A real RV64GC/LP64D libc probe must run before the complete suite.
 These path changes apply only to that disposable runner.
 They must not be applied to a person's workstation.
 
@@ -111,7 +115,13 @@ The first [CI run](https://github.com/stubbi/asm/actions/runs/41939533640) stopp
 It did not build or execute the RISC-V CLI.
 The [CI attempt record](riscv64-ci-attempts.json) retains the source commits, failure, and raw-log digest.
 The corrected workflow initializes failed/unrun evidence before setup commands.
-The correction still requires a new CI run.
+The second run reached runtime and exposed branch-register and starter-template defects.
+The third [CI run](https://github.com/stubbi/asm/actions/runs/41941931995) passed all 12 focused checks.
+Its complete CLI suite ran 293 tests with 68 failures and two errors.
+Most failures stopped at absolute path checks before transport or update operations.
+The global cross-sysroot prefix redirected the guest root during those checks.
+The runner correction and native response-file guard require another complete run.
+These failed outcomes remain in the attempt record.
 
 ## Primary references
 

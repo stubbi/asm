@@ -71,12 +71,24 @@ jobs:
           sudo ln -sfn /usr/bin/riscv64-linux-gnu-as /usr/bin/as
           sudo ln -sfn /usr/bin/riscv64-linux-gnu-ld /usr/bin/ld
           sudo ln -sfn /usr/bin/riscv64-linux-gnu-gcc /usr/bin/cc
+      - name: Expose the target loader without changing the guest filesystem root
+        run: |
+          loader=/usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1
+          libraries=/usr/riscv64-linux-gnu/lib
+          test -f "$loader"
+          test -f "$libraries/libc.so.6"
+          test ! -e /lib/ld-linux-riscv64-lp64d.so.1
+          test ! -L /lib/ld-linux-riscv64-lp64d.so.1
+          test ! -e /lib/riscv64-linux-gnu
+          test ! -L /lib/riscv64-linux-gnu
+          sudo ln -s "$loader" /lib/ld-linux-riscv64-lp64d.so.1
+          sudo ln -s "$libraries" /lib/riscv64-linux-gnu
       - name: Build and run the complete CLI contract
         working-directory: /tmp/asm-riscv64-ci
         run: |
           python3 tools/riscv64.py --check
           sudo make ARCH=riscv64 build/asm-riscv64-linux
-          sudo env QEMU_LD_PREFIX=/usr/riscv64-linux-gnu python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode emulated --evidence build/riscv64-qualification.json
+          sudo env QEMU_LD_PREFIX=/ python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode emulated --evidence build/riscv64-qualification.json
       - name: Retain exact bytes, tool versions, and failed or passed evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

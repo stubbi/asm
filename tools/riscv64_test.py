@@ -180,6 +180,29 @@ def main(arguments=None):
             report["checks"][current] = run([str(work / "probe")], logs / "toolchain.log")
         if report["checks"][current]["outcome"] != "pass":
             raise ValueError("The fixed assembler/linker paths did not produce an executable RV64I/LP64 program")
+        # A sysroot prefix also rewrites open("/") and invalidates descriptor walks.
+        # The disposable runner exposes the real target loader/library paths.
+        if args.execution_mode == "emulated" and os.environ.get("QEMU_LD_PREFIX") != "/":
+            raise ValueError("Emulated filesystem checks require QEMU_LD_PREFIX=/")
+        with tempfile.TemporaryDirectory(prefix="asm-riscv64-c-probe-") as temporary:
+            work = Path(temporary)
+            source = work / "probe.c"
+            source.write_text('#include <stdio.h>\nint main(void) { puts("riscv64 libc probe"); return 0; }\n')
+            program = work / "probe"
+            subprocess.run(["/usr/bin/cc", "-march=rv64gc", "-mabi=lp64d", "-fPIE", "-pie",
+                            "-Wl,-z,noexecstack,-z,relro,-z,now", "-o", str(program), str(source)],
+                           check=True, timeout=30)
+            header = program.read_bytes()[:64]
+            if (header[:7] != b"\x7fELF\x02\x01\x01"
+                    or struct.unpack_from("<HH", header, 16) != (3, 243)
+                    or struct.unpack_from("<I", header, 48)[0] != 5):
+                raise ValueError("C-linked probe must declare RV64GC/LP64D with RVC")
+            report["linked_toolchain_probe"] = {"sha256": digest(program), "isa": "RV64GC", "abi": "LP64D",
+                                                "elf_flags": 5, "os": "Linux"}
+            linked = run([str(program)], logs / "linked-toolchain.log")
+            report["linked_toolchain_probe"]["execution"] = linked
+            if linked["outcome"] != "pass" or (logs / "linked-toolchain.log").read_bytes() != b"riscv64 libc probe\n":
+                raise ValueError("The real target loader/library paths did not execute the RV64GC/LP64D probe")
         environment = dict(os.environ, ASM_TEST_TARGET="riscv64-linux", ASM_RISCV64_CLI=str(artifact),
                            ASM_RISCV64_EXECUTION_MODE=args.execution_mode)
         current = "make_test"
