@@ -277,7 +277,12 @@ def executable_inventory(execute):
     return files
 
 
-def runtime_files(image_id, arch):
+def runtime_files(image_id, arch, *, runner=None):
+    if runner is not None:
+        def execute(executable, *args):
+            return subprocess.CompletedProcess([executable, *args], 0,
+                stdout=runner(image_id, *args, entrypoint=executable))
+        return executable_inventory(execute)
     base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
     return executable_inventory(lambda executable, *args: command([*base, "--entrypoint", executable, image_id, *args]))
 

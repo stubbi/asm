@@ -175,6 +175,7 @@ class HandshakeGate:
 
 class CapacityTests(unittest.TestCase):
     # Reuse the existing real canonical fixture without running or editing its tests.
+    postgres_factory = staticmethod(runtime.TlsPostgres)
     setUpClass = runtime.RuntimeTests.__dict__["setUpClass"]
     url = runtime.RuntimeTests.__dict__["url"]
     raw_request = runtime.RuntimeTests.__dict__["raw_request"]

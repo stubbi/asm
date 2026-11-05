@@ -73,6 +73,8 @@ class TlsPostgres(LocalPostgres):
 
 
 class RuntimeTests(unittest.TestCase):
+    postgres_factory = staticmethod(TlsPostgres)
+
     @classmethod
     def setUpClass(cls):
         value = os.environ.get("ASM_SERVER_BINARY")
@@ -83,7 +85,7 @@ class RuntimeTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="asm-runtime-")
         cls.addClassCleanup(cls.temp.cleanup)
         cls.base = Path(cls.temp.name)
-        cls.cluster = TlsPostgres(cls.base)
+        cls.cluster = cls.postgres_factory(cls.base)
         cls.addClassCleanup(cls.cluster.close)
         cls.cluster.start()
         cls.prefix = "asm_proto_" + secrets.token_hex(6)

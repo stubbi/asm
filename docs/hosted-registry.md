@@ -9,6 +9,8 @@ Local tooling alone does not meet this outcome.
 The existing private deployment preparation supplies isolated PostgreSQL, read-only request credentials, scoped operations, network rules, monitoring, and separate internal/public stages.
 It is not a running service.
 Production qualification requires actual data persistence, TLS, failure, recovery, and external client evidence.
+The [selected PostgreSQL 18 compatibility gate](postgres18-qualification.md#measured-preflight) passed an isolated native AMD64 preflight at its recorded source.
+It does not establish private-cluster or deployment qualification.
 
 ## Component and target scope
 
@@ -17,7 +19,7 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
-| Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | Canonical HTTP exports and deployment qualification remain incomplete. |
+| Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | The recorded PostgreSQL 18.6 preflight covers AMD64 only. Deployment and other PostgreSQL 18 database architectures retain separate gates. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
 | Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |
@@ -33,7 +35,7 @@ These checks do not qualify live deployment, full registry behavior, or recovery
 AMD64 and ARM64 used native instruction execution; RISC-V64 used QEMU user emulation.
 The tested PR merge revision was `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
 These results apply to that source, not head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later changes.
-Current-head qualification, canonical HTTP integration, and deployment retain separate gates.
+Later sources, other architectures, and deployment retain separate qualification gates.
 See the [image evidence](server-images.md#completed-prior-image-checks) for executable digests and execution limits.
 
 ## Public implementation
