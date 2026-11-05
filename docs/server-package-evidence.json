@@ -1115,5 +1115,905 @@
       ]
     }
   ],
-  "source_comparison_note": "Main added reference packages and their tests during these runs. Full checkout trees differ; the listed CLI, server, package and qualification inputs are identical."
+  "source_comparison_note": "Main added reference packages and their tests during these runs. Full checkout trees differ; the listed CLI, server, package and qualification inputs are identical.",
+  "integration_sync": {
+    "date": "2026-11-05",
+    "base_commit": "bc5bfbe8c9e6122d7360fbd11dc24f396ad6360d",
+    "head_commit": "2279e7dec0697d69c51cd67fefa6b64c03eb0020",
+    "ci_checkout_commit": "44783b724cb7ee1226c04fc9562df0108cce37f2",
+    "checkout_tree_matches_head": true,
+    "run_url": "https://github.com/stubbi/asm/actions/runs/42006906717",
+    "scope": "Native x86-64 and ARM64 extracted assembly packages after preserving main unified target/lock/parser contracts.",
+    "artifact_recheck": {
+      "status": "pass",
+      "scope": "Both downloaded target reports, eight artifact sizes and SHA-256 digests, and six retained test-log digests independently matched."
+    },
+    "linux": {
+      "x86_64-linux": {
+        "schema": 1,
+        "scope": "linux-server-ports",
+        "source_revision": "44783b724cb7ee1226c04fc9562df0108cce37f2",
+        "target": "x86_64-linux",
+        "isa": "x86-64",
+        "os": "Linux",
+        "server_abi": "System V AMD64 LP64",
+        "cpu_baseline": "x86-64",
+        "cpu_features": [],
+        "execution": "native",
+        "host": {
+          "system": "Linux",
+          "node": "runnervm48cm3",
+          "release": "7.0.0-1017-azure",
+          "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026",
+          "machine": "x86_64",
+          "processor": "x86_64"
+        },
+        "job_status": "success",
+        "status": "pass",
+        "artifacts": {
+          "cli": {
+            "bytes": 127480,
+            "sha256": "93195486433fee6e81629266a9b239204ad76774237a480844c948128be4de75",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 28312,
+            "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 35808,
+            "sha256": "7228289ec68e2e28c0128a38e549d43c4fbba0f636661a1726fe0f88179068a9",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69423,
+            "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+          }
+        },
+        "tests": {
+          "native-link": {
+            "status": "pass",
+            "tests": 8,
+            "seconds": 0.3,
+            "log_sha256": "11517e7ec014acfe2200daf6c8ab1e3752df300b8ed2d90ad68e4e13b28a19ee"
+          },
+          "reference": {
+            "status": "pass",
+            "tests": 19,
+            "seconds": 6.223,
+            "log_sha256": "8a7221a7b027be851d3c1ec32ff602a337c166e0ef992d7655474da99916aa86"
+          },
+          "hosted": {
+            "status": "pass",
+            "tests": 11,
+            "seconds": 4.68,
+            "log_sha256": "f8d58c1e787bd4721f2820f32a71416afbba373474a5e5443770c359bcfced0d"
+          },
+          "failure_preservation": {
+            "status": "pass",
+            "tests": 4,
+            "reference": {
+              "exit_code": 2,
+              "preserved_sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3"
+            },
+            "hosted": {
+              "exit_code": 2,
+              "preserved_sha256": "7228289ec68e2e28c0128a38e549d43c4fbba0f636661a1726fe0f88179068a9"
+            },
+            "symbolic_destinations": {
+              "file": {
+                "exit_code": 2,
+                "outside_unchanged": true
+              },
+              "directory": {
+                "exit_code": 2,
+                "outside_unchanged": true
+              }
+            }
+          }
+        },
+        "host_match": {
+          "status": "pass"
+        },
+        "source_match": {
+          "status": "pass",
+          "head": "44783b724cb7ee1226c04fc9562df0108cce37f2",
+          "dirty": false
+        },
+        "tools": [
+          {
+            "command": [
+              "/usr/bin/cc",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+            "error": ""
+          },
+          {
+            "command": [
+              "/usr/bin/as",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `x86_64-linux-gnu'.\n",
+            "error": ""
+          },
+          {
+            "command": [
+              "/usr/bin/ld",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+            "error": ""
+          }
+        ],
+        "limits": [
+          "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+          "The execution mode is supplied by the CI job; it is not a hardware attestation."
+        ]
+      },
+      "aarch64-linux": {
+        "schema": 1,
+        "scope": "linux-server-ports",
+        "source_revision": "44783b724cb7ee1226c04fc9562df0108cce37f2",
+        "target": "aarch64-linux",
+        "isa": "AArch64",
+        "os": "Linux",
+        "server_abi": "AAPCS64 LP64",
+        "cpu_baseline": "ARMv8-A",
+        "cpu_features": [],
+        "execution": "native",
+        "host": {
+          "system": "Linux",
+          "node": "runnervmkb2gk",
+          "release": "7.0.0-1017-azure",
+          "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026",
+          "machine": "aarch64",
+          "processor": "aarch64"
+        },
+        "job_status": "success",
+        "status": "pass",
+        "artifacts": {
+          "cli": {
+            "bytes": 168880,
+            "sha256": "1da6021372270d3ccdaf8e9b7cd538614720872d8020cd14c38f69f582a12806",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 74864,
+            "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 78440,
+            "sha256": "88bedbd2ab90245db72493ea118f6316cd533aeb8b088322d42504351c84283a",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69424,
+            "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+          }
+        },
+        "tests": {
+          "native-link": {
+            "status": "pass",
+            "tests": 8,
+            "seconds": 0.289,
+            "log_sha256": "f5897a0e2e984a8b47925a8bb86b9d983bb224bbc1a4b797dac581d62fe8b584"
+          },
+          "reference": {
+            "status": "pass",
+            "tests": 19,
+            "seconds": 6.572,
+            "log_sha256": "a23a0a68a2e15b593dbea012b089160e3dcaa219718440217fe55270fbb54835"
+          },
+          "hosted": {
+            "status": "pass",
+            "tests": 11,
+            "seconds": 5.342,
+            "log_sha256": "2356696b7a744d1531548275ccff6468b79a15a63413a1776377bf980b5d4a9b"
+          },
+          "failure_preservation": {
+            "status": "pass",
+            "tests": 4,
+            "reference": {
+              "exit_code": 2,
+              "preserved_sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9"
+            },
+            "hosted": {
+              "exit_code": 2,
+              "preserved_sha256": "88bedbd2ab90245db72493ea118f6316cd533aeb8b088322d42504351c84283a"
+            },
+            "symbolic_destinations": {
+              "file": {
+                "exit_code": 2,
+                "outside_unchanged": true
+              },
+              "directory": {
+                "exit_code": 2,
+                "outside_unchanged": true
+              }
+            }
+          }
+        },
+        "host_match": {
+          "status": "pass"
+        },
+        "source_match": {
+          "status": "pass",
+          "head": "44783b724cb7ee1226c04fc9562df0108cce37f2",
+          "dirty": false
+        },
+        "tools": [
+          {
+            "command": [
+              "/usr/bin/cc",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+            "error": ""
+          },
+          {
+            "command": [
+              "/usr/bin/as",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `aarch64-linux-gnu'.\n",
+            "error": ""
+          },
+          {
+            "command": [
+              "/usr/bin/ld",
+              "--version"
+            ],
+            "exit_code": 0,
+            "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+            "error": ""
+          }
+        ],
+        "limits": [
+          "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+          "The execution mode is supplied by the CI job; it is not a hardware attestation."
+        ]
+      }
+    },
+    "evidence_gate": {
+      "reference_minimum_tests": 19,
+      "regression": {
+        "status_before": "fail",
+        "observed": "An otherwise passing synthetic record with eighteen reference tests incorrectly returned pass.",
+        "red_log_sha256": "ddcd15db61161bef82cfac26c648268c67b20df14dc1f1997845f4ef5c3df124"
+      },
+      "status_after": "pass",
+      "tests_after": 8,
+      "green_log_sha256": "e5f17e207516c0679ff64e9ca5df813c3ef504588a1d85e8ead4af5c247730b3",
+      "scope": "Synthetic ELF and archive fixtures validate evidence decisions; they are not runtime execution evidence."
+    },
+    "local": {
+      "target": "aarch64-macos",
+      "os": "macOS15.6.1",
+      "kernel": "Darwin24.6.0",
+      "toolchain": "Apple clang17.0.0 clang-1700.0.13.5; Python3.14.6",
+      "source_state": "CLI, registry, verifier and agent checks ran on the pending merge tree subsequently committed as this head. Only the evidence recorder and its boundary regression changed afterward; their eight checks ran after that correction.",
+      "cli": {
+        "sha256": "a82e71bbd64c4a93e36cdbf8d4d4af7cae2ca29aad5673459263c6fbca8d6dea",
+        "bytes": 282400
+      },
+      "checks": [
+        {
+          "command": "make test",
+          "status": "pass",
+          "log_sha256": "4ed3569ac21a2e4ca0f4f9c00d3f4de661cd7e414b3bb30f153e0812d114f425",
+          "tests": 261
+        },
+        {
+          "command": "python3 -m unittest discover -s tests/registry -p 'test_*.py' -v",
+          "status": "pass",
+          "log_sha256": "3d3a4705f166db9029eb3aa8cb671856e648586da841585dccab329086adc117",
+          "tests": 72
+        },
+        {
+          "command": "make verifier-test",
+          "status": "pass",
+          "log_sha256": "f712e0d3e474f8f724b0469b2c4346fae84e237d2737f91802f425532562edbd",
+          "packages": 2
+        },
+        {
+          "command": "make agent-test PYTHON=build/agent-venv/bin/python",
+          "status": "pass",
+          "log_sha256": "90bdc88d3fcae6a377391d6c4e11559232e488516216716340a8073634dcc796",
+          "tests": 66
+        }
+      ],
+      "initial_agent_attempt": {
+        "status": "fail",
+        "errors": 3,
+        "reason": "Unprovisioned Python lacked httpx2, mcp and pydantic. The hash-pinned requirements-mcp.txt environment passed afterward.",
+        "log_sha256": "176247f214892d569c7512f2b8c433f87cef5175cfe3eb466786540e1375edee"
+      },
+      "registry_metadata": {
+        "status": "pass",
+        "releases": 15,
+        "base_commit": "bc5bfbe8c9e6122d7360fbd11dc24f396ad6360d",
+        "artifact_bytes_checked": false
+      }
+    },
+    "history_review": {
+      "first_commit": "93487e3aeca0e5815e21083bd3e4e282a28375f6",
+      "shallow": false,
+      "reachable_commits_at_review_start": 179,
+      "scope": "Complete available graph and titles, relevant commit bodies, specifications and implementation diffs through main bc5bfbe and prior PR head460fd60d. Preserved unified target/lock decisions, failure preservation, tool environments, license scope and immutable records."
+    },
+    "limits": [
+      "RISC-V extracted asm build execution remains a separate CLI integration gate.",
+      "Startup DNS/configuration changes are isolated and absent.",
+      "No publication, deployment or performance qualification.",
+      "Previous failed and canceled reports remain historical evidence; an eighteen-test record cannot qualify the current suite."
+    ],
+    "evidence_only_head_confirmation": {
+      "head_commit": "5b5bdf680780ceded6e9b4ad95f6ea67ca2a9039",
+      "ci_checkout_commit": "05dfc48266a658103ebd6ee0e88010075d31ef2d",
+      "checkout_tree_matches_head": true,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42007778931",
+      "status": "pass",
+      "scope": "All head checks passed. Both native server jobs repeated eight native-link, nineteen reference, eleven hosted and four failure-preservation tests; canonical catalog TLS checks passed.",
+      "artifact_recheck": "All eight downloaded artifact sizes and SHA-256 digests, and six retained test-log digests independently matched.",
+      "artifacts": {
+        "aarch64-linux": {
+          "cli": {
+            "bytes": 168880,
+            "sha256": "1da6021372270d3ccdaf8e9b7cd538614720872d8020cd14c38f69f582a12806",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 74864,
+            "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 78440,
+            "sha256": "946eef31a8a0224719c052dae8601d8eb678ea9f62c6d18e5858bbb9d32f778c",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69424,
+            "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+          }
+        },
+        "x86_64-linux": {
+          "cli": {
+            "bytes": 127480,
+            "sha256": "93195486433fee6e81629266a9b239204ad76774237a480844c948128be4de75",
+            "elf_flags": 0,
+            "status": "pass"
+          },
+          "reference": {
+            "bytes": 28312,
+            "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "hosted": {
+            "bytes": 35808,
+            "sha256": "2c1b743e1e46bddfb6f5b886dbd5c3fd1434a7bf807e03bee3ffe86fe60226e5",
+            "elf_flags": 0,
+            "hardening": [
+              "PIE",
+              "RELRO",
+              "immediate binding",
+              "non-executable stack"
+            ],
+            "status": "pass"
+          },
+          "source_archive": {
+            "status": "pass",
+            "bytes": 69423,
+            "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+          }
+        }
+      }
+    }
+  },
+  "release_preparation_sync": {
+    "date": "2026-11-05",
+    "main_commit": "6d7c7df53b1ae17a44c13b038cf95cc798fffa94",
+    "preceding_head": "5b5bdf680780ceded6e9b4ad95f6ea67ca2a9039",
+    "scope": "Reuse main0.6.0 version, compiler-response-file guards and active/inactive regressions. Preserve all unified target/lock/archive contracts. Server/reference source bytes remain unchanged from fb72db4.",
+    "cli_implementation_matches_main": true,
+    "local_source_state": "Checks ran on the pending synchronization tree. CLI and registry implementation inputs match the recorded main commit; package tests remain included. Only this evidence record changed after these checks.",
+    "local_checks": {
+      "native": {
+        "status": "pass",
+        "tests": 262,
+        "seconds": 199.747,
+        "log": {
+          "sha256": "0bde2848dee41d9fbb92f7f2a367bb4a9a3826edb3d755b3fac57ed084801463",
+          "bytes": 45246
+        }
+      },
+      "registry": {
+        "status": "pass",
+        "tests": 74,
+        "seconds": 2.519,
+        "log": {
+          "sha256": "7ca5ac60281c36c91a583f8864b216a8ea59eca65612496450aa757f6dbfee9d",
+          "bytes": 11710
+        }
+      }
+    },
+    "local_cli": {
+      "sha256": "3ef597087b8f8f4668f49cda2b54f2503590b98a14f1acb5b8ab939ffd62247c",
+      "bytes": 282400
+    },
+    "registry_metadata": {
+      "status": "pass",
+      "releases": 15,
+      "artifact_bytes_checked": false,
+      "log": {
+        "sha256": "7d829560d10b49a535619d10639a7cacf57a944eb3f8f4fd7173213a5c167bf8",
+        "bytes": 146
+      }
+    },
+    "required_suites": {
+      "native-link": 9,
+      "reference": 19,
+      "hosted": 11,
+      "failure_preservation": 4
+    },
+    "gate_regression": {
+      "observed_before": "An otherwise passing synthetic report with eight native-link tests was incorrectly accepted after main added a ninth required case.",
+      "red": {
+        "sha256": "28b7f2139faa84162fbcfafd59c6332b5bbf1009bd6e455257ff0f6a9880d896",
+        "bytes": 1760
+      },
+      "after": "All eight evidence-parser checks pass, including9/8 native-link and19/18 reference boundaries.",
+      "green": {
+        "sha256": "e6964a0949ffb470a47b1daa3b94f645a338c0050dad71e287f591346ff9c32e",
+        "bytes": 2638
+      },
+      "scope": "Synthetic report checks are evidence-policy tests, not server execution."
+    },
+    "history_review": "Review extended through main6d7c7df and its narrow #35 changes. Preserve0.6.0 identity, licenses, earlier source evidence and all active/inactive response-file checks.",
+    "post_sync_linux_scope": "The older eight-native-test records remain historical. Final PR-head CI must pass nine native-link tests and all nineteen reference tests before admission."
+  },
+  "frozen_integration_handoff": {
+    "date": "2026-11-05",
+    "inputs": {
+      "qualified_package_head": "1910a33cdc5cfd830314cf397bcc69fb069496c1",
+      "main_distribution_commit": "295342d02d1ec940c8131d8413ce0c527e10fd88",
+      "qualified_image_source_head": "7d684055fc972fd511e450b77f6f0dda331cd06c",
+      "paired_documentation_commit": "aac615d561929dd1d8cf8d214f6399fce446ee9b",
+      "catalog_fixture_correction": "06eaa444dd687ccf0045b40486e42d2dab34aad3"
+    },
+    "qualified_package_checkpoint": {
+      "head_commit": "1910a33cdc5cfd830314cf397bcc69fb069496c1",
+      "ci_checkout_commit": "41ea0aba64b41a8c79ab9f1946851ff29e984dfb",
+      "checkout_tree_matches_head": true,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42009741648",
+      "status": "pass",
+      "linux": {
+        "aarch64-linux": {
+          "schema": 1,
+          "scope": "linux-server-ports",
+          "source_revision": "41ea0aba64b41a8c79ab9f1946851ff29e984dfb",
+          "target": "aarch64-linux",
+          "isa": "AArch64",
+          "os": "Linux",
+          "server_abi": "AAPCS64 LP64",
+          "cpu_baseline": "ARMv8-A",
+          "cpu_features": [],
+          "execution": "native",
+          "host": {
+            "system": "Linux",
+            "node": "runnervmkb2gk",
+            "release": "7.0.0-1017-azure",
+            "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026",
+            "machine": "aarch64",
+            "processor": "aarch64"
+          },
+          "job_status": "success",
+          "status": "pass",
+          "artifacts": {
+            "cli": {
+              "bytes": 168880,
+              "sha256": "dffc3451fcf6af21940744c18c26451c5f226106fe87a416410bbcfce49b02fd",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 74864,
+              "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 78440,
+              "sha256": "5f5fdac0ab523bb36d080fbf2f2c33915550aa6e876c261fbb758d2097f35171",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69424,
+              "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 9,
+              "seconds": 0.276,
+              "log_sha256": "0fd85d6df93cc067d4094753b0a2cf483e701666357ef42e138b849aa5e0282e"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.224,
+              "log_sha256": "18477253d9182e3b513debefd8cf333a542716c04f0db387092347fddba60637"
+            },
+            "hosted": {
+              "status": "pass",
+              "tests": 11,
+              "seconds": 5.179,
+              "log_sha256": "c9ce122d88537474dc42095a8362579ad3110a75ded5eed4e4864b135a0bdaf9"
+            },
+            "failure_preservation": {
+              "status": "pass",
+              "tests": 4,
+              "reference": {
+                "exit_code": 2,
+                "preserved_sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9"
+              },
+              "hosted": {
+                "exit_code": 2,
+                "preserved_sha256": "5f5fdac0ab523bb36d080fbf2f2c33915550aa6e876c261fbb758d2097f35171"
+              },
+              "symbolic_destinations": {
+                "file": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                },
+                "directory": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                }
+              }
+            }
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "source_match": {
+            "status": "pass",
+            "head": "41ea0aba64b41a8c79ab9f1946851ff29e984dfb",
+            "dirty": false
+          },
+          "tools": [
+            {
+              "command": [
+                "/usr/bin/cc",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+              "error": ""
+            },
+            {
+              "command": [
+                "/usr/bin/as",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `aarch64-linux-gnu'.\n",
+              "error": ""
+            },
+            {
+              "command": [
+                "/usr/bin/ld",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+              "error": ""
+            }
+          ],
+          "limits": [
+            "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+            "The execution mode is supplied by the CI job; it is not a hardware attestation."
+          ]
+        },
+        "x86_64-linux": {
+          "schema": 1,
+          "scope": "linux-server-ports",
+          "source_revision": "41ea0aba64b41a8c79ab9f1946851ff29e984dfb",
+          "target": "x86_64-linux",
+          "isa": "x86-64",
+          "os": "Linux",
+          "server_abi": "System V AMD64 LP64",
+          "cpu_baseline": "x86-64",
+          "cpu_features": [],
+          "execution": "native",
+          "host": {
+            "system": "Linux",
+            "node": "runnervm48cm3",
+            "release": "7.0.0-1017-azure",
+            "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026",
+            "machine": "x86_64",
+            "processor": "x86_64"
+          },
+          "job_status": "success",
+          "status": "pass",
+          "artifacts": {
+            "cli": {
+              "bytes": 127480,
+              "sha256": "ccb96d42f073f9c6e8eec8d1f67e30fa019d8c1d9787b35a787a6953efa4bb96",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 28312,
+              "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 35808,
+              "sha256": "71f9da8676d0d7541206760256f8e5711f0dcc0303cfdd924d53e6fa24402a8e",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69423,
+              "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 9,
+              "seconds": 0.31,
+              "log_sha256": "e7e7f0fa24e0dabe2b3d518d808f995f9d14d89d9f31ef6ecfa50ab1dae45cf4"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.156,
+              "log_sha256": "bd0b66ae83e24242043e1b96f129886f226944ee2ed0950d7d19f6bfb4d7c0b0"
+            },
+            "hosted": {
+              "status": "pass",
+              "tests": 11,
+              "seconds": 4.88,
+              "log_sha256": "14248d296662e15bf34df7cfc526582555e82922098ce73545217098dec3e552"
+            },
+            "failure_preservation": {
+              "status": "pass",
+              "tests": 4,
+              "reference": {
+                "exit_code": 2,
+                "preserved_sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3"
+              },
+              "hosted": {
+                "exit_code": 2,
+                "preserved_sha256": "71f9da8676d0d7541206760256f8e5711f0dcc0303cfdd924d53e6fa24402a8e"
+              },
+              "symbolic_destinations": {
+                "file": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                },
+                "directory": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                }
+              }
+            }
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "source_match": {
+            "status": "pass",
+            "head": "41ea0aba64b41a8c79ab9f1946851ff29e984dfb",
+            "dirty": false
+          },
+          "tools": [
+            {
+              "command": [
+                "/usr/bin/cc",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+              "error": ""
+            },
+            {
+              "command": [
+                "/usr/bin/as",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `x86_64-linux-gnu'.\n",
+              "error": ""
+            },
+            {
+              "command": [
+                "/usr/bin/ld",
+                "--version"
+              ],
+              "exit_code": 0,
+              "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+              "error": ""
+            }
+          ],
+          "limits": [
+            "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+            "The execution mode is supplied by the CI job; it is not a hardware attestation."
+          ]
+        }
+      },
+      "artifact_recheck": "Both downloaded reports, all eight artifact sizes and SHA-256 digests, and six retained test-log digests independently matched.",
+      "scope": "Nine native-link, nineteen extracted reference, eleven hosted foundation and four failure-preservation tests per native Linux target. The canonical catalog step used the earlier catalog contract; it does not qualify the later four-export catalog."
+    },
+    "required_context_repair": {
+      "required_name": "Test the assembly server reference",
+      "diagnosis": "The matrix job names omitted this exact required GitHub ruleset context. All nineteen visible checks completed, but admission remained blocked.",
+      "policy_changed": false,
+      "implementation": "An always-run aggregate depends on the complete native matrix. Only success passes. Failure, cancellation, skip and missing results fail with a useful next step. The aggregate has no repository permissions.",
+      "red_log": {
+        "sha256": "84149e371638a36ffcdcff4e7d77d0d3eb0aa4e4cc7d6d236dd96706e12c311d",
+        "bytes": 1070
+      },
+      "green_log": {
+        "sha256": "a8e764cc58592ac725a9ba0802fd4cf8b6c6ba8937644fd98a7c323074c91237",
+        "bytes": 2814
+      },
+      "reference": "https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks"
+    },
+    "focused_checks": {
+      "qualification_tests": {
+        "status": "pass",
+        "tests": 9,
+        "log": {
+          "sha256": "0f7d79c194315ad3cf66b22ee601f70046873fe7c894f378fb3d4009ae3e8e9f",
+          "bytes": 2814
+        }
+      },
+      "image_harness_selftest": {
+        "status": "pass",
+        "log": {
+          "sha256": "b0ac3b312aeb9a93c6244bd6d7d8117495029c1bf8c22e30e2538aa61c560ed8",
+          "bytes": 890
+        }
+      },
+      "workflow_validation": {
+        "status": "pass",
+        "tool": "actionlint1.7.12",
+        "files": [
+          "assembly-server.yml",
+          "server-images.yml",
+          "ci.yml",
+          "release.yml",
+          "mcp-image.yml"
+        ]
+      },
+      "registry_suite": {
+        "status": "pass",
+        "tests": 85,
+        "log": {
+          "sha256": "886dbbd42fa31a24649759c1d7e724e70c92c8236939a9976356d0ae1bdd3297",
+          "bytes": 13435
+        }
+      },
+      "release_suite": {
+        "status": "pass",
+        "tests": 65,
+        "skipped": 12,
+        "scope": "Declared platform skips remain visible; this is not a skipped native server qualification.",
+        "log": {
+          "sha256": "c5728e14af2cb3c602799cf33813766d16f5e90480700c1ea1e9761038dbacb2",
+          "bytes": 11589
+        }
+      }
+    },
+    "preserved_contracts": [
+      "Main0.6.0 CLI implementation, unified target/lock/archive validation and exact-source schema2 native fan-in.",
+      "Separate package and CLI test suites.",
+      "Six accepted canonical target labels and four exact export routes; CLI publication retains its separate limits.",
+      "The new catalog fixture selects an unused synthetic major version without changing SQL or assertions.",
+      "Assembly reference and hosted runtime source files remain byte-identical to qualified package head1910a33.",
+      "The paired image documentation retains exact historical source identities and native AMD64/ARM64 versus emulated RISC-V limits."
+    ],
+    "remaining_gates": [
+      "The staging owner must run the complete combined-source native and image gates. Existing checkpoint results do not qualify the new combined commit.",
+      "The four-export catalog and corrected fixture still require the pinned native PostgreSQL16.15 gate; no local18.1 substitution was used.",
+      "RISC-V extracted asm build package execution remains a separate CLI integration gate.",
+      "Startup DNS/configuration changes remain isolated. Both private activation holds remain.",
+      "No deployment, publication, hardware-range or performance qualification follows from this handoff."
+    ]
+  }
 }

@@ -38,8 +38,8 @@ Each name becomes one `-lNAME` argument.
 The field cannot contain linker flags or paths.
 
 `check` names a relative `.c` file using the existing source-path rules.
-Source and checker path components cannot start with `@` or `-`.
-Compilers can interpret these names as options, including generated frontend metadata.
+Build-source, test, and checker path components cannot start with `@` or `-`.
+Compilers can interpret these names as options or response-file input.
 Source archives must include that file.
 Archive paths retain the registry's stricter portable-path rules and 240-byte limit.
 Asm compiles it with `-fsyntax-only`, C11, and warnings as errors.
@@ -83,7 +83,18 @@ This build extension does not qualify such a replacement or change the architect
 
 ## Validation record
 
+The [multi-target completion record](multi-target-projects-completion-evidence.json) retains the target-selection and dependency-lock checks.
+Those Linux runs used an ARM virtual machine and an emulated x86-64 Linux machine.
+They do not establish physical Linux hardware qualification.
+Cross-target native-library linking still requires a separate sysroot contract.
+
+
 The [server package record](server-package-evidence.json) retains native Linux x86-64 and ARM64 qualification.
+Its integration record covers source `2279e7de` after synchronization with the unified target and lock contracts.
+The complete CI checkout tree matches that head.
+The current workflow requires ten native-link tests, including inactive-target path rejection.
+The evidence gate also requires all 19 reference tests.
+An 18-test synthetic report failed the boundary regression before correction.
 Each target passed eight native-link tests, 19 extracted-package tests, 11 hosted-runtime tests, and four failure-preservation checks.
 The reference package built through the recorded native Asm CLI.
 The record binds the CLI, archive, both executables, test logs, toolchain, and exact checkout commit.
@@ -104,10 +115,10 @@ Its crossassembly results do not replace the later native Linux results.
 
 ## Target coverage
 
-The [shared coverage audit](target-coverage.md) and [architecture acceptance gates](architecture-gates.md) define the wider platform work.
+The [architecture acceptance gates](architecture-gates.md) define the wider platform work.
 This section covers native linking and the assembly server only.
-The native-library build contract is part of Asm 0.6.0.
-Additional CLI hosts and server ports retain separate qualification gates.
+The qualification records identify source revisions and artifacts.
+They do not declare released target support.
 
 | CLI host target | ISA | OS | C ABI for linked projects | CPU requirement | Current CLI evidence |
 | --- | --- | --- | --- | --- | --- |
@@ -182,11 +193,7 @@ The source-only hosted handoff is `codex/server-runtime-ports`, commits `e3fabf0
 It contains no image, installer, or release changes.
 The native-package workflow separately exercises current Linux x86-64 and ARM64 CLI builds and both server suites.
 The hosted image workflow owns native x86-64/ARM64 and explicitly emulated RISC-V image qualification.
-The [multi-target completion record](multi-target-projects-completion-evidence.json) identifies the current native-library, target-selection, and dependency-lock checks.
-The Linux runs used an ARM virtual machine and an emulated x86-64 Linux machine.
-These results do not establish physical Linux hardware qualification.
-Cross-target native-library linking still requires a separate sysroot contract.
 
-The [earlier native-linking record](native-linking-evidence.json) remains historical evidence for its stated source and artifact digests.
-Its failed attempts and unrun gates are retained.
-Later results apply to the exact bytes in the multi-target completion record.
+The [shared coverage record](target-coverage.md) retains the cross-session port acceptance conditions.
+The [earlier native-linking record](native-linking-evidence.json) retains its stated source, artifacts, failed attempts, and unrun gates.
+Later results apply only to the exact bytes in their qualification records.

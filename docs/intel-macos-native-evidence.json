@@ -41,5 +41,168 @@
   },
   "code_signature": "ad-hoc",
   "support_claim": "native-runtime-qualified",
-  "qualification_run": "https://github.com/stubbi/asm/actions/runs/41940484143"
+  "qualification_run": "https://github.com/stubbi/asm/actions/runs/41940484143",
+  "integrated_qualification": {
+    "schema": 1,
+    "target": "x86_64-macos",
+    "source_commit": "295c6936cce8de4886dbe7b2e04e0a09c7c565c1",
+    "isa": "x86-64",
+    "os": "macos",
+    "abi": "Apple System V AMD64 LP64",
+    "minimum_os": "15.0",
+    "additional_cpu_features": [],
+    "execution": "native",
+    "host": {
+      "machine": "x86_64",
+      "macos": "15.7.9",
+      "translated_process": "0"
+    },
+    "tools": {
+      "clang": "Apple clang version 17.0.0 (clang-1700.0.13.5)\nTarget: x86_64-apple-darwin24.6.0\nThread model: posix\nInstalledDir: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+      "sdk": "15.5",
+      "python": "3.14.7"
+    },
+    "status": "pass",
+    "developer_id": "not-run",
+    "notarization": "not-run",
+    "installer_release_integration": "not-run",
+    "stage": "complete",
+    "version": "0.6.0",
+    "file": "asm-0.6.0-x86_64-macos",
+    "bytes": 176896,
+    "sha256": "6e7ccde57ab290cfbdc53e0b1b817f87d5e63a969e4aa34f83f7dbb9c4a5213d",
+    "reproducible_builds": 2,
+    "runtime": {
+      "target": "x86_64-macos",
+      "tests": 209,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "status": "pass",
+      "failed_cases": []
+    },
+    "code_signature": "ad-hoc",
+    "support_claim": "native-runtime-qualified",
+    "workflow": "https://github.com/stubbi/asm/actions/runs/42009046954",
+    "download_verification": {
+      "bytes": true,
+      "sha256": true,
+      "strict_codesign": true
+    },
+    "source_snapshot": {
+      "reader": "registry.git_files with --no-replace-objects; release.materialize",
+      "tracked_files": 360,
+      "bytes": 3936280,
+      "all_tracked_files_retained": true
+    }
+  },
+  "intermediate_qualifications": [
+    {
+      "schema": 1,
+      "target": "x86_64-macos",
+      "source_commit": "89cdfb113e59f79c8102e10eb7d6e45053ec6608",
+      "isa": "x86-64",
+      "os": "macos",
+      "abi": "Apple System V AMD64 LP64",
+      "minimum_os": "15.0",
+      "additional_cpu_features": [],
+      "execution": "native",
+      "host": {
+        "machine": "x86_64",
+        "macos": "15.7.9",
+        "translated_process": "0"
+      },
+      "tools": {
+        "clang": "Apple clang version 17.0.0 (clang-1700.0.13.5)\nTarget: x86_64-apple-darwin24.6.0\nThread model: posix\nInstalledDir: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+        "sdk": "15.5",
+        "python": "3.14.7"
+      },
+      "status": "pass",
+      "developer_id": "not-run",
+      "notarization": "not-run",
+      "installer_release_integration": "not-run",
+      "stage": "complete",
+      "version": "0.5.0",
+      "file": "asm-0.5.0-x86_64-macos",
+      "bytes": 176896,
+      "sha256": "c1b145c2908020ded2a9da74d273267c1a590c3e4479be05694c22dd3f64b577",
+      "reproducible_builds": 2,
+      "runtime": {
+        "target": "x86_64-macos",
+        "tests": 206,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "status": "pass",
+        "failed_cases": []
+      },
+      "code_signature": "ad-hoc",
+      "support_claim": "native-runtime-qualified",
+      "workflow": "https://github.com/stubbi/asm/actions/runs/42007841225",
+      "scope_note": "Retained intermediate runtime result; source extraction was superseded by the guarded object reader."
+    }
+  ],
+  "integration_checks": {
+    "native_apple_silicon": {
+      "command": "make test",
+      "tests": 264,
+      "status": "pass",
+      "skipped": 0
+    },
+    "registry": {
+      "tests": 78,
+      "status": "pass"
+    },
+    "verifier_race_tests": {
+      "packages": 2,
+      "status": "pass"
+    },
+    "source_binding": {
+      "regressions": 7,
+      "status": "pass",
+      "legacy_substitution_mutants_rejected": 5
+    },
+    "history_review": {
+      "first_commit": "93487e3aeca0e5815e21083bd3e4e282a28375f6",
+      "main_through": "6d7c7df53b1ae17a44c13b038cf95cc798fffa94",
+      "main_commits": 61,
+      "shallow": false
+    }
+  },
+  "integration_negative_evidence": [
+    {
+      "log": "intel-integration-initial-red.log",
+      "sha256": "847563d3f1da032f7f50d4907fd21f8545310a363103105aadf207eee16bd730",
+      "result": "Local Rosetta probe: one 15-second build timeout and obsolete target-list assertion."
+    },
+    {
+      "log": "intel-integration-native-local.log",
+      "sha256": "922a9d015f0f0217132c4a8ed3da3fde5f65beb4340c1d71a828f727af460974",
+      "result": "Unified project probe: absent Intel hello test declaration and wrong math output expectation."
+    },
+    {
+      "log": "intel-integration-full-local.log",
+      "sha256": "c2154f5b6d27303d278d413ed3f6a2467c21f2341418dd3d2b6cabb07059815c",
+      "result": "Intermediate Rosetta suite:205 tests,15 failures,two errors,one cross-tools skip. Native update suffixes and Intel-publication assertion were corrected."
+    },
+    {
+      "log": "intel-integration-targeted-local.log",
+      "sha256": "945f639319f6b7b64997d29dba886b23e3a70dfc5a5c1c4a1210393733d8904e",
+      "result": "Invalid archive-response fixture: six setup errors because portable archive paths already forbid @. Fixture removed; archive checks unchanged."
+    },
+    {
+      "log": "intel-source-binding-red.log",
+      "sha256": "9172ec26f0dacead436ec2ba7f2c5aeee26324fee267d82d6a76c881a666d0ee",
+      "result": "Seven initial source-reader regressions failed before the helper existed."
+    },
+    {
+      "log": "intel-source-binding-legacy-mutant.log",
+      "sha256": "908686c9138f39652f3c4ac2e5080ece5e9af6092a3457e9a1fe3eb62f50579b",
+      "result": "All five adversarial substitution regressions reject legacy archive-based extraction."
+    }
+  ]
 }

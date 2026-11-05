@@ -62,7 +62,7 @@ class DependencyCliTests(unittest.TestCase):
                             b"mov rax, rdi\ncmp rdi, rsi\ncmova rax, rsi\nret\n")
                 elif IS_ARM64 and relative == "src/min.s":
                     data = b".global asm_u64_min\n.text\nasm_u64_min:\n    cmp x0, x1\n    csel x0, x0, x1, ls\n    ret\n"
-                elif IS_MACOS and relative in {"src/main.s", "tests/main.s"}:
+                elif (IS_ARM64 or IS_MACOS) and relative in {"src/main.s", "tests/main.s"}:
                     data = exit_source(0).encode()
                 member = tarfile.TarInfo(relative)
                 member.mode = 0o644

@@ -127,6 +127,36 @@ Keep the release record, checksums, source commit, target list, and workflow lin
 Do not describe a local build as a published release.
 Do not describe a submitted registry manifest as an accepted package.
 
+## Qualify the Windows verifier
+
+The verifier workflow has separate native x86-64 and ARM64 Windows jobs.
+These jobs do not qualify a released CLI host or activate production trust.
+They use Go 1.27.3 and the complete verifier suite with JSON test events.
+
+The runner selects the existing current-user `LOCALAPPDATA/Temp` directory.
+This selection does not establish safe permissions or a supported volume.
+Mandatory native secure-filesystem tests check the actual temporary ancestors, owner, ACL, and fixed local NTFS volume.
+A failed or skipped mandatory case fails qualification.
+The runner does not repair permissions.
+
+The gate retains raw JSON, separate diagnostics, source and tree identities, input hashes, and the native Go tool digest.
+Before and after execution, it compares the complete verifier file set and bytes with the original Git blobs.
+It reuses the registry source collector and rejects links, junctions, extra files, and checkout transformations.
+Go controls temporary test executables; their hashes remain unavailable in this gate.
+A duplicate build cannot supply evidence for the executed test bytes.
+Privilege-dependent skipped cases remain unqualified and appear in the result.
+
+The capture assigns a waiting bootstrap to a noninherited Windows Job Object before Go starts.
+Closing the job terminates its descendants before the runner finalizes output.
+The output file has one writer, a byte limit, and a deadline.
+An assignment or cleanup error fails the gate.
+Native Windows execution remains required; portable capture tests exercise only their stated host.
+
+The implementation uses [Microsoft's job inheritance and termination contract](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
+The [assignment rules](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject) include nested-job limits.
+The parser follows [Go 1.27.3 test-event documentation](https://pkg.go.dev/cmd/test2json).
+These primary sources were checked on 5 November 2026.
+
 ## Interpret evidence
 
 | Evidence | What it establishes | Required limit |

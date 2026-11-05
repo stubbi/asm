@@ -92,7 +92,8 @@ func windowsSetFixtureDACL(t *testing.T, path, sddl string, null bool) {
 	control, _, err := original.Control()
 	must(t, err)
 	t.Cleanup(func() {
-		handle := windowsRawHandle(t, path, windows.WRITE_DAC,
+		// Retain descriptor-read access, as on the initial mutation handle.
+		handle := windowsRawHandle(t, path, windows.READ_CONTROL|windows.WRITE_DAC,
 			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
 		defer windows.CloseHandle(handle)
 		flags := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION)
@@ -319,16 +320,23 @@ func windowsCreateJunction(t *testing.T, path, target string) {
 	for i, value := range paths {
 		binary.LittleEndian.PutUint16(buffer[16+i*2:18+i*2], value)
 	}
-	handle := windowsRawHandle(t, path, windows.GENERIC_WRITE,
+	handle := windowsRawHandle(t, path, windows.GENERIC_WRITE|windows.FILE_READ_ATTRIBUTES,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
 	defer windows.CloseHandle(handle)
 	var returned uint32
 	must(t, windows.DeviceIoControl(handle, windows.FSCTL_SET_REPARSE_POINT,
 		&buffer[0], uint32(len(buffer)), nil, 0, &returned, nil))
-	info, err := os.Lstat(path)
-	must(t, err)
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Fatal("junction fixture is not a reparse link")
+	// Go's ModeSymlink excludes mount-point junctions. Check the native tag
+	// through the held reparse-point handle before exercising rejection.
+	var info struct {
+		FileAttributes uint32
+		ReparseTag     uint32
+	}
+	must(t, windows.GetFileInformationByHandleEx(handle, windows.FileAttributeTagInfo,
+		(*byte)(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))))
+	required := uint32(windows.FILE_ATTRIBUTE_DIRECTORY | windows.FILE_ATTRIBUTE_REPARSE_POINT)
+	if info.FileAttributes&required != required || info.ReparseTag != windows.IO_REPARSE_TAG_MOUNT_POINT {
+		t.Fatal("junction fixture lacks its native directory and mount-point reparse tag")
 	}
 }
 

@@ -4,12 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Synthetic ELF fixtures are inspected only; they are never executed.
 """
 import importlib.util
+import io
 import json
 from pathlib import Path
 import platform
+import re
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -46,7 +49,7 @@ class ServerQualificationTests(unittest.TestCase):
     def recorder_inputs(self, work):
         binary = work / "server"
         binary.write_bytes(elf())
-        for name, count in (("native-link", 8), ("reference", 18), ("hosted", 11)):
+        for name, count in (("native-link", 10), ("reference", 19), ("hosted", 11)):
             (work / (name + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
         (work / "build-failure-tests.log").write_text('{"status":"pass","tests":4}\n')
         output = work / "qualification.json"
@@ -64,6 +67,54 @@ class ServerQualificationTests(unittest.TestCase):
         with patch.object(sys, "argv", arguments), patch.object(record.platform, "uname", return_value=linux), \
                 patch.object(record.subprocess, "run", side_effect=tool_result):
             return record.main()
+
+    def test_current_native_and_reference_suites_must_be_complete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            arguments, output = self.recorder_inputs(work)
+            manifest = (b'[package]\nname = "asm-server"\nversion = "0.1.0"\n'
+                        b'[build]\nsource = "server.s"\ntarget = "x86_64-linux"\n')
+            files = {"asm.toml": manifest, "server.s": b".text\n",
+                     "README.md": b"Assembly server fixture.\n", "LICENSE": b"AGPL-3.0-or-later\n"}
+            with tarfile.open(work / "source.tar.gz", "w:gz") as archive:
+                for name, data in files.items():
+                    member = tarfile.TarInfo(name)
+                    member.mode = 0o644
+                    member.size = len(data)
+                    archive.addfile(member, io.BytesIO(data))
+            for suite, complete, incomplete in (("reference", 19, 18), ("native-link", 10, 9)):
+                for count, expected, status in ((complete, 0, "pass"), (incomplete, 1, "fail")):
+                    with self.subTest(suite=suite, count=count):
+                        for name, required in (("native-link", 10), ("reference", 19)):
+                            (work / (name + "-tests.log")).write_text(f"Ran {required} tests in 1.0s\n\nOK\n")
+                        (work / (suite + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
+                        self.assertEqual(self.run_recorder(arguments), expected)
+                        report = json.loads(output.read_text())
+                        self.assertEqual(report["status"], status)
+                        self.assertEqual(report["tests"][suite]["status"], status)
+
+    def test_required_context_reports_every_native_matrix_outcome(self):
+        workflow = (ROOT / ".github/workflows/assembly-server.yml").read_text()
+        jobs = re.split(r"(?m)^  (?=[a-z][a-z0-9_-]*:\s*$)", workflow.split("jobs:\n", 1)[1])
+        gates = [job for job in jobs if "    name: Test the assembly server reference\n" in job]
+        self.assertEqual(len(gates), 1, "Repository rules require this exact check name")
+        gate = gates[0]
+        self.assertRegex(gate, r"(?m)^    permissions: \{\}$")
+        self.assertRegex(gate, r"(?m)^    needs: test$")
+        self.assertRegex(gate, r"(?m)^    if: \$\{\{ always\(\) \}\}$")
+        self.assertIn("SERVER_TEST_RESULT: ${{ needs.test.result }}", gate)
+        command = re.search(r"(?m)^        run: (.+)$", gate)
+        self.assertIsNotNone(command)
+        for result in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                outcome = subprocess.run(["/bin/sh", "-c", command[1]],
+                                         env={"SERVER_TEST_RESULT": result}, capture_output=True, timeout=5)
+                self.assertEqual(outcome.returncode == 0, result == "success")
+                self.assertEqual(outcome.stdout, b"")
+                if result == "success":
+                    self.assertEqual(outcome.stderr, b"")
+                else:
+                    self.assertIn(b"Inspect both target jobs.", outcome.stderr)
 
     def test_missing_source_archive_cannot_receive_a_pass_record(self):
         with tempfile.TemporaryDirectory() as temporary:

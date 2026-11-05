@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
-from host import TARGET, IS_MACOS
+from host import TARGET, IS_MACOS, MAC_ARCH
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / 'build/asm'
@@ -32,7 +32,8 @@ class CrossBuildTests(unittest.TestCase):
 
     def tool_available(self, target):
         if IS_MACOS:
-            return Path('/opt/homebrew/opt/llvm/bin/clang').exists() and Path('/opt/homebrew/opt/lld/bin/ld.lld').exists()
+            prefix = '/opt/homebrew' if MAC_ARCH == 'arm64' else '/usr/local'
+            return Path(prefix + '/opt/llvm/bin/clang').exists() and Path(prefix + '/opt/lld/bin/ld.lld').exists()
         triple = target.replace('-linux', '-linux-gnu')
         return Path('/usr/bin/' + triple + '-as').exists() and Path('/usr/bin/' + triple + '-ld').exists()
 
@@ -100,6 +101,8 @@ class CrossBuildTests(unittest.TestCase):
 
     def test_unsupported_declared_build_target_fails_without_changes(self):
         for target in ('x86_64-macos', 'x86_64-windows', 'aarch64-windows'):
+            if target == TARGET:
+                continue
             with self.subTest(target=target):
                 (self.project / 'asm.toml').write_text(f'[package]\nname="hello"\nversion="0.1.0"\n[target.{target}]\nsource="src/main.s"\n')
                 result = self.cli('build', '--target', target, code=2)

@@ -163,8 +163,16 @@ class NativePublishTests(unittest.TestCase):
                 self.cli(code=1)
                 self.assertFalse(self.output.exists())
                 self.artifact.write_bytes(registry.make_archive(files))
-                self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]), code=2)
-                self.assertFalse(self.output.exists())
+                arguments = self.arguments(artifacts=[(target, "source", self.artifact, self.url)])
+                if IS_MACOS and target == TARGET:
+                    # A source-port host can prepare its own record before
+                    # the shared registry/release schema admits that host.
+                    self.cli(arguments)
+                    self.assertEqual(json.loads(self.output.read_bytes())["artifacts"][0]["target"], TARGET)
+                    self.output.unlink()
+                else:
+                    self.cli(arguments, code=2)
+                    self.assertFalse(self.output.exists())
 
     def test_multi_target_archive_matches_each_declared_artifact_target(self):
         self.artifact.write_bytes(registry.make_archive(self.target_files()))

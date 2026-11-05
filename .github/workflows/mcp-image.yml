@@ -146,6 +146,7 @@ jobs:
       - name: Load the exact qualified architecture-specific image
         env:
           ASM_ARCH: ${{ matrix.arch }}
+          ASM_IMAGE_TAG: sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
         run: |
           set -euo pipefail
           sha256sum --check "mcp-image-$ASM_ARCH.sha256"
@@ -153,17 +154,18 @@ jobs:
           test "$(docker image inspect asm-mcp:qualification --format '{{.Architecture}}')" = "$ASM_ARCH"
           test "$(docker image inspect asm-mcp:qualification --format '{{.Id}}')" = "$(jq -r .Id "mcp-image-$ASM_ARCH.json")"
           test "$(docker image inspect asm-mcp:qualification --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
-          docker tag asm-mcp:qualification "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH"
+          docker tag asm-mcp:qualification "ghcr.io/stubbi/asm-mcp:$ASM_IMAGE_TAG"
       - name: Publish the exact image and retain its digest
         id: image
         env:
           ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ASM_ARCH: ${{ matrix.arch }}
+          ASM_IMAGE_TAG: sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
         run: |
           set -euo pipefail
           printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker push "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH"
-          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-mcp:sha-$GITHUB_SHA-$ASM_ARCH" --format '{{index .RepoDigests 0}}')"
+          docker push "ghcr.io/stubbi/asm-mcp:$ASM_IMAGE_TAG"
+          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-mcp:$ASM_IMAGE_TAG" --format '{{index .RepoDigests 0}}')"
           case "$ASM_REF" in ghcr.io/stubbi/asm-mcp@sha256:*) ;; *) exit 1 ;; esac
           printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$ASM_REF" >> "$GITHUB_STEP_SUMMARY"

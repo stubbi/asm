@@ -55,7 +55,7 @@ class NativeCliTests(unittest.TestCase):
         self.assertIn("new", json.loads(self.cli("help", "--json").stdout)["commands"])
         build_targets = ["x86_64-linux", "aarch64-linux", "riscv64-linux"]
         if IS_MACOS:
-            build_targets.append("aarch64-macos")
+            build_targets.append(TARGET)
         self.assertEqual(json.loads(self.cli("targets", "--json").stdout),
                          {"host": TARGET, "targets": build_targets})
         status = json.loads(self.cli("status").stdout)

@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "version": "0.6.0",
+  "source_commit": "6d7c7df53b1ae17a44c13b038cf95cc798fffa94",
+  "release_json_sha256": "1678cd016f1c66d93a3038fe8a4059aa923bcfba322e923c4e53f44ea458ba27",
+  "checksum_file_sha256": "edfdb9203fa309a3ffe240322c142216d999f13cf6ec09d762fa91aa9ceb6027",
+  "attestation_bundle_sha256": "f8741283e87e2293ba414bea273c8908eb80f2a0c0cf2a78b571760cb868ef36",
+  "provenance_policy": "existing fixed GitHub release workflow/main/source/signer/repository ID policy; external GitHub CLI2.102.0; no credentials or ambient verifier configuration",
+  "verified": [
+    {
+      "file": "SHA256SUMS",
+      "sha256": "edfdb9203fa309a3ffe240322c142216d999f13cf6ec09d762fa91aa9ceb6027",
+      "bytes": 1113,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 4.1,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "asm-0.6.0-aarch64-linux",
+      "sha256": "dffc3451fcf6af21940744c18c26451c5f226106fe87a416410bbcfce49b02fd",
+      "bytes": 168880,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 2.961,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "asm-0.6.0-aarch64-macos",
+      "sha256": "3ef597087b8f8f4668f49cda2b54f2503590b98a14f1acb5b8ab939ffd62247c",
+      "bytes": 282400,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.009,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "asm-0.6.0-source.tar.gz",
+      "sha256": "89d1add51104584574df75fbf08a77264e7fb406cfaf1883475d1c48b084e637",
+      "bytes": 823657,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.178,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "asm-0.6.0-x86_64-linux",
+      "sha256": "ccb96d42f073f9c6e8eec8d1f67e30fa019d8c1d9787b35a787a6953efa4bb96",
+      "bytes": 127480,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 2.711,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-aarch64-linux",
+      "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9",
+      "bytes": 1064,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 4.006,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-aarch64-linux.tar.gz",
+      "sha256": "0e0235bdeb4fb96c86a01b6fe0479763dce9ee1cbba2c64b62c44e2957b863ad",
+      "bytes": 10324,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.386,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-riscv64-linux",
+      "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92",
+      "bytes": 1296,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.882,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-riscv64-linux.tar.gz",
+      "sha256": "0e0235bdeb4fb96c86a01b6fe0479763dce9ee1cbba2c64b62c44e2957b863ad",
+      "bytes": 10324,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.839,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-x86_64-linux",
+      "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440",
+      "bytes": 8880,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.598,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "hello-0.6.0-x86_64-linux.tar.gz",
+      "sha256": "0e0235bdeb4fb96c86a01b6fe0479763dce9ee1cbba2c64b62c44e2957b863ad",
+      "bytes": 10324,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.374,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "math-0.6.0-x86_64-linux-source.tar.gz",
+      "sha256": "4d41475059a5a42d3c28b9994acd2008c387e894e423ae11d6dc466b296c8d0b",
+      "bytes": 23495,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 4.079,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "release.json",
+      "sha256": "1678cd016f1c66d93a3038fe8a4059aa923bcfba322e923c4e53f44ea458ba27",
+      "bytes": 9219,
+      "exit": 0,
+      "repository_id": "1441332955",
+      "seconds": 3.198,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "records": [
+    "stubbi/asm",
+    "stubbi/hello",
+    "stubbi/math"
+  ],
+  "status": "pass",
+  "checked_at_utc": "2026-11-05T10:19:28.828495+00:00",
+  "release_url": "https://github.com/stubbi/asm/releases/tag/v0.6.0",
+  "workflow_url": "https://github.com/stubbi/asm/actions/runs/42008449971",
+  "immutable": true,
+  "scope": "Downloaded public payload sizes, digests, checksums, executable/archive formats, and fixed-policy release provenance. Runtime and installation require separate checks."
+}

@@ -4,7 +4,21 @@
 // No browser or npm dependency is required for these metadata-boundary checks.
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const path = require("node:path");
 const { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount } = require("../site/app.js");
+const { mathSourcePath } = require("../site/app.js");
+
+test("the math guide selects the unified routine and retains earlier include paths", () => {
+  const version = "0.6.0";
+  const prefix = `stubbi/math/${version}/x86_64-linux/`;
+  const include = mathSourcePath(version);
+  assert.ok(include.startsWith(prefix));
+  const routine = path.join(__dirname, "../examples/math", include.slice(prefix.length));
+  assert.match(fs.readFileSync(routine, "utf8"), /asm_u64_min/);
+  assert.equal(mathSourcePath("0.5.0"), "stubbi/math/0.5.0/x86_64-linux/src/min.s");
+  assert.equal(mathSourcePath('0.6.0";bad'), null);
+});
 
 function record(name, target) {
   return { name, summary: "A source package", latest: "0.1.0", targets: [target], versions: [{ version: "0.1.0", artifacts: [] }] };
