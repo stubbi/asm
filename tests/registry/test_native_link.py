@@ -51,6 +51,10 @@ class NativeLinkArchiveTests(unittest.TestCase):
         self.validate(checker=False)
         self.validate('link = "c"\n', checker=False)
 
+    def test_resolution_metadata_preserves_native_library_contract(self):
+        self.validate('link = "c"\nlibraries = "pq"\ncheck = "abi-check.c"\n'
+                      '[resolution]\nschema = "1"\n[features]\ndefault = []\n')
+
     def test_eight_maximum_length_library_names_are_valid(self):
         names = " ".join(chr(ord("a") + number) * 31 for number in range(8))
         self.assertEqual(len(names), 255)

@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, ASM_FLAGS, TARGET, OTHER_TARGET
+from host import IS_ARM64, IS_RISCV64, CLI_ASM_FLAGS, TARGET, OTHER_TARGET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -205,14 +205,16 @@ class SelfUpdateMetadataTests(unittest.TestCase):
             prefix="self-metadata-", dir=ROOT / "build")
         cls.work = Path(cls.temporary.name)
         (cls.work / "harness.s").write_text(
+            (ROOT / "tests/riscv64/self_update_metadata_harness.s").read_text() if IS_RISCV64 else
             (ROOT / "tests/aarch64/self_update_metadata_harness.s").read_text() if IS_ARM64 else HARNESS)
         cls.binary = cls.work / "harness"
         sources = [(cls.work / "harness.s", cls.work / "harness.o")]
-        if not IS_ARM64:
+        if not (IS_ARM64 or IS_RISCV64):
             sources.append((ROOT / "cli/self_update_metadata.s", cls.work / "metadata.o"))
         for source, output in sources:
-            page_flags = ["--defsym", f"ARM_TEST_PAGE_SIZE={os.sysconf('SC_PAGE_SIZE')}"] if IS_ARM64 else []
-            subprocess.run(["as", *ASM_FLAGS, *page_flags, "--fatal-warnings", "-o", str(output),
+            page_name = "RV_TEST_PAGE_SIZE" if IS_RISCV64 else "ARM_TEST_PAGE_SIZE"
+            page_flags = ["--defsym", f"{page_name}={os.sysconf('SC_PAGE_SIZE')}"] if IS_ARM64 or IS_RISCV64 else []
+            subprocess.run(["as", *CLI_ASM_FLAGS, *page_flags, "--fatal-warnings", "-o", str(output),
                             str(source)], cwd=ROOT, check=True, capture_output=True, timeout=10)
         subprocess.run(
             ["ld", "-z", "noexecstack", "-z", "relro", "-z", "now",

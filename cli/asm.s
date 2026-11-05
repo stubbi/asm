@@ -3,6 +3,7 @@
  * See LICENSE and LICENSING.md for the terms and scope.
  */
 .intel_syntax noprefix
+.include "cli/resolution_manifest.s"
 .global _start
 .global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
@@ -302,6 +303,10 @@ common_option:
     call streq
     test eax, eax
     jnz .Lopt_locked
+    mov rax, rbx
+    call native_link_option
+    test eax, eax
+    jnz .Lopt_yes
     mov rdi, rbx
     lea rsi, [rip + opt_no_run]
     call streq
@@ -769,8 +774,6 @@ read_manifest:
     push r13
     push r14
     push r15
-    mov byte ptr [rip + manifest_host_found], 0
-    mov qword ptr [rip + project_target_mask], 0
     mov eax, SYS_open
     lea rdi, [rip + manifest_path]
     mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
@@ -827,346 +830,43 @@ read_manifest:
     mov eax, SYS_close
     mov rdi, r12
     syscall
-    lea r12, [rip + manifest_buffer]
-    xor r13d, r13d
-    xor r14d, r14d
-    xor r15d, r15d
-.Lmanifest_line:
-    mov al, [r12]
-    test al, al
-    jz .Lmanifest_finish
-    cmp al, ' '
-    je .Lmanifest_skip
-    cmp al, 9
-    je .Lmanifest_skip
-    cmp al, 13
-    je .Lmanifest_skip
-    cmp al, 10
-    je .Lmanifest_skip
-    cmp al, '#'
-    je .Lmanifest_comment
-    cmp al, '['
-    je .Lmanifest_section
-    mov rdi, r12
-    xor ecx, ecx
-.Lmanifest_key:
-    mov al, [r12]
-    cmp al, 'a'
-    jb .Lmanifest_key_end
-    cmp al, 'z'
-    ja .Lmanifest_key_end
-    inc ecx
-    inc r12
-    cmp ecx, 32
-    ja manifest_error
-    jmp .Lmanifest_key
-.Lmanifest_key_end:
-    test ecx, ecx
-    jz manifest_error
-    lea rsi, [rip + key_buffer]
-    xor edx, edx
-.Lmanifest_key_copy:
-    mov al, [rdi + rdx]
-    mov [rsi + rdx], al
-    inc edx
-    cmp edx, ecx
-    jb .Lmanifest_key_copy
-    mov byte ptr [rsi + rdx], 0
-    call skip_horizontal
-    cmp byte ptr [r12], '='
-    jne manifest_error
-    inc r12
-    call skip_horizontal
-    cmp byte ptr [r12], '"'
-    jne manifest_error
-    inc r12
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + key_name]
-    call streq
-    test eax, eax
-    jnz .Lfield_name
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + key_version]
-    call streq
-    test eax, eax
-    jnz .Lfield_version
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + key_source]
-    call streq
-    test eax, eax
-    jnz .Lfield_source
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + key_test]
-    call streq
-    test eax, eax
-    jnz .Lfield_test
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + key_target]
-    call streq
-    test eax, eax
-    jnz .Lfield_target
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + native_key_link]
-    call streq
-    test eax, eax
-    jnz .Lfield_link
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + native_key_libraries]
-    call streq
-    test eax, eax
-    jnz .Lfield_libraries
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + native_key_check]
-    call streq
-    test eax, eax
-    jnz .Lfield_check
-    jmp manifest_error
-.Lfield_name:
-    cmp r13d, 1
-    jne manifest_error
-    lea rdi, [rip + package_name]
-    mov esi, 64
-    mov edx, 1
-    jmp .Lfield_read
-.Lfield_version:
-    cmp r13d, 1
-    jne manifest_error
-    lea rdi, [rip + package_version]
-    mov esi, 63
-    mov edx, 2
-    jmp .Lfield_read
-.Lfield_source:
-    cmp r13d, 2
-    jb manifest_error
-    lea rdi, [rip + package_source]
-    mov esi, 255
-    mov edx, 4
-    jmp .Lfield_read
-.Lfield_test:
-    cmp r13d, 2
-    jb manifest_error
-    lea rdi, [rip + package_test]
-    mov esi, 255
-    mov edx, 128
-    jmp .Lfield_read
-.Lfield_target:
-    cmp r13d, 2
-    jne manifest_error
-    lea rdi, [rip + package_target]
-    mov esi, 63
-    mov edx, 8
-    jmp .Lfield_read
-.Lfield_link:
-    cmp r13d, 2
-    jb manifest_error
-    lea rdi, [rip + package_link]
-    mov esi, 255
-    mov edx, 16
-    jmp .Lfield_read
-.Lfield_libraries:
-    cmp r13d, 2
-    jb manifest_error
-    lea rdi, [rip + package_libraries]
-    mov esi, 255
-    mov edx, 32
-    jmp .Lfield_read
-.Lfield_check:
-    cmp r13d, 2
-    jb manifest_error
-    lea rdi, [rip + package_check]
-    mov esi, 255
-    mov edx, 64
-.Lfield_read:
-    test r14d, edx
-    jnz manifest_error
-    or r14d, edx
-    xor ecx, ecx
-.Lfield_chars:
-    mov al, [r12]
-    cmp al, '"'
-    je .Lfield_end
-    cmp al, 32
-    jb manifest_error
-    cmp al, 127
-    je manifest_error
-    cmp al, '\\'
-    je manifest_error
-    cmp ecx, esi
-    jae manifest_error
-    mov [rdi + rcx], al
-    inc r12
-    inc ecx
-    jmp .Lfield_chars
-.Lfield_end:
-    test ecx, ecx
-    jz manifest_error
-    mov byte ptr [rdi + rcx], 0
-    inc r12
-    jmp .Lline_end
-.Lmanifest_section:
-    call manifest_finish_build
-    inc r12
-    lea rdi, [rip + key_buffer]
-    xor ecx, ecx
-.Lsection_chars:
-    mov al, [r12]
-    cmp al, ']'
-    je .Lsection_end
-    cmp al, 32
-    jb manifest_error
-    cmp al, 126
-    ja manifest_error
-    cmp ecx, 31
-    jae manifest_error
-    mov [rdi + rcx], al
-    inc ecx
-    inc r12
-    jmp .Lsection_chars
-.Lsection_end:
-    mov byte ptr [rdi + rcx], 0
-    inc r12
-    lea rsi, [rip + section_package]
-    call streq
-    test eax, eax
-    jnz .Lsection_package
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_build]
-    call streq
-    test eax, eax
-    jz .Lsection_target
-    test r15d, 510
-    jnz manifest_error
-    or r15d, 2
-    mov r13d, 2
-    call manifest_start_build
-    jmp .Lline_end
-.Lsection_target:
-    test r15d, 2
-    jnz manifest_error
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_x86]
-    call streq
-    mov edx, 4
-    lea rsi, [rip + target_x86]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_arm]
-    call streq
-    mov edx, 8
-    lea rsi, [rip + target_arm]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_riscv]
-    call streq
-    mov edx, 16
-    lea rsi, [rip + target_riscv]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_macos]
-    call streq
-    mov edx, 32
-    lea rsi, [rip + target_macos]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_macos_x86]
-    call streq
-    mov edx, 64
-    lea rsi, [rip + target_macos_x86]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_windows_x86]
-    call streq
-    mov edx, 128
-    lea rsi, [rip + target_windows_x86]
-    test eax, eax
-    jnz .Lsection_target_known
-    lea rdi, [rip + key_buffer]
-    lea rsi, [rip + section_target_windows_arm]
-    call streq
-    mov edx, 256
-    lea rsi, [rip + target_windows_arm]
-    test eax, eax
-    jnz .Lsection_target_known
-    jmp manifest_error
-.Lsection_target_known:
-    test r15d, edx
-    jnz manifest_error
-    or r15d, edx
-    lea rdi, [rip + package_target]
+    lea rdi, [rip + rm_root_original]
+    lea rsi, [rip + manifest_buffer]
     call copy_string
-    mov r13d, 3
-    call manifest_start_build
-    jmp .Lline_end
-.Lsection_package:
-    test r15d, 1
-    jnz manifest_error
-    or r15d, 1
-    mov r13d, 1
-.Lline_end:
-    call skip_horizontal
-    mov al, [r12]
-    cmp al, '#'
-    je .Lmanifest_comment
-    cmp al, 10
-    je .Lmanifest_skip
-    test al, al
-    jz .Lmanifest_finish
-    jmp manifest_error
-.Lmanifest_skip:
-    inc r12
-    jmp .Lmanifest_line
-.Lmanifest_comment:
-    mov al, [r12]
-    test al, al
-    jz .Lmanifest_finish
-    inc r12
-    cmp al, 10
-    jne .Lmanifest_comment
-    jmp .Lmanifest_line
-.Lmanifest_finish:
-    call manifest_finish_build
-    mov eax, r14d
-    and eax, 3
-    cmp eax, 3
-    jne manifest_error
-    lea rdi, [rip + package_name]
-    call valid_name
-    test eax, eax
-    jz manifest_error
-    lea rdi, [rip + package_version]
-    call valid_version
-    test eax, eax
-    jz manifest_error
-    test r15d, 510
-    jz manifest_error
-    cmp byte ptr [rip + manifest_host_found], 0
+    lea rdi, [rip + manifest_buffer]
+    lea rsi, [rip + rm_root_metadata]
+    mov rdx, [rip + project_requested_target]
+    call rm_parse_manifest
+    cmp eax, 2
     je manifest_no_host
-    lea rdi, [rip + package_source]
-    lea rsi, [rip + selected_source]
+    test eax, eax
+    jnz manifest_error
+    lea rdi, [rip + package_name]
+    mov rsi, [rip + rm_root_metadata + 24]
     call copy_string
-    lea rdi, [rip + package_test]
-    lea rsi, [rip + selected_test]
+    lea rdi, [rip + package_version]
+    mov rsi, [rip + rm_root_metadata + 32]
+    call copy_string
+    lea rdi, [rip + package_source]
+    mov rsi, [rip + rm_root_metadata + 40]
     call copy_string
     lea rdi, [rip + package_target]
-    lea rsi, [rip + selected_target]
+    mov rsi, [rip + rm_root_metadata + 48]
     call copy_string
     lea rdi, [rip + package_link]
-    lea rsi, [rip + selected_link]
+    mov rsi, [rip + rm_root_metadata + RM_LINK]
     call copy_string
     lea rdi, [rip + package_libraries]
-    lea rsi, [rip + selected_libraries]
+    mov rsi, [rip + rm_root_metadata + RM_LIBRARIES]
     call copy_string
     lea rdi, [rip + package_check]
-    lea rsi, [rip + selected_check]
+    mov rsi, [rip + rm_root_metadata + RM_CHECK]
     call copy_string
-    mov eax, r15d
-    and eax, 508
-    mov [rip + project_target_mask], eax
+    lea rdi, [rip + package_test]
+    mov rsi, [rip + rm_root_metadata + RM_TEST]
+    call copy_string
+    mov rax, [rip + rm_root_metadata + RM_TARGET_MASK]
+    mov [rip + project_target_mask], rax
     call native_link_check_options
     pop r15
     pop r14
@@ -1185,102 +885,6 @@ manifest_no_host:
     lea rdi, [rip + err_manifest_host]
     mov esi, 2
     jmp die
-
-/* Input: R14D=previous fields, package_target already set for a target table.
- * Output: keeps package name/version bits and clears build fields. Owned work
- * buffers hold an empty source/native metadata and default tests/main.s.
- * Capacities: source/test/native=256. Scratch:RAX/RCX/RSI/RDI; updates R14D.
- * Stack:8 bytes for call alignment. No syscalls or external ABI calls. */
-manifest_start_build:
-    and r14d, 3
-    mov byte ptr [rip + package_source], 0
-    mov byte ptr [rip + package_link], 0
-    mov byte ptr [rip + package_libraries], 0
-    mov byte ptr [rip + package_check], 0
-    lea rdi, [rip + package_test]
-    lea rsi, [rip + test_source]
-    sub rsp, 8
-    call copy_string
-    add rsp, 8
-    ret
-
-/* Input: R13D=section, R14D=field bits, bounded package_* work buffers.
- * Output: validates every build table, including inactive targets. Copies a
- * selected table into owned selected_* buffers; legacy target support is checked
- * after the complete parse. Missing fields or invalid paths/metadata exit 1.
- * Capacities including NUL: target=64; source/test/native=256. Copies cannot
- * overlap or exceed those matching capacities. Scratch:caller-saved; preserves
- * R12-R15 and all SysV callee-saved registers. Stack:8 plus bounded callees.
- * No file changes, syscalls, or external ABI calls. */
-manifest_finish_build:
-    cmp r13d, 2
-    jb .Lmanifest_build_done
-    test r14d, 4
-    jz manifest_error
-    cmp r13d, 2
-    jne .Lmanifest_validate_paths
-    test r14d, 8
-    jz manifest_error
-.Lmanifest_validate_paths:
-    sub rsp, 8
-    lea rdi, [rip + package_source]
-    call valid_source
-    test eax, eax
-    jz manifest_error
-    lea rdi, [rip + package_test]
-    call valid_source
-    test eax, eax
-    jz manifest_error
-    lea rdi, [rip + package_link]
-    lea rsi, [rip + package_libraries]
-    lea rdx, [rip + package_check]
-    call native_link_validate
-    test eax, eax
-    jz manifest_error
-    lea rdi, [rip + package_target]
-    call project_target_matches
-    test eax, eax
-    jz .Lmanifest_build_unselected
-.Lmanifest_select_build:
-    lea rdi, [rip + selected_source]
-    lea rsi, [rip + package_source]
-    call copy_string
-    lea rdi, [rip + selected_test]
-    lea rsi, [rip + package_test]
-    call copy_string
-    lea rdi, [rip + selected_target]
-    lea rsi, [rip + package_target]
-    call copy_string
-    lea rdi, [rip + selected_link]
-    lea rsi, [rip + package_link]
-    call copy_string
-    lea rdi, [rip + selected_libraries]
-    lea rsi, [rip + package_libraries]
-    call copy_string
-    lea rdi, [rip + selected_check]
-    lea rsi, [rip + package_check]
-    call copy_string
-    mov byte ptr [rip + manifest_host_found], 1
-.Lmanifest_build_unselected:
-    add rsp, 8
-.Lmanifest_build_done:
-    ret
-
-/* Input/output: R12 is the bounded manifest parser cursor. Advances over SP,
- * TAB and CR. Scratch: RAX. This parser helper intentionally updates R12. */
-skip_horizontal:
-    mov al, [r12]
-    cmp al, ' '
-    je .Lhorizontal_next
-    cmp al, 9
-    je .Lhorizontal_next
-    cmp al, 13
-    jne .Lhorizontal_end
-.Lhorizontal_next:
-    inc r12
-    jmp skip_horizontal
-.Lhorizontal_end:
-    ret
 
 /* Input: RDI=project name. Output: EAX=1 for [a-z][a-z0-9-]{0,63}, else zero.
  * Scratch: RAX/RCX. Registry namespace validation is a separate stricter rule. */
@@ -1353,8 +957,9 @@ valid_version:
     jmp .Linvalid
 
 /* Input: RDI=source path already bounded to 255 chars. Output: EAX=1 for a
- * relative path with no empty/. /.., option, or response-file segments, else zero.
- * This validates syntax; assembly and included files remain trusted local input. */
+ * relative path with no empty/. /.., option-like, or @-leading segments.
+ * The @ restriction prevents compiler/assembler response-file expansion. This
+ * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     cmp byte ptr [rdi], '/'
     je .Linvalid
@@ -1799,6 +1404,7 @@ commands:
     .quad command_uninstall, cmd_uninstall
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
+    .quad command_resolve, cmd_resolve
     .quad command_yank, cmd_unimplemented, 0, 0
 command_help: .asciz "help"
 command_version: .asciz "version"
@@ -1828,6 +1434,7 @@ command_uninstall: .asciz "uninstall"
 command_update: .asciz "update"
 command_lock: .asciz "lock"
 command_sync: .asciz "sync"
+command_resolve: .asciz "resolve"
 command_login: .asciz "login"
 command_yank: .asciz "yank"
 opt_json: .asciz "--json"
@@ -1945,6 +1552,7 @@ help_text:
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
+    .ascii "  resolve          Resolve manifest dependencies, ranges, and features\n"
     .ascii "  lock             Check every locked archive and source file\n"
     .ascii "  sync             Fetch and extract exact locked source artifacts\n"
     .ascii "  publish          Prepare a release record for review; do not upload\n"
@@ -1966,9 +1574,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -1987,7 +1595,6 @@ number_buffer: .skip 32
 stage_dir: .skip 64
 stage_object: .skip 96
 stage_binary: .skip 96
-key_buffer: .skip 64
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
@@ -2000,6 +1607,7 @@ selected_link: .skip 256
 selected_libraries: .skip 256
 selected_check: .skip 256
 manifest_buffer: .skip 8192
+rm_root_original: .skip 8192
 manifest_host_found: .skip 1
 json_mode: .skip 1
 allow_locked: .skip 1
@@ -2025,6 +1633,7 @@ made_test: .skip 1
 .include "cli/elf.s"
 .include "cli/archive.s"
 .include "cli/dependencies.s"
+.include "cli/resolver.s"
 .include "cli/programs.s"
 .include "cli/publish.s"
 .include "cli/self_update.s"
@@ -2034,3 +1643,9 @@ made_test: .skip 1
 .ifdef ASM_TRUSTED_DISTRIBUTION
 .include "cli/self_update_trust.s"
 .endif
+
+.section .bss
+.balign 8
+.global rm_root_metadata
+rm_root_metadata: .skip RM_SIZE
+.section .note.GNU-stack,"",@progbits

@@ -286,8 +286,8 @@ main:
     mv t3, t0
     slli t3, t3, 48
     srli t3, t3, 48
-    la t4, listen_address + 2
-    sh t3, 0(t4)
+    la t4, listen_address
+    sh t3, 2(t4)
     mv t4, s1
     li t2, 16
     add t4, t4, t2

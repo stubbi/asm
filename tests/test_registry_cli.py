@@ -106,7 +106,12 @@ class RegistryCliTests(unittest.TestCase):
             "--artifact", self.artifact, "--json",
         ).stdout)
         self.assertEqual(result["version"], "3.0.0")
-        self.cli("fetch", "stubbi/hello", "--target", "riscv64-linux", "--artifact", self.artifact, code=1)
+        missing_target = next(target for target in ("riscv64-linux", "x86_64-linux", "aarch64-linux")
+                              if target not in {TARGET, OTHER_TARGET})
+        absent = self.work / "absent-target-output"
+        self.cli("fetch", "stubbi/hello", "--target", missing_target, "--artifact", self.artifact,
+                 "--output", absent, code=1)
+        self.assertFalse(absent.exists())
 
     def test_fetch_refuses_existing_file_and_symlink(self):
         self.write_index(self.row())
@@ -168,7 +173,14 @@ class RegistryCliTests(unittest.TestCase):
             mutations = [(0, "I", 0x464c457f), (4, "I", 0x1000007 if IS_ARM64 else 0x100000c), (12, "I", 1),
                          (16, "I", 129), (20, "I", 0xffffffff), (28, "I", 1), (36, "I", 4)]
         else:
-            program_offset = struct.unpack_from("<Q", original, 32)[0]
+            header_offset = struct.unpack_from("<Q", original, 32)[0]
+            header_size, header_count = struct.unpack_from("<HH", original, 54)
+            # GNU RISC-V can place PT_RISCV_ATTRIBUTES before PT_LOAD.
+            # Mutate the actual load segment when checking W+X and file bounds.
+            program_offset = next(header_offset + number * header_size
+                                  for number in range(header_count)
+                                  if struct.unpack_from("<I", original,
+                                                        header_offset + number * header_size)[0] == 1)
             mutations = [
                 (4, "B", 1), (5, "B", 2), (18, "H", 62 if ELF_MACHINE == 183 else 183), (56, "H", 65535),
                 (32, "Q", len(original) + 1), (54, "H", 55), (24, "Q", 1),
@@ -180,15 +192,18 @@ class RegistryCliTests(unittest.TestCase):
             struct.pack_into("<" + format_, data, offset, value)
             bad.append(bytes(data))
         bad.append(b"#!/bin/sh\necho must-not-run\n")
-        for data in bad:
-            with self.subTest(prefix=data[:24]):
+        for case, data in enumerate(bad):
+            with self.subTest(case=case, prefix=data[:24]):
                 self.artifact.write_bytes(data)
                 self.digest = hashlib.sha256(data).hexdigest()
                 self.write_index(self.row(kind="executable"))
-                self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
+                result = self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
+                if TARGET == "riscv64-linux":
+                    self.assertIn("supported RISC-V64 ELF executable", result.stderr)
                 self.assertFalse((self.work / "rejected").exists())
         self.write_index(self.row(kind="executable", target=OTHER_TARGET))
-        self.cli("install", "stubbi/hello", "--target", OTHER_TARGET, "--output", "rejected", code=2)
+        result = self.cli("install", "stubbi/hello", "--target", OTHER_TARGET, "--output", "rejected", code=2)
+        self.assertIn(f"installation requires {TARGET}", result.stderr)
 
     def test_fifo_inputs_fail_without_blocking(self):
         self.write_index(self.row())

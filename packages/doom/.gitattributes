@@ -1,0 +1,3 @@
+# Keep upstream notices, credits, and source bytes unchanged.
+third_party/** -text
+assets/*.zlib binary

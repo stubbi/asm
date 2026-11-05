@@ -21,13 +21,14 @@ import tempfile
 import time
 import unittest
 
-from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, ASM_FLAGS, CLI_SOURCE, CLI_DIRECTORY
+from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, IS_RISCV64, ASM_FLAGS, CLI_ASM_FLAGS, CLI_SOURCE, CLI_DIRECTORY
 from host import SYS_RENAMEAT, SYS_SIGPROCMASK, SYS_GETRLIMIT, SYS_SETRLIMIT, program
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT = json.loads((ROOT / "cli/commands.json").read_text())["version"]
 NEXT = f"{int(CURRENT.split('.')[0]) + 1}.10.0"
+HELD_FIXTURE_READY_SECONDS = 30
 OLDER = "0.0.0"
 COMMIT = "a" * 40
 INDEX = "https://asm.build/registry/v1/index-macos.tsv" if IS_MACOS else "https://asm.build/registry/v1/index.tsv"
@@ -283,7 +284,7 @@ class SelfUpdateTests(unittest.TestCase):
     @classmethod
     def compile_version(cls, version):
         (cls.source / CLI_SOURCE).write_text(cls.original_source.replace(CURRENT, version))
-        subprocess.run(["as", *ASM_FLAGS, "--fatal-warnings", "-o", "asm.o", CLI_SOURCE],
+        subprocess.run(["as", *CLI_ASM_FLAGS, "--fatal-warnings", "-o", "asm.o", CLI_SOURCE],
                        cwd=cls.source, check=True, capture_output=True)
         subprocess.run(["ld", "-z", "noexecstack", "-z", "relro", "-z", "now",
                         "--build-id=none", "-o", "asm", "asm.o"],
@@ -724,6 +725,9 @@ class SelfUpdateTests(unittest.TestCase):
                 "mov x8, #56\nsvc #0\nmov x0, #73\nmov x8, #93\nsvc #0\n") if IS_ARM64 else (
                 "mov eax,257\nmov edi,-100\nlea rsi,[rip+path]\nmov edx,65\n"
                 "mov r10d,384\nsyscall\nmov eax,60\nmov edi,73\nsyscall\n")
+        if IS_RISCV64:
+            body = ("li a0, -100\nla a1, path\nli a2, 65\nli a3, 384\n"
+                    "li a7, 56\necall\nli a0, 73\nli a7, 93\necall\n")
         source.write_text(program(body) + f'.section .rodata\npath: .asciz "{marker}"\n')
         subprocess.run(["as", *ASM_FLAGS, "-o", str(self.work / "candidate.o"), str(source)], check=True)
         subprocess.run(["ld", "-z", "noexecstack", "-o", str(self.work / "candidate"),
@@ -752,7 +756,10 @@ class SelfUpdateTests(unittest.TestCase):
         process = subprocess.Popen([str(self.installed), "self", "update"], cwd=self.work, env=self.env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(lambda: process.kill() if process.poll() is None else None)
-        deadline = time.monotonic() + 5
+        # Wait for the explicit marker after the fixture tools start. A full
+        # system guest can take several seconds to start their interpreters.
+        # This bounds only setup; the displacement assertions stay unchanged.
+        deadline = time.monotonic() + HELD_FIXTURE_READY_SECONDS
         marker = self.fixture / ("entered-verifier" if at_verifier else "entered")
         while not marker.exists():
             if process.poll() is not None:
