@@ -1,0 +1,2 @@
+# Official protocol SDK. Runtime dependencies are pinned in requirements-mcp.txt.
+mcp==2.3.0

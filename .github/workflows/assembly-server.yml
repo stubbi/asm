@@ -68,7 +68,7 @@ jobs:
           ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
           cd "$ASM_DEPS/postgresql-16.15"
           TMPDIR="$ASM_DEPS/tmp" ./configure --prefix="$ASM_DEPS/postgres" \
-            --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
+            --with-openssl --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
           make -j2
           make install
       - name: Run the assembly server tests
@@ -80,3 +80,10 @@ jobs:
           make -C experiments/assembly-server test \
             MHD_PREFIX="$ASM_DEPS/mhd" \
             PG_PREFIX="$ASM_DEPS/postgres"
+      - name: Build and test the Linux x86-64 assembly runtime foundation
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          make -C server test MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" SOURCE_REVISION="$GITHUB_SHA"

@@ -1,0 +1,13 @@
+**
+!LICENSE
+!requirements-mcp.txt
+!containers/
+!containers/**
+!tools/
+!tools/mcp_server.py
+!tools/agent_catalog.py
+!tools/agent_workflow.py
+!tools/registry.py
+!skills/
+!skills/asm-build/
+!skills/asm-build/**

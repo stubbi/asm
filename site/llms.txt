@@ -1,0 +1,21 @@
+# Asm
+
+> Asm is a package registry and command-line tool for assembly projects.
+
+Use explicit targets, inspect exact releases, and retain evidence for the resulting software.
+These entry points become available when this site build is published.
+
+## Agent entry points
+
+- [Start an assembly task](https://asm.build/agents.md): Requirements, targets, reuse, development, and evidence limits.
+- [Asm development skill](https://asm.build/skills/asm-build/SKILL.md): The maintained workflow and focused references.
+- [Package catalog](https://asm.build/registry/v1/index.json): Current package records, versions, artifacts, and evidence.
+
+## Integration and service status
+
+- [MCP setup](https://github.com/stubbi/asm/blob/main/docs/agents.md): Source-checkout setup, read-only tools, and hosted configuration.
+- [Hosted registry contract](https://github.com/stubbi/asm/blob/main/docs/hosted-registry.md): Service scope, activation gates, and remaining recovery checks.
+- [Source and current status](https://github.com/stubbi/asm): Supported hosts, prerequisites, and release limits.
+
+These static files do not run hosted builds or a remote MCP endpoint.
+The prepared hosted registry and MCP deployment remain under qualification.
