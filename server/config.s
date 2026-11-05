@@ -45,6 +45,10 @@ query_fields:
     .quad query_address, 9, 16
     .quad 0, 0, 0
 
+.section .bss
+.balign 8
+database_hostname: .zero 254
+
 .section .text
 .globl clear_pg_environment
 .type clear_pg_environment,@function
@@ -188,7 +192,7 @@ port_number:
     ret
 
 /* RDI=trusted ASCII connection URL, <=4096 bytes and NUL-terminated.
- * EAX=1 iff its five query keys occur exactly once. Preserves callee-saved.
+ * EAX=1 iff four TLS keys occur once, with an optional unique hostaddr. Preserves callee-saved.
  * Values are parsed later by libpq. Stack 8 + RBX/R12/R13/R14.
  * Checks raw keys before libpq can normalize duplicate query options. */
 check_query:
@@ -235,7 +239,9 @@ check_query:
     jmp .Lquery_field
 .Lquery_end:
     xor eax, eax
-    cmp r12, 31
+    mov rdx, r12
+    and edx, 15
+    cmp edx, 15
     sete al
     jmp .Lquery_done
 .Lquery_invalid:
@@ -253,7 +259,7 @@ check_query:
 /* Input: immutable db_config[4098] from the private-file reader.
  * EAX=1 or 0. No connection is opened. PQconninfoParse owns its result until
  * PQconninfoFree. An error message is freed without logging its contents.
- * Requires explicit user/database/host/IPv4 hostaddr/port, verify-full,
+ * Requires explicit user/database/host/port, optional IPv4 hostaddr, verify-full,
  * CA/client certificate/key paths. Passwords and other options are rejected.
  * Callee-saved preserved. Stack 24 bytes plus six saved registers.
  * PQconninfoOption ABI (56 bytes, value at 24) is checked at build time. */
@@ -347,6 +353,12 @@ validate_database_config:
     call hostname
     test eax, eax
     jz .Lpolicy_bad
+    mov rdi, r13
+    call strlen@PLT
+    lea rdx, [rax + 1]
+    lea rdi, [rip + database_hostname]
+    mov rsi, r13
+    call memcpy@PLT
     jmp .Lpolicy_next
 .Lpolicy_address:
     mov rsi, r13
@@ -370,9 +382,11 @@ validate_database_config:
     add rbx, 56
     jmp .Lpolicy_option
 .Lpolicy_finish:
-    xor ebx, ebx
-    cmp r12, 511
-    sete bl
+    mov rax, r12
+    and eax, 503
+    cmp eax, 503
+    jne .Lpolicy_bad
+    mov ebx, 1
     jmp .Lpolicy_free
 .Lpolicy_bad:
     xor ebx, ebx
@@ -380,6 +394,12 @@ validate_database_config:
     mov rdi, r15
     call PQconninfoFree@PLT
     mov eax, ebx
+    test ebx, ebx
+    jz .Lpolicy_return
+    test r12, 8
+    jnz .Lpolicy_return
+    lea rdi, [rip + database_hostname]
+    call resolve_database_address
     jmp .Lpolicy_return
 .Lpolicy_parse_error:
     mov rdi, [rsp]

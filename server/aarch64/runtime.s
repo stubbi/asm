@@ -28,8 +28,10 @@
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
-usage: .asciz "Usage: asm-hub serve\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
+usage: .asciz "Usage: asm-hub serve\n       asm-hub prepare-config SOURCE_DIR DEST_DIR\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
 serve_command: .asciz "serve"
+prepare_command: .asciz "prepare-config"
+prepare_error: .asciz "asm-hub: cannot prepare database.url. Check directory ownership, permissions, source bytes, and the existing destination.\n"
 env_bind: .asciz "ASM_BIND"
 env_database: .asciz "ASM_DATABASE_URL_FILE"
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
@@ -132,12 +134,30 @@ main:
     mov x29, sp
     stp x19, x20, [sp, #16]
 
+    cmp w0, #4
+    b.eq .Lprepare_dispatch
     cmp w0, #2
     b.ne .Lusage
     ldr x0, [x1, #8]
     ADDR x1, serve_command
     bl strcmp
     cbnz w0, .Lusage
+    b .Lserve_config
+.Lprepare_dispatch:
+    mov x19, x1
+    ldr x0, [x19, #8]
+    ADDR x1, prepare_command
+    bl strcmp
+    cbnz w0, .Lusage
+    ldr x0, [x19, #16]
+    ldr x1, [x19, #24]
+    bl prepare_config
+    cbz w0, .Lmain_done
+    ADDR x0, prepare_error
+    bl message
+    mov w0, #78
+    b .Lmain_done
+.Lserve_config:
     bl clear_pg_environment
     cbz w0, .Lconfig_fail
     ADDR x0, env_bind

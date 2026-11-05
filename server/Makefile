@@ -13,9 +13,9 @@ HOST_SYSTEM := $(shell uname -s)
 HOST_MACHINE := $(shell uname -m)
 NATIVE_TARGET := $(if $(filter x86_64,$(HOST_MACHINE)),x86_64-linux,$(if $(filter aarch64,$(HOST_MACHINE)),aarch64-linux,$(if $(filter riscv64,$(HOST_MACHINE)),riscv64-linux)))
 TARGET ?= $(NATIVE_TARGET)
-SOURCES_x86_64-linux := runtime.s config.s
-SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s
-SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s
+SOURCES_x86_64-linux := runtime.s config.s resolver.s prepare.s
+SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s aarch64/resolver.s aarch64/prepare.s
+SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s riscv64/resolver.s riscv64/prepare.s
 TARGET_FLAGS_riscv64-linux := -march=rv64gc -mabi=lp64d
 
 .PHONY: all test test-fixtures
@@ -63,3 +63,22 @@ test: all test-fixtures
 	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
 	ASM_SERVER_STARTUP_FIXTURE="$(BUILD)/startup-fixture.so" \
 	python3 -m unittest -v test_runtime test_startup
+
+.PHONY: test-kernel-timer
+test-kernel-timer:
+	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
+	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
+	  *) echo "Use native Linux to build and run the test-only kernel timer probe." >&2; exit 1 ;; esac
+	@test "$(TARGET)" = "$(NATIVE_TARGET)" || \
+	  { echo "TARGET must match the native Linux host: $(NATIVE_TARGET)." >&2; exit 1; }
+	@set -eu; umask 077; \
+	  test ! -L "$(BUILD)" || { echo "BUILD must not be a symlink." >&2; exit 1; }; \
+	  mkdir -p "$(BUILD)"; \
+	  test ! -L "$(BUILD)/test-kernel-timer" && test ! -d "$(BUILD)/test-kernel-timer" || \
+	    { echo "test-kernel-timer must not be a symlink or directory." >&2; exit 1; }; \
+	  stage=$$(mktemp -d "$(BUILD)/.asm-kernel-timer.XXXXXXXX"); \
+	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
+	  $(CC) $(TARGET_FLAGS_$(TARGET)) -std=c11 -Wall -Wextra -Werror -fPIE -pie \
+	    -Wl,-z,relro,-z,now,-z,noexecstack -o "$$stage/test-kernel-timer" test_kernel_timer.c -lrt; \
+	  mv -fT -- "$$stage/test-kernel-timer" "$(BUILD)/test-kernel-timer"; \
+	  timeout --signal=KILL 30s "$(BUILD)/test-kernel-timer"

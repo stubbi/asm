@@ -125,7 +125,7 @@ class StartupTests(unittest.TestCase):
         self.assertEqual((self.base / "stdout").read_bytes(), b"")
         self.assertNotIn(b"postgresql://", (self.base / "stderr").read_bytes())
 
-    def refusal(self, mode="synthetic", raw=None, *, full_stderr=False, minimum=None):
+    def refusal(self, mode="synthetic", raw=None, *, full_stderr=False, minimum=None, expected=78):
         env = self.environment(mode, raw)
         read_fd = write_fd = None
         if full_stderr:
@@ -152,7 +152,8 @@ class StartupTests(unittest.TestCase):
                 time.sleep(0.005)
             self.assertIsNotNone(process.poll(), "The startup exceeded its two-second configured deadline and test margin.")
             stdout, stderr = process.communicate(timeout=0.2)
-            self.assertEqual(process.returncode, 78, stderr)
+            allowed = expected if isinstance(expected, tuple) else (expected,)
+            self.assertIn(process.returncode, allowed, stderr)
             self.assertEqual(stdout, b"")
             if stderr is not None:
                 self.assertNotIn(b"postgresql://", stderr)
@@ -178,8 +179,10 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(log.count("lookup"), 1, log)
         self.assertIn("profile-valid", log)
         self.assertIn("watchdog-ready", log)
+        self.assertEqual(log.count("hard-timer-created"), 1, log)
+        self.assertEqual(log.count("hard-timer-armed"), 1, log)
         for forbidden in ("bad-profile", "bad-wait", "storage-invalid", "watchdog-invalid",
-                          "cancel-forbidden", "freed-live-result", "state-invalid", "pinned-address-invalid"):
+                          "cancel-forbidden", "freed-live-result", "state-invalid", "pinned-address-invalid", "hard-timer-invalid"):
             self.assertNotIn(forbidden, log)
 
     def test_dns_only_localhost_uses_real_dns_and_tls(self):
@@ -189,6 +192,7 @@ class StartupTests(unittest.TestCase):
         self.assert_profile(log)
         self.assertIn("freed-completed-result", log)
         self.assertIn("state-restored", log)
+        self.assertEqual(log.count("hard-timer-deleted"), 1, log)
         self.assertIn("pinned-address-valid", log)
 
     def test_explicit_ipv4_bypasses_dns(self):
@@ -209,6 +213,7 @@ class StartupTests(unittest.TestCase):
         self.assertGreaterEqual(log.count("database-connect"), 5)
         self.assertIn("state-restored", log)
         self.assertEqual(log.count("pinned-address-valid"), log.count("database-connect"), log)
+        self.assertEqual(log.count("hard-timer-deleted"), 1, log)
 
     def test_inherited_blocked_alarm_handler_mask_and_empty_timer_are_restored(self):
         with self.serving("blocked-alarm"):
@@ -246,23 +251,35 @@ class StartupTests(unittest.TestCase):
                 self.assertNotIn("database-connect", log)
                 if mode == "submit-fail":
                     self.assertNotIn("freed-completed-result", log)
+        for mode in ("deny-timer-create", "deny-timer-settime", "deny-timer-delete"):
+            with self.subTest(mode=mode):
+                (self.base / "fixture.log").unlink(missing_ok=True)
+                log = self.refusal(mode)
+                self.assertIn("seccomp-installed", log)
+                self.assertNotIn("database-connect", log)
+                self.assertNotIn("hard-timer-deleted", log)
+                if mode != "deny-timer-delete":
+                    self.assertNotIn("lookup", log)
 
     def test_watchdog_covers_blocked_submission_wait_and_full_diagnostic_pipe(self):
         for mode, full in (("submit-stall", False), ("submit-stall-worker", False),
-                           ("wait-stall", False), ("lookup-fail", True)):
+                           ("wait-stall", False), ("lookup-fail", True), ("submit-stall-masked", False)):
             with self.subTest(mode=mode, full_stderr=full):
                 (self.base / "fixture.log").unlink(missing_ok=True)
-                log = self.refusal(mode, full_stderr=full, minimum=1.5)
+                expected = -signal.SIGKILL if mode == "submit-stall-masked" else (78, -signal.SIGKILL)
+                log = self.refusal(mode, full_stderr=full, minimum=1.5, expected=expected)
                 self.assert_profile(log)
                 self.assertNotIn("database-connect", log)
-                if mode == "submit-stall-worker":
+                if mode in ("submit-stall-worker", "submit-stall-masked"):
                     self.assertIn("blocked-worker-ready", log)
                     self.assertNotIn("blocked-worker-setup-failed", log)
+                if mode == "submit-stall-masked":
+                    self.assertIn("masked-submit-ready", log)
                 if mode == "wait-stall":
                     self.assertIn("wait", log)
 
     def test_repeated_interruptions_share_one_absolute_budget(self):
-        log = self.refusal("interrupt", minimum=1.5)
+        log = self.refusal("interrupt", minimum=1.5, expected=(78, -signal.SIGKILL))
         self.assert_profile(log)
         self.assertGreater(log.count("wait"), 5)
         remaining = [int(item.removeprefix("wait-ms=")) for item in log if item.startswith("wait-ms=")]

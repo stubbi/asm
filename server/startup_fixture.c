@@ -33,6 +33,9 @@ static const char *owned_name;
 static struct addrinfo first, second;
 static struct sockaddr_in first_address, second_address;
 static int synthetic, completed, observed_connection;
+static timer_t hard_timer;
+static int hard_created, hard_armed, hard_deleted, start_clock_valid;
+static struct timespec start_clock;
 static pthread_mutex_t worker_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t worker_condition = PTHREAD_COND_INITIALIZER;
 static int worker_ready;
@@ -115,6 +118,9 @@ __attribute__((constructor)) static void initialize(void) {
         if (log_fd < 0) _exit(99);
     }
     if (!mode) return;
+    if (is_mode("deny-timer-create")) { install_denial(SYS_timer_create, EPERM); return; }
+    if (is_mode("deny-timer-settime")) { install_denial(SYS_timer_settime, EPERM); return; }
+    if (is_mode("deny-timer-delete")) { install_denial(SYS_timer_delete, EPERM); return; }
     if (is_mode("deny-openat2")) { install_denial(SYS_openat2, EPERM); return; }
     if (is_mode("unsupported-openat2")) { install_denial(SYS_openat2, ENOSYS); return; }
     if (is_mode("interrupt-read")) { install_denial(SYS_read, EINTR); return; }
@@ -159,7 +165,7 @@ __attribute__((constructor)) static void initialize(void) {
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGUSR1, &action, NULL)) _exit(99);
     event("initialized");
-    if (is_mode("submit-stall-worker")) start_blocked_worker();
+    if (is_mode("submit-stall-worker") || is_mode("submit-stall-masked")) start_blocked_worker();
 }
 
 static void watchdog_observation(void) {
@@ -211,6 +217,16 @@ int getaddrinfo_a(int how, struct gaicb *list[], int count, struct sigevent *not
     owned_request = list[0];
     owned_name = owned_request->ar_name;
     owned_hints = owned_request->ar_request;
+    if (is_mode("submit-stall-masked")) {
+        _Static_assert(sizeof(unsigned long) == 8 && NSIG == 65, "Review the kernel signal-set profile");
+        unsigned long all = ~0UL, actual = 0;
+        unsigned long expected = all & ~(1UL << (SIGKILL - 1)) & ~(1UL << (SIGSTOP - 1));
+        if (syscall(SYS_rt_sigprocmask, SIG_SETMASK, &all, NULL, sizeof(all)) ||
+            syscall(SYS_rt_sigprocmask, SIG_SETMASK, NULL, &actual, sizeof(actual)) || actual != expected)
+            _exit(99);
+        event("masked-submit-ready");
+        for (;;) pause();
+    }
     if (is_mode("submit-stall") || is_mode("submit-stall-worker")) for (;;) pause();
     if (is_mode("submit-fail")) { errno = EIO; return EAI_SYSTEM; }
     synthetic = !is_mode("real");
@@ -291,6 +307,67 @@ void freeaddrinfo(struct addrinfo *result) {
     next(result);
 }
 
+/* Record the last pre-timer monotonic sample to check the exact configured
+ * two-second absolute deadline, without treating scheduling time as proof. */
+int clock_gettime(clockid_t clock, struct timespec *value) {
+    int (*next)(clockid_t, struct timespec *) = dlsym(RTLD_NEXT, "clock_gettime");
+    if (!next) _exit(99);
+    int result = next(clock, value);
+    if (!result && clock == CLOCK_MONOTONIC && !hard_created) {
+        start_clock = *value;
+        start_clock_valid = 1;
+    }
+    return result;
+}
+
+/* Observe the libc timer interface. The kernel still owns every timer. */
+int timer_create(clockid_t clock, struct sigevent *notification, timer_t *identifier) {
+    int (*next)(clockid_t, struct sigevent *, timer_t *) = dlsym(RTLD_NEXT, "timer_create");
+    if (!next) _exit(99);
+    int result = next(clock, notification, identifier);
+    if (!result) {
+        if (hard_created || clock != CLOCK_MONOTONIC || !notification || !identifier ||
+            notification->sigev_notify != SIGEV_SIGNAL || notification->sigev_signo != SIGKILL)
+            event("hard-timer-invalid");
+        hard_timer = *identifier;
+        hard_created = 1;
+        event("hard-timer-created");
+    }
+    return result;
+}
+
+int timer_settime(timer_t identifier, int flags, const struct itimerspec *value, struct itimerspec *old) {
+    int (*next)(timer_t, int, const struct itimerspec *, struct itimerspec *) = dlsym(RTLD_NEXT, "timer_settime");
+    if (!next) _exit(99);
+    if (!hard_created || identifier != hard_timer || flags != TIMER_ABSTIME || !value ||
+        value->it_interval.tv_sec || value->it_interval.tv_nsec) event("hard-timer-invalid");
+    struct timespec now;
+    if (!value || clock_gettime(CLOCK_MONOTONIC, &now)) _exit(99);
+    long long remaining = (long long)(value->it_value.tv_sec - now.tv_sec) * 1000000000LL +
+                          value->it_value.tv_nsec - now.tv_nsec;
+    if (remaining <= 0 || remaining > 2000000000LL || !start_clock_valid ||
+        value->it_value.tv_sec != start_clock.tv_sec + 2 ||
+        value->it_value.tv_nsec != start_clock.tv_nsec) event("hard-timer-invalid");
+    int result = next(identifier, flags, value, old);
+    if (!result) {
+        hard_armed = 1;
+        event("hard-timer-armed");
+    }
+    return result;
+}
+
+int timer_delete(timer_t identifier) {
+    int (*next)(timer_t) = dlsym(RTLD_NEXT, "timer_delete");
+    if (!next) _exit(99);
+    if (!hard_created || !hard_armed || hard_deleted || identifier != hard_timer) event("hard-timer-invalid");
+    int result = next(identifier);
+    if (!result) {
+        hard_deleted = 1;
+        event("hard-timer-deleted");
+    }
+    return result;
+}
+
 /* libpq is not replaced: observe the state at the actual connection boundary. */
 void *PQconnectStartParams(const char *const *keys, const char *const *values, int expand) {
     if (owned_request && !observed_connection) {
@@ -300,7 +377,8 @@ void *PQconnectStartParams(const char *const *keys, const char *const *values, i
         sigset_t mask;
         int valid = !sigaction(SIGALRM, NULL, &action) &&
                     !getitimer(ITIMER_REAL, &timer) && !sigprocmask(SIG_SETMASK, NULL, &mask);
-        valid = valid && action.sa_handler == initial_action.sa_handler &&
+        valid = valid && hard_created && hard_armed && hard_deleted &&
+            action.sa_handler == initial_action.sa_handler &&
             action.sa_flags == initial_action.sa_flags &&
             timer.it_value.tv_sec == 0 && timer.it_value.tv_usec == 0 &&
             timer.it_interval.tv_sec == initial_timer.it_interval.tv_sec &&

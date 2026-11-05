@@ -51,6 +51,10 @@ query_fields:
     .quad query_address, 9, 16
     .quad 0, 0, 0
 
+.section .bss
+.balign 8
+/* Decoded TLS hostname survives PQconninfoFree and asynchronous DNS. */
+database_hostname: .zero 254
 
 .section .text
 .globl clear_pg_environment
@@ -187,8 +191,9 @@ port_number:
 .Lport_return:
     ret
 
-/* x0=ASCII connection URL <=4096 bytes. w0=1 iff five raw query keys
- * occur exactly once. Frame 48 saves x19-x22; no allocation or mutation.
+/* x0=ASCII connection URL <=4096 bytes. w0=1 iff four required raw query
+ * keys occur exactly once; hostaddr is optional and unique. Frame48 saves
+ * x19-x22; no allocation or mutation.
  * Checks keys before libpq normalization can hide duplicate options. */
 check_query:
     stp x29, x30, [sp, #-48]!
@@ -229,7 +234,8 @@ check_query:
     add x19, x0, #1
     b .Lquery_field
 .Lquery_end:
-    cmp x20, #31
+    and x9, x20, #15
+    cmp x9, #15
     cset w0, eq
     b .Lquery_done
 .Lquery_invalid:
@@ -242,10 +248,13 @@ check_query:
 
 .globl validate_database_config
 .type validate_database_config,%function
-/* Immutable global db_config[4098] is the sole input; w0=1/0. No network.
+/* Immutable global db_config[4098] is the sole input; w0=1/0. DNS-only URLs
+ * resolve once after complete policy validation; resolver failure exits78.
  * Frame 96 saves x19-x24; owns PQconninfoParse's array until PQconninfoFree.
  * Parse-error memory is released without logging. Requires explicit user,
- * database, hostname, IPv4, port, verify-full and CA/client certificate/key.
+ * database, hostname, port, verify-full and CA/client certificate/key.
+ * An explicit IPv4 bypasses DNS and all signal/timer changes. The validated
+ * decoded hostname is copied into owned process-lifetime storage before free.
  * No password or other option is accepted. PQconninfoOption is 56 bytes,
  * val at24; build-time assertions bind this layout to reviewed headers. */
 validate_database_config:
@@ -326,6 +335,13 @@ validate_database_config:
 .Lpolicy_hostname:
     bl hostname
     cbz w0, .Lpolicy_bad
+    ADDR x9, database_hostname
+    mov x10, #0
+.Lpolicy_copy_hostname:
+    ldrb w11, [x21, x10]
+    strb w11, [x9, x10]
+    add x10, x10, #1
+    cbnz w11, .Lpolicy_copy_hostname
     b .Lpolicy_next
 .Lpolicy_address:
     mov x1, x21
@@ -347,7 +363,9 @@ validate_database_config:
     add x19, x19, #56
     b .Lpolicy_option
 .Lpolicy_finish:
-    cmp x20, #511
+    mov x9, #503
+    and x10, x20, x9
+    cmp x10, x9
     cset w24, eq
     b .Lpolicy_free
 .Lpolicy_bad:
@@ -356,6 +374,10 @@ validate_database_config:
     mov x0, x23
     bl PQconninfoFree
     mov w0, w24
+    cbz w0, .Lpolicy_return
+    tbnz x20, #3, .Lpolicy_return
+    ADDR x0, database_hostname
+    bl resolve_database_address
     b .Lpolicy_return
 .Lpolicy_parse_error:
     ldr x0, [sp, #64]

@@ -12,7 +12,9 @@
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
-usage: .asciz "Usage: asm-hub serve\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
+usage: .asciz "Usage: asm-hub serve\n       asm-hub prepare-config SOURCE_DIR DEST_DIR\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
+prepare_command: .asciz "prepare-config"
+prepare_error: .asciz "asm-hub: configuration preparation failed. Check the fixed database.url key, directory ownership, and destination against server/README.md.\n"
 serve_command: .asciz "serve"
 env_bind: .asciz "ASM_BIND"
 env_database: .asciz "ASM_DATABASE_URL_FILE"
@@ -115,6 +117,8 @@ main:
     mov rbp, rsp
     push rbx
     sub rsp, 72
+    cmp edi, 4
+    je .Lprepare_dispatch
     cmp edi, 2
     jne .Lusage
     mov rdi, [rsi + 8]
@@ -202,6 +206,22 @@ main:
     call close@PLT
 .Ldaemon_stopped:
     xor eax, eax
+    jmp .Lmain_done
+.Lprepare_dispatch:
+    mov rbx, rsi
+    mov rdi, [rbx + 8]
+    lea rsi, [rip + prepare_command]
+    call strcmp@PLT
+    test eax, eax
+    jnz .Lusage
+    mov rdi, [rbx + 16]
+    mov rsi, [rbx + 24]
+    call prepare_config
+    test eax, eax
+    jz .Lmain_done
+    lea rdi, [rip + prepare_error]
+    call message
+    mov eax, 78
     jmp .Lmain_done
 .Lusage:
     lea rdi, [rip + usage]

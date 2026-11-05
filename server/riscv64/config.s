@@ -51,6 +51,11 @@ query_fields:
     .quad query_address, 9, 16
     .quad 0, 0, 0
 
+.section .bss
+.balign 8
+/* Copied before PQconninfoFree; a pending resolver retains this until exit. */
+.Ldatabase_hostname: .zero 254
+
 .section .text
 .globl clear_pg_environment
 .type clear_pg_environment,@function
@@ -688,8 +693,8 @@ check_query:
     srli t0, t0, 32
     mv t5, t3
     li t6, 0
-    mv t3, s2
-    li t1, 31
+    andi t3, s2, 15
+    li t1, 15
     mv t5, t3
     mv t6, t1
     xor t3, t5, t6
@@ -731,7 +736,7 @@ check_query:
 validate_database_config:
     /* No input. Reads immutable db_config[4098]. Returns a0=1/0.
      * PQconninfoParse owns its option array until PQconninfoFree. Frees errors
-     * without logging. Requires explicit user/database/host/IPv4 address/port,
+     * without logging. Requires explicit user/database/host/port and optional IPv4 hostaddr,
      * verify-full and CA/client certificate/key paths. Rejects passwords and
      * unknown options. PQconninfoOption size56/value24 is a build assertion.
      * Changes caller-saved a0-a7/t0-t6; preserves s0-s11/gp/tp. */
@@ -1029,7 +1034,18 @@ validate_database_config:
     and t5, t5, t6
     li t6, 0
     beq t5,t6, .Lpolicy_bad
-    j .Lpolicy_next
+    la t1, .Ldatabase_hostname
+    mv t2, s3
+    li t3, 254
+.Lpolicy_hostname_copy:
+    lbu t4, 0(t2)
+    sb t4, 0(t1)
+    beqz t4, .Lpolicy_next
+    addi t1, t1, 1
+    addi t2, t2, 1
+    addi t3, t3, -1
+    bnez t3, .Lpolicy_hostname_copy
+    j .Lpolicy_bad
 .Lpolicy_address:
     mv t3, s3
     mv a1, t3
@@ -1091,31 +1107,10 @@ validate_database_config:
     li t6, 0
     j .Lpolicy_option
 .Lpolicy_finish:
-    mv t3, s1
-    slli t3, t3, 32
-    srli t3, t3, 32
-    mv t1, s1
-    slli t1, t1, 32
-    srli t1, t1, 32
-    xor t3, t3, t1
-    slli t3, t3, 32
-    srli t3, t3, 32
-    mv s1, t3
-    slli s1, s1, 32
-    srli s1, s1, 32
-    mv t5, t3
-    li t6, 0
-    mv t3, s2
-    li t1, 511
-    mv t5, t3
-    mv t6, t1
-    xor t3, t5, t6
-    seqz t3, t3
-    li t2, -256
-    and s1, s1, t2
-    li t2, 255
-    and t1, t3, t2
-    or s1, s1, t1
+    andi t0, s2, 503           /* Every required field except optional hostaddr. */
+    li t1, 503
+    bne t0, t1, .Lpolicy_bad
+    li s1, 1
     j .Lpolicy_free
 .Lpolicy_bad:
     mv t3, s1
@@ -1133,16 +1128,17 @@ validate_database_config:
     mv t5, t3
     li t6, 0
 .Lpolicy_free:
-    mv t3, s5
-    mv a0, t3
+    mv a0, s5
     call PQconninfoFree
+    beqz s1, .Lpolicy_no_array
+    andi t0, s2, 8
+    bnez t0, .Lpolicy_explicit_address
+    la a0, .Ldatabase_hostname
+    call resolve_database_address
     mv t0, a0
-    mv t3, s1
-    slli t3, t3, 32
-    srli t3, t3, 32
-    mv t0, t3
-    slli t0, t0, 32
-    srli t0, t0, 32
+    j .Lpolicy_return
+.Lpolicy_explicit_address:
+    li t0, 1
     j .Lpolicy_return
 .Lpolicy_parse_error:
     mv t4, sp

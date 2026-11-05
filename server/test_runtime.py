@@ -358,7 +358,7 @@ class RuntimeTests(unittest.TestCase):
         raw = self.configs["reader"].read_text().strip()
         for value in (raw.replace("verify-full", "disable"), raw.replace("verify-full", "require"),
                       raw + "&sslmode=verify-full", raw + "&options=-c%20search_path=public",
-                      raw.replace("&hostaddr=127.0.0.1", ""), raw.replace("127.0.0.1", "localhost"),
+                      raw.replace("127.0.0.1", "localhost"),
                       raw.replace("@localhost", ":secret@localhost")):
             with self.subTest(value=value.replace(raw, "valid-prefix")):
                 self.reject(content=value, PGSSLMODE="disable", PGSERVICE="untrusted")

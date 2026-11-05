@@ -28,7 +28,9 @@
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
-usage: .asciz "Usage: asm-hub serve\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
+usage: .asciz "Usage: asm-hub serve\n       asm-hub prepare-config SOURCE_DIR DEST_DIR\nSet ASM_BIND and ASM_DATABASE_URL_FILE before serving.\n"
+.Lprepare_command: .asciz "prepare-config"
+.Lprepare_error: .asciz "asm-hub: configuration preparation failed. Check the fixed database.url key, ownership, permissions, and destination.\n"
 serve_command: .asciz "serve"
 env_bind: .asciz "ASM_BIND"
 env_database: .asciz "ASM_DATABASE_URL_FILE"
@@ -133,33 +135,16 @@ main:
     addi sp, sp, -96
     sd s1, 72(sp)
     sd ra, 80(sp)
-    mv t3, a0
-    slli t3, t3, 32
-    srli t3, t3, 32
-    li t1, 2
-    mv t5, t3
-    mv t6, t1
-    bne t5,t6, .Lusage
-    mv t4, a1
-    li t2, 8
-    add t4, t4, t2
-    ld t3, 0(t4)
-    mv a0, t3
-    la t3, serve_command
-    mv a1, t3
+    /* Preparation is dispatched before serving environment or library work. */
+    sd a1, 8(sp)
+    li t0, 4
+    beq a0, t0, .Lprepare_dispatch
+    li t0, 2
+    bne a0, t0, .Lusage
+    ld a0, 8(a1)
+    la a1, serve_command
     call strcmp
-    mv t0, a0
-    mv t3, t0
-    slli t3, t3, 32
-    srli t3, t3, 32
-    mv t1, t0
-    slli t1, t1, 32
-    srli t1, t1, 32
-    mv t5, t3
-    mv t6, t1
-    and t5, t5, t6
-    li t6, 0
-    bne t5,t6, .Lusage
+    bnez a0, .Lusage
     call clear_pg_environment
     mv t0, a0
     mv t3, t0
@@ -473,6 +458,23 @@ main:
     srli t0, t0, 32
     mv t5, t3
     li t6, 0
+    j .Lmain_done
+.Lprepare_dispatch:
+    ld a0, 8(a1)
+    la a1, .Lprepare_command
+    call strcmp
+    bnez a0, .Lusage
+    ld t0, 8(sp)
+    ld a0, 16(t0)
+    ld a1, 24(t0)
+    call prepare_config
+    beqz a0, .Lprepare_ok
+    la a0, .Lprepare_error
+    call message
+    li t0, 78
+    j .Lmain_done
+.Lprepare_ok:
+    li t0, 0
     j .Lmain_done
 .Lusage:
     la t3, usage

@@ -114,6 +114,14 @@ jobs:
             MHD_PREFIX="$ASM_DEPS/mhd" \
             PG_PREFIX="$ASM_DEPS/postgres" \
             2>&1 | tee "$RUNNER_TEMP/server-port-evidence/reference-tests.log"
+      - name: Probe the kernel monotonic deadline without application code
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          make -C server test-kernel-timer TARGET="$ASM_TEST_TARGET" \
+            BUILD="$RUNNER_TEMP/hosted-server-build" \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/kernel-timer-tests.log"
       - name: Prepare test-only startup ownership fixtures
         shell: bash
         run: |

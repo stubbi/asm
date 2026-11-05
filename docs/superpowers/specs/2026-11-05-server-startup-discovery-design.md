@@ -33,13 +33,21 @@ Recompute the remaining wait after interruptions; never restart the budget.
 Reserve SIGALRM during this phase and arm a separate two-second ITIMER_REAL watchdog before submission.
 The handler terminates the whole process with exit status 78 through `exit_group`.
 It performs no logging, cancellation, allocation, or cleanup.
-This also covers a blocked submission or diagnostic path.
+glibc masks SIGALRM during helper-thread creation, including internal lock waits.
+The target contract additionally requires a kernel-owned CLOCK_MONOTONIC timer with SIGEV_SIGNAL and SIGKILL.
+Arm that timer at the same absolute 2000 ms deadline before submission.
+It must terminate a fully masked stalled submission under a responsive kernel and fair scheduling.
+A DNS deadline can exit with status 78 or termination by SIGKILL; malformed configuration still returns 78.
+No listener opens on either deadline outcome.
+Timer creation, arming, or deletion failure refuses startup with status 78.
+This backstop remains unimplemented until native probe and masked-submission failure evidence are retained.
 Require all inherited interval-timer value and interval fields to be zero.
 Refuse any nonzero inherited timer state rather than silently replacing it.
 Unblock SIGALRM while resolving.
 
 After success, block SIGALRM, disarm the watchdog, and reject an expired or pending deadline signal.
-Restore the original empty timer, then restore the original handler and signal mask.
+Delete the owned hard timer and recheck the deadline before success.
+Restore the original empty interval timer, then restore the original handler and signal mask.
 No watchdog remains during requests.
 Failure never opens a listener.
 The ordinary database connection/query/result deadline remains 2000 ms.
@@ -48,6 +56,7 @@ These are configured deadlines, not hard real-time scheduler or kernel-I/O guara
 Export `resolve_database_address` using each target's C ABI.
 Its input is a persistent, validated hostname pointer; it appends to the owned `db_config` buffer.
 Success returns 1; an unresolved or invalid result terminates the whole process with status 78.
+Only deadline termination can instead use SIGKILL, as specified above.
 All callee-saved registers and 16-byte stack alignment are preserved.
 
 ## Fixed-key preparer contract
@@ -77,10 +86,12 @@ Preserve the original accepted bytes, including that LF.
 The serving command retains authority for URL and TLS validation.
 
 Create or validate a current-UID `0700` child named `private`.
+Its group does not confer access through this private mode.
 Publish a completed `0600`, single-link file atomically with `RENAME_NOREPLACE`.
-Use a private exclusive temporary file; handle short I/O and bounded interrupted-call retries.
+Use a private exclusive temporary file; handle short I/O and at most 16 interrupted-call retries per operation.
+Bound random temporary-name collisions to 16 attempts.
 Sync its bytes before publication.
-An existing destination is a successful no-op only when its ownership, exact mode, type, link count, length, and bytes match.
+An existing destination is a successful no-op only when its current UID, selected GID, exact mode, type, link count, length, and bytes match.
 Refuse a different or symlink destination without changing it.
 Normal failures remove only the owned temporary file; an empty private directory can remain.
 Same-UID actors are outside this advisory coordination boundary.
@@ -109,7 +120,8 @@ Native AMD64/ARM64 jobs must run the actual executable; RISC-V qualification rem
 The pinned QEMU user emulator lacks `openat2`; successful preparer qualification needs a compatible emulator or full guest kernel.
 Unsupported execution must refuse configuration; no filesystem fallback is permitted.
 
-Required cases cover DNS-only TLS success, unchanged TLS refusals, explicit-address bypass, pinned lookup count, malformed resolver results, failed submission, stalled submission/waits, full stderr, repeated interruption, inherited signal masks, and restored handler/timer state.
+Required cases cover DNS-only TLS success, unchanged TLS refusals, explicit-address bypass, pinned lookup count, malformed resolver results, failed submission, stalled submission/waits, full stderr, fully masked stalls, repeated interruption, inherited signal masks, and restored handler/timer state.
+Successful resolution must delete its owned hard timer and remain alive beyond the original deadline.
 Preparer cases cover AtomicWriter-shaped snapshots, retries, generation replacement, all file/permission/type bounds, escapes, syscall denial, and unrelated-destination preservation.
 Tests use owned temporary files and databases, fixed resource/time bounds, and no production credentials.
 Keep actual red runs, corrected runs, source commits, exact artifacts, and remaining deployment gates.
