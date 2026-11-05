@@ -29,10 +29,11 @@ import traceback
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     if __package__:
-        from . import windows_bootstrap, windows_layout
+        from . import windows_bootstrap, windows_layout, windows_fixture_security_probe
     else:
         import windows_bootstrap
         import windows_layout
+        import windows_fixture_security_probe
 finally:
     sys.path.pop(0)
 
@@ -368,6 +369,7 @@ def main(argv=None):
               'limits': {'child_seconds': 90, 'stream_bytes': MAX_OUTPUT,
                          'fixture_file_bytes': MAX_FILE}, 'inputs': {}}
     owned = None
+    checkpoint_written = False
     try:
         commit_id(args.source_commit)
         report['host']['native_machine'] = require_native(args.target)
@@ -416,6 +418,12 @@ def main(argv=None):
         windows_layout.read_pe_metadata(bounded_bytes(artifact), args.target, expected_version=version)
         script = owned / 'bootstrap.ps1'
         script.write_bytes(windows_bootstrap.render_source_installer(artifact, args.target))
+        report['fixture_security'] = windows_fixture_security_probe.snapshot(
+            home, artifact, extra_paths=(owned, source, obj, script,
+                                        Path(tempfile.gettempdir()), Path(os.environ['USERPROFILE'])))
+        # Preserve the exact guard inputs even if the installer child fails.
+        atomic_report(output, report)
+        checkpoint_written = True
         checked(ps + ['-File', script], report['commands'], cwd=owned, env=environment)
         report['verification'] = validate_install(home, artifact, args.target, version, marker)
         # A source change during the probe invalidates its exact-source claim.
@@ -428,7 +436,8 @@ def main(argv=None):
     finally:
         for relative in ('tools/windows_bootstrap_smoke.py', 'tools/windows_bootstrap.py',
                          'tools/windows-install.ps1.in', 'tools/windows_layout.py', 'tools/bootstrap.py',
-                         'tools/registry.py', 'cli/asm.s', 'tests/windows/fixture_security.py'):
+                         'tools/registry.py', 'cli/asm.s', 'tests/windows/fixture_security.py',
+                         'tools/windows_fixture_security_probe.py'):
             try:
                 data = bounded_bytes(ROOT / relative)
                 report['inputs'][relative] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
@@ -443,7 +452,7 @@ def main(argv=None):
         report['finished_utc'] = datetime.now(timezone.utc).isoformat()
         # Never overwrite a report from a previous attempt, even on refusal.
         output.mkdir(parents=True, exist_ok=True)
-        if (output / 'report.json').exists():
+        if (output / 'report.json').exists() and not checkpoint_written:
             print('Existing report preserved; choose a new output directory.', file=sys.stderr)
             report['outcome'] = 'fail'
         else:

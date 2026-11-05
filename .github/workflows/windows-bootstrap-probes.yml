@@ -13,6 +13,8 @@ on:
       - 'tools/windows_layout.py'
       - 'tools/windows_layout_rename_probe.py'
       - 'tests/windows/test_layout_rename_probe.py'
+      - 'tools/windows_fixture_security_probe.py'
+      - 'tests/windows/test_fixture_security_probe.py'
 
 permissions:
   contents: read
@@ -57,6 +59,8 @@ jobs:
           python -m unittest discover -s tests/windows -p test_bootstrap_smoke_driver.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests/windows -p test_layout_rename_probe.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests/windows -p test_fixture_security_probe.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Observe held file and directory publication
         if: always()
