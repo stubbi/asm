@@ -149,7 +149,7 @@ Both vocabularies stay fixed when the registry accepts additional targets.
 Unknown target labels would cause older parsers to reject an entire feed.
 
 The expanded `index-all.tsv` contains every active artifact accepted by the current registry validator.
-Its current vocabulary contains the same four targets as `index-macos.tsv`.
+Current published records contain only the four compatibility targets.
 The JSON index describes all published targets and retains yanked versions.
 All three native feeds use the same bounded v1 format below.
 The expanded feed does not change accepted release targets, declared CLI hosts, or existing CLI defaults.

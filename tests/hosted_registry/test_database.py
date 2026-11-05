@@ -161,15 +161,16 @@ class CatalogDatabaseTests(unittest.TestCase):
         self.import_first()
         before = self.admin.execute("SELECT route,body FROM asm_catalog.current_exports ORDER BY route")
         record = json.loads(registry.json_bytes(next(r for r in self.records if r["name"] == "stubbi/asm")))
-        record["version"] = "0.6.0"
+        versions = [registry.version_tuple(r["version"]) for r in self.records if r["name"] == record["name"]]
+        record["version"] = f"{max(versions)[0] + 1}.0.0"
         record["artifacts"] = [
             {"target": target, "kind": kind, "bytes": 1024, "sha256": "a" * 64,
-             "url": f"https://github.com/stubbi/asm/releases/download/v0.6.0/fixture-{target}-{kind}"
+             "url": f"https://github.com/stubbi/asm/releases/download/v{record['version']}/fixture-{target}-{kind}"
                     + (".tar.gz" if kind == "source" else ".exe" if target.endswith("-windows") else "")}
             for target in sorted(registry.TARGETS) for kind in ("source", "executable")]
         self.assertEqual(len(record["artifacts"]), 12)
         self.records.append(record)
-        path = self.repo / "registry/packages/stubbi/asm/0.6.0.json"
+        path = self.repo / "registry/packages/stubbi/asm" / (record["version"] + ".json")
         path.write_bytes(registry.json_bytes(record))
         self.git("add", ".")
         self.git("commit", "-qm", "Accept six-target catalog fixture")

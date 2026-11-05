@@ -1,0 +1,43 @@
+{
+  "artifacts": [
+    {
+      "bytes": 127480,
+      "kind": "executable",
+      "sha256": "ccb96d42f073f9c6e8eec8d1f67e30fa019d8c1d9787b35a787a6953efa4bb96",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-x86_64-linux"
+    },
+    {
+      "bytes": 823657,
+      "kind": "source",
+      "sha256": "89d1add51104584574df75fbf08a77264e7fb406cfaf1883475d1c48b084e637",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-source.tar.gz"
+    },
+    {
+      "bytes": 168880,
+      "kind": "executable",
+      "sha256": "dffc3451fcf6af21940744c18c26451c5f226106fe87a416410bbcfce49b02fd",
+      "target": "aarch64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-aarch64-linux"
+    },
+    {
+      "bytes": 282400,
+      "kind": "executable",
+      "sha256": "3ef597087b8f8f4668f49cda2b54f2503590b98a14f1acb5b8ab939ffd62247c",
+      "target": "aarch64-macos",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-aarch64-macos"
+    }
+  ],
+  "license": "AGPL-3.0-or-later",
+  "name": "stubbi/asm",
+  "schema": 1,
+  "source": {
+    "commit": "6d7c7df53b1ae17a44c13b038cf95cc798fffa94",
+    "path": ".",
+    "repository": "https://github.com/stubbi/asm"
+  },
+  "summary": "A native assembly CLI for assembly projects and package records.",
+  "version": "0.6.0",
+  "yanked": false
+}
