@@ -28,32 +28,34 @@
 
 ### Task 1: Observable test-only baseline
 
-- [ ] Add `server/test_startup.py` and a separate preload fixture; compose the existing TLS fixture without editing it.
-- [ ] Add `make test-fixtures` and expose `ASM_SERVER_STARTUP_FIXTURE`; keep test code out of application linkage.
-- [ ] Run native tests against current assembly and retain expected missing-feature failures.
+- [x] Add `server/test_startup.py` and a separate preload fixture; compose the existing TLS fixture without editing it.
+- [x] Add `make test-fixtures` and expose `ASM_SERVER_STARTUP_FIXTURE`; keep test code out of application linkage.
+- [x] Run native tests against current assembly and retain expected missing-feature failures.
 
 ### Task 2: x86-64 and shared integration
 
-- [ ] Add `resolver.s` and `prepare.s` with the specified C ABI and syscall contracts.
-- [ ] Modify main dispatch/usage and optional-hostaddr configuration only.
-- [ ] Extend target-header assertions and Makefile sources.
-- [ ] Run native AMD64 tests and fix observed defects.
+- [x] Add `resolver.s` and `prepare.s` with the specified C ABI and syscall contracts.
+- [x] Modify main dispatch/usage and optional-hostaddr configuration only.
+- [x] Extend target-header assertions and Makefile sources.
+- [x] Run native AMD64 tests and fix observed defects.
 
 ### Task 3: AArch64 implementation
 
-- [ ] Add native AAPCS64 resolver/preparer modules and matching dispatch/config integration.
-- [ ] Crossassemble, then run the same suite on native ARM64.
-- [ ] Review register, stack, structure, and signal-handler behavior independently.
+- [x] Add native AAPCS64 resolver/preparer modules and matching dispatch/config integration.
+- [x] Crossassemble, then run the same suite on native ARM64.
+- [x] Review register, stack, structure, and signal behavior independently.
 
 ### Task 4: RISC-V64 implementation
 
-- [ ] Add native RV64GC/LP64D resolver/preparer modules and matching dispatch/config integration.
-- [ ] Check real assembly output and run the unchanged behavior suite through the image owner's explicit emulation.
-- [ ] Preserve emulated versus physical evidence boundaries.
+- [x] Add native RV64GC/LP64D resolver/preparer modules and matching dispatch/config integration.
+- [x] Check real RV64GC/LP64D assembly output.
+- [ ] Run the unchanged behavior suite through the image owner's full-system RISC-V guest kernel.
+- [x] Preserve emulated versus physical evidence boundaries.
 
 ### Task 5: Reviewable handoff
 
-- [ ] Review all three implementations and complete native red/green failure gates.
-- [ ] Document command, prerequisites, rollout policy, errors, source/artifact binding, and remaining cluster gates.
-- [ ] Provide selected hosted-only commits and fixture integration contract to the image/routing owners.
-- [ ] Do not activate a deployment.
+- [x] Review all three implementations and complete native AMD64/ARM64 red/green failure gates.
+- [x] Document command, prerequisites, rollout policy, errors, source/artifact binding, and remaining cluster gates.
+- [x] Provide selected hosted-only commits and fixture integration contract to the image/routing owners.
+- [x] Do not activate a deployment.
+- [ ] Replace the image publication hold with same-source startup and full-system RISC-V qualification.

@@ -208,7 +208,12 @@ sudo python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' "$ownership_pare
 The startup suite runs 38 hosted runtime methods through the real executable.
 It covers projected snapshots, file preservation, timer denial, masked resolver stalls, and post-deadline survival after successful timer deletion.
 The separate `make -C server test-kernel-timer` target probes five kernel/API cases without application linkage.
-Native application qualification remains pending until its recorded run succeeds.
+Native AMD64 and ARM64 checks passed at source `69df018` in [run 42043568369](https://github.com/stubbi/asm/actions/runs/42043568369).
+Each target passed all 38 hosted methods, five kernel probes, and four build-preservation cases.
+The CLI build and extracted reference checks passed ten and nineteen cases respectively.
+The canonical SQL run passed with one macOS-only ACL test skipped.
+The [startup evidence record](../docs/server-startup-evidence.json) retains exact digests, prior failures, and target limits.
+RISC-V execution, images, and deployment remain unqualified.
 
 Replace `FULL_COMMIT_ID` with the exact 40-character source commit.
 The status source offer points to that commit.
@@ -259,6 +264,8 @@ These results do not qualify head `7d684055fc972fd511e450b77f6f0dda331cd06c` or 
 The [image guide](../docs/server-images.md#completed-prior-image-checks) records executable digests and the remaining gates.
 
 These earlier foundation image results do not qualify canonical HTTP or startup additions.
+The startup branch must hold image qualification before any legacy sixteen-case harness can publish its runtime.
+Replace that hold only with matching startup image and full-system RISC-V guest evidence.
 
 The legacy `guard.sql` retains its provenance notice and checksum for the separate reference.
 The runtime now includes `catalog/reader-guard.sql` and reads the complete canonical ledger.

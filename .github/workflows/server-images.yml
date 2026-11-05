@@ -29,6 +29,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Hold startup image qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -e server/resolver.s; then
+            mkdir -p server-image-evidence
+            printf '%s\n' \
+              'Startup image qualification is on hold.' \
+              'The canonical image suite does not qualify startup behavior on every target.' \
+              'Require startup and canonical image checks bound to the same source and runtime bytes before removing this hold.' \
+              | tee server-image-evidence/startup-qualification-hold.txt >&2
+            exit 1
+          fi
       - name: Check the qualification harness
         run: python3 tools/test_server_image.py --self-test
       - name: Install the pinned Ubuntu RISC-V user emulator

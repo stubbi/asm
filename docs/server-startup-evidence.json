@@ -1,0 +1,878 @@
+{
+  "schema": 1,
+  "scope": "server-startup-native-evidence",
+  "recorded_date": "2026-11-05",
+  "qualified_source_revision": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+  "dependencies": {
+    "glibc": "2.39 in native jobs; implementation requires 2.34 or later",
+    "libmicrohttpd": "1.0.3",
+    "postgresql_libpq": "16.15"
+  },
+  "result_scope": [
+    "Native AMD64 and ARM64 instruction execution through asm-hub serve and prepare-config.",
+    "38 hosted methods include16 canonical runtime,13 preparer,and9 resolver methods;5 kernel probe cases run separately.",
+    "The native Asm CLI builds the extracted reference package, with10 native-link,19 reference,and4 failure-preservation cases per native target.",
+    "Artifact and test-log SHA-256 values were checked against downloaded CI files.",
+    "Earlier failures are retained and do not become passing evidence."
+  ],
+  "checkpoints": [
+    {
+      "run_id": "42036255326",
+      "url": "https://github.com/stubbi/asm/actions/runs/42036255326",
+      "stage": "missing-feature-red",
+      "targets": [
+        {
+          "source_revision": "18c445235913f688bb4c9e3aae6660ea54fbf255",
+          "target": "aarch64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "18c445235913f688bb4c9e3aae6660ea54fbf255",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 168912,
+              "sha256": "90f44c324c8ab41dd92d3b131c44531fc338f6db54c66bbfab8205d25b11b1c4",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 74864,
+              "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 78944,
+              "sha256": "b9951ca45a6bc20b72702ced6a95264af67b9b4fe3f7415419b61ec78567b01c",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69424,
+              "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.297,
+              "log_sha256": "d2808e8847bec7eaa8ac645e9cc6d91cc3d89ae6ffb2c1b668227c8ef88ea4b4"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.209,
+              "log_sha256": "b6340f56c00496a95f34028b46246a47b62b7d54f1c706decd2a82079442b417"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 13.103,
+              "log_sha256": "e16a90e5e377681500e2339e6763ea5c6194b06ef5819b1f8977704c60adc22e"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "aarch64"
+          },
+          "receipt_sha256": "cb3dac845fa6044cc6f354f63f6d7a459ef4d6028ca2e0d875d10a2c0879c33b"
+        },
+        {
+          "source_revision": "18c445235913f688bb4c9e3aae6660ea54fbf255",
+          "target": "x86_64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "18c445235913f688bb4c9e3aae6660ea54fbf255",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 127480,
+              "sha256": "53b9ee64f556c673869592915db6eef5fc612b4770b0f9e756050a4e680faef7",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 28312,
+              "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 40408,
+              "sha256": "bc6eb45d9d1ccd9bb9b9fb126c1f9efddf46f30bc8628474f514a6656065b146",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69423,
+              "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.276,
+              "log_sha256": "0f7a2cf5ee2afc76a322d4ddf97605bd3a3ddb2c7ec1039b66ad3c4d20d42e2e"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.203,
+              "log_sha256": "e811e5acf9f6a5e494989d0921a8c37e4c233415e6a4881fb1559342dba2720e"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 12.316,
+              "log_sha256": "4b5b7e21efa830488c85e1e93397d360984f960d48a57b8dcc0351f6ed9cdbfa"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "x86_64"
+          },
+          "receipt_sha256": "5c1d9df713445433334c0c778b3de7ca909a19637b88ecb3c56b82d88ce3d41e"
+        }
+      ]
+    },
+    {
+      "run_id": "42040379631",
+      "url": "https://github.com/stubbi/asm/actions/runs/42040379631",
+      "stage": "kernel-probe-pass-masked-alarm-red",
+      "targets": [
+        {
+          "source_revision": "1674c6e6074abe8978dad2fa89d8dad4d87f980a",
+          "target": "aarch64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "1674c6e6074abe8978dad2fa89d8dad4d87f980a",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 168912,
+              "sha256": "90f44c324c8ab41dd92d3b131c44531fc338f6db54c66bbfab8205d25b11b1c4",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 74864,
+              "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 82824,
+              "sha256": "1602153611270f7c1b84a9473cd6ce7fe8b920551ea8104b163d5edd7fba59f2",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69424,
+              "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.328,
+              "log_sha256": "632f55899dc28099a9fd454896c91a5d9c349116a34433454d019ad7751f56d3"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.444,
+              "log_sha256": "351440706a27839267eb30fe4f4cdedc689e9d6fc743835cfed12af3606be0b8"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 27.244,
+              "log_sha256": "18a81ff19cf657fd01d2087d1b63df43ff378809f94995a132edaa8ad539ac4a"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "aarch64"
+          },
+          "receipt_sha256": "82fc9c21dff4b2d4674e7a07af3d27ad313eb960aeaaed4ca9e13bcaef1248ee",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "f34efb91cb835390268b7d0f7df0de1fbbf8c38df22610f0b6d4f9e86531a1c1",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2003.119 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2204.937 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.179 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.120 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2002.719 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          }
+        },
+        {
+          "source_revision": "1674c6e6074abe8978dad2fa89d8dad4d87f980a",
+          "target": "x86_64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "1674c6e6074abe8978dad2fa89d8dad4d87f980a",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 127480,
+              "sha256": "53b9ee64f556c673869592915db6eef5fc612b4770b0f9e756050a4e680faef7",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 28312,
+              "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 49544,
+              "sha256": "f89c746beccb7ab5eb97802dad5996982192fa8770e6b0ede026c561bfc7e239",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69423,
+              "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.243,
+              "log_sha256": "27a0709f8fd3e8d68d1a91735a923f20f981b18b521317d9c520efc237b0db82"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.029,
+              "log_sha256": "36a48de28c9f84ce3372db4a5e71deea85d9ca64ebc3fca54b86c2f9c0d9ac71"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 24.432,
+              "log_sha256": "2c9b72849872ec7b525e914159d92154e67f4d91a77410e5f9031b80ddfcbef6"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "x86_64"
+          },
+          "receipt_sha256": "374d59266d02a09b9faffbff7e1aac40308a0a856c3d9ad78f605737578ce5b3",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "1e3e763d571afb72393c80b2c22fdae04c654dc7f271fdeba0af8f7f271e1ac5",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2002.447 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2205.125 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.189 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.145 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2003.766 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "42042090494",
+      "url": "https://github.com/stubbi/asm/actions/runs/42042090494",
+      "stage": "kernel-product-observer-failure",
+      "targets": [
+        {
+          "source_revision": "0463e90d7701d42deb9501760f1a154036621061",
+          "target": "aarch64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "0463e90d7701d42deb9501760f1a154036621061",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 168912,
+              "sha256": "90f44c324c8ab41dd92d3b131c44531fc338f6db54c66bbfab8205d25b11b1c4",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 74864,
+              "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 82968,
+              "sha256": "0849ebea41ff7370a13f92467b5ade61fb4f3b9678050641c47031e9fa74b1f6",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69424,
+              "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.335,
+              "log_sha256": "76fa9932f8ed1a9694bdbd2fc44193860cccf2bb98344aec71e820292ae39b9e"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.299,
+              "log_sha256": "7e91915a626d8ef95c8d0ab8ba1c32f71b3ad0907cba497198413d056fabeb05"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 25.953,
+              "log_sha256": "4133d1e029aff064f1c83a705cbcf92a6ae0dd079287e344c32172756059cfa3"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "aarch64"
+          },
+          "receipt_sha256": "87fc5e213657f7b53ba7d54d43046367df5a9d68fc92b07907d4594a4e4087cb",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "d086721c95d7f46d01c9391226b3504c949220ca9507430b6088dd4b34793fd8",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2002.964 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2205.002 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.216 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.203 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2002.711 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          }
+        },
+        {
+          "source_revision": "0463e90d7701d42deb9501760f1a154036621061",
+          "target": "x86_64-linux",
+          "execution": "native",
+          "status": "fail",
+          "job_status": "failure",
+          "source_match": {
+            "status": "pass",
+            "head": "0463e90d7701d42deb9501760f1a154036621061",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 127480,
+              "sha256": "53b9ee64f556c673869592915db6eef5fc612b4770b0f9e756050a4e680faef7",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 28312,
+              "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 49504,
+              "sha256": "c8fe60ae99081ca101e7719470243adc083f1df70ff2a988799a353591dae89e",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69423,
+              "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.466,
+              "log_sha256": "ca96652e0da02b11ba4ca5492363ab7458a5589a75e6414b09e26227755e5af0"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.612,
+              "log_sha256": "0a093d7c2aaa2ef84021ba7aaa5464f262f5def20f3c14c4e3ec6cab1d4aed42"
+            },
+            "hosted": {
+              "status": "fail",
+              "tests": 38,
+              "seconds": 25.086,
+              "log_sha256": "30378ae9e7bf37a690b3352e46572ed20b9a4cdb1a605f37f35445b36a5f6ce5"
+            },
+            "failure_preservation": {
+              "status": "fail",
+              "reason": "[Errno 2] No such file or directory: '/home/runner/work/_temp/server-port-evidence/build-failure-tests.log'"
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "x86_64"
+          },
+          "receipt_sha256": "de437ee4295ff885322c23626a8120b177191e515dec321b115a7b97f74fe64e",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "9868458410330c2be4cad90fdbab25b45ea355e76bce1565ee0438f1d9ef55be",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2002.589 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2201.246 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.174 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.166 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2002.178 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "42043568369",
+      "url": "https://github.com/stubbi/asm/actions/runs/42043568369",
+      "stage": "native-green",
+      "targets": [
+        {
+          "source_revision": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+          "target": "aarch64-linux",
+          "execution": "native",
+          "status": "pass",
+          "job_status": "success",
+          "source_match": {
+            "status": "pass",
+            "head": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 168912,
+              "sha256": "90f44c324c8ab41dd92d3b131c44531fc338f6db54c66bbfab8205d25b11b1c4",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 74864,
+              "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 82968,
+              "sha256": "63338ede34f6ea2a930bb2ae08bf3ae7978247715a78dd882162aa23ece791d8",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69424,
+              "sha256": "2d3f5411b672d345b9f1d05060dd84ef10a11cd27629dfc06d054669acc5ced6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.358,
+              "log_sha256": "0d9ea6671dd12896450ec9055c948573e46aad60e50350e98d2dd3aa33166607"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.354,
+              "log_sha256": "4e961f71225620388a05cd11de37be42b3b1e7e3968a4d9965ac2e27593b7036"
+            },
+            "hosted": {
+              "status": "pass",
+              "tests": 38,
+              "seconds": 25.845,
+              "log_sha256": "56d261702cb5d01dccfccf29e90b470e4132f6e2fa7b69c2874003933cd914d3"
+            },
+            "failure_preservation": {
+              "status": "pass",
+              "tests": 4,
+              "reference": {
+                "exit_code": 2,
+                "preserved_sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9"
+              },
+              "hosted": {
+                "exit_code": 2,
+                "preserved_sha256": "63338ede34f6ea2a930bb2ae08bf3ae7978247715a78dd882162aa23ece791d8"
+              },
+              "symbolic_destinations": {
+                "file": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                },
+                "directory": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                }
+              }
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "aarch64"
+          },
+          "receipt_sha256": "b0a3fcac092d89ee8e667038bb0a2c87fa49e1127e9bd1c1cbbcd1225d10a663",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "2e2024995c6602c6e40296ae48361c0164497defa2c872fa2624de9164501791",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2003.135 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2205.121 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.244 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.205 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2002.935 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          },
+          "canonical_sql": {
+            "status": "pass",
+            "tests": 22,
+            "skipped": 1,
+            "skip_reason": "macOS extended ACL interface; not applicable on Linux"
+          }
+        },
+        {
+          "source_revision": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+          "target": "x86_64-linux",
+          "execution": "native",
+          "status": "pass",
+          "job_status": "success",
+          "source_match": {
+            "status": "pass",
+            "head": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+            "dirty": false
+          },
+          "host_match": {
+            "status": "pass"
+          },
+          "artifacts": {
+            "cli": {
+              "bytes": 127480,
+              "sha256": "53b9ee64f556c673869592915db6eef5fc612b4770b0f9e756050a4e680faef7",
+              "elf_flags": 0,
+              "status": "pass"
+            },
+            "reference": {
+              "bytes": 28312,
+              "sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "hosted": {
+              "bytes": 49504,
+              "sha256": "28547a615031dc2049377e9b4cf79c09979e4f573eeb9cb1509cff50703777d8",
+              "elf_flags": 0,
+              "hardening": [
+                "PIE",
+                "RELRO",
+                "immediate binding",
+                "non-executable stack"
+              ],
+              "status": "pass"
+            },
+            "source_archive": {
+              "status": "pass",
+              "bytes": 69423,
+              "sha256": "2e75f8a581e9f3c0dad17f4f4a47af88090a54a85cb976102ceacf3a71341fd6"
+            }
+          },
+          "tests": {
+            "native-link": {
+              "status": "pass",
+              "tests": 10,
+              "seconds": 0.378,
+              "log_sha256": "eeda22786506ef9ea7e6d964fc74c66ca5d7fa9331246423392c194f3cd95f9d"
+            },
+            "reference": {
+              "status": "pass",
+              "tests": 19,
+              "seconds": 6.22,
+              "log_sha256": "a665efdb3447a160d55b91318fd88d48a559b4815532d2bce9aa0dc47c79f8c0"
+            },
+            "hosted": {
+              "status": "pass",
+              "tests": 38,
+              "seconds": 26.088,
+              "log_sha256": "10fe0a284954db363a69f53b256e2ca325f7b1e08ac6d781773f6bb62e88c827"
+            },
+            "failure_preservation": {
+              "status": "pass",
+              "tests": 4,
+              "reference": {
+                "exit_code": 2,
+                "preserved_sha256": "eea871cebd71c6176179d1ac7b267e09fe3a9d40badf05df540a3310e0c32dc3"
+              },
+              "hosted": {
+                "exit_code": 2,
+                "preserved_sha256": "28547a615031dc2049377e9b4cf79c09979e4f573eeb9cb1509cff50703777d8"
+              },
+              "symbolic_destinations": {
+                "file": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                },
+                "directory": {
+                  "exit_code": 2,
+                  "outside_unchanged": true
+                }
+              }
+            }
+          },
+          "host": {
+            "system": "Linux",
+            "release": "7.0.0-1017-azure",
+            "machine": "x86_64"
+          },
+          "receipt_sha256": "1a7b61232e86bfe1357b45738db97c7325183147b7ecc482763dcd184a28fdb9",
+          "kernel_probe": {
+            "schema": 1,
+            "scope": "kernel-timer-probe",
+            "status": "pass",
+            "tests": 5,
+            "uid": 1001,
+            "gid": 1001,
+            "log_sha256": "d15033985227c2d3a2f45e1590a0b5d42769ebf0b2cefcb090714cdd7216e400",
+            "observations": [
+              "PASS all-kernel-maskable-signals-blocked elapsed_ms=2005.016 status=9 observation_bytes=24 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS deleted-timer-survives-past-deadline elapsed_ms=2200.940 status=0 observation_bytes=48 api_errno=0 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-create elapsed_ms=5.246 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-settime elapsed_ms=5.186 status=0 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff",
+              "PASS seccomp-denied-timer-delete-still-kills elapsed_ms=2001.967 status=9 observation_bytes=24 api_errno=1 mask=0xfffffffffffbfeff"
+            ]
+          },
+          "canonical_sql": {
+            "status": "pass",
+            "tests": 22,
+            "skipped": 1,
+            "skip_reason": "macOS extended ACL interface; not applicable on Linux"
+          }
+        }
+      ]
+    }
+  ],
+  "negative_findings": [
+    {
+      "run_id": "42036255326",
+      "detail": "Missing DNS-only startup and prepare-config. Each native38-method run failed;90 subtest failures and6 cascading subcase setup errors were retained."
+    },
+    {
+      "run_id": "42040379631",
+      "detail": "Kernel probe5 passed both native targets. The ALRM draft still failed22 assertions including a fully masked resolver stall past the2.8-second test margin. This motivated one kernel-owned monotonic SIGKILL timer."
+    },
+    {
+      "run_id": "42042090494",
+      "detail": "Kernel product ran38 methods on both native targets with3 observer failures. The C fixture searched for a duplicate hostaddr key inside its first key. A compiled C probe returned valid0 before/1 after; wrong-address, duplicate-key,and changed-host cases stayed rejected. Only the test expression changed before native green."
+    }
+  ],
+  "history_review": {
+    "head": "69df018e019a1a65bcb9c7b915c915a08aafb37e",
+    "reachable_commits": 90,
+    "first_commit": "93487e3aeca0e5815e21083bd3e4e282a28375f6",
+    "shallow": false,
+    "unavailable_historical_input": "Unpublished SQL-reference commit286a75c9; current canonical migration/SQL retained and tested separately."
+  },
+  "limits": [
+    "This is not a release or deployment qualification.",
+    "RISC-V source crossassembles with LLVM23.1.4; full-system guest and physical RISC-V behavior remain unrun.",
+    "QEMU8.2.2 linux-user cannot satisfy mandatory openat2; newer linux-user still lacks the seccomp fixture contract. No filesystem/test fallback is permitted.",
+    "Canonical RISC-V concurrency diagnosis and coherent source integration remain owned separately. No database deadline or security check was widened.",
+    "Startup image qualification and full guest38-case evidence remain pending. Legacy16-case image qualification must not publish startup-bearing images.",
+    "Private-cluster ownership, kernel/syscall policy, projected certificate rotation, admission, capacity, memory, shutdown-drain,and recovery remain separate gates.",
+    "The DNS configured deadline assumes a responsive kernel and fair scheduling; it is not a hard real-time hardware guarantee."
+  ]
+}
