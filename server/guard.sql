@@ -8,7 +8,8 @@ SELECT EXISTS (
              AND (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls
                OR left(r.rolname, 3) = 'pg_'
                OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace s
-                 WHERE s.nspname NOT LIKE 'pg_temp_%' AND s.nspname NOT LIKE 'pg_toast_temp_%'
+                 WHERE pg_catalog.left(s.nspname, 8) <> 'pg_temp_'
+                   AND pg_catalog.left(s.nspname, 14) <> 'pg_toast_temp_'
                    AND pg_catalog.has_schema_privilege(r.oid, s.oid, 'CREATE'))
                OR pg_catalog.has_database_privilege(r.oid, current_database(), 'CREATE')
                OR EXISTS (

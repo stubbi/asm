@@ -7,14 +7,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/theupdateframework/go-tuf/v2/metadata"
@@ -91,12 +88,17 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		return err
 	}
 	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+	unlock, err := acquireStateLock(lock)
+	if err != nil {
 		return errors.New("another trust refresh is in progress")
 	}
-	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer unlock()
+	// Validate every existing fixed role before the library reads or replaces it.
 	// No pathname supplied by remote metadata is used for persistent state.
-	// Delegated roles are deliberately outside this small self-update profile.
+	// MaxDelegations=0 prevents delegated-role persistence. The pinned updater
+	// writes only root.json, timestamp.json, snapshot.json, and targets.json.
+	// Windows holds the private directory and its protected ancestors throughout
+	// this operation, so unrelated accounts cannot redirect path-based I/O.
 	for _, name := range roles {
 		data, err := readRegular(filepath.Join(state, name), maxMetadata)
 		if os.IsNotExist(err) {
@@ -128,7 +130,7 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		return err
 	}
 	// go-tuf v2.4.2 persists rotated roots but does not implement TUF 5.3.11.
-	// Keep the last processed root durable before Refresh can replace root.json.
+	// Flush the last processed root before Refresh can replace root.json.
 	// A restart can then finish cleanup even if root persistence was interrupted.
 	current, err := trustedmetadata.New(anchor)
 	if err != nil {
@@ -165,7 +167,7 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 	cfg.LocalTargetsDir = state
 	cfg.RemoteTargetsURL = targetsURL
 	var u *updater.Updater
-	cfg.Fetcher = &rotationFetcher{Fetcher: transport, beforeTimestamp: func() error {
+	cfg.Fetcher = &checkpointFetcher{checkpoint: directory.Sync, Fetcher: &rotationFetcher{Fetcher: transport, beforeTimestamp: func() error {
 		verified := u.GetTrustedMetadataSet()
 		if verified.Root.Signed.IsExpired(verified.RefTime) {
 			return &metadata.ErrExpiredMetadata{Msg: "final root.json is expired"}
@@ -178,7 +180,7 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 			return errOnlineKeyRotation
 		}
 		return nil
-	}}
+	}}}
 	cfg.RootMaxLength, cfg.TimestampMaxLength = maxMetadata, 16384
 	cfg.SnapshotMaxLength, cfg.TargetsMaxLength = maxMetadata, maxMetadata
 	cfg.MaxRootRotations, cfg.MaxDelegations = 32, 0
@@ -197,7 +199,7 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		}
 		// The first updater already completed and verified the root phase. Start
 		// the online roles again without its in-memory pre-rotation timestamp.
-		cfg.LocalTrustedRoot, cfg.Fetcher, cfg.MaxRootRotations = anchor, transport, 0
+		cfg.LocalTrustedRoot, cfg.Fetcher, cfg.MaxRootRotations = anchor, &checkpointFetcher{Fetcher: transport, checkpoint: directory.Sync}, 0
 		u, err = updater.New(cfg)
 		if err != nil {
 			return err
@@ -214,7 +216,7 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		if err != nil {
 			return errors.Join(refreshErr, err)
 		}
-		err = f.Sync()
+		err = syncOpenedFile(f)
 		err = errors.Join(err, f.Close())
 		if err != nil {
 			return errors.Join(refreshErr, err)
@@ -288,9 +290,10 @@ func onlineKeysChanged(previous, current metadata.RootType) (bool, error) {
 }
 
 // Commit the verified root before removing timestamp/snapshot history. Keep the
-// old checkpoint until both removals are durable, so every interruption repeats
-// the required cleanup. Targets and the clock observation remain intact.
-func completeRootRecovery(state string, directory *os.File, rootBytes []byte) error {
+// old checkpoint until both removals and the platform flush complete. Process
+// interruption repeats cleanup. Hardware power-loss recovery is not promised.
+// Targets and the clock observation remain intact.
+func completeRootRecovery(state string, directory *stateDirectory, rootBytes []byte) error {
 	if err := atomicWrite(filepath.Join(state, "root.json"), rootBytes); err != nil {
 		return err
 	}
@@ -334,78 +337,6 @@ func (r *trustedRepository) download(name string) ([]byte, error) {
 	return data, nil
 }
 
-// openState walks each component without following symlinks. Root-owned sticky
-// /tmp (or /private/tmp) is allowed only above a protected user-owned child.
-// Same-account mutation and an administrator remain outside this boundary.
-func openState(path string) (*os.File, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
-		return nil, errors.New("trust state requires a clean absolute path")
-	}
-	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, err
-	}
-	directory := os.NewFile(uintptr(fd), "/")
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	prefix := ""
-	needOwned := false
-	for i, part := range parts {
-		prefix += "/" + part
-		next, err := unix.Openat(int(directory.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		if err == unix.ENOENT && i == len(parts)-1 {
-			if err = unix.Mkdirat(int(directory.Fd()), part, 0700); err == nil {
-				next, err = unix.Openat(int(directory.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-			}
-		}
-		directory.Close()
-		if err != nil {
-			return nil, err
-		}
-		directory = os.NewFile(uintptr(next), prefix)
-		var st unix.Stat_t
-		if err = unix.Fstat(next, &st); err != nil {
-			directory.Close()
-			return nil, err
-		}
-		owned := st.Uid == uint32(os.Getuid())
-		sticky := st.Uid == 0 && st.Mode&unix.S_ISVTX != 0 && (prefix == "/tmp" || prefix == "/private/tmp")
-		if (!owned && st.Uid != 0) || (needOwned && (!owned || st.Mode&0022 != 0)) ||
-			(st.Mode&0022 != 0 && !sticky) || (i == len(parts)-1 && (!owned || st.Mode&0077 != 0)) {
-			directory.Close()
-			return nil, errors.New("trust state has unsafe ownership or directory permissions")
-		}
-		if err := platformPermissions(directory); err != nil {
-			directory.Close()
-			return nil, err
-		}
-		needOwned = sticky
-	}
-	return directory, nil
-}
-
-func openFile(path string, flags int, mode uint32) (*os.File, error) {
-	fd, err := unix.Open(path, flags|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, mode)
-	if err != nil {
-		return nil, err
-	}
-	f := os.NewFile(uintptr(fd), path)
-	info, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	st := info.Sys().(*syscall.Stat_t)
-	if !info.Mode().IsRegular() || st.Nlink != 1 || st.Uid != uint32(os.Getuid()) || info.Mode().Perm()&0022 != 0 {
-		f.Close()
-		return nil, errors.New("expected an owned regular file with one link and protected permissions")
-	}
-	if err := platformPermissions(f); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return f, nil
-}
-
 func readRegular(path string, limit int64) ([]byte, error) {
 	f, err := openFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -443,21 +374,4 @@ func writeExclusive(path string, data []byte) error {
 		os.Remove(path)
 	}
 	return err
-}
-
-func atomicWrite(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".trust-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	_, err = f.Write(data)
-	if err == nil {
-		err = f.Sync()
-	}
-	err = errors.Join(err, f.Close())
-	if err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
 }

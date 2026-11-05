@@ -2,7 +2,8 @@
 
 Version 0.4.0 provides the independently qualified Apple Silicon macOS CLI.
 The checked catalog supplies its native executable and release-workflow provenance.
-Intel macOS is unsupported and has no native qualification job.
+Published releases do not include Intel macOS.
+The [experimental Intel source port](intel-macos-port.md) has a separate qualification workflow.
 
 ## Target contract
 
