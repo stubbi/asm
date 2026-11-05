@@ -2,6 +2,8 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import json
+import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -31,7 +33,21 @@ class ConsoleReceiptTests(unittest.TestCase):
     def check_no_readiness_controller_branch(self):
         # Execute the actual controller branch with simulated APIs and clock.
         # This establishes receipt honesty only, never Windows kernel behavior.
-        compiler = shutil.which('cc') or shutil.which('clang') or shutil.which('clang.exe')
+        target_arguments = []
+        if os.name == 'nt':
+            compiler = shutil.which('clang.exe')
+            fixed_clang = Path('C:/Program Files/LLVM/bin/clang.exe')
+            if fixed_clang.is_file():
+                compiler = str(fixed_clang)
+            targets = {'x86_64-windows': 'x86_64-pc-windows-msvc',
+                       'aarch64-windows': 'aarch64-pc-windows-msvc'}
+            host_target = {'amd64': 'x86_64-windows', 'x86_64': 'x86_64-windows',
+                           'arm64': 'aarch64-windows', 'aarch64': 'aarch64-windows'}
+            target = os.environ.get('ASM_WINDOWS_TARGET') or host_target.get(platform.machine().lower())
+            self.assertIn(target, targets, 'The Windows harness requires an explicit supported native target.')
+            target_arguments = ['--target=' + targets[target]]
+        else:
+            compiler = shutil.which('cc') or shutil.which('clang')
         self.assertIsNotNone(compiler, 'The controller branch regression requires a C compiler.')
         fixture = Path(__file__).with_name('managed_console.c').resolve()
         harness = r"""
@@ -93,7 +109,7 @@ int main(void) {
             source = Path(temporary) / 'controller-host.c'
             binary = Path(temporary) / 'controller-host.exe'
             source.write_text(harness, encoding='utf-8')
-            built = subprocess.run([compiler, '-std=c11', '-O0', '-I', str(fixture.parent),
+            built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', '-I', str(fixture.parent),
                                     str(source), '-o', str(binary)], capture_output=True, timeout=30)
             self.assertEqual(built.returncode, 0, built.stderr.decode(errors='replace'))
             observed = subprocess.run([str(binary)], capture_output=True, timeout=5)
@@ -106,8 +122,8 @@ int main(void) {
         self.assertTrue(row['launcher_reaped'])
         self.assertFalse(row['payload_reaped'])
         self.assertEqual(row['elapsed_ms'], 10000)
-        self.assertEqual(observed.stderr,
-                         b'launcher_terminated=1 job_closed=1 signal_calls=0\n')
+        self.assertEqual(observed.stderr.splitlines(),
+                         [b'launcher_terminated=1 job_closed=1 signal_calls=0'])
 
     def test_malformed_or_ambiguous_receipts_are_rejected(self):
         cases = [b'', b'{}', b'x' * 4097, self.receipt() + b'{}',
