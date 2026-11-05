@@ -2,7 +2,7 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Native execution, package lifecycle tests, and updater tests have not run for this snapshot.
+The first native Windows test run executed the CLI and failed its project and ownership preflights.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -100,8 +100,8 @@ python3 tools/windows_x64.py --output /tmp/asm-windows-x64.s
 clang -target x86_64-pc-windows-msvc -c /tmp/asm-windows-x64.s -o /tmp/asm-windows-x64.obj
 ```
 
-The generated assembly SHA-256 was `0c06ccfd997789f6ac7dd25d9590ba13dee29be2ee19bb770f435f3666f63543`.
-The object SHA-256 was `85830fd4f21b9a355628651ab34248183d756259c57c978064c1181f974653be`.
+The generated assembly SHA-256 was `5947ba2ef8a5d8684cedca2b7380d8d160926d79631151fb5242992c3923e03e`.
+The object SHA-256 was `cbe13c30af51efe0afafd2e88365ed6f81027ecac8e3ad265d55b91b6ee938bc`.
 These digests identify source and object bytes, not a qualified executable.
 Native CI must record the final PE digest with its actual SDK, toolchain, host, and results.
 
@@ -118,7 +118,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, eight focused checks passed on macOS through Rosetta.
+On 2026-11-05, eleven focused checks passed on macOS through Rosetta.
 They execute extracted x86-64 assembly with deterministic API shims.
 They do not establish Windows API behavior or native filesystem effects.
 
@@ -140,6 +140,9 @@ The corrected deadline case performs two one-byte reads and four clock probes be
 The file-kind cases preserve directories during unlink and preserve regular files during rmdir.
 The PE cases also retain acceptance of valid adjacent mapped sections.
 A separate capture case preserves a final byte written between an empty probe and observed child exit.
+A working-directory case accepts the exact extended DOS prefix returned by Windows APIs.
+It continues to reject UNC and device namespaces.
+Verifier environment cases keep all six native Windows paths inside the private verifier directory.
 
 The first PE test harness placed its wrapper in a data section and failed with SIGBUS.
 That harness defect was corrected before the PE rejection checks were evaluated.
@@ -147,14 +150,18 @@ The original malformed PE fixtures then reproduced acceptance before the parser 
 
 ## Work still required
 
-Native execution has not tested startup, first-project output, child exit status, Unicode paths, or compiler diagnostics.
-Package lifecycle, locked dependencies, archive attacks, DACL attacks, junctions, recovery, and concurrent operations need native tests.
+The [first native CLI run](https://github.com/stubbi/asm/actions/runs/41942208419/job/126965560411) exercised startup and read-only registry commands.
+Its runtime suite failed because project creation and protected ownership preflights stopped later workflows.
+The working-directory adapter rejected an API-produced extended DOS path; the retained host shim reproduces that defect.
+The corrected adapter needs a native rerun.
+Ownership failures need the actual token, owner, and DACL evidence before any policy change.
+Package lifecycle, compiler output, recovery, and updater qualification remain incomplete.
 The ordinary repository CLI and verifier release gates also remain required.
 
-Verifier environment values still need Windows path normalization.
-The shared updater currently constructs HOME and configuration values with the internal `/C:/...` representation.
-GitHub CLI must receive native Windows paths and a private Windows user/cache configuration.
-Until this is corrected and tested, manual self-update is incomplete.
+Verifier environment values now convert the internal `/C:/...` representation to native `C:/...` paths.
+HOME, GH_CONFIG_DIR, XDG_CACHE_HOME, XDG_CONFIG_HOME, USERPROFILE, and LOCALAPPDATA point to the private verifier directory.
+These values have host-shim coverage; real Windows verifier and cache behavior still need qualification.
+Manual self-update remains incomplete.
 
 The running-image preflight currently opens the path reported by `GetModuleFileNameW`.
 Its held file identity detects subsequent entry replacement.
@@ -164,6 +171,24 @@ This difference from Linux `/proc/self/exe` requires a reviewed Windows contract
 NTFS POSIX rename replacement of the running CLI still needs a native test.
 If Windows refuses that operation, a separately reviewed completion helper is required.
 Do not report a completed update until the replacement and its recovery behavior are observed.
+
+## Native adapter diagnostics
+
+The separate diagnostic fixture preserves every production permission decision.
+It builds an instrumented executable and operates only inside an owned temporary directory.
+It records bounded NTSTATUS/component traces, normalized stat fields, token SIDs, and path ownership/DACL information.
+The equal-version updater check makes no network request.
+The release generator never includes the diagnostic assembly.
+
+Run this fixture in the Windows developer environment:
+
+```text
+python cli/windows/x86_64/native_diagnostics.py --evidence build/windows-evidence/x64-adapter-diagnostics.json
+```
+
+The evidence destination must not exist.
+The fixture's successful collection does not mean that the recorded CLI commands passed.
+Its JSON records each command's actual exit status and bounded output.
 
 ## Primary API references
 
@@ -176,3 +201,6 @@ They document API behavior; they do not qualify this implementation.
 - [Explicit process handle inheritance](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 - [Volume information by handle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumeinformationbyhandlew)
 - [Rename information and POSIX semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information)
+
+- [Final path names and extended DOS prefixes](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew)
+- [Default ownership of new objects](https://learn.microsoft.com/en-us/windows/win32/secauthz/owner-of-a-new-object)

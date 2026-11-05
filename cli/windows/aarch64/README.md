@@ -75,6 +75,9 @@ The current user, SYSTEM, Administrators, and TrustedInstaller are recognized se
 Protected administrative ancestors can have add-only child grants.
 Managed user directories still require current-user ownership and reject untrusted mutable grants.
 New private objects receive a protected DACL for the current user, SYSTEM, and Administrators.
+Exclusive identity probes grant the current user metadata and cleanup rights without data read, write, or execute rights.
+Probe stat adapters populate only the observed volume and file identity.
+They cannot establish ownership, permissions, or executable validity.
 The internal mode fields summarize that Windows policy; they do not claim POSIX permission equivalence.
 
 Child creation supplies the executable path separately from the quoted argument string.
@@ -103,12 +106,15 @@ The source-derived ABI shim runs on Apple Silicon macOS:
 python3 cli/windows/aarch64/abi_test.py --output build/windows/aarch64/abi-shim-evidence.json
 ```
 
-The shim executes the production read, write, component-open, directory-enumeration, directory-lock, process-creation, deletion, and capture-loop bodies.
+The shim executes production file, probe, directory, process-creation, deletion, and capture-loop bodies.
 Its test APIs destroy volatile registers and check stack arguments at the callee's stack pointer.
 The current bodies pass those checks.
-Eight separate regression variants fail when executed.
-Those variants restore reviewed stack, volatile-register, capture-deadline, or final-output-drain defects.
+Nine separate regression variants fail when executed.
+Those variants restore reviewed stack, volatile-register, capture-deadline, final-output-drain, or extended-directory-path defects.
 The checked deletion paths also reject a directory passed to unlink and a regular file passed to rmdir.
+Probe tests inspect actual shim-supplied identities, reject permission claims, use metadata-only access, and close failed lookups.
+The directory test supplies an extended drive path from the native path API.
+The current-directory setter receives its ordinary drive form.
 The capture check includes an empty peek, child completion, one pending byte, and EOF.
 The shim uses test APIs and a controlled clock.
 It does not establish Windows API, filesystem, or runtime behavior.

@@ -426,6 +426,34 @@ win_nt_open:
  * reserved DOS names, and traversal components are rejected before mutation.
  * Existing held roots remain anchored when another process renames a parent.
  */
+/* RDI=bounded API-produced UTF16 path. RAX=pointer to its drive-absolute
+ * spelling, skipping only an exact extended DOS prefix, or -EINVAL.
+ * Rejects UNC, device, volume-GUID and drive-relative namespaces. The caller
+ * retains ownership of the original buffer; no character is changed.
+ * Scratch: RAX/RCX/RDX/flags. No stack or external calls. */
+win_drive_path:
+    mov rcx, rdi
+    mov rax, 0x005c003f005c005c /* UTF16 \\?\ */
+    cmp [rcx], rax
+    jne .Lwdp_drive
+    add rcx, 8
+.Lwdp_drive:
+    movzx eax, word ptr [rcx]
+    or eax, 32
+    cmp eax, 'a'
+    jb .Lwdp_invalid
+    cmp eax, 'z'
+    ja .Lwdp_invalid
+    cmp word ptr [rcx + 2], ':'
+    jne .Lwdp_invalid
+    cmp word ptr [rcx + 4], '\\'
+    jne .Lwdp_invalid
+    mov rax, rcx
+    ret
+.Lwdp_invalid:
+    mov rax, -22
+    ret
+
 win_open:
     WFRAME
     mov r12, rdi
@@ -496,12 +524,11 @@ win_open:
 .Lwo_absolute_wide:
     lea r15, [rip + win_path_wide]
 .Lwo_root:
-    movzx eax, word ptr [r15]
-    or eax, 32
-    cmp eax, 'a'
-    jb .Lwo_invalid
-    cmp eax, 'z'
-    ja .Lwo_invalid
+    mov rdi, r15
+    call win_drive_path
+    test rax, rax
+    js .Lwo_invalid
+    mov r15, rax
     /* Native drive root \??\C:\. */
     lea rsi, [rip + win_nt_root]
     mov ax, [r15]
@@ -976,6 +1003,10 @@ win_syscall:
     cmp eax, 4096
     jae .Lws_invalid
     lea rdi, [rip + win_path_wide]
+    call win_drive_path
+    test rax, rax
+    js .Lws_invalid
+    mov rdi, rax
     mov rsi, [rbp - 48]
     mov rdx, [rbp - 56]
     call win_utf8
@@ -2959,3 +2990,77 @@ win_component_safe:
 .Lwcs_bad:
     xor eax, eax
     ret
+
+.text
+/* Normalize the four privately constructed verifier path values from /C:/...
+ * to native C:/... and add Windows user/cache locations. All six values refer
+ * to the same newly created verifier directory; no ambient profile is copied.
+ * RAX=0/-EINVAL. The caller's four 8192-byte buffers own the original strings;
+ * the two Windows strings have separate 8192-byte buffers. Prefix lengths are
+ * fixed by the shared HOME/GH_CONFIG_DIR/XDG constants. No filesystem mutation.
+ * Stack: WFRAME plus copy_string; preserves internal callee-saved registers. */
+win_prepare_verifier_environment:
+    WFRAME
+    lea r12, [rip + win_verifier_path_values]
+    mov r13d, 4
+.Lwvpe_value:
+    mov rdi, [r12]
+    cmp byte ptr [rdi], '/'
+    jne .Lwvpe_bad
+    movzx eax, byte ptr [rdi + 1]
+    or eax, 32
+    cmp eax, 'a'
+    jb .Lwvpe_bad
+    cmp eax, 'z'
+    ja .Lwvpe_bad
+    cmp byte ptr [rdi + 2], ':'
+    jne .Lwvpe_bad
+    cmp byte ptr [rdi + 3], '/'
+    jne .Lwvpe_bad
+    xor ecx, ecx
+.Lwvpe_bound:
+    cmp ecx, 8170
+    jae .Lwvpe_bad
+    cmp byte ptr [rdi + rcx], 0
+    je .Lwvpe_strip
+    inc ecx
+    jmp .Lwvpe_bound
+.Lwvpe_strip:
+    xor ecx, ecx
+.Lwvpe_copy_left:
+    mov al, [rdi + rcx + 1]
+    mov [rdi + rcx], al
+    inc ecx
+    test al, al
+    jnz .Lwvpe_copy_left
+    add r12, 8
+    dec r13d
+    jnz .Lwvpe_value
+    lea rdi, [rip + win_profile_environment]
+    lea rsi, [rip + win_profile_prefix]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + self_home_environment + 5]
+    call copy_string
+    lea rdi, [rip + win_localappdata_environment]
+    lea rsi, [rip + win_localappdata_prefix]
+    call copy_string
+    mov rdi, rax
+    lea rsi, [rip + self_home_environment + 5]
+    call copy_string
+    xor eax, eax
+    WLEAVE
+.Lwvpe_bad:
+    mov rax, -22
+    WLEAVE
+.section .rdata,"dr"
+.p2align 3
+win_verifier_path_values:
+    .quad self_home_environment + 5, self_config_environment + 14
+    .quad self_cache_environment + 15, self_xdg_environment + 16
+win_profile_prefix: .asciz "USERPROFILE="
+win_localappdata_prefix: .asciz "LOCALAPPDATA="
+.section .bss
+.p2align 3
+win_profile_environment: .space 8192
+win_localappdata_environment: .space 8192

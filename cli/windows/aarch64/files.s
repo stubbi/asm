@@ -153,6 +153,36 @@ win_parent_path:
 5:  mov x9, #-22
     ret
 
+/* x0=bounded, NUL-terminated UTF16 path returned by a Windows path API.
+ * x9=borrowed drive-absolute view, or -22. Ordinary C:\ and extended \\?\C:\
+ * forms are accepted. Network/device namespaces are rejected. This does not
+ * resolve or open a filesystem object. x0 preserved; x9-x11/NZCV scratch.
+ */
+win_drive_view:
+    mov x9, x0
+    ldr x10, [x9]
+    ARM_IMM x11, 0x005c003f005c005c
+    cmp x10, x11
+    b.ne 1f
+    add x9, x9, #8
+1:  ldrh w10, [x9]
+    orr w10, w10, #32
+    cmp w10, #97
+    b.lo 3f
+    cmp w10, #122
+    b.hi 3f
+    ldrh w10, [x9, #2]
+    cmp w10, #58
+    b.ne 3f
+    ldrh w10, [x9, #4]
+    cmp w10, #92
+    b.eq 2f
+    cmp w10, #47
+    b.ne 3f
+2:  ret
+3:  mov x9, #-22
+    ret
+
 /* x0=owned UTF8 buffer, x1=capacity; x9=length including NUL or -22.
  * Windows current directory returned as C:/path, with strict UTF8 conversion.
  */
@@ -168,9 +198,12 @@ win_getcwd_utf8:
     cbz w0, .Lwgc_bad
     cmp w0, #4096
     b.hs .Lwgc_bad
+    ARM_ADDR x0, win_cwd_w
+    ARM_CALL win_drive_view
+    tbnz x9, #63, .Lwgc_bad
+    mov x2, x9
     mov w0, #65001
     mov w1, #0x80
-    ARM_ADDR x2, win_cwd_w
     mov w3, #-1
     mov x4, x19
     mov x5, x20
@@ -222,6 +255,9 @@ win_fchdir:
     cmp w0, #4096
     b.hs 1f
     ARM_ADDR x0, win_cwd_w
+    ARM_CALL win_drive_view
+    tbnz x9, #63, 2f
+    mov x0, x9
     bl SetCurrentDirectoryW
     cbz w0, 1f
     mov x9, #0

@@ -7,6 +7,7 @@
  * Windows handles remain native handles; only 0,1,2 name standard streams.
  */
 .text
+.equ WIN_OPEN_IDENTITY, 0x08000000
 .equ WIN_OPEN_DELETE, 0x10000000
 .macro WIN_SAVE
     stp x29, x30, [sp, #-96]!
@@ -221,7 +222,10 @@ win_open:
     cbz w0, .Lwo_error
     cmp w0, #4096
     b.hs .Lwo_bad
-    ARM_ADDR x23, win_path_full
+    ARM_ADDR x0, win_path_full
+    ARM_CALL win_drive_view
+    tbnz x9, #63, .Lwo_bad
+    mov x23, x9
     ldrh w10, [x21, #2]
     cmp w10, #':'
     b.ne .Lwo_current_root
@@ -421,7 +425,10 @@ win_nt_component:
     tst x20, #64
     b.eq 1f
     ARM_ADDR x10, win_private_sd
-    str x10, [sp, #112]
+    cbnz x25, 8f
+    /* A mode000 exclusive probe denies current-user data access. */
+    ARM_ADDR x10, win_probe_sd
+8:  str x10, [sp, #112]
 1:  str xzr, [sp, #120]
     add x0, sp, #128
     ARM_IMM x1, 0x120089          /* read data/attributes/control/synchronize */
@@ -437,7 +444,15 @@ win_nt_component:
 1:  and x10, x20, #3
     cbz x10, 2f
     ARM_IMM x1, 0x17019f         /* read/write/delete + READ_CONTROL/SYNC */
-2:  tst x20, #WIN_OPEN_DELETE
+2:  cbnz x25, .Lwn_not_probe_access
+    tst x20, #64
+    b.eq .Lwn_not_probe_access
+    ARM_IMM x1, 0x130080         /* mode000 probe: metadata/cleanup only */
+.Lwn_not_probe_access:
+    tst x20, #WIN_OPEN_IDENTITY
+    b.eq 9f
+    ARM_IMM x1, 0x100080         /* SYNC + FILE_READ_ATTRIBUTES only */
+9:  tst x20, #WIN_OPEN_DELETE
     b.eq 8f
     ARM_IMM x1, 0x130080         /* DELETE/SYNC/READ_CONTROL/attributes */
 8:  tst x20, #64
@@ -567,6 +582,85 @@ arm_fstat:
     ARM_CALL win_error
 .Lws_return:
     add sp, sp, #64
+    WIN_RETURN
+/* Probe-only identity inspection. x0=held exclusive probe HANDLE,
+ * x1=owned128-byte output. x9=0 or negative errno. Only device/inode are
+ * populated; every other field is zero, so this cannot authorize a program.
+ * No DACL check opens the mode000 probe for data access. GetFileInformation
+ * inspects the retained identity; reparse objects and directories fail closed.
+ * Preserves x0-x7/x19-x29. Stack160 plus helpers; inputs remain borrowed.
+ */
+arm_probe_fd_stat:
+    WIN_SAVE
+    sub sp, sp, #64
+    str x1, [sp, #56]
+    stp xzr, xzr, [x1]
+    stp xzr, xzr, [x1, #16]
+    stp xzr, xzr, [x1, #32]
+    stp xzr, xzr, [x1, #48]
+    stp xzr, xzr, [x1, #64]
+    stp xzr, xzr, [x1, #80]
+    stp xzr, xzr, [x1, #96]
+    stp xzr, xzr, [x1, #112]
+    mov x1, sp
+    bl GetFileInformationByHandle
+    cbz w0, .Lwprobe_fd_error
+    ldr w10, [sp]
+    tst w10, #0x400
+    b.ne .Lwprobe_fd_bad
+    tst w10, #16
+    b.ne .Lwprobe_fd_bad
+    ldr x1, [sp, #56]
+    ldr w11, [sp, #28]
+    str x11, [x1, #ARM_STAT_DEVICE]
+    ldr w11, [sp, #44]
+    ldr w12, [sp, #48]
+    orr x11, x12, x11, lsl #32
+    str x11, [x1, #ARM_STAT_INODE]
+    mov x9, #0
+    b .Lwprobe_fd_done
+.Lwprobe_fd_error:
+    ARM_CALL win_error
+    b .Lwprobe_fd_done
+.Lwprobe_fd_bad:
+    mov x9, #-13
+.Lwprobe_fd_done:
+    add sp, sp, #64
+    WIN_RETURN
+/* x0=retained parent HANDLE, x1=validated basename, x2=owned128-byte output,
+ * x6=256 (nofollow). Metadata-only opens preserve mode000 protection and reject
+ * all reparses through win_open. This only compares an actual file identity.
+ * Returns0 or negative errno; closes the temporary HANDLE on every open path.
+ * Preserves x0-x7/x19-x29. Stack112 plus helpers. No file bytes change.
+ */
+arm_probe_stat:
+    WIN_SAVE
+    cmp x6, #256
+    b.ne .Lwprobe_bad_flags
+    sub sp, sp, #16
+    str x2, [sp]
+    ARM_IMM x2, O_NOFOLLOW + O_CLOEXEC + WIN_OPEN_IDENTITY
+    mov x6, #0
+    ARM_CALL win_open
+    tbnz x9, #63, .Lwprobe_path_done
+    str x9, [sp, #8]
+    mov x0, x9
+    ldr x1, [sp]
+    ARM_CALL arm_probe_fd_stat
+    str x9, [sp]
+    ldr x0, [sp, #8]
+    bl CloseHandle
+    cbnz w0, 1f
+    ldr x9, [sp]
+    tbnz x9, #63, .Lwprobe_path_done
+    ARM_CALL win_error
+    b .Lwprobe_path_done
+1:  ldr x9, [sp]
+.Lwprobe_path_done:
+    add sp, sp, #16
+    WIN_RETURN
+.Lwprobe_bad_flags:
+    mov x9, #-22
     WIN_RETURN
 arm_lstat:
     WIN_SAVE

@@ -74,6 +74,7 @@ def prepare(source: Path) -> str:
         text = replace_once(text, '    add x22, x19, #1', '    add x22, x19, #3')
         text = replace_once(text, '    add x1, x19, #1', '    add x1, x19, #3')
         text = text.replace('/.local/bin/asm"', '/.local/bin/asm.exe"')
+        text = replace_once(text, 'program_cli_name: .asciz "asm"', 'program_cli_name: .asciz "asm.exe"')
         text = replace_once(text, '    ldrb w10, [x0, #3]\n    cbnz w10, .Lp_cli_destination_safe',
             '    ldrb w10, [x0, #3]\n    cmp w10, #46\n    b.ne .Lp_cli_destination_safe\n    ldr w10, [x0, #4]\n    ARM_IMM w11, 0x00657865\n    ARM_IMM w12, 0x202020\n    orr w10, w10, w12\n    cmp w10, w11\n    b.ne .Lp_cli_destination_safe')
     if source.name == 'templates.s':
@@ -164,6 +165,11 @@ def prepare(source: Path) -> str:
         match = re.search(unsupported, text)
         if match:
             raise ValueError(f'unhandled Linux platform call: {match.group(1)}')
+        called_adapters = set(re.findall(r'\bARM_CALL\s+(arm_\w+)', text))
+        defined_adapters = set(re.findall(r'^(arm_\w+):', text, flags=re.M))
+        missing = called_adapters - defined_adapters
+        if missing:
+            raise ValueError('missing Windows adapters: ' + ', '.join(sorted(missing)))
         if re.search(r'\b[wx]18\b', re.sub(r'/\*.*?\*/', '', text, flags=re.S)):
             raise ValueError('Windows platform register x18 must remain untouched')
     return text

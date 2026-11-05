@@ -125,6 +125,79 @@ _main:
     ARM_ADDR x10, abi_delete_calls
     ldr w11, [x10]
     REQUIRE_EQ w11, #2
+    /* GetFinalPathName's extended drive prefix must not enter cwd state. */
+    mov x0, #0x4400
+    ARM_CALL win_fchdir
+    REQUIRE_EQ x9, #0
+    /* Probe stat must report real identity without granting mode/owner data. */
+    mov x0, #0x4404
+    ARM_ADDR x1, abi_probe_stat
+    ARM_CALL arm_probe_fd_stat
+    REQUIRE_EQ x9, #0
+    ARM_ADDR x10, abi_probe_stat
+    ldr x11, [x10]
+    ARM_IMM x12, 0x11223344
+    REQUIRE_EQ x11, x12
+    ldr x11, [x10, #8]
+    ARM_IMM x12, 0x5566778899aabbcc
+    REQUIRE_EQ x11, x12
+    add x10, x10, #16
+    mov x12, #14
+.Labi_probe_fields_zero:
+    ldr x11, [x10], #8
+    cbnz x11, abi_failed
+    subs x12, x12, #1
+    b.ne .Labi_probe_fields_zero
+    ARM_ADDR x10, abi_probe_test
+    mov x11, #1
+    str x11, [x10]
+    mov x0, #0x4400
+    ARM_ADDR x1, abi_probe_name
+    ARM_ADDR x2, abi_probe_stat
+    mov x6, #256
+    ARM_CALL arm_probe_stat
+    REQUIRE_EQ x9, #0
+    REQUIRE_EQ x6, #256
+    ARM_ADDR x10, abi_probe_stat
+    REQUIRE_EQ x2, x10
+    ldr x11, [x10]
+    ARM_IMM x12, 0x11223344
+    REQUIRE_EQ x11, x12
+    /* Failure closes the metadata handle and returns the actual error. */
+    ARM_ADDR x10, abi_probe_getinfo_error
+    mov x11, #1
+    str x11, [x10]
+    ARM_ADDR x10, abi_close_calls
+    ldr x11, [x10]
+    str x11, [sp, #96]
+    mov x0, #0x4400
+    ARM_ADDR x1, abi_probe_name
+    ARM_ADDR x2, abi_probe_stat
+    mov x6, #256
+    ARM_CALL arm_probe_stat
+    cmn x9, #13
+    b.ne abi_failed
+    ARM_ADDR x10, abi_close_calls
+    ldr x11, [x10]
+    ldr x12, [sp, #96]
+    add x12, x12, #1
+    REQUIRE_EQ x11, x12
+    ARM_ADDR x10, abi_probe_getinfo_error
+    str xzr, [x10]
+    ARM_ADDR x10, abi_probe_test
+    str xzr, [x10]
+    /* Exclusive mode000 creation selects the probe SD and metadata access. */
+    ARM_IMM x20, O_CLOEXEC + O_NOFOLLOW + 193
+    mov x25, #0
+    ARM_ADDR x0, abi_component
+    mov x1, #10
+    mov x2, #1
+    ARM_CALL win_nt_component
+    ARM_IMM x10, 0x4404
+    REQUIRE_EQ x9, x10
+    REQUIRE_EQ x25, #0
+    ARM_IMM x20, O_DIRECTORY
+    mov x25, #0x2525
     ARM_ADDR x0, abi_executable
     ARM_ADDR x1, abi_argv
     mov x2, #0
@@ -277,6 +350,18 @@ NtCreateFile:
     REQUIRE_EQ w12, #10
     b .Labi_created
 .Labi_lock_create:
+    ARM_IMM x11, 0x130080
+    cmp x1, x11
+    b.ne .Labi_directory_lock_create
+    ARM_IMM x11, 0x200020
+    REQUIRE_EQ x10, x11
+    REQUIRE_EQ x6, #7
+    REQUIRE_EQ x7, #2
+    ldr x10, [x2, #32]
+    ARM_ADDR x11, win_probe_sd
+    REQUIRE_EQ x10, x11
+    b .Labi_created
+.Labi_directory_lock_create:
     ARM_IMM x11, 0x13019f
     REQUIRE_EQ x1, x11
     ARM_IMM x11, 0x201060
@@ -291,6 +376,9 @@ NtCreateFile:
     mov x0, #0
     ret
 GetFileInformationByHandle:
+    ARM_ADDR x10, abi_probe_getinfo_error
+    ldr x11, [x10]
+    cbnz x11, .Labi_getinfo_error
     mov x10, #0x4400
     cmp x0, x10
     mov w10, #16
@@ -300,8 +388,23 @@ GetFileInformationByHandle:
     ARM_ADDR x10, abi_file_attributes
     ldr w10, [x10]
 1:  str w10, [x1]
+    ARM_IMM w10, 0x11223344
+    str w10, [x1, #28]
+    str wzr, [x1, #32]
+    mov w10, #7
+    str w10, [x1, #36]
+    mov w10, #1
+    str w10, [x1, #40]
+    ARM_IMM w10, 0x55667788
+    str w10, [x1, #44]
+    ARM_IMM w10, 0x99aabbcc
+    str w10, [x1, #48]
     API_CLOBBER
     mov w0, #1
+    ret
+.Labi_getinfo_error:
+    API_CLOBBER
+    mov w0, #0
     ret
 NtQueryDirectoryFile:
     mov x10, #0x4400
@@ -430,6 +533,10 @@ GetExitCodeProcess:
     mov w0, #1
     ret
 CloseHandle:
+    ARM_ADDR x10, abi_close_calls
+    ldr x11, [x10]
+    add x11, x11, #1
+    str x11, [x10]
 DeleteProcThreadAttributeList:
     API_CLOBBER
     mov x0, #1
@@ -438,6 +545,13 @@ LockFileEx:
 TerminateProcess:
     b abi_failed
 GetLastError:
+    ARM_ADDR x10, abi_probe_getinfo_error
+    ldr x11, [x10]
+    cbz x11, .Labi_get_pipe_error
+    API_CLOBBER
+    mov w0, #5
+    ret
+.Labi_get_pipe_error:
     ARM_ADDR x10, abi_capture_mode
     ldr x11, [x10]
     REQUIRE_EQ x11, #1
@@ -447,7 +561,42 @@ GetLastError:
     API_CLOBBER
     mov w0, #109
     ret
+GetFinalPathNameByHandleW:
+    ARM_IMM x10, 0x4400
+    REQUIRE_EQ x0, x10
+    REQUIRE_EQ x2, #4096
+    cbnz x3, abi_failed
+    ARM_ADDR x10, abi_extended_cwd
+    mov x11, #0
+1:  ldrh w12, [x10, x11, lsl #1]
+    strh w12, [x1, x11, lsl #1]
+    add x11, x11, #1
+    cbnz w12, 1b
+    API_CLOBBER
+    mov x0, #11
+    ret
+SetCurrentDirectoryW:
+    ARM_ADDR x10, abi_ordinary_cwd
+    mov x11, #0
+1:  ldrh w12, [x10, x11]
+    ldrh w13, [x0, x11]
+    REQUIRE_EQ w12, w13
+    add x11, x11, #2
+    cbnz w12, 1b
+    API_CLOBBER
+    mov x0, #1
+    ret
 win_open:
+    ARM_ADDR x10, abi_probe_test
+    ldr x11, [x10]
+    cbz x11, .Labi_open_ready
+    ARM_IMM x10, O_NOFOLLOW + O_CLOEXEC + WIN_OPEN_IDENTITY
+    REQUIRE_EQ x2, x10
+    mov x10, #0x4400
+    REQUIRE_EQ x0, x10
+    ARM_ADDR x10, abi_probe_name
+    REQUIRE_EQ x1, x10
+.Labi_open_ready:
     API_CLOBBER
     mov x9, #0x4404
     ret
@@ -509,8 +658,6 @@ GetTickCount64:
     ret
 Sleep:
     b abi_failed
-win_error_code:
-win_error:
 win_nt_error:
     b abi_failed
 .data
@@ -551,3 +698,16 @@ win_capture_size: .quad 0
 abi_capture_mode: .quad 0
 abi_capture_peeks: .quad 0
 abi_capture_waits: .quad 0
+
+.p2align 3
+abi_probe_stat: .space 128
+abi_probe_test: .quad 0
+abi_probe_getinfo_error: .quad 0
+abi_close_calls: .quad 0
+win_probe_sd: .space 40
+abi_probe_name: .asciz "entry"
+
+.p2align 3
+win_cwd_w: .space 8192
+abi_extended_cwd: .hword 92,92,63,92,67,58,92,119,111,114,107,0
+abi_ordinary_cwd: .hword 67,58,92,119,111,114,107,0

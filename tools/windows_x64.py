@@ -155,6 +155,21 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
         text = text[:begin] + text[begin:].replace('mov edx, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK',
                                                   'mov edx, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK + 0x20000002', 1)
     if source.name == 'self_update_verify.s':
+        anchor = '    mov rsi, r12\n    call copy_string\n.ifdef ASM_TRUSTED_DISTRIBUTION\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, '''    mov rsi, r12
+    call copy_string
+    call win_prepare_verifier_environment
+    test rax, rax
+    js self_io_error
+.ifdef ASM_TRUSTED_DISTRIBUTION
+''')
+        anchor = '    lea rax, [rip + self_gh_environment + 10*8]\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, '    lea rax, [rip + self_gh_environment + 12*8]\n')
+        anchor = '    .quad self_locale_environment, self_lang_environment\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor + '    .quad win_profile_environment, win_localappdata_environment\n')
         text = replace_routine(text, 'self_capture', 'self_verifier_missing', '''self_capture:
     push r12
     push r13

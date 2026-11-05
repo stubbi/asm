@@ -31,10 +31,14 @@ def source_text():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     parts = [module.prepare(ROOT / 'cli/aarch64/platform.inc'),
-             region(HERE / 'platform.s', '.equ WIN_OPEN_DELETE', '/* x0=Win32 error'),
+             region(HERE / 'platform.s', '.equ WIN_OPEN_IDENTITY', '/* x0=Win32 error'),
+             region(HERE / 'platform.s', 'win_error_code:', 'win_nt_error:'),
              region(HERE / 'platform.s', 'win_handle:', 'arm_close:'),
              region(HERE / 'platform.s', 'win_nt_component:', '\narm_open:'),
+             region(HERE / 'platform.s', 'arm_probe_fd_stat:', 'arm_lstat:'),
              region(HERE / 'platform.s', 'arm_unlink:', '/* Rename uses source HANDLE'),
+             region(HERE / 'files.s', 'win_drive_view:', '/* x0=owned UTF8 buffer'),
+             region(HERE / 'files.s', 'win_fchdir:', '/* One kernel directory'),
              region(HERE / 'files.s', 'win_getdents:', '\n/* x0=HANDLE, x1=flock'),
              region(HERE / 'files.s', 'win_directory_lock:', '\n/* x0=closing directory'),
              region(HERE / 'files.s', 'win_component_name:', '\n/* Extra Windows archive'),
@@ -100,6 +104,9 @@ def main():
         cases['regression_' + routine[:-1]] = mutated[:begin] + body.replace(old, f'    bl {api}', 1) + mutated[finish:]
     deadline = '    /* A continuously readable producer must not bypass the deadline. */\n    bl GetTickCount64\n    sub x0, x0, x20\n    ARM_IMM x10, 120000\n    cmp x0, x10\n    b.hs .Lwpc_bad\n'
     cases['regression_capture_deadline'] = mutate('win_pump_capture:', 'GetStdHandle:', deadline, '')
+    cases['regression_extended_cwd'] = mutate(
+        'win_fchdir:', 'win_getdents:',
+        '    ARM_CALL win_drive_view\n    tbnz x9, #63, 2f\n    mov x0, x9\n', '')
     cases['regression_capture_exit_drain'] = mutate(
         'win_pump_capture:', 'GetStdHandle:',
         '.Lwpc_exited:\n    mov x10, #1\n    str x10, [sp, #72]\n    b .Lwpc_loop',

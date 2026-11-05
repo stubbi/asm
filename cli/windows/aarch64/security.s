@@ -56,6 +56,51 @@ win_security_init:
     mov w2, #0x1000
     bl SetSecurityDescriptorControl
     cbz w0, .Lwsi_bad
+    /* Mode000 identity probes expose metadata and cleanup rights, not data
+     * read/write/execute rights, to the current user. Administrative recovery
+     * principals retain full control as they do for other private objects. */
+    ARM_ADDR x0, win_probe_acl
+    mov w1, #2048
+    mov w2, #2
+    bl InitializeAcl
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_acl
+    mov w1, #2
+    mov w2, #0
+    ARM_IMM w3, 0x170080
+    ARM_ADDR x16, win_token_user
+    ldr x4, [x16]
+    bl AddAccessAllowedAceEx
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_acl
+    mov w1, #2
+    mov w2, #0
+    ARM_IMM w3, 0x1f01ff
+    ARM_ADDR x4, win_sid_system
+    bl AddAccessAllowedAceEx
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_acl
+    mov w1, #2
+    mov w2, #0
+    ARM_IMM w3, 0x1f01ff
+    ARM_ADDR x4, win_sid_admin
+    bl AddAccessAllowedAceEx
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_sd
+    mov w1, #1
+    bl InitializeSecurityDescriptor
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_sd
+    mov w1, #1
+    ARM_ADDR x2, win_probe_acl
+    mov w3, #0
+    bl SetSecurityDescriptorDacl
+    cbz w0, .Lwsi_bad
+    ARM_ADDR x0, win_probe_sd
+    mov w1, #0x1000
+    mov w2, #0x1000
+    bl SetSecurityDescriptorControl
+    cbz w0, .Lwsi_bad
     mov x9, #0
     ldp x29, x30, [sp], #48
     ret
@@ -239,4 +284,6 @@ win_sid_installer: .byte 1,6,0,0,0,0,0,5
 .p2align 3
 win_token_user: .skip 1024
 win_private_sd: .skip 40
+win_probe_sd: .skip 40
+win_probe_acl: .skip 2048
 win_private_acl: .skip 2048

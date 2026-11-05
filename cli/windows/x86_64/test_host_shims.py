@@ -65,6 +65,8 @@ class HostShims(unittest.TestCase):
         cls.build_path()
         cls.build_capture()
         cls.build_delete()
+        cls.build_extended_cwd()
+        cls.build_verifier_environment()
 
     @classmethod
     def tearDownClass(cls):
@@ -358,6 +360,145 @@ test_closes: .quad 0
         driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long run_delete(int,int),deletion_count(void),close_count(void);\nint main(int n,char**a){if(n!=3)return 2;long s=run_delete(atoi(a[1]),atoi(a[2]));printf("%ld %ld %ld\\n",s,deletion_count(),close_count());}\n'
         cls.build('delete', assembly, driver, ['run_delete','deletion_count','close_count'])
 
+    @classmethod
+    def build_extended_cwd(cls):
+        assembly = cls.macros + block(cls.platform_source, 'win_wide', 'win_utf8')
+        if 'win_drive_path:\n' in cls.platform_source:
+            assembly += block(cls.platform_source, 'win_drive_path', 'win_open')
+        assembly += block(cls.platform_source, 'win_open', 'win_syscall')
+        component = cls.platform_source[cls.platform_source.index('win_component_safe:\n'):]
+        if 'win_prepare_verifier_environment:\n' in component:
+            component = component[:component.index('win_prepare_verifier_environment:\n')]
+        assembly += component
+        assembly += block(cls.prepared, 'streq', 'strlen')
+        assembly += '''
+.text
+.global open_from_cwd
+open_from_cwd:
+    WFRAME
+    mov [rip + test_extended], edi
+    mov rdi, -100
+    lea rsi, [rip + test_relative_file]
+    xor edx, edx
+    xor r10d, r10d
+    call win_open
+    WLEAVE
+MultiByteToWideChar:
+    mov r11, [rsp + 40]
+    xor eax, eax
+.Lhost_cwd_convert:
+    movzx ecx, byte ptr [r8 + rax]
+    mov [r11 + rax*2], cx
+    inc eax
+    test ecx, ecx
+    jnz .Lhost_cwd_convert
+    ret
+GetCurrentDirectoryW:
+    lea r11, [rip + test_current_directory]
+    mov eax, [rip + test_extended]
+    cmp eax, 2
+    je .Lhost_cwd_unc
+    cmp eax, 3
+    je .Lhost_cwd_device
+    test eax, eax
+    jnz .Lhost_cwd_copy
+    add r11, 8
+    jmp .Lhost_cwd_copy
+.Lhost_cwd_unc:
+    lea r11, [rip + test_unc_directory]
+    jmp .Lhost_cwd_copy
+.Lhost_cwd_device:
+    lea r11, [rip + test_device_directory]
+.Lhost_cwd_copy:
+    xor eax, eax
+.Lhost_cwd_unit:
+    mov cx, [r11 + rax*2]
+    mov [rdx + rax*2], cx
+    test cx, cx
+    jz .Lhost_cwd_return
+    inc eax
+    jmp .Lhost_cwd_unit
+.Lhost_cwd_return:
+    ret
+win_nt_open:
+    cmp edx, 16
+    jne .Lhost_cwd_existing
+    cmp word ptr [rsi], 'a'
+    jne .Lhost_cwd_existing
+    mov rax, -2
+    ret
+.Lhost_cwd_existing:
+    mov eax, 8
+    ret
+win_handle:
+    mov eax, 7
+    ret
+win_descriptor:
+    mov eax, 3
+    ret
+CloseHandle:
+    mov eax, 1
+    ret
+DuplicateHandle:
+    mov qword ptr [r9], 8
+    mov eax, 1
+    ret
+GetModuleFileNameW:
+GetWindowsDirectoryW:
+    xor eax, eax
+    ret
+win_error:
+    mov rax, -13
+    ret
+.data
+self_proc_exe: .asciz "/proc/self/exe"
+test_relative_file: .asciz "asm.toml"
+test_extended: .long 0
+test_current_directory: .short 92,92,63,92,67,58,92,112,114,111,106,101,99,116,0
+test_unc_directory: .short 92,92,63,92,85,78,67,92,115,101,114,118,101,114,92,115,104,97,114,101,0
+test_device_directory: .short 92,68,101,118,105,99,101,92,72,97,114,100,100,105,115,107,86,111,108,117,109,101,49,0
+win_nt_root: .short 92,63,63,92,67,58,92,0
+win_path_wide: .space 8192
+win_full_wide: .space 8192
+'''
+        driver = '#include <stdio.h>\nextern long open_from_cwd(int);\nint main(){printf("%ld %ld %ld %ld\\n",open_from_cwd(0),open_from_cwd(1),open_from_cwd(2),open_from_cwd(3));}\n'
+        cls.build('extended-cwd', assembly, driver, ['open_from_cwd'])
+
+    @classmethod
+    def build_verifier_environment(cls):
+        assembly = cls.macros + cls.platform_source[cls.platform_source.index('win_prepare_verifier_environment:\n'):]
+        assembly += '\n.text\n' + block(cls.prepared, 'copy_string', 'write_cstr')
+        assembly += '''
+.text
+.global prepare_verifier_environment
+prepare_verifier_environment:
+    WFRAME
+    test edi, edi
+    jz .Lhost_environment_valid
+    mov byte ptr [rip + self_home_environment + 5], 92
+.Lhost_environment_valid:
+    call win_prepare_verifier_environment
+    WLEAVE
+.global verifier_environment
+verifier_environment:
+    lea rax, [rip + test_environment]
+    mov rax, [rax + rdi*8]
+    ret
+.data
+self_home_environment: .asciz "HOME=/C:/Users/test user/private/verifier"
+    .space 8192
+self_config_environment: .asciz "GH_CONFIG_DIR=/C:/Users/test user/private/verifier"
+    .space 8192
+self_cache_environment: .asciz "XDG_CACHE_HOME=/C:/Users/test user/private/verifier"
+    .space 8192
+self_xdg_environment: .asciz "XDG_CONFIG_HOME=/C:/Users/test user/private/verifier"
+    .space 8192
+.p2align 3
+test_environment: .quad self_home_environment,self_config_environment,self_cache_environment,self_xdg_environment,win_profile_environment,win_localappdata_environment
+'''
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long prepare_verifier_environment(int);\nextern const char* verifier_environment(int);\nint main(int n,char**a){long s=prepare_verifier_environment(n>1?atoi(a[1]):0);printf("%ld\\n",s);if(s==0)for(int i=0;i<6;i++)puts(verifier_environment(i));}\n'
+        cls.build('verifier-environment', assembly, driver, ['prepare_verifier_environment','verifier_environment'])
+
     def test_drive_absolute_output_does_not_use_cwd(self):
         for value in ['C:/output/tool.exe', r'C:\output\tool.exe', '/C:/output/tool.exe']:
             with self.subTest(value=value):
@@ -420,6 +561,23 @@ test_closes: .quad 0
                 result = self.run_fixture('delete', str(mode), str(attributes))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), expected)
+
+    def test_relative_open_accepts_extended_dos_cwd_without_namespace_ambiguity(self):
+        result = self.run_fixture('extended-cwd')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '-2 -2 -22 -22')
+
+    def test_verifier_windows_paths_stay_in_the_private_directory(self):
+        result = self.run_fixture('verifier-environment')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = ['0'] + [name + '=C:/Users/test user/private/verifier' for name in
+            ['HOME','GH_CONFIG_DIR','XDG_CACHE_HOME','XDG_CONFIG_HOME','USERPROFILE','LOCALAPPDATA']]
+        self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_verifier_environment_refuses_an_unexpected_namespace(self):
+        result = self.run_fixture('verifier-environment', '1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '-22')
 
 
 if __name__ == '__main__':
