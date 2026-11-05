@@ -109,6 +109,32 @@ def prepare(source: Path) -> str:
             '    mov x2, x21\\n    adrp x3, written\\n    add x3, x3, :lo12:written\\n    mov x4, 0\\n    bl WriteFile\\n    cbz w0, failed\\n    adrp x3, written\\n    add x3, x3, :lo12:written\\n    ldr w10, [x3]\\n    cbz w10, failed\\n    cmp x10, x21\\n    b.hi failed\\n    add x20, x20, x10\\n    subs x21, x21, x10\\n    b.ne write_loop\\n    mov w0, 0\\n')
     if source.name == 'dependencies.s':
         text = replace_once(text, 'dependency_acquire:\n', 'dependency_acquire:\n    ARM_CALL win_managed_check_cwd\n    cbnz x9, dependency_io_error\n')
+    if source.name == 'resolver.s':
+        # COFF cannot encode this one-MiB symbol addend in ADRP. Materialize
+        # the same end address with ADD's shifted immediate, without changing
+        # another register, flags, buffer capacity, or the overflow branch.
+        text = replace_once(text, '    ARM_ADDR x16, res_rendered + 1048576',
+            '    ARM_ADDR x16, res_rendered\n    add x16, x16, #256, lsl #12')
+        # The POSIX prefix walk would truncate C:/dir to the ambiguous C:.
+        # Normalize only its owned <=4000-byte copy. Skip the drive separator
+        # only after the existing absolute-path predicate accepts it. win_open
+        # still walks the native drive/components and refuses direct C: input.
+        text = replace_once(text,
+            '    ARM_ADDR x16, res_artifact_path\n    mov x21, x16\n    mov x22, x21\n.Lres_dir_component:',
+            '    ARM_ADDR x16, res_artifact_path\n    mov x21, x16\n'
+            '    mov x0, x21\n    ARM_CALL win_slashes\n'
+            '    mov x0, x21\n    ARM_CALL win_is_absolute\n'
+            '    mov x22, x21\n    cbz w9, .Lres_dir_component\n'
+            '    add x22, x21, #3\n.Lres_dir_component:')
+        # Reuse one terminal separator, including the C:/ root spelling.
+        # This keeps the final archive path free of an empty component.
+        text = replace_once(text,
+            '.Lres_dir_final:\n    ARM_CALL res_check_artifact_dir\n    mov x0, x22',
+            '.Lres_dir_final:\n    ARM_CALL res_check_artifact_dir\n'
+            '    cmp x22, x21\n    b.eq .Lwin_res_dir_suffix\n'
+            '    ldrb w10, [x22, #-1]\n    cmp w10, #47\n'
+            '    b.ne .Lwin_res_dir_suffix\n    sub x22, x22, #1\n'
+            '.Lwin_res_dir_suffix:\n    mov x0, x22')
     if source.name == 'registry.s':
         text = replace_once(text, 'registry_workspace:\n', 'registry_workspace:\n    ARM_CALL win_managed_check_cwd\n    cbnz x9, registry_io_error\n')
         text = routine(text, 'registry_download', 'registry_read_index', (LOCAL / 'download.s').read_text())
