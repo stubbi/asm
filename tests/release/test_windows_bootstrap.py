@@ -8,8 +8,10 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -90,6 +92,115 @@ class WindowsBootstrapTests(unittest.TestCase):
             self.assertEqual(result.stdout, b"")
             self.assertIn(b"Windows bootstrap:", result.stderr)
             self.assertEqual(output.read_bytes(), b"previous installer")
+
+    def test_cli_generates_a_quiet_complete_source_installer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact, output = Path(temporary) / "source-' \u00e9.exe", Path(temporary) / "install.ps1"
+            image = executable()
+            artifact.write_bytes(image)
+            result = subprocess.run([sys.executable, str(ROOT / "tools/windows_bootstrap.py"),
+                "--source-artifact", str(artifact), "--target", "x86_64-windows", "--output", str(output)],
+                cwd=ROOT, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+            self.assertEqual((result.stdout, result.stderr), (b"", b""))
+            script = output.read_bytes()
+            script.decode("ascii")
+            self.assertEqual(specification(script), {"mode": "source", "version": "0.6.1", "artifacts": [
+                {"target": "x86_64-windows", "path": str(artifact.resolve()), "bytes": 1536,
+                 "sha256": hashlib.sha256(image).hexdigest()}]})
+            self.assertEqual(artifact.read_bytes(), image)
+
+    def test_runtime_pe_parser_uses_the_shared_bounded_container_profile(self):
+        """Run the real parser on data; substitute only unrelated Windows identity.
+
+        This host-only .NET 8 test does not call Windows APIs or execute a PE.
+        The native PowerShell suite independently exercises the complete script.
+        """
+        dotnet = shutil.which("dotnet")
+        if dotnet is None:
+            self.skipTest("The optional host-only parser check requires an installed .NET 8 SDK.")
+        environment = dict(os.environ, DOTNET_CLI_TELEMETRY_OPTOUT="1", DOTNET_SKIP_FIRST_TIME_EXPERIENCE="1")
+        installed = subprocess.run([dotnet, "--list-sdks"], capture_output=True, text=True, timeout=10, env=environment)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        sdks = re.findall(r"(?m)^(8\.0\.[0-9]+) \[(.+)\]$", installed.stdout)
+        if not sdks:
+            self.skipTest("The optional host-only parser check requires an installed .NET 8 SDK.")
+        version, directory = max(sdks, key=lambda item: tuple(map(int, item[0].split("."))))
+        sdk = Path(directory) / version
+        packs = list((sdk.parent.parent / "packs/Microsoft.NETCore.App.Ref").glob("8.*/ref/net8.0"))
+        self.assertTrue(packs, "The installed .NET 8 SDK lacks its reference assemblies.")
+        refs = max(packs, key=lambda p: tuple(map(int, p.parents[1].name.split("."))))
+        cases = [("x64", executable(), "x86_64-windows", True),
+                 ("arm64", executable(0xaa64), "aarch64-windows", True)]
+        for label, offset, fmt, value, expected in (
+                ("no_large_address_flag", 150, "H", 2, True),
+                ("native_subsystem", 220, "H", 1, False),
+                ("gui_cli_subsystem", 220, "H", 2, False),
+                ("zero_image_base", 176, "Q", 0, False),
+                ("image_above_two_gib", 208, "I", 0x90000000, False),
+                ("text_zero_virtual_size", 400, "I", 0, True)):
+            image = bytearray(executable())
+            struct.pack_into("<" + fmt, image, offset, value)
+            cases.append((label, bytes(image), "x86_64-windows", expected))
+        for label, offset, address, size, expected in (("global_pointer", 328, 0x1000, 0, True),
+                ("header_directory", 272, 64, 8, True), ("short_certificate", 296, 1536, 4, False)):
+            image = bytearray(executable()) + (b"\x08\0\0\0\0\x02\x02\0" if label == "short_certificate" else b"")
+            struct.pack_into("<II", image, offset, address, size)
+            cases.append((label, bytes(image), "x86_64-windows", expected))
+        gap = bytearray(executable())
+        struct.pack_into("<I", gap, 444, 0x3000)
+        struct.pack_into("<I", gap, 208, 0x4000)
+        cases.append(("section_gap", bytes(gap), "x86_64-windows", False))
+        header = bytearray(executable())
+        header[132:476] = bytes(header[128:472])
+        struct.pack_into("<I", header, 60, 132)
+        cases.append(("unaligned_pe_header", bytes(header), "x86_64-windows", False))
+        for label, image, target, expected in cases:
+            with self.subTest(oracle=label):
+                try:
+                    self.generator.windows_layout.read_pe_metadata(image, target, expected_version="0.6.1")
+                    accepted = True
+                except ValueError:
+                    accepted = False
+                self.assertEqual(accepted, expected)
+        template = (ROOT / "tools/windows-install.ps1.in").read_text(encoding="ascii")
+        source = template.split("-TypeDefinition @'\n", 1)[1].split("\n'@", 1)[0]
+        source = source.replace("WindowsIdentity.GetCurrent().User.Value", '"S-1-5-21-1"')
+        source += '''
+public static class ParserProbe {
+    public static void Main(string[] args) {
+        var parser = typeof(AsmBootstrapV1.Installer).GetMethod("Pe", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        for (int i=0; i<args.Length; i+=2) {
+            try { parser.Invoke(null, new object[] { System.IO.File.ReadAllBytes(args[i]), args[i+1], "0.6.1" }); System.Console.WriteLine("accept"); }
+            catch (System.Reflection.TargetInvocationException) { System.Console.WriteLine("reject"); }
+        }
+    }
+}
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            code = base / "Probe.cs"
+            code.write_text(source)
+            output = base / "Probe.dll"
+            command = [dotnet, str(sdk / "Roslyn/bincore/csc.dll"), "/nologo", "/langversion:5", "/target:exe",
+                       "/nostdlib+", "/out:" + str(output)]
+            command.extend("/reference:" + str(path) for path in refs.glob("*.dll"))
+            command.append(str(code))
+            compiled = subprocess.run(command, capture_output=True, text=True, timeout=30, env=environment)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            (base / "Probe.runtimeconfig.json").write_text(json.dumps({"runtimeOptions": {"tfm": "net8.0",
+                "framework": {"name": "Microsoft.NETCore.App", "version": "8.0.0"}}}))
+            arguments = [dotnet, str(output)]
+            for label, image, target, _ in cases:
+                path = base / (label + ".bin")
+                path.write_bytes(image)
+                arguments.extend((str(path), target))
+            result = subprocess.run(arguments, capture_output=True, text=True, timeout=20, env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(result.stdout.splitlines()), len(cases), result.stdout)
+            for (label, _, _, expected), actual in zip(cases, result.stdout.splitlines()):
+                with self.subTest(runtime=label):
+                    self.assertEqual(actual, "accept" if expected else "reject")
 
     def test_source_generation_rejects_target_confusion_and_missing_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

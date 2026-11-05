@@ -91,6 +91,7 @@ public static class Installer {
         using (SHA256 hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
     }
     static uint U32(byte[] data, int offset) { Require(offset >= 0 && offset <= data.Length-4, "The PE data is truncated."); return BitConverter.ToUInt32(data, offset); }
+    static ulong U64(byte[] data, int offset) { Require(offset >= 0 && offset <= data.Length-8, "The PE data is truncated."); return BitConverter.ToUInt64(data, offset); }
     static ushort U16(byte[] data, int offset) { Require(offset >= 0 && offset <= data.Length-2, "The PE data is truncated."); return BitConverter.ToUInt16(data, offset); }
     static bool Fits(ulong offset, ulong length, ulong total) { return offset <= total && length <= total-offset; }
     static bool Overlap(ulong a, ulong sizeA, ulong b, ulong sizeB) { return sizeA != 0 && sizeB != 0 && a < b+sizeB && b < a+sizeA; }
@@ -251,10 +252,20 @@ public static class Installer {
             if (path.Length == 3 && privateLast) Security(current.Handle,true);
             return current;
         }
-        public Node Directory(Node parent, string name, bool create) {
-            Node node=Open(parent, name, true, false, true, true, 0x21|Delete, 7);
-            if (node == null && create) node=Open(parent, name, true, true, false, true, 0x21|Delete, 7);
+        public Node Directory(Node parent, string name, bool create, bool renameSource=false) {
+            // Destination anchors retain identity without DELETE access.
+            // Windows can open a rename destination with read/write sharing.
+            uint access=0x21U | (renameSource ? Delete : 0U);
+            Node node=Open(parent, name, true, false, true, true, access, 7);
+            if (node == null && create) node=Open(parent, name, true, true, false, true, access, 7);
             Require(node != null, "An installation directory is missing. Run the installer to repair the layout."); return Keep(node);
+        }
+        public void CloseDescendants(Node directory) {
+            for (int i=Held.Count-1; i>=0; i--) {
+                Node node=Held[i]; if (node == directory) continue;
+                for (Node parent=node.Parent; parent != null; parent=parent.Parent)
+                    if (parent == directory) { node.Dispose(); break; }
+            }
         }
         public void Recheck() {
             foreach (Node node in Held) {
@@ -271,27 +282,37 @@ public static class Installer {
     sealed class Metadata { public string Version, Minimum; public uint Protocol, MinimumProtocol, MaximumProtocol; }
     static Metadata Pe(byte[] data, string target, string expected) {
         Require(data.Length >= 64 && data.Length <= MaximumArtifact && data[0] == 77 && data[1] == 90, "The CLI is not a bounded PE executable.");
-        uint pe=U32(data, 60); Require(pe >= 64 && Fits(pe, 24, (ulong)data.Length), "The PE header is out of bounds."); int p=(int)pe;
+        uint pe=U32(data, 60); Require(pe >= 64 && pe%8 == 0 && Fits(pe, 24, (ulong)data.Length), "The PE header is out of bounds."); int p=(int)pe;
         Require(U32(data,p) == 0x4550 && U16(data,p+4) == (target == "x86_64-windows" ? 0x8664 : 0xaa64), "The CLI PE target does not match the native host.");
         uint count=U16(data,p+6), flags=U16(data,p+22), opt=U16(data,p+20); int o=p+24;
-        Require(count >= 1 && count <= 96 && (flags & 0x22) == 0x22 && (flags & 0x3100) == 0 && opt >= 112 && opt <= 4096
+        Require(count >= 1 && count <= 96 && (flags & 2) != 0 && (flags & 0x3100) == 0 && opt >= 112 && opt <= 4096
             && Fits((ulong)o,opt,(ulong)data.Length) && Fits((ulong)o+opt,count*40,(ulong)data.Length) && U16(data,o) == 0x20b,
             "The CLI PE headers are malformed or unsupported.");
         uint sectionAlignment=U32(data,o+32), fileAlignment=U32(data,o+36), imageSize=U32(data,o+56), headers=U32(data,o+60), entry=U32(data,o+16), directories=U32(data,o+108);
-        Require(sectionAlignment >= 4096 && (sectionAlignment & (sectionAlignment-1)) == 0 && fileAlignment >= 512 && fileAlignment <= 65536
+        ulong imageBase=U64(data,o+24);
+        Require(imageSize > 0 && imageSize <= 0x80000000U && imageBase > 0 && imageBase%65536 == 0 && imageBase <= UInt64.MaxValue-imageSize
+            && sectionAlignment >= 4096 && sectionAlignment <= imageSize && (sectionAlignment & (sectionAlignment-1)) == 0 && fileAlignment >= 512 && fileAlignment <= 65536
             && (fileAlignment & (fileAlignment-1)) == 0 && sectionAlignment >= fileAlignment && imageSize > 0 && imageSize%sectionAlignment == 0
-            && headers > 0 && headers%fileAlignment == 0 && headers <= data.Length && (ulong)o+opt+count*40 <= headers
-            && directories <= 16 && 112+directories*8 <= opt && (U16(data,o+70) & 0x100) != 0, "The CLI PE alignment or execution policy is invalid.");
-        List<ulong[]> sections=new List<ulong[]>(); int metadata=-1; bool initializedEntry=false;
+            && headers > 0 && headers%fileAlignment == 0 && headers <= data.Length && headers <= imageSize && (ulong)o+opt+count*40 <= headers
+            && directories <= 16 && 112+directories*8 <= opt && U16(data,o+68) == 3 && (U16(data,o+70) & 0x100) != 0,
+            "The CLI PE alignment, console subsystem, or execution policy is invalid.");
+        List<ulong[]> sections=new List<ulong[]>(); List<ulong[]> initialized=new List<ulong[]>(); initialized.Add(new ulong[]{0,headers});
+        int metadata=-1; bool initializedEntry=false; ulong previousEnd=0, first=((ulong)headers+sectionAlignment-1)/sectionAlignment*sectionAlignment;
         for (int i=0; i<count; i++) {
             int s=o+(int)opt+i*40; uint virtualSize=U32(data,s+8), address=U32(data,s+12), rawSize=U32(data,s+16), raw=U32(data,s+20), permissions=U32(data,s+36);
             ulong mapped=Math.Max((ulong)virtualSize,rawSize);
-            Require(address >= headers && address%sectionAlignment == 0 && mapped > 0 && Fits(address,mapped,imageSize)
+            ulong memoryEnd=(ulong)address+(mapped+sectionAlignment-1)/sectionAlignment*sectionAlignment;
+            Require(address >= first && address%sectionAlignment == 0 && mapped > 0 && memoryEnd <= imageSize && (i == 0 || address == previousEnd)
                 && (rawSize == 0 || (raw >= headers && raw%fileAlignment == 0 && rawSize%fileAlignment == 0 && Fits(raw,rawSize,(ulong)data.Length)))
+                && (rawSize != 0 || raw == 0)
                 && (permissions & 0xa0000000) != 0xa0000000, "The CLI PE section bounds or write/execute permissions are invalid.");
+            previousEnd=memoryEnd;
             foreach (ulong[] previous in sections) Require(!Overlap(address,mapped,previous[0],previous[1]) && !Overlap(raw,rawSize,previous[2],previous[3]), "The CLI PE sections overlap.");
             sections.Add(new ulong[] {address,mapped,raw,rawSize,virtualSize,permissions});
-            if (entry >= address && (ulong)entry-address < virtualSize && (ulong)entry-address < rawSize && (permissions & 0x20000000) != 0) initializedEntry=true;
+            if (rawSize != 0) {
+                ulong length=Math.Min(virtualSize == 0 ? rawSize : virtualSize,rawSize); initialized.Add(new ulong[]{address,length});
+                if (entry != 0 && entry >= address && (ulong)entry-address < length && (permissions & 0x20000000) != 0) initializedEntry=true;
+            }
             if (Ascii.GetString(data,s,8) == ".asmmeta") {
                 Require(metadata == -1 && virtualSize == 64 && rawSize >= 64 && (permissions & 0x40000040) == 0x40000040 && (permissions & 0xa00000a0) == 0,
                     "The CLI needs one bounded read-only metadata section."); metadata=(int)raw;
@@ -300,12 +321,16 @@ public static class Installer {
         Require(initializedEntry && metadata >= 0, "The CLI lacks an initialized entry point or managed metadata.");
         for (int i=0; i<directories; i++) {
             uint address=U32(data,o+112+i*8), size=U32(data,o+116+i*8); if (address == 0 && size == 0) continue;
+            if (i == 8) {
+                bool pointer=false; foreach (ulong[] range in initialized) if (address >= range[0] && (ulong)address-range[0] < range[1]) pointer=true;
+                Require(size == 0 && pointer,"The CLI global pointer directory is out of initialized bounds."); continue;
+            }
             Require(address != 0 && size != 0, "The CLI PE data directory is incomplete.");
             bool found=false;
             if (i == 4) {
-                found=address%8 == 0 && Fits(address,size,(ulong)data.Length) && address >= headers;
+                found=address%8 == 0 && size >= 8 && size%8 == 0 && Fits(address,size,(ulong)data.Length) && address >= headers;
                 foreach (ulong[] section in sections) if (Overlap(address,size,section[2],section[3])) found=false;
-            } else foreach (ulong[] section in sections) if (address >= section[0] && Fits((ulong)address-section[0],size,Math.Min(section[3],section[4]))) found=true;
+            } else foreach (ulong[] range in initialized) if (address >= range[0] && Fits((ulong)address-range[0],size,range[1])) found=true;
             Require(found, "The CLI PE data directory is out of initialized bounds.");
         }
         Require(Ascii.GetString(data,metadata,8) == "ASMCLI1\0" && U32(data,metadata+8) == 1, "The CLI metadata schema is invalid.");
@@ -462,7 +487,7 @@ public static class Installer {
     }
     static void Fetch(string url, int limit, Node file, Node home) {
         Tool(@"C:\Windows\System32\curl.exe",new string[]{"-q","--fail","--location","--silent","--show-error",
-            "--proto","=https","--proto-redir","=https","--max-time","120","--max-filesize",limit.ToString(CultureInfo.InvariantCulture),"--output","-",url},home,120,limit,file);
+            "--proto","=https","--proto-redir","=https","--tlsv1.2","--max-time","120","--max-filesize",limit.ToString(CultureInfo.InvariantCulture),"--output","-",url},home,120,limit,file);
     }
     static Node FinishedFile(Paths held, Node writer, bool allowDelete) {
         writer.Flush(); FileInfo identity=writer.Identity; Node parent=writer.Parent; string name=writer.Name; writer.Dispose();
@@ -548,7 +573,7 @@ public static class Installer {
             lockFile=Open(bin,".asm.lock",false,false,true,true,Read|Write,7);
             if (lockFile == null) lockFile=Open(bin,".asm.lock",false,true,false,true,Read|Write,7);
             held.Keep(lockFile); Require(LockFileEx(lockFile.Handle,3,0,1,0,ref overlap),"Another Asm installation operation is active. Retry when it ends."); locked=true;
-            Node store=held.Keep(Open(bin,".asm-cli",true,false,true,true,0x21|Delete,7));
+            Node store=held.Keep(Open(bin,".asm-cli",true,false,true,true,0x21,7));
             State state=store == null ? null : ExistingState(held,store,target);
             Node root=held.Keep(Open(bin,"asm.exe",false,false,true,true,Read,5)); byte[] rootBytes=root == null ? null : root.Bytes(MaximumArtifact);
             if (state != null && root != null && rootBytes.Length == expectedBytes && Hex(rootBytes) == expectedSha) {
@@ -602,10 +627,19 @@ public static class Installer {
             Node publish=RenameReady(held,candidate);
             if (state == null) {
                 Require(AtLeast(candidateMetadata.Version,candidateMetadata.Minimum),"The initial launcher cannot start this payload. Use a compatible release.");
-                Node newStore=held.Directory(stage,"store",true), versions=held.Directory(newStore,"versions",true), versionDirectory=held.Directory(versions,expectedSha,true);
+                Node newStore=held.Directory(stage,"store",true,true), versions=held.Directory(newStore,"versions",true), versionDirectory=held.Directory(versions,expectedSha,true);
                 NewFile(held,versionDirectory,"asm.exe",candidateBytes); NewFile(held,newStore,"layout",Ascii.GetBytes("# asm-cli-layout-v1\n"));
                 byte[] record=Record(version,target,expectedBytes,expectedSha,candidateMetadata.Minimum); Require(record.Length <= 256,"The initial record exceeds its bound.");
-                NewFile(held,newStore,"current.tsv",record); held.Recheck(); newStore.Rename(bin,".asm-cli",false);
+                NewFile(held,newStore,"current.tsv",record); held.Recheck();
+                // NTFS directory publication must not retain open descendants.
+                // Keep the source directory identity, then reopen all contents.
+                held.CloseDescendants(newStore); newStore.Rename(bin,".asm-cli",false);
+                Node publishedStore=held.Keep(Open(bin,".asm-cli",true,false,false,true,0x21,7));
+                Require(newStore.Same(publishedStore),"The published store differs from the staged directory."); newStore.Dispose();
+                state=ExistingState(held,publishedStore,target);
+                Require(Equal(state.RecordBytes,record) && state.Selected.Size == expectedBytes && state.Selected.Sha == expectedSha && state.Selected.Version == version,
+                    "The published CLI store changed before launcher publication.");
+                Compatible(candidateMetadata,state.Metadata);
             }
             held.Recheck();
             if (state != null) Require(Equal(state.Current.Bytes(256),state.RecordBytes),"The active selection changed before launcher repair.");
@@ -624,7 +658,7 @@ public static class Installer {
                     using (Node cleanup=Open(stage.Parent,stage.Name,true,false,false,true,0x21|Delete,7)) {
                         Require(stage.Same(cleanup),"The private temporary directory moved."); int left=4096; CleanTree(cleanup,ref left,0,Stopwatch.StartNew()); Remove(cleanup);
                     }
-                } catch { if (committed) result+=" Private temporary files remain; remove the .asm-bootstrap directory after inspection."; }
+                } catch { if (committed) result+=" Private temporary files remain at "+stage.Path+". Inspect and remove this directory."; }
             }
             held.Dispose();
         }
@@ -636,7 +670,7 @@ public static class Installer {
     $asmSpecification = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($AsmSpecBase64)) | ConvertFrom-Json
     $asmNativeTarget = [AsmBootstrapV1.Installer]::NativeTarget()
     $asmArtifacts = @($asmSpecification.artifacts | Where-Object { $_.target -ceq $asmNativeTarget })
-    if ($asmArtifacts.Count -ne 1) { throw 'This release has no qualified artifact for the native Windows target.' }
+    if ($asmArtifacts.Count -ne 1) { throw 'This installer has no artifact for the native Windows target. Use the matching installer.' }
     $asmArtifact = $asmArtifacts[0]
     $asmSource = $null; $asmUrl = $null; $asmBundle = $null; $asmCommit = $null
     if ($asmSpecification.mode -ceq 'source') {
