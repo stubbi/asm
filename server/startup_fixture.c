@@ -10,6 +10,7 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -32,6 +33,9 @@ static const char *owned_name;
 static struct addrinfo first, second;
 static struct sockaddr_in first_address, second_address;
 static int synthetic, completed, observed_connection;
+static pthread_mutex_t worker_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t worker_condition = PTHREAD_COND_INITIALIZER;
+static int worker_ready;
 
 static int is_mode(const char *name) { return mode && strcmp(mode, name) == 0; }
 
@@ -46,6 +50,40 @@ static void event(const char *line) {
 
 static void inherited_alarm(int number) { (void)number; }
 static void interruption(int number) { (void)number; }
+
+static void *blocked_worker(void *unused) {
+    (void)unused;
+    /* The creating thread blocks signals before pthread_create. This worker
+     * therefore cannot consume the process-directed watchdog signal. */
+    sigset_t mask;
+    if (pthread_sigmask(SIG_SETMASK, NULL, &mask) || sigismember(&mask, SIGALRM) != 1)
+        _exit(99);
+    if (pthread_mutex_lock(&worker_mutex)) _exit(99);
+    event("blocked-worker-ready");
+    worker_ready = 1;
+    if (pthread_cond_signal(&worker_condition)) _exit(99);
+    for (;;) {
+        if (pthread_cond_wait(&worker_condition, &worker_mutex)) _exit(99);
+    }
+    return NULL;
+}
+
+static void start_blocked_worker(void) {
+    sigset_t blocked, saved;
+    sigfillset(&blocked);
+    pthread_t worker;
+    if (pthread_sigmask(SIG_SETMASK, &blocked, &saved) ||
+        pthread_create(&worker, NULL, blocked_worker, NULL) ||
+        pthread_sigmask(SIG_SETMASK, &saved, NULL) || pthread_detach(worker) ||
+        pthread_mutex_lock(&worker_mutex)) {
+        event("blocked-worker-setup-failed");
+        _exit(99);
+    }
+    while (!worker_ready) {
+        if (pthread_cond_wait(&worker_condition, &worker_mutex)) _exit(99);
+    }
+    if (pthread_mutex_unlock(&worker_mutex)) _exit(99);
+}
 
 static void install_denial(int number, int error) {
     /* A fault injector, not a sandbox. The child cannot change architecture. */
@@ -121,6 +159,7 @@ __attribute__((constructor)) static void initialize(void) {
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGUSR1, &action, NULL)) _exit(99);
     event("initialized");
+    if (is_mode("submit-stall-worker")) start_blocked_worker();
 }
 
 static void watchdog_observation(void) {
@@ -172,7 +211,7 @@ int getaddrinfo_a(int how, struct gaicb *list[], int count, struct sigevent *not
     owned_request = list[0];
     owned_name = owned_request->ar_name;
     owned_hints = owned_request->ar_request;
-    if (is_mode("submit-stall")) for (;;) pause();
+    if (is_mode("submit-stall") || is_mode("submit-stall-worker")) for (;;) pause();
     if (is_mode("submit-fail")) { errno = EIO; return EAI_SYSTEM; }
     synthetic = !is_mode("real");
     if (!synthetic) {
@@ -254,7 +293,8 @@ void freeaddrinfo(struct addrinfo *result) {
 
 /* libpq is not replaced: observe the state at the actual connection boundary. */
 void *PQconnectStartParams(const char *const *keys, const char *const *values, int expand) {
-    if (owned_request && !observed_connection++) {
+    if (owned_request && !observed_connection) {
+        observed_connection = 1;
         struct sigaction action;
         struct itimerval timer;
         sigset_t mask;
@@ -270,6 +310,8 @@ void *PQconnectStartParams(const char *const *keys, const char *const *values, i
                 sigismember(&action.sa_mask, number) != sigismember(&initial_action.sa_mask, number)) valid = 0;
         }
         event(valid ? "state-restored" : "state-invalid");
+    }
+    if (owned_request) {
         const char *url = NULL;
         for (int index = 0; index < 32 && keys[index]; index++)
             if (!strcmp(keys[index], "dbname")) url = values[index];

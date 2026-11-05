@@ -9,6 +9,7 @@ import http.client
 import os
 from pathlib import Path
 import resource
+import signal
 import socket
 import stat
 import subprocess
@@ -138,7 +139,7 @@ class StartupTests(unittest.TestCase):
         started = time.monotonic()
         process = subprocess.Popen([str(self.binary), "serve"], env=env,
                                    stdout=subprocess.PIPE, stderr=write_fd if full_stderr else subprocess.PIPE,
-                                   preexec_fn=child_limits)
+                                   preexec_fn=child_limits, start_new_session=True)
         try:
             # Observe admission throughout startup rather than after exit only.
             deadline = started + 2.8
@@ -161,7 +162,12 @@ class StartupTests(unittest.TestCase):
                 self.assertGreater(elapsed, minimum)
         finally:
             if process.poll() is None:
-                process.kill()
+                # SIGKILL to the owned process group also removes a worker left
+                # alive by an incorrect thread-only timeout exit.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 process.communicate(timeout=2)
             if write_fd is not None:
                 os.close(write_fd)
@@ -202,7 +208,7 @@ class StartupTests(unittest.TestCase):
         self.assert_profile(log)
         self.assertGreaterEqual(log.count("database-connect"), 5)
         self.assertIn("state-restored", log)
-        self.assertIn("pinned-address-valid", log)
+        self.assertEqual(log.count("pinned-address-valid"), log.count("database-connect"), log)
 
     def test_inherited_blocked_alarm_handler_mask_and_empty_timer_are_restored(self):
         with self.serving("blocked-alarm"):
@@ -242,12 +248,16 @@ class StartupTests(unittest.TestCase):
                     self.assertNotIn("freed-completed-result", log)
 
     def test_watchdog_covers_blocked_submission_wait_and_full_diagnostic_pipe(self):
-        for mode, full in (("submit-stall", False), ("wait-stall", False), ("lookup-fail", True)):
+        for mode, full in (("submit-stall", False), ("submit-stall-worker", False),
+                           ("wait-stall", False), ("lookup-fail", True)):
             with self.subTest(mode=mode, full_stderr=full):
                 (self.base / "fixture.log").unlink(missing_ok=True)
                 log = self.refusal(mode, full_stderr=full, minimum=1.5)
                 self.assert_profile(log)
                 self.assertNotIn("database-connect", log)
+                if mode == "submit-stall-worker":
+                    self.assertIn("blocked-worker-ready", log)
+                    self.assertNotIn("blocked-worker-setup-failed", log)
                 if mode == "wait-stall":
                     self.assertIn("wait", log)
 

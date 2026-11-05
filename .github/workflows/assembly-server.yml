@@ -15,34 +15,25 @@ concurrency:
 
 jobs:
   test:
-    name: Test the assembly server reference
-    runs-on: ubuntu-24.04
+    name: Test package and runtime (${{ matrix.target }}, native)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: x86_64-linux }
+          - { runner: ubuntu-24.04-arm, target: aarch64-linux }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      ASM_TEST_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Assemble each Linux runtime source without execution
-        shell: bash
-        timeout-minutes: 2
-        working-directory: server
+      - name: Install native build prerequisites
         run: |
-          set -euo pipefail
-          clang --version
-          ASM_OBJECTS="$RUNNER_TEMP/asm-server-source-objects"
-          mkdir -m 700 "$ASM_OBJECTS"
-          for target in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu; do
-            case "$target" in
-              x86_64-linux-gnu) source_dir=.; target_flags=() ;;
-              aarch64-linux-gnu) source_dir=aarch64; target_flags=() ;;
-              riscv64-linux-gnu) source_dir=riscv64; target_flags=(-march=rv64gc -mabi=lp64d) ;;
-            esac
-            for source in runtime config; do
-              clang --target="$target" "${target_flags[@]}" -x assembler-with-cpp \
-                -DASM_SOURCE_REVISION="\"$GITHUB_SHA\"" -c "$source_dir/$source.s" \
-                -o "$ASM_OBJECTS/$target-$source.o"
-            done
-          done
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential bison flex bzip2 libssl-dev
       - name: Fetch and check the pinned source archives
         shell: bash
         timeout-minutes: 5
@@ -92,22 +83,54 @@ jobs:
             --with-openssl --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
           make -j2
           make install
-      - name: Run the assembly server tests
+      - name: Build the native Asm CLI
+        run: make
+      - name: Exercise native-library CLI builds and failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/server-port-evidence"
+          PYTHONPATH=tests python3 -m unittest test_native_link -v \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/native-link-tests.log"
+      - name: Package the server source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 experiments/assembly-server/package.py --target "$ASM_TEST_TARGET" \
+            --output "$RUNNER_TEMP/asm-server-project"
+          python3 tools/registry.py pack "$RUNNER_TEMP/asm-server-project" \
+            --name stubbi/asm-server --version 0.1.0 --target "$ASM_TEST_TARGET" \
+            --output "$RUNNER_TEMP/asm-server-source.tar.gz"
+          mkdir "$RUNNER_TEMP/asm-server-source"
+          tar -xzf "$RUNNER_TEMP/asm-server-source.tar.gz" -C "$RUNNER_TEMP/asm-server-source"
+      - name: Build and test the extracted server package
         shell: bash
         timeout-minutes: 3
         run: |
           set -euo pipefail
           ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
-          make -C experiments/assembly-server test \
+          make -C "$RUNNER_TEMP/asm-server-source" test \
+            ASM="$GITHUB_WORKSPACE/build/asm" \
             MHD_PREFIX="$ASM_DEPS/mhd" \
-            PG_PREFIX="$ASM_DEPS/postgres"
-      - name: Build and test the Linux x86-64 assembly runtime foundation
+            PG_PREFIX="$ASM_DEPS/postgres" \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/reference-tests.log"
+      - name: Prepare test-only startup ownership fixtures
         shell: bash
-        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/python3 server/test_startup.py --prepare-ownership-fixtures \
+            "$RUNNER_TEMP/startup-ownership" "$(id -u)" "$(id -g)"
+          printf 'ASM_SERVER_STARTUP_OWNERSHIP=%s\n' "$RUNNER_TEMP/startup-ownership" >> "$GITHUB_ENV"
+      - name: Test the hosted assembly runtime foundation
+        shell: bash
+        timeout-minutes: 3
         run: |
           set -euo pipefail
           ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
-          make -C server test MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" SOURCE_REVISION="$GITHUB_SHA"
+          make -C server test TARGET="$ASM_TEST_TARGET" \
+            BUILD="$RUNNER_TEMP/hosted-server-build" SOURCE_REVISION="$GITHUB_SHA" \
+            MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/hosted-tests.log"
       - name: Check canonical catalog publication with PostgreSQL TLS
         shell: bash
         timeout-minutes: 5
@@ -117,3 +140,66 @@ jobs:
           export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
           export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
           make hosted-registry-test
+      - name: Check build failure preserves both executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test_server_build_failures.py \
+            --reference "$RUNNER_TEMP/asm-server-source" \
+            --hosted "$GITHUB_WORKSPACE/server" \
+            --hosted-build "$RUNNER_TEMP/hosted-server-build" \
+            --asm "$GITHUB_WORKSPACE/build/asm" --target "$ASM_TEST_TARGET" \
+            --mhd-prefix "$RUNNER_TEMP/asm-server-reference/mhd" \
+            --pg-prefix "$RUNNER_TEMP/asm-server-reference/postgres" \
+            --revision "$GITHUB_SHA" \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/build-failure-tests.log"
+      - name: Remove only the owned startup fixtures
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -d "$RUNNER_TEMP/startup-ownership"; then
+            sudo /usr/bin/python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' \
+              "$RUNNER_TEMP/startup-ownership"
+          fi
+      - name: Record target artifact identities
+        if: always()
+        shell: bash
+        env:
+          ASM_JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/server-port-evidence"
+          python3 tools/record_server_ports.py \
+            --target "$ASM_TEST_TARGET" --execution native --revision "$GITHUB_SHA" \
+            --job-status "$ASM_JOB_STATUS" --asm "$GITHUB_WORKSPACE/build/asm" \
+            --reference "$RUNNER_TEMP/asm-server-source/build/app" \
+            --hosted "$RUNNER_TEMP/hosted-server-build/asm-hub" \
+            --archive "$RUNNER_TEMP/asm-server-source.tar.gz" \
+            --output "$RUNNER_TEMP/server-port-evidence/qualification.json"
+      - name: Retain passed and failed port evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-port-${{ matrix.target }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/server-port-evidence/
+            ${{ github.workspace }}/build/asm
+            ${{ runner.temp }}/asm-server-source/build/app
+            ${{ runner.temp }}/hosted-server-build/asm-hub
+            ${{ runner.temp }}/asm-server-source.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  required:
+    name: Test the assembly server reference
+    permissions: {}
+    if: ${{ always() }}
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require both native qualification jobs
+        env:
+          SERVER_TEST_RESULT: ${{ needs.test.result }}
+        run: test "$SERVER_TEST_RESULT" = success || { printf '%s\n' 'Native server qualification did not succeed. Inspect both target jobs.' >&2; exit 1; }

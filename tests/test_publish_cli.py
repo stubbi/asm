@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import IS_MACOS
+from host import IS_MACOS, TARGET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,14 +73,18 @@ class NativePublishTests(unittest.TestCase):
         candidate = self.work / "candidate"
         url = "https://github.com/owner/math/releases/download/v0.1.0/native"
         candidate.write_bytes(elf(183))
-        arguments = self.arguments(artifacts=[("aarch64-macos", "executable", candidate, url)])
+        arguments = self.arguments(artifacts=[(TARGET if IS_MACOS else "aarch64-macos", "executable", candidate, url)])
         self.cli(arguments, code=1)
         self.assertFalse(self.output.exists())
         if IS_MACOS:
             candidate.write_bytes(ASM.read_bytes())
             self.cli(arguments)
-            record = registry.validate_manifest(json.loads(self.output.read_bytes()))
-            registry.validate_artifact(candidate.read_bytes(), record, record["artifacts"][0])
+            record = json.loads(self.output.read_bytes())
+            self.assertEqual(record["artifacts"][0]["target"], TARGET)
+            self.assertEqual(record["artifacts"][0]["sha256"], hashlib.sha256(candidate.read_bytes()).hexdigest())
+            if TARGET in registry.TARGETS:
+                record = registry.validate_manifest(record)
+                registry.validate_artifact(candidate.read_bytes(), record, record["artifacts"][0])
 
     def test_prepares_real_record_with_actual_digest_and_no_upload_claim(self):
         result = self.cli(self.arguments() + ["--json"])
@@ -159,8 +163,16 @@ class NativePublishTests(unittest.TestCase):
                 self.cli(code=1)
                 self.assertFalse(self.output.exists())
                 self.artifact.write_bytes(registry.make_archive(files))
-                self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]), code=2)
-                self.assertFalse(self.output.exists())
+                arguments = self.arguments(artifacts=[(target, "source", self.artifact, self.url)])
+                if IS_MACOS and target == TARGET:
+                    # A source-port host can prepare its own record before
+                    # the shared registry/release schema admits that host.
+                    self.cli(arguments)
+                    self.assertEqual(json.loads(self.output.read_bytes())["artifacts"][0]["target"], TARGET)
+                    self.output.unlink()
+                else:
+                    self.cli(arguments, code=2)
+                    self.assertFalse(self.output.exists())
 
     def test_multi_target_archive_matches_each_declared_artifact_target(self):
         self.artifact.write_bytes(registry.make_archive(self.target_files()))

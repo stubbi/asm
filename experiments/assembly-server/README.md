@@ -1,9 +1,31 @@
-# Assembly application server experiment
+# Asm server package
 
-This checkpoint demonstrates an assembly application calling established HTTP and PostgreSQL libraries through the C ABI.
-It runs locally on Linux x86-64.
+`asm-server` version `0.1.0` is an experimental Asm source package.
+The checkout's `asm.toml` declares `server.s` for `x86_64-linux`.
+The included `LICENSE` supplies the AGPL-3.0-or-later terms.
+The package has no published registry release yet.
+Target-specific native assembly also exists for Linux ARM64 and RISC-V64.
+Their source and runtime qualification states remain separate.
+The [target contract and gates](https://github.com/stubbi/asm/blob/main/docs/native-linking.md#target-coverage) record those limits.
+
+| Manifest target | ISA and CPU profile | OS | C ABI | Source |
+| --- | --- | --- | --- | --- |
+| `x86_64-linux` | x86-64 baseline | Linux | System V AMD64 LP64 | `server.s`, GNU Intel syntax |
+| `aarch64-linux` | ARMv8-A | Linux | AAPCS64 LP64 | `aarch64/server.s`, GNU syntax |
+| `riscv64-linux` | RV64GC, including hardware double precision | Linux | LP64D | `riscv64/server.s`, GNU syntax |
+
+The package calls C libraries through the selected ABI.
+The RISC-V profile differs from the freestanding RV64I/LP64 hello example.
+Linux kernel and libc minimums need separate qualification; the sources do not establish them.
+The manifest declares the native libraries and compile-only ABI assertions.
+Use a source-built Asm CLI with [native library build support](https://github.com/stubbi/asm/blob/main/docs/native-linking.md).
+Published Asm 0.5.0 binaries do not support these build fields.
+
+This package contains an assembly application that calls established HTTP and PostgreSQL libraries through the C ABI.
+Its source profiles target the three Linux systems listed above.
 It has no public deployment or performance comparison.
-See [the reproducibility results](RESULTS.md) for the current checks.
+See [the reproducibility results](RESULTS.md) for the earlier checkpoint's checks.
+Those results predate native Asm builds and the assembly runtime-version guard.
 The [initial checkpoint](INITIAL_RESULTS.md) retains the earlier results and failures.
 
 The experiment has four read routes:
@@ -25,12 +47,13 @@ The endpoint never presents a truncated first page as a complete catalog.
 
 | Component | Implementation |
 | --- | --- |
-| Request routing, input bounds, connection lifecycle, deadlines, response handling, and shutdown | `server.s`, GNU Intel-syntax assembly |
+| Request routing, input bounds, connection lifecycle, deadlines, response handling, and shutdown | The selected target's native assembly source |
 | HTTP framing, parsing, connection admission, and thread management | GNU libmicrohttpd 1.0.3, a C library |
 | PostgreSQL wire protocol, authentication, and available database TLS support | libpq 16.15, a C library |
 | Query semantics and retained registry constraints | Fixed parameterized SQL and PostgreSQL |
 | Process startup, allocation used by libraries, and standard runtime functions | The system C runtime |
-| Build-time ABI assertions | `abi-check.c`, a separate executable that is not linked into the server |
+| Build-time header and layout assertions | `abi-check.c`, compiled without execution or application linkage |
+| Runtime library version checks | Assembly startup, before configuration reads, database requests, or listeners |
 | Fixture creation and tests | Python orchestration, an included SQL migration, and a fresh local PostgreSQL cluster |
 
 There is no C, Rust, Python, or shell application backend behind the assembly routes.
@@ -92,28 +115,54 @@ The program reads that file once before starting threads.
 
 ## Reproduce the local checks
 
-Use Linux x86-64, GNU libmicrohttpd 1.0.3, PostgreSQL 16.15, and Python 3.10 or later.
+Use a matching Linux host, GNU libmicrohttpd 1.0.3, PostgreSQL 16.15, and Python 3.11 or later.
+Install a source-built Asm CLI and a system C compiler at `/usr/bin/cc`.
 Run tests as an ordinary user, without `sudo`.
 The [dependency recipe](DEPENDENCIES.md) supplies pinned sources and exact local build commands.
-The ABI check rejects different library headers or linked runtime versions.
-It also checks the operating-system structures, system calls, flags, and libpq enums used by the assembly.
+The compile-only ABI check rejects different library headers.
+Assembly startup rejects different linked runtime versions.
+The compile-only check also checks the operating-system structures, system calls, flags, and libpq enums used by the assembly.
 Review the boundary before changing those pins.
 
-Run this command from the repository root to build the server:
+Run commands from the package directory.
+In a repository checkout, use `experiments/assembly-server`.
+An extracted source archive is also a package directory.
+Its root manifest must match the native host.
+Prepare ARM64 or RISC-V source from the repository root before building:
 
 ```sh
-make -C experiments/assembly-server \
+python3 experiments/assembly-server/package.py \
+  --target aarch64-linux --output build/server-aarch64-source
+cd build/server-aarch64-source
+```
+
+For RISC-V, use `riscv64-linux`.
+Change both directory paths to the new RISC-V package directory.
+The extracted RISC-V build additionally needs the independently implemented native RISC-V CLI.
+An ARM64 CLI does not translate x86-64 or RISC-V source.
+
+Build the server directly:
+
+```sh
+asm build \
+  --include-dir /path/to/libmicrohttpd-prefix/include \
+  --include-dir /path/to/postgresql-prefix/include \
+  --library-dir /path/to/libmicrohttpd-prefix/lib \
+  --library-dir /path/to/postgresql-prefix/lib
+```
+
+Run the tests:
+
+```sh
+make test \
   MHD_PREFIX=/path/to/libmicrohttpd-prefix \
   PG_PREFIX=/path/to/postgresql-prefix
 ```
 
-Run the tests from the repository root:
-
-```sh
-make -C experiments/assembly-server test \
-  MHD_PREFIX=/path/to/libmicrohttpd-prefix \
-  PG_PREFIX=/path/to/postgresql-prefix
-```
+The executable is `build/app`.
+Temporary clusters, test evidence, and logs stay under the package's `build` directory.
+The Makefile calls the same native build command before tests.
+`ASM=/absolute/path/to/asm` selects a CLI that is not on PATH.
 
 The fixture accepts no existing database URL, service name, or data directory.
 It creates a private cluster, binds PostgreSQL to loopback, and uses random credentials.
@@ -123,15 +172,35 @@ Cleanup stops only the owned processes and removes their temporary files, includ
 The tests do not download artifacts or contact public endpoints.
 
 To inspect the application manually, prepare a local reader account that meets the included schema and role checks.
-Run the following command from the repository root:
+Run the following command from the package directory:
 
 ```sh
-build/assembly-server/asm-hub-prototype 8081 /path/to/reader.url
+build/app 8081 /path/to/reader.url
 ```
 
 The connection URL file must have mode `0600`.
 The server accepts an HTTP port from 1024 to 65535.
 The tests use the real network stack, HTTP library, PostgreSQL library, database, and assembly executable.
+The runtime-version test substitutes incompatible library versions and requires rejection before configuration or listener creation.
+The same HTTP and database tests apply to each target; only the preload assembly fixture changes.
+
+## Package the source
+
+The archive includes the build recipe, ABI checker, SQL, fixture, tests, license, and retained evidence.
+It excludes generated build files and does not bundle the external libraries.
+
+With Python 3.11 or later, create a local archive from the repository root:
+
+```sh
+python3 tools/registry.py pack experiments/assembly-server \
+  --name stubbi/asm-server --version 0.1.0 --target x86_64-linux \
+  --output dist/asm-server-0.1.0-x86_64-linux-source.tar.gz
+```
+
+The command reports the archive path, SHA-256 digest, and byte size.
+This local archive does not establish a source commit or publish a release.
+Before publication, commit the package and use `pack-git` with `--source-path experiments/assembly-server`.
+Follow the [publication guide](https://github.com/stubbi/asm/blob/main/registry/README.md) for commit binding and release records.
 
 ## Production work that remains
 
@@ -149,7 +218,7 @@ That work must preserve prompt liveness under saturation.
 The local experiment's connection cap does not establish a global denial-of-service control.
 
 The stable v2 API, deterministic v1 export, version detail, download observations, and fixed-label metrics remain unimplemented here.
-The [architecture proposal](../../docs/architecture.md) and [acceptance gates](../../docs/architecture-gates.md) define the remaining work.
+The [architecture proposal](https://github.com/stubbi/asm/blob/main/docs/architecture.md) and [acceptance gates](https://github.com/stubbi/asm/blob/main/docs/architecture-gates.md) define the remaining work.
 The included [HTTP tests](test_server.py) and [fixture tests](test_fixture.py) cover this checkpoint's implemented behavior.
 Authenticated public publication and untrusted build execution remain separate services.
 

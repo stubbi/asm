@@ -61,7 +61,5 @@ test-fixtures:
 test: all test-fixtures
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
 	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
-	python3 test_runtime.py
-	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
-	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
-	ASM_SERVER_STARTUP_FIXTURE="$(BUILD)/startup-fixture.so" python3 test_startup.py
+	ASM_SERVER_STARTUP_FIXTURE="$(BUILD)/startup-fixture.so" \
+	python3 -m unittest -v test_runtime test_startup

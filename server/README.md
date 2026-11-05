@@ -119,7 +119,10 @@ Projected-volume rotation must still pass against the actual private deployment.
 ## Build and test
 
 Use a matching Linux x86-64, ARMv8-A AArch64, or RV64GC/LP64D host.
-Use GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15.
+Install GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15 for that host.
+The Makefile selects the assembly port from the host architecture.
+If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
+This build does not cross-compile.
 Use Python 3.11 or later and an OpenSSL command for the integration fixture.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
@@ -130,11 +133,26 @@ For this runtime, configure PostgreSQL with `--with-openssl`.
 The reference recipe's TLS-free PostgreSQL build cannot pass these tests.
 Keep HTTP transport behind the separately qualified ingress TLS boundary.
 
-Build and test from the repository root:
+Build the service from the repository root:
 
 ```sh
-make -C server test MHD_PREFIX=/path/to/mhd PG_PREFIX=/path/to/postgres SOURCE_REVISION=FULL_COMMIT_ID
+make -C server all MHD_PREFIX=/path/to/mhd PG_PREFIX=/path/to/postgres SOURCE_REVISION=FULL_COMMIT_ID
 ```
+
+The startup tests need fixed test files with different owners.
+Use a disposable Linux test host with `sudo` for that fixture setup.
+The server and PostgreSQL tests run as the current non-root user.
+Run these commands from the repository root:
+
+```sh
+ownership_parent=$(mktemp -d /tmp/asm-startup-owned.XXXXXXXX)
+sudo python3 server/test_startup.py --prepare-ownership-fixtures "$ownership_parent/ownership" "$(id -u)" "$(id -g)"
+ASM_SERVER_STARTUP_OWNERSHIP="$ownership_parent/ownership" make -C server test MHD_PREFIX=/path/to/mhd PG_PREFIX=/path/to/postgres SOURCE_REVISION=FULL_COMMIT_ID
+sudo python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' "$ownership_parent"
+```
+
+The new startup tests are a test-first contract; native execution is pending.
+This checkpoint does not implement DNS-only startup or `prepare-config` yet.
 
 Replace `FULL_COMMIT_ID` with the exact 40-character source commit.
 The status source offer points to that commit.
@@ -177,6 +195,14 @@ The later [Linux CI run 41934599148](https://github.com/stubbi/asm/actions/runs/
 It tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
 This result covers the stated TLS, configuration, readiness, identity, and idle-shutdown cases.
 It does not qualify deployment compatibility, catalog behavior, saturation, or recovery.
+
+[Image run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) later passed all 11 runtime cases per architecture, without skips.
+AMD64 and ARM64 used native instruction execution; RISC-V64 used QEMU user emulation.
+The tested PR merge revision was `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
+These results do not qualify head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later changes.
+The [image guide](../docs/server-images.md#completed-prior-image-checks) records executable digests and the remaining gates.
+
+These earlier foundation image results do not qualify canonical HTTP or startup additions.
 
 The legacy `guard.sql` retains its provenance notice and checksum for the separate reference.
 The runtime now includes `catalog/reader-guard.sql` and reads the complete canonical ledger.
