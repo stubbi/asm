@@ -5,7 +5,8 @@ Status: build and qualification implementation, 5 November 2026.
 This path builds the assembly runtime foundation for Linux AMD64, ARM64, and RISC-V64.
 An entry in the build matrix is not a supported-target claim.
 Each architecture must compile its actual port and pass the complete runtime suite.
-The new image jobs have not yet supplied that evidence.
+The [completed prior-image checks](#completed-prior-image-checks) cover one recorded source revision.
+Each later source revision requires its own completed qualification.
 
 The operator outcome is an immutable image connected to its source, executable, target, and observed checks.
 The governing principles are dependable reuse and trust earned through evidence.
@@ -86,6 +87,23 @@ It accepts no existing database or production credential.
 All current tests must execute, at least eleven tests must exist, and no test may skip.
 The result identifies source, image ID, ELF target, executable digest, library digests, execution mode, and test count.
 These are foundation checks, not a complete registry qualification.
+
+## Completed prior-image checks
+
+[Run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) passed all 11 runtime cases for each architecture, without skips.
+It tested PR merge revision `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
+
+| Image platform | Execution | Executable SHA-256 |
+| --- | --- | --- |
+| [Linux AMD64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984484580) | Native | `ad1f6cff7a36a9171af6928b3667ba73cf24f6412cdd63f831ba35d06bc95b45` |
+| [Linux ARM64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984485001) | Native | `456da6cd1ee4c0532e44b7e009cf712d79709ad7c2e591c5ae17219a64c58288` |
+| [Linux RISC-V64](https://github.com/stubbi/asm/actions/runs/41947880132/job/126984484813) | QEMU user emulation | `03efff97e1f1f86255d50d142a3b695c8656fd36253db0303495a6605af0b218` |
+
+These results do not qualify head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later source changes.
+Current-head qualification remains a separate gate.
+Native instruction execution does not qualify a physical hardware range.
+RISC-V emulation supplies no native RISC-V hardware or performance evidence.
+Canonical HTTP integration, capacity, recovery, publication, and deployment remain separate gates.
 
 ## Verified inputs
 

@@ -86,7 +86,11 @@ Projected-volume rotation must still pass against the actual private deployment.
 
 ## Build and test
 
-Use Linux x86-64 with GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15.
+Use a matching Linux x86-64, AArch64, or RV64GC/LP64D host.
+Install GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15 for that host.
+The Makefile selects the assembly port from the host architecture.
+If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
+This build does not cross-compile.
 Use Python 3.10 or later and an OpenSSL command for the integration fixture.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
@@ -137,16 +141,25 @@ It tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which co
 This result covers the stated TLS, configuration, readiness, identity, and idle-shutdown cases.
 It does not qualify deployment compatibility, catalog behavior, saturation, or recovery.
 
+[Image run 41947880132](https://github.com/stubbi/asm/actions/runs/41947880132) later passed all 11 runtime cases per architecture, without skips.
+AMD64 and ARM64 used native instruction execution; RISC-V64 used QEMU user emulation.
+The tested PR merge revision was `09a5a2fb63185fedb9dd9b58d26199a0ea1f884f`, containing source head `4fe2c25277ed40a163b48b727ab814225d227cf8`.
+These results do not qualify head `7d684055fc972fd511e450b77f6f0dda331cd06c` or later changes.
+The [image guide](../docs/server-images.md#completed-prior-image-checks) records executable digests and the remaining gates.
+
 The schema and guard originated in the reviewed assembly reference.
 `guard.sql` retains its provenance notice and checksum.
-The runtime reuses that guard without changing the experiment or its evidence.
+The runtime and reference guards now compare temporary-schema prefixes literally.
+The retained migration bytes and checksum remain unchanged.
 The reference schema excludes macOS artifacts and lacks fields required for complete current schema-1 exports.
 No export has been guessed from incomplete records.
+The separate [canonical catalog component](catalog/README.md) stores complete records and defines operator commands.
+Its HTTP integration and deployment qualification remain separate work.
 
 These requirements remain open:
 
-- Exact Linux TSV, macOS TSV, and schema-1 JSON exports from retained canonical records.
-- Reviewed schema migration, grants, namespace ownership, and idempotent import commands.
+- HTTP delivery of all four [canonical catalog exports](catalog/README.md) from retained records.
+- Image and deployment integration for canonical migration, grants, namespace bindings, and idempotent import commands.
 - Bounded hostname resolution compatible with private service discovery.
 - Database connection reuse and measured admission behavior under saturation.
 - Absolute HTTP header deadlines and qualified shutdown draining.
