@@ -236,3 +236,6 @@ The reviewed four-export catalog contract from PR #29 is integrated.
 Its HTTP and image qualification require fresh results for this source.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
 No cluster, DNS, credential, release, or live service changes follow from this image workflow.
+
+The separate [operator image contract](operator-images.md) describes migration and import packaging.
+Its qualification remains separate from the reader image's retained results.

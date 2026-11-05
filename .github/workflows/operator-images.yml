@@ -1,0 +1,153 @@
+name: Registry operator image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operator-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    name: Qualify native AMD64 operator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Package the exact clean source commit without credentials or unrelated refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          mkdir -m 700 "$ASM_EVIDENCE"
+          {
+            uname -a
+            docker version
+            docker buildx version
+            printf 'target=linux/amd64 execution=native\n'
+          } > "$ASM_EVIDENCE/environment.txt"
+          python3 tools/operator_source.py create --repository . --revision "$GITHUB_SHA" --output .operator-source \
+            2>&1 | tee "$ASM_EVIDENCE/source.log"
+          cp .operator-source/source.json .operator-source/source.bundle "$ASM_EVIDENCE/"
+      - name: Check source, preparation, entrypoint, and image contract regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          python3 -m unittest discover -s tests/operator_image -p 'test_*.py' -v \
+            2>&1 | tee "$ASM_EVIDENCE/host-tests.log"
+      - name: Build the operator and its derived qualification image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          git --no-replace-objects -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+            diff --exit-code "$GITHUB_SHA" -- .
+          docker build --platform linux/amd64 --file containers/operator.Dockerfile \
+            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
+            --tag asm-operator:runtime-amd64 . 2>&1 | tee "$ASM_EVIDENCE/build-runtime.log"
+          docker build --platform linux/amd64 --file containers/operator.Dockerfile \
+            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
+            --tag asm-operator:qualification-amd64 . 2>&1 | tee "$ASM_EVIDENCE/build-qualification.log"
+      - name: Run actual image commands and all applicable isolated SQL and preparation tests
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          python3 tools/test_operator_image.py --revision "$GITHUB_SHA" \
+            --image asm-operator:runtime-amd64 --qualification-image asm-operator:qualification-amd64 \
+            --output "$ASM_EVIDENCE/qualification.json" \
+            2>&1 | tee "$ASM_EVIDENCE/image-tests.log"
+      - name: Retain only this run's exact qualified final image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > "$ASM_EVIDENCE/image.json"
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification "$ASM_EVIDENCE/qualification.json" --image "$ASM_EVIDENCE/image.json"
+          docker save --output "$ASM_EVIDENCE/runtime.tar" asm-operator:runtime-amd64
+          (cd "$ASM_EVIDENCE" && sha256sum runtime.tar > runtime.sha256)
+      - name: Retain successful and failed evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: operator-image-amd64-${{ github.sha }}
+          path: ${{ runner.temp }}/asm-operator-image-evidence/
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: qualify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: operator-image-amd64-${{ github.sha }}
+      - name: Load the exact qualified artifact and enforce its source and security contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check runtime.sha256
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image image.json
+          docker load --input runtime.tar
+          docker image inspect asm-operator:runtime-amd64 --format '{{json .}}' > loaded-image.json
+          python3 -I tools/operator_publication.py --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image loaded-image.json
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-amd64"
+          docker tag asm-operator:runtime-amd64 "ghcr.io/stubbi/asm-operator:$ASM_TAG"
+      - name: Publish that qualified image and record its immutable registry digest
+        id: image
+        shell: bash
+        env:
+          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-amd64"
+          docker push "ghcr.io/stubbi/asm-operator:$ASM_TAG"
+          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-operator:$ASM_TAG" --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$ASM_REF" | grep -Eq '^ghcr.io/stubbi/asm-operator@sha256:[0-9a-f]{64}$'
+          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$ASM_REF" | tee registry-digest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the exact public source and qualified image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/stubbi/asm-operator
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: operator-image-digest-amd64-${{ github.sha }}
+          path: |
+            registry-digest.txt
+            qualification.json
+            image.json
+            loaded-image.json
+          if-no-files-found: error
+          retention-days: 30
