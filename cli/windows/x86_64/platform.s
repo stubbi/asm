@@ -1187,8 +1187,18 @@ win_security_initialize:
     call GetTokenInformation
     mov r13d, eax
     mov rcx, r12
+    mov edx, 20 /* TokenElevation: explicit elevated-token exception only */
+    lea r8, [rip + win_token_elevation]
+    mov r9d, 4
+    lea rax, [rbp - 136]
+    mov [rsp + 32], rax
+    call GetTokenInformation
+    mov r14d, eax
+    mov rcx, r12
     call CloseHandle
     test r13d, r13d
+    jz .Lwsi_bad
+    test r14d, r14d
     jz .Lwsi_bad
     mov ecx, 22 /* WinLocalSystemSid */
     xor edx, edx
@@ -1203,6 +1213,29 @@ win_security_initialize:
     lea r8, [rip + win_admin_sid]
     lea r9, [rip + win_sid_capacity]
     call CreateWellKnownSid
+    test eax, eax
+    jz .Lwsi_bad
+    mov dword ptr [rip + win_sid_capacity], 68
+    mov ecx, 71 /* WinCreatorOwnerRightsSid */
+    xor edx, edx
+    lea r8, [rip + win_owner_rights_sid]
+    lea r9, [rip + win_sid_capacity]
+    call CreateWellKnownSid
+    test eax, eax
+    jz .Lwsi_bad
+    /* Resolve the fixed OS service identity, never a caller-selected name. */
+    xor ecx, ecx
+    lea rdx, [rip + win_installer_name]
+    lea r8, [rip + win_installer_sid]
+    lea r9, [rip + win_installer_capacity]
+    lea rax, [rbp - 400] /* owned domain[128 UTF16] */
+    mov [rsp + 32], rax
+    mov dword ptr [rbp - 128], 128
+    lea rax, [rbp - 128]
+    mov [rsp + 40], rax
+    lea rax, [rbp - 136]
+    mov [rsp + 48], rax
+    call LookupAccountNameW
     test eax, eax
     jz .Lwsi_bad
     lea rcx, [rip + win_private_acl]
@@ -1252,6 +1285,78 @@ win_security_initialize:
     xor eax, eax
     WLEAVE
 .Lwsi_bad:
+    mov eax, 1
+    WLEAVE
+
+/* RDI=valid owner SID; ESI=1 ordinary file,0 directory/grant.
+ * EAX=1 current owner,0 trusted system,2 foreign.
+ * Administrators counts as current only for a verified elevated token.
+ * WFRAME preserves inputs; SID storage is process-owned. */
+win_owner_class:
+    WFRAME
+    mov r12, rdi
+    mov rcx, r12
+    call IsValidSid
+    test eax, eax
+    jz .Lwoc_foreign
+    mov rcx, r12
+    mov rdx, [rip + win_token_user]
+    call EqualSid
+    test eax, eax
+    jnz .Lwoc_user
+    mov rcx, r12
+    lea rdx, [rip + win_admin_sid]
+    call EqualSid
+    test eax, eax
+    jz .Lwoc_system
+    test esi, esi
+    jz .Lwoc_root
+    cmp dword ptr [rip + win_token_elevation], 0
+    jne .Lwoc_user
+    jmp .Lwoc_root
+.Lwoc_system:
+    mov rcx, r12
+    lea rdx, [rip + win_system_sid]
+    call EqualSid
+    test eax, eax
+    jnz .Lwoc_root
+    mov rcx, r12
+    lea rdx, [rip + win_installer_sid]
+    call EqualSid
+    test eax, eax
+    jnz .Lwoc_root
+.Lwoc_foreign:
+    mov eax, 2
+    WLEAVE
+.Lwoc_user:
+    mov eax, 1
+    WLEAVE
+.Lwoc_root:
+    xor eax, eax
+    WLEAVE
+
+/* RDI=validated effective grant SID; ESI=owner class0..2. EAX=1 safe/0.
+ * OWNER_RIGHTS denotes only an already qualified object owner. Foreign
+ * owner rights remain unsafe. Privileged OS principals retain their scope. */
+win_grant_safe:
+    WFRAME
+    mov r12, rdi
+    mov r13d, esi
+    xor esi, esi
+    call win_owner_class
+    cmp eax, 2
+    jne .Lwgs_safe
+    cmp r13d, 2
+    je .Lwgs_bad
+    mov rcx, r12
+    lea rdx, [rip + win_owner_rights_sid]
+    call EqualSid
+    test eax, eax
+    jnz .Lwgs_safe
+.Lwgs_bad:
+    xor eax, eax
+    WLEAVE
+.Lwgs_safe:
     mov eax, 1
     WLEAVE
 
@@ -1308,28 +1413,12 @@ win_stat:
     test eax, eax
     jnz .Lwst_unsafe
     mov r14, [rbp - 224]
-    mov rcx, [rbp - 208]
-    mov rdx, [rip + win_token_user]
-    call EqualSid
-    test eax, eax
-    jnz .Lwst_owner_user
-    mov rcx, [rbp - 208]
-    lea rdx, [rip + win_system_sid]
-    call EqualSid
-    test eax, eax
-    jnz .Lwst_owner_root
-    mov rcx, [rbp - 208]
-    lea rdx, [rip + win_admin_sid]
-    call EqualSid
-    test eax, eax
-    jnz .Lwst_owner_root
-    mov dword ptr [r13 + 28], 2
-    jmp .Lwst_acl
-.Lwst_owner_user:
-    mov dword ptr [r13 + 28], 1
-    jmp .Lwst_acl
-.Lwst_owner_root:
-    mov dword ptr [r13 + 28], 0
+    mov rdi, [rbp - 208]
+    xor esi, esi
+    test dword ptr [rbp - 192], 16
+    setz sil
+    call win_owner_class
+    mov [r13 + 28], eax
 .Lwst_acl:
     mov r12, [rbp - 216]
     test r12, r12
@@ -1363,25 +1452,26 @@ win_stat:
     jz 3f
     cmp dword ptr [r13 + 28], 0
     jne 3f
-    /* Add-only grants above HOME cannot replace protected held children. */
-    and edx, -7
+    /* Only FILE_ADD_SUBDIRECTORY is harmless to existing protected children. */
+    and edx, -5
 3:  test [rax + 4], edx
     jz .Lwst_ace_next
+    /* A known ACE must contain a complete valid SID before comparison. */
+    movzx edx, word ptr [rax + 2]
+    cmp edx, 16
+    jb .Lwst_acl_bad
+    movzx ecx, byte ptr [rax + 9]
+    lea ecx, [rcx*4 + 16]
+    cmp ecx, edx
+    ja .Lwst_acl_bad
     lea rcx, [rax + 8]
-    mov rdx, [rip + win_token_user]
-    call EqualSid
+    call IsValidSid
     test eax, eax
-    jnz .Lwst_ace_next
-    mov rcx, [rbp - 232]
-    add rcx, 8
-    lea rdx, [rip + win_system_sid]
-    call EqualSid
-    test eax, eax
-    jnz .Lwst_ace_next
-    mov rcx, [rbp - 232]
-    add rcx, 8
-    lea rdx, [rip + win_admin_sid]
-    call EqualSid
+    jz .Lwst_acl_bad
+    mov rdi, [rbp - 232]
+    add rdi, 8
+    mov esi, [r13 + 28]
+    call win_grant_safe
     test eax, eax
     jz .Lwst_acl_bad
 .Lwst_ace_next:
@@ -1791,15 +1881,22 @@ win_getdents:
 
 .section .data
 win_sid_capacity: .long 68
+win_installer_capacity: .long 68
 .section .rdata,"dr"
 win_root_utf8: .asciz "/"
+win_installer_name: .short 78,84,32,83,69,82,86,73,67,69,92,84,114,117,115,116,101,100,73,110,115,116,97,108,108,101,114,0
 win_lock_name: .short '.','a','s','m','.','l','o','c','k',0
 .section .bss
 .p2align 3
 win_token_user: .space 4096
 win_system_sid: .space 68
 win_admin_sid: .space 68
+win_installer_sid: .space 68
+win_owner_rights_sid: .space 68
+win_token_elevation: .space 4
+.p2align 3
 win_private_acl: .space 4096
+.p2align 3
 win_rename_info: .space 8216
 win_parent_path: .space 4096
 win_parent_basename: .space 8
@@ -2363,10 +2460,14 @@ win_env_path: .short 'P','A','T','H',0
 .p2align 3
 win_executable_wide: .space 8192
 win_command_utf8: .space 32767
+.p2align 1
 win_command_wide: .space 65534
+.p2align 4
 win_environment_wide: .space 65536
 win_child_environment: .space 8
+.p2align 4
 win_startup: .space 112
+.p2align 4
 win_attribute_list: .space 1024
 win_inherited_handles: .space 24
 win_process_info: .space 24
@@ -2802,7 +2903,7 @@ win_compile_project:
     lea rax, [rip + package_source]
     cmp byte ptr [rip + test_mode], 0
     je 1f
-    lea rax, [rip + test_source]
+    lea rax, [rip + package_test]
 1:  mov [rbx + 56], rax
     mov qword ptr [rbx + 64], 0
     lea rdi, [rip + as_path]
@@ -3064,3 +3165,48 @@ win_localappdata_prefix: .asciz "LOCALAPPDATA="
 .p2align 3
 win_profile_environment: .space 8192
 win_localappdata_environment: .space 8192
+
+.text
+/* RDI=source path bounded to255 UTF8 bytes. EAX=1 valid/0 invalid.
+ * The shared syntax gate remains authoritative for option/response aliases.
+ * Then reject Windows ADS, device names, separators and trailing aliases per
+ * component before compiler invocation. Borrows win_path_wide[4096 units].
+ * WFRAME preserves input registers and internal callee-saved registers. */
+win_valid_source:
+    WFRAME
+    call win_shared_valid_source
+    test eax, eax
+    jz .Lwvs_bad
+    lea rsi, [rip + win_path_wide]
+    mov edx, 4096
+    call win_wide
+    test rax, rax
+    js .Lwvs_bad
+    lea r12, [rip + win_path_wide]
+    mov r13, r12
+.Lwvs_scan:
+    movzx eax, word ptr [r13]
+    test eax, eax
+    jz .Lwvs_component
+    cmp eax, '/'
+    je .Lwvs_component
+    add r13, 2
+    jmp .Lwvs_scan
+.Lwvs_component:
+    mov rdi, r12
+    mov rdx, r13
+    sub rdx, r12
+    call win_component_safe
+    test eax, eax
+    jz .Lwvs_bad
+    cmp word ptr [r13], 0
+    je .Lwvs_good
+    lea r12, [r13 + 2]
+    mov r13, r12
+    jmp .Lwvs_scan
+.Lwvs_bad:
+    xor eax, eax
+    WLEAVE
+.Lwvs_good:
+    mov eax, 1
+    WLEAVE

@@ -59,7 +59,14 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
                             'noexecstack: .asciz "-Wl,/entry:_start,/subsystem:console,/nxcompat,/dynamicbase"')
         text = text.replace('mov qword ptr [rip + child_argv + 48], 0\n    lea rdi, [rip + ld_path]',
                             'lea rax, [rip + win_kernel32_lib]\n    mov [rip + child_argv + 48], rax\n    mov qword ptr [rip + child_argv + 56], 0\n    lea rdi, [rip + ld_path]')
+        text = text.replace('valid_source:\n', 'valid_source:\n    jmp win_valid_source\nwin_shared_valid_source:\n', 1)
         text += '\n' + (LOCAL / 'platform.s').read_text()
+    if source.name == 'cross_build.s':
+        text = replace_routine(text, 'cross_tools', 'cross_build_project', '''cross_tools:
+    lea rdi, [rip + cross_unsupported_error]
+    mov esi, 2
+    jmp die
+''')
     if source.name == 'registry.s':
         text = replace_routine(text, 'registry_download', 'registry_read_index', '''registry_download:
     jmp win_download
@@ -93,13 +100,8 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     lea rsi, [rip + registry_bin_suffix]
     call copy_string
 ''')
-        text = text.replace('registry_valid_target:\n', '''registry_valid_target:
-    push rdi
-    lea rsi, [rip + win_registry_linux]
-    call streq
-    pop rdi
-    test eax, eax
-    jnz registry_valid
+        text = replace_routine(text, 'registry_valid_target', 'registry_valid_kind', '''registry_valid_target:
+    jmp pub_project_valid_target
 ''')
         text += '\n.section .rodata\nwin_registry_linux: .asciz "x86_64-linux"\n'
     if source.name == 'programs.s':
@@ -232,6 +234,35 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
         begin = text.index('pub_validate_elf:\n')
         end = text.index('pub_hash_payload:\n', begin)
         linux_validator = text[begin:end].replace('pub_validate_elf:\n', 'win_pub_validate_linux_elf:\n', 1)
+        # Only the three established Linux ELF containers use this validator.
+        # A declared foreign PE/Mach-O target does not become ELF-compatible.
+        linux_validator = linux_validator.replace('win_pub_validate_linux_elf:\n', '''win_pub_validate_linux_elf:
+    push rdi
+    push rsi
+    lea rsi, [rip + win_registry_linux]
+    call streq
+    test eax, eax
+    jnz .Lwin_pub_linux_known
+    mov rdi, [rsp + 8]
+    lea rsi, [rip + registry_aarch64]
+    call streq
+    test eax, eax
+    jnz .Lwin_pub_linux_known
+    mov rdi, [rsp + 8]
+    lea rsi, [rip + registry_riscv64]
+    call streq
+.Lwin_pub_linux_known:
+    pop rsi
+    pop rdi
+    test eax, eax
+    jnz .Lwin_pub_linux_container
+    mov eax, 1
+    ret
+.Lwin_pub_linux_container:
+''', 1)
+        anchor = '    .quad registry_host, 4, registry_aarch64, 8, registry_riscv64, 16, registry_macos, 32'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor.replace('registry_host', 'win_registry_linux'))
         text = replace_routine(text, 'pub_validate_elf', 'pub_hash_payload', '''pub_validate_elf:
     push rdi
     push rsi
@@ -255,10 +286,23 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
 ''')
     text = text.replace('x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc')
     text = text.replace('x86_64-linux', 'x86_64-windows')
+    # Canonical foreign target rows are data, not host aliases. Keep the seven
+    # target table and v2-lock identities distinct after host substitutions.
+    if source.name == 'asm.s':
+        text = text.replace('target_x86: .asciz "x86_64-windows"',
+                            'target_x86: .asciz "x86_64-linux"')
+        text = text.replace('section_target_x86: .asciz "target.x86_64-windows"',
+                            'section_target_x86: .asciz "target.x86_64-linux"')
+        text = re.sub(r'^targets_text:.*$', lambda m: 'targets_text: .asciz "x86_64-windows (host; LLVM clang + Windows SDK)\\n"', text, flags=re.M)
+        text = re.sub(r'^targets_json:.*$', lambda m: 'targets_json: .asciz "{\\"host\\":\\"x86_64-windows\\",\\"targets\\":[\\"x86_64-windows\\"]}\\n"', text, flags=re.M)
+    if source.name == 'cross_build.s':
+        text = text.replace('/usr/bin/x86_64-windows-gnu-', '/usr/bin/x86_64-linux-gnu-')
+
     # Existing known-target rows remain valid data. The host literal alone
     # selects Windows installation. Each host uses its own native index.
     text = text.replace('win_registry_linux: .asciz "x86_64-windows"',
                         'win_registry_linux: .asciz "x86_64-linux"')
+    text = text.replace(r'\"targets\":[\"x86_64-windows\",\"aarch64-linux\",\"riscv64-linux\"]', r'\"targets\":[\"x86_64-windows\"]')
     text = text.replace('x86-64 ELF', 'x86-64 PE')
     text = text.replace('host ELF', 'host PE')
     text = re.sub(r'build/app(?!\.exe)', 'build/app.exe', text)

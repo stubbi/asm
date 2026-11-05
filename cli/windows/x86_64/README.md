@@ -2,7 +2,8 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-The first native Windows test run executed the CLI and failed its project and ownership preflights.
+Two native Windows runs executed the CLI and retained failed runtime results.
+The second run created a project, then exposed ownership and child-process failures.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -32,9 +33,12 @@ The adapter rejects traversal, alternate streams, reserved device basenames, and
 Private files receive a protected DACL for the current token user and LocalSystem.
 The normalized stat record includes volume serial, file index, link count, size, owner class, and unsafe DACL writes.
 Inventory and updater checks consume those actual handle results.
-Directory ancestors owned by System or Administrators can have add-only grants.
-Such grants cannot replace the protected child directories used by the shared walk.
-This interpretation needs independent Windows security review and hostile-path tests.
+Ancestor owners can be the current user, System, Administrators, or TrustedInstaller.
+Effective foreign grants can add a subdirectory, but cannot write existing entries or delete protected children.
+Administrators ownership qualifies an ordinary file only when `TokenElevation` confirms an elevated token.
+Administrators-owned directories remain system ancestors; final private directories require the actual token user.
+OWNER_RIGHTS grants qualify only when the object owner already meets that policy.
+These rules follow `verifier/PORTABILITY.md`; native hostile-path tests remain required.
 
 Atomic finalization uses a source handle and a held destination directory.
 `NtSetInformationFile` receives `FileRenameInformationEx`, with replacement flags selected by the caller.
@@ -96,13 +100,18 @@ These results require native qualification before they become supported instruct
 On 2026-11-05, Apple clang 17.0.0 cross-assembled the flattened source with exit status zero:
 
 ```text
-python3 tools/windows_x64.py --output /tmp/asm-windows-x64.s
-clang -target x86_64-pc-windows-msvc -c /tmp/asm-windows-x64.s -o /tmp/asm-windows-x64.obj
+python3 tools/windows_x64.py --output build/windows/x86_64/asm.s
+clang -target x86_64-pc-windows-msvc -c build/windows/x86_64/asm.s -o build/windows/x86_64/asm.obj
 ```
 
-The generated assembly SHA-256 was `5947ba2ef8a5d8684cedca2b7380d8d160926d79631151fb5242992c3923e03e`.
-The object SHA-256 was `cbe13c30af51efe0afafd2e88365ed6f81027ecac8e3ad265d55b91b6ee938bc`.
+The generated assembly SHA-256 was `e1f4533af1c655ad217457dd44a09a369a7620a8aed69dfc699e23f8de5efdd0`.
+The object SHA-256 was `25b516245df5ff61933ba88d671bfdc32a66561c7d82691003867341c5d6e64c`.
 These digests identify source and object bytes, not a qualified executable.
+The temporary-import cross-link produced 97,792 bytes with SHA-256 `e46b1ac08a42861ecb9775efddcc57853b4ed29217482546356a92eade8338a3`.
+`build/windows/x86_64/cross-build-current.json` records exact compile and link arguments.
+The first link attempt failed because its temporary import library lacked `NtSetInformationFile`.
+Adding that existing SDK export to the local import definition permitted the cross-link.
+This does not establish native SDK linking or execution.
 Native CI must record the final PE digest with its actual SDK, toolchain, host, and results.
 
 `pe.s` checks a bounded AMD64 PE32+ console executable container.
@@ -118,7 +127,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, eleven focused checks passed on macOS through Rosetta.
+On 2026-11-05, fifteen focused checks passed on macOS through Rosetta.
 They execute extracted x86-64 assembly with deterministic API shims.
 They do not establish Windows API behavior or native filesystem effects.
 
@@ -143,6 +152,14 @@ A separate capture case preserves a final byte written between an empty probe an
 A working-directory case accepts the exact extended DOS prefix returned by Windows APIs.
 It continues to reject UNC and device namespaces.
 Verifier environment cases keep all six native Windows paths inside the private verifier directory.
+Ownership cases cover TrustedInstaller, elevated and ordinary Administrators tokens, OWNER_RIGHTS, foreign owners, and foreign write grants.
+The prior ownership implementation failed seven policy cases before correction.
+An additional case retains the rejection of Administrators as a private directory owner.
+An exact process routine shim reproduces status 127 when API structure storage is misaligned.
+Aligned storage permits that simulated launch; native error evidence must confirm the remaining real failure.
+Manifest cases preserve all seven canonical target identities and reject Windows stream, device, and path aliases.
+Publication metadata keeps its Linux table entry separate from the Windows host.
+Foreign Windows and Mach-O executable publication remains unsupported on this candidate.
 
 The first PE test harness placed its wrapper in a data section and failed with SIGBUS.
 That harness defect was corrected before the PE rejection checks were evaluated.
@@ -152,9 +169,13 @@ The original malformed PE fixtures then reproduced acceptance before the parser 
 
 The [first native CLI run](https://github.com/stubbi/asm/actions/runs/41942208419/job/126965560411) exercised startup and read-only registry commands.
 Its runtime suite failed because project creation and protected ownership preflights stopped later workflows.
-The working-directory adapter rejected an API-produced extended DOS path; the retained host shim reproduces that defect.
-The corrected adapter needs a native rerun.
-Ownership failures need the actual token, owner, and DACL evidence before any policy change.
+The second [native CLI run](https://github.com/stubbi/asm/actions/runs/41947783095) confirmed project creation after the working-directory correction.
+Its diagnostics found TrustedInstaller ownership on the drive root and Administrators as the elevated token's default owner.
+Python-created files and directories inherited that Administrators ownership.
+The corrected policy uses actual token elevation, rather than assuming that every Administrators owner belongs to the caller.
+Positive fixture directories receive the actual token user's owner SID; their inherited DACLs remain unchanged.
+The retained second-run JSON is under `build/windows-second-native`.
+The policy and process storage corrections need a native rerun.
 Package lifecycle, compiler output, recovery, and updater qualification remain incomplete.
 The ordinary repository CLI and verifier release gates also remain required.
 
@@ -177,6 +198,11 @@ Do not report a completed update until the replacement and its recovery behavior
 The separate diagnostic fixture preserves every production permission decision.
 It builds an instrumented executable and operates only inside an owned temporary directory.
 It records bounded NTSTATUS/component traces, normalized stat fields, token SIDs, and path ownership/DACL information.
+It also records child-process setup stages, API results, and Windows error codes in a separate diagnostic executable.
+An error code is meaningful only when its API result indicates failure.
+The fixture runs the generated project and retains the actual exit status.
+It records ambient HOME ownership before setting the positive fixture owner.
+The diagnostic source cross-linked to 99,840 bytes with SHA-256 `1c3fc1702be1dab2dd96d5f57fa346aa399f8cca58227811c9ca78e16dc9e370`.
 The equal-version updater check makes no network request.
 The release generator never includes the diagnostic assembly.
 
@@ -204,3 +230,7 @@ They document API behavior; they do not qualify this implementation.
 
 - [Final path names and extended DOS prefixes](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew)
 - [Default ownership of new objects](https://learn.microsoft.com/en-us/windows/win32/secauthz/owner-of-a-new-object)
+
+- [Token elevation information](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-token_information_class)
+- [Fixed account lookup](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountnamew)
+- [Process attribute storage](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-initializeprocthreadattributelist)

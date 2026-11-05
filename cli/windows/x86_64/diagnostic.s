@@ -79,3 +79,31 @@ win_diag_hex_digits: .ascii "0123456789ABCDEF"
 win_diag_nt_line: .ascii "NT 00000000 component="
     .space 1002
 win_diag_stat_line: .ascii "STAT mode=00000000 owner=00000000 links=00000000\n"
+
+.text
+/* RAX=setup result. Log a bounded process stage/result; an error code is
+ * meaningful only when the documented API result denotes failure. Preserve
+ * RAX and internal registers. This does not enter the release executable. */
+win_diag_process_log:
+    WFRAME
+    mov r12, rax
+    call GetLastError
+    mov r13d, eax
+    lea rdi, [rip + win_diag_process_line + 11]
+    mov esi, [rip + win_diag_process_stage]
+    call win_diag_hex32
+    lea rdi, [rip + win_diag_process_line + 27]
+    mov esi, r12d
+    call win_diag_hex32
+    lea rdi, [rip + win_diag_process_line + 42]
+    mov esi, r13d
+    call win_diag_hex32
+    mov edi, 2
+    lea rsi, [rip + win_diag_process_line]
+    mov edx, 51
+    call write_all
+    mov rax, r12
+    WLEAVE
+.data
+win_diag_process_stage: .long 0
+win_diag_process_line: .ascii "PROC stage=00000000 result=00000000 error=00000000\n"

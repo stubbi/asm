@@ -8,6 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 from pathlib import Path
 import importlib.util
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -67,6 +68,10 @@ class HostShims(unittest.TestCase):
         cls.build_delete()
         cls.build_extended_cwd()
         cls.build_verifier_environment()
+        cls.build_security()
+        cls.build_process()
+        cls.build_manifest_paths()
+        cls.build_targets()
 
     @classmethod
     def tearDownClass(cls):
@@ -78,7 +83,7 @@ class HostShims(unittest.TestCase):
             assembly = assembly.replace('.global ' + symbol + '\n', '.global ' + cls.prefix + symbol + '\n')
             assembly = assembly.replace('\n' + symbol + ':\n', '\n' + cls.prefix + symbol + ':\n')
         if cls.prefix:
-            assembly = assembly.replace('.section .bss', '.data').replace('.section .rodata', '.data')
+            assembly = assembly.replace('.section .bss', '.data').replace('.section .rodata', '.data').replace('.section .data', '.data')
             assembly = assembly.replace('.section .rdata,"dr"', '.data')
         else:
             assembly += '\n.section .note.GNU-stack,"",@progbits\n'
@@ -87,8 +92,11 @@ class HostShims(unittest.TestCase):
         csource = cls.directory / (name + '.c')
         csource.write_text(driver)
         command = [cls.clang, '-arch', 'x86_64'] if cls.prefix else [cls.clang, '-m64']
-        subprocess.run(command + [str(source), str(csource), '-o', str(cls.directory / name)],
-                       check=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(command + [str(source), str(csource), '-o', str(cls.directory / name)],
+                       capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+
 
     @classmethod
     def run_fixture(cls, name, *arguments):
@@ -466,7 +474,7 @@ win_full_wide: .space 8192
 
     @classmethod
     def build_verifier_environment(cls):
-        assembly = cls.macros + cls.platform_source[cls.platform_source.index('win_prepare_verifier_environment:\n'):]
+        assembly = cls.macros + block(cls.platform_source, 'win_prepare_verifier_environment', 'win_valid_source')
         assembly += '\n.text\n' + block(cls.prepared, 'copy_string', 'write_cstr')
         assembly += '''
 .text
@@ -498,6 +506,267 @@ test_environment: .quad self_home_environment,self_config_environment,self_cache
 '''
         driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long prepare_verifier_environment(int);\nextern const char* verifier_environment(int);\nint main(int n,char**a){long s=prepare_verifier_environment(n>1?atoi(a[1]):0);printf("%ld\\n",s);if(s==0)for(int i=0;i<6;i++)puts(verifier_environment(i));}\n'
         cls.build('verifier-environment', assembly, driver, ['prepare_verifier_environment','verifier_environment'])
+
+    @classmethod
+    def build_manifest_paths(cls):
+        assembly = cls.macros + block(cls.prepared,'win_shared_valid_source','cmd_build')
+        assembly += '\n.text\n' + block(cls.platform_source,'win_component_safe','win_prepare_verifier_environment')
+        assembly += '\n.text\n' + cls.platform_source[cls.platform_source.index('win_valid_source:\n'):]
+        assembly += r"""
+.text
+.global source_case
+source_case:
+    jmp win_valid_source
+win_wide:
+    xor eax, eax
+1:  movzx ecx, byte ptr [rdi + rax]
+    mov [rsi + rax*2], cx
+    inc eax
+    test ecx, ecx
+    jnz 1b
+    ret
+.data
+win_path_wide: .space 8192
+"""
+        driver = '#include <stdio.h>\nextern long source_case(const char*);\nint main(int n,char**a){printf("%ld\\n",source_case(a[1]));}\n'
+        cls.build('source-path',assembly,driver,['source_case'])
+
+    @classmethod
+    def build_targets(cls):
+        assembly = cls.macros + block(cls.prepared,'project_canonical_target','project_set_target')
+        assembly += '\n' + block(cls.prepared,'streq','strlen')
+        assembly += '\n.global canonical_target\ncanonical_target:\n    jmp project_canonical_target\n.data\n'
+        for name in ['host_target','host_target_alias','target_x86','target_arm','target_riscv','target_macos','target_macos_x86','target_windows_x86','target_windows_arm']:
+            rows = re.findall(r'^' + name + r': .+$',cls.prepared,re.M)
+            assert len(rows) == 1, name
+            assembly += rows[0] + '\n'
+        driver = '#include <stdio.h>\nextern const char* canonical_target(const char*);\nint main(int n,char**a){const char*p=canonical_target(a[1]);puts(p?p:"invalid");}\n'
+        cls.build('canonical-target',assembly,driver,['canonical_target'])
+        assembly = cls.macros + block(cls.prepared,'pub_project_valid_target','pub_project_reset_entry')
+        assembly += '\n' + block(cls.prepared,'streq','strlen')
+        assembly += '\n.global registry_target_case\nregistry_target_case:\n    jmp pub_project_valid_target\n.data\n'
+        for name in ['win_registry_linux','registry_aarch64','registry_riscv64','registry_macos','pub_project_x86_macos','pub_project_x86_windows','pub_project_arm_windows']:
+            assembly += re.findall(r'^' + name + r': .+$',cls.prepared,re.M)[0] + '\n'
+        assembly += cls.prepared[cls.prepared.index('pub_project_targets:\n'):cls.prepared.index('pub_readme_names:')]
+        driver = '#include <stdio.h>\nextern long registry_target_case(const char*);\nint main(int n,char**a){printf("%ld\\n",registry_target_case(a[1]));}\n'
+        cls.build('registry-target',assembly,driver,['registry_target_case'])
+
+
+    def test_windows_manifest_source_rejects_streams_devices_and_aliases(self):
+        for value in ['src/main.s:stream','src/CON.s','src/NUL','src/main.s.','src/main.s ','src\\main.s','@options','src/@options','src/../main.s']:
+            with self.subTest(value=value):
+                r = self.run_fixture('source-path',value)
+                self.assertEqual(r.returncode,0,r.stderr)
+                self.assertEqual(r.stdout.strip(),'0')
+        for value in ['src/main.s','custom/tests.s']:
+            self.assertEqual(self.run_fixture('source-path',value).stdout.strip(),'1')
+
+    def test_manifest_target_identities_remain_distinct(self):
+        for target in ['x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos','x86_64-macos','x86_64-windows','aarch64-windows']:
+            self.assertEqual(self.run_fixture('canonical-target',target).stdout.strip(),target)
+        self.assertEqual(self.run_fixture('canonical-target','x86_64-pc-windows-msvc').stdout.strip(),'x86_64-windows')
+        self.assertEqual(self.run_fixture('canonical-target','made-up').stdout.strip(),'invalid')
+        for target in ['x86_64-linux','aarch64-linux','riscv64-linux','aarch64-macos','x86_64-macos','x86_64-windows','aarch64-windows']:
+            self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'1')
+        for target in ['made-up','x86_64-pc-windows-msvc']:
+            self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'0')
+
+
+    @classmethod
+    def build_process(cls):
+        body = block(cls.platform_source,'win_process','win_explicit_environment')
+        data = cls.platform_source[cls.platform_source.index('.section .data\n.p2align 3\nwin_pipe_security:'):cls.platform_source.index('win_hash_file:\n')]
+        assembly = cls.macros + body + data + '\n.text\n' + block(cls.prepared,'streq','strlen') + r"""
+.text
+.global process_case
+process_case:
+    WFRAME
+    lea rdi, [rip + as_path]
+    lea rsi, [rip + test_argv]
+    xor edx, edx
+    xor r10d, r10d
+    xor r8d, r8d
+    mov r9, -1
+    call win_process
+    WLEAVE
+win_wide:
+win_wide_command:
+""".replace('win_wide_command:\n','') + r"""
+    mov eax, 1
+    ret
+MultiByteToWideChar:
+    mov eax, 1
+    ret
+win_build_environment:
+win_explicit_environment:
+    xor eax, eax
+    ret
+CreateFileW:
+    mov eax, 17
+    ret
+DuplicateHandle:
+    test rdx, rdx
+    jz 1f
+    lea rax, [rdx + 100]
+    mov [r9], rax
+    mov eax, 1
+    ret
+1:  xor eax, eax
+    ret
+InitializeProcThreadAttributeList:
+    test rcx, 7
+    setz al
+    movzx eax, al
+    ret
+UpdateProcThreadAttribute:
+    mov eax, 1
+    ret
+CreateProcessW:
+    mov rax, [rsp + 80]
+    mov qword ptr [rax], 70
+    mov qword ptr [rax + 8], 71
+    mov eax, 1
+    ret
+GetTickCount64:
+WaitForSingleObject:
+    xor eax, eax
+    ret
+GetExitCodeProcess:
+    mov dword ptr [rdx], 0
+    mov eax, 1
+    ret
+DeleteProcThreadAttributeList:
+CloseHandle:
+TerminateProcess:
+CreatePipe:
+SetHandleInformation:
+PeekNamedPipe:
+ReadFile:
+    mov eax, 1
+    ret
+GetLastError:
+    mov eax, 109
+    ret
+win_handle:
+    mov rax, rdi
+    ret
+.data
+as_path: .asciz "C:/clang.exe"
+native_cc_path: .asciz "C:/clang.exe"
+.p2align 3
+test_argv: .quad as_path,0
+win_handles: .quad 10,11,12
+"""
+        cls.build('process',assembly,'#include <stdio.h>\nextern long process_case(void);\nint main(){printf("%ld\\n",process_case());}\n',['process_case'])
+
+    def test_process_api_storage_has_required_alignment(self):
+        r = self.run_fixture('process')
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(r.stdout.strip(),'0')
+
+    @classmethod
+    def build_security(cls):
+        body = block(cls.platform_source, 'win_stat', 'win_protect')
+        if 'win_owner_class:\n' in cls.platform_source:
+            body += block(cls.platform_source, 'win_owner_class', 'win_stat')
+        assembly = cls.macros + body + r"""
+.text
+.global security_case
+security_case:
+    WFRAME
+    mov [rip + test_owner_sid], edi
+    mov [rip + win_token_elevation], esi
+    mov [rip + test_grant_sid], edx
+    mov [rip + test_ace + 4], ecx
+    mov [rip + test_attributes], r8d
+    mov edi, 7
+    lea rsi, [rip + test_stat]
+    call win_stat
+    test rax, rax
+    jnz 1f
+    mov eax, [rip + test_stat + 28]
+    shl eax, 8
+    mov edx, [rip + test_stat + 24]
+    and edx, 18
+    or eax, edx
+1:  WLEAVE
+GetFileInformationByHandle:
+    mov r9, rdx
+    mov rdi, rdx
+    mov ecx, 7
+    xor eax, eax
+    rep stosq
+    mov eax, [rip + test_attributes]
+    mov [r9], eax
+    mov dword ptr [r9 + 28], 1
+    mov dword ptr [r9 + 40], 1
+    mov dword ptr [r9 + 48], 1
+    mov eax, 1
+    ret
+GetSecurityInfo:
+    lea rax, [rip + test_owner_sid]
+    mov [r9], rax
+    mov rdx, [rsp + 48]
+    lea rax, [rip + test_acl]
+    mov [rdx], rax
+    mov rdx, [rsp + 64]
+    mov [rdx], rax
+    xor eax, eax
+    ret
+EqualSid:
+    mov eax, [rcx]
+    cmp eax, [rdx]
+    sete al
+    movzx eax, al
+    ret
+IsValidAcl:
+IsValidSid:
+    mov eax, 1
+    ret
+GetAce:
+    mov eax, [rip + test_grant_sid]
+    mov [rip + test_ace + 8], eax
+    lea rax, [rip + test_ace]
+    mov [r8], rax
+    mov eax, 1
+    ret
+LocalFree:
+    ret
+win_error:
+    mov rax, -5
+    ret
+.data
+win_token_user: .quad test_user_sid
+win_token_elevation: .long 0
+test_user_sid: .long 1
+win_system_sid: .long 2
+win_admin_sid: .long 3
+win_installer_sid: .long 4
+win_owner_rights_sid: .long 6
+test_owner_sid: .long 0
+    .long 0
+test_grant_sid: .long 0
+test_attributes: .long 0
+test_acl: .byte 2,0,0,0,1,0,0,0
+test_ace: .byte 0,0,16,0
+    .long 0,0,0
+test_stat: .space 144
+"""
+        driver = '#include <stdio.h>\n#include <stdlib.h>\nextern long security_case(int,int,int,int,int);\nint main(int n,char**a){printf("%ld\\n",security_case(atoi(a[1]),atoi(a[2]),atoi(a[3]),strtoul(a[4],0,0),atoi(a[5]))); }\n'
+        cls.build('security', assembly, driver, ['security_case'])
+
+    def test_real_windows_owner_and_acl_contract(self):
+        cases = [(4,0,2,0x1f01ff,16,0), (3,1,6,0x1f01ff,0,256),
+                 (3,0,6,0x1f01ff,0,0), (3,1,6,0x1f01ff,16,0),
+                 (5,1,6,0x1f01ff,0,530),
+                 (1,0,5,2,16,274), (4,0,5,4,16,0),
+                 (4,0,5,2,16,18), (1,0,1,0x1f01ff,0,256),
+                 (1,0,6,0x1f01ff,0,256), (2,0,4,0x1f01ff,16,0)]
+        for owner, elevated, grant, mask, attributes, expected in cases:
+            with self.subTest(owner=owner,elevated=elevated,grant=grant,mask=mask):
+                r = self.run_fixture('security', *map(str,(owner,elevated,grant,mask,attributes)))
+                self.assertEqual(r.returncode,0,r.stderr)
+                self.assertEqual(r.stdout.strip(),str(expected))
 
     def test_drive_absolute_output_does_not_use_cwd(self):
         for value in ['C:/output/tool.exe', r'C:\output\tool.exe', '/C:/output/tool.exe']:

@@ -46,6 +46,17 @@ def diagnostic_source(module):
     call win_diag_stat_log
     mov rcx, r14
 ''')
+    begin = source.index('win_process:\n')
+    end = source.index('win_command_byte:\n', begin)
+    process = source[begin:end]
+    stages = ['win_wide','win_wide_command','win_build_environment','win_explicit_environment',
+              'CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW',
+              'InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW']
+    for number, name in enumerate(stages, 1):
+        process = process.replace('    call ' + name + '\n',
+            '    mov dword ptr [rip + win_diag_process_stage], ' + str(number) + '\n' +
+            '    call ' + name + '\n    call win_diag_process_log\n')
+    source = source[:begin] + process + source[end:]
     return source + '\n' + (LOCAL / 'diagnostic.s').read_text()
 
 
@@ -82,11 +93,11 @@ def api_security(paths):
     result = {'token': {}, 'paths': []}
     if advapi.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)):
         try:
-            for kind, name in [(1, 'user'), (4, 'default_owner')]:
+            for kind, name in [(1, 'user'), (4, 'default_owner'), (20, 'elevated')]:
                 data = ctypes.create_string_buffer(4096)
                 needed = wintypes.DWORD()
                 if advapi.GetTokenInformation(token, kind, data, 4096, ctypes.byref(needed)):
-                    result['token'][name] = sid_text(pointer.from_buffer(data).value)
+                    result['token'][name] = (ctypes.c_uint32.from_buffer(data).value if kind == 20 else sid_text(pointer.from_buffer(data).value))
                 else:
                     result['token'][name] = {'error': ctypes.get_last_error()}
         finally:
@@ -109,7 +120,7 @@ def api_security(paths):
                         security, 1, 5, ctypes.byref(value), ctypes.byref(count)):
                     try:
                         length = max(0, count.value - 1)
-                        row['sddl'] = ctypes.wstring_at(value, min(length, 16384))
+                        row['sddl'] = ctypes.wstring_at(value, min(length, 16384)).split('\0', 1)[0]
                         row['sddl_truncated'] = length > 16384
                     finally:
                         kernel.LocalFree(value)
@@ -119,6 +130,35 @@ def api_security(paths):
                 kernel.LocalFree(security)
         result['paths'].append(row)
     return result
+
+
+def set_fixture_user_owner(paths):
+    """Set only intended positive fixture owners; keep inherited DACLs."""
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    advapi = ctypes.WinDLL('advapi32', use_last_error=True)
+    pointer = ctypes.c_void_p
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    advapi.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, pointer, wintypes.DWORD,
+                                          ctypes.POINTER(wintypes.DWORD)]
+    advapi.SetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+                                           pointer, pointer, pointer, pointer]
+    advapi.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    token = wintypes.HANDLE()
+    if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        data, needed = ctypes.create_string_buffer(4096), wintypes.DWORD()
+        if not advapi.GetTokenInformation(token, 1, data, 4096, ctypes.byref(needed)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        sid = pointer.from_buffer(data).value
+        for path in paths:
+            error = advapi.SetNamedSecurityInfoW(str(path), 1, 1, sid, None, None, None)
+            if error:
+                raise ctypes.WinError(error)
+    finally:
+        kernel.CloseHandle(token)
 
 
 def main():
@@ -133,7 +173,7 @@ def main():
     spec = importlib.util.spec_from_file_location('windows_x64', ROOT / 'tools/windows_x64.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    report = {'kind': 'windows-x64-adapter-diagnostics', 'native_qualification': False, 'commands': []}
+    report = {'process_stages': {str(i+1): name for i,name in enumerate(['win_wide','win_wide_command','win_build_environment','win_explicit_environment','CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW','InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW'])}, 'kind': 'windows-x64-adapter-diagnostics', 'native_qualification': False, 'commands': []}
 
     def run(argv, **options):
         started = time.monotonic()
@@ -166,13 +206,17 @@ def main():
                 report['executable_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
                 home = work / 'home with spaces'
                 home.mkdir()
+                report['ambient_home_security'] = api_security([home])
+                set_fixture_user_owner([home])
                 environment = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
                 new_project = work / 'hello'
                 run([binary, 'new', new_project], cwd=work, env=environment)
+                run([binary, 'run'], cwd=new_project, env=environment)
                 run([binary, 'installed', '--json'], cwd=work, env=environment)
                 version = json.loads(run([binary, 'version', '--json'], cwd=work, env=environment).stdout)['version']
                 installation = home / '.local/bin/asm.exe'
                 installation.parent.mkdir(parents=True, exist_ok=True)
+                set_fixture_user_owner([home / '.local', installation.parent])
                 shutil.copyfile(binary, installation)
                 run([installation, 'self', 'update', version, '--json'], cwd=work, env=environment)
                 report['security'] = api_security([
