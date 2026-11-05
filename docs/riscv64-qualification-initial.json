@@ -1,7 +1,7 @@
 {
   "checks": {
     "artifact": {
-      "error": "[Errno 2] No such file or directory: '/Users/jannesstubbemann/.codex/worktrees/riscv64-cli/asm/build/asm-riscv64-linux'",
+      "error": "[Errno 2] No such file or directory: '<port-worktree>/build/asm-riscv64-linux'",
       "outcome": "fail"
     },
     "artifact_binding": {
@@ -28,7 +28,7 @@
       "elf_machine": 243,
       "isa": "RV64IM",
       "os": "Linux",
-      "path": "/Users/jannesstubbemann/.codex/worktrees/riscv64-cli/asm/build/asm-riscv64-linux",
+      "path": "<port-worktree>/build/asm-riscv64-linux",
       "required_cpu_features": [
         "M"
       ],
@@ -178,7 +178,7 @@
       "results": [
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
             "-march=rv64im",
             "-mabi=lp64",
             "--fatal-warnings",
@@ -192,7 +192,7 @@
         },
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
             "-z",
             "noexecstack",
             "-z",
@@ -205,12 +205,12 @@
             "build/riscv64-archive-harness.o"
           ],
           "exit_code": 0,
-          "stderr": "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
+          "stderr": "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
           "stdout": ""
         },
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
             "-h",
             "-l",
             "-A",
@@ -222,7 +222,7 @@
         },
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
             "-march=rv64im",
             "-mabi=lp64",
             "--fatal-warnings",
@@ -236,7 +236,7 @@
         },
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
             "-z",
             "noexecstack",
             "-z",
@@ -249,12 +249,12 @@
             "build/riscv64-metadata-harness.o"
           ],
           "exit_code": 0,
-          "stderr": "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
+          "stderr": "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
           "stdout": ""
         },
         {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
             "-h",
             "-l",
             "-A",
@@ -300,6 +300,15 @@
     "source_base": "351c709ae89c362c309b462832280306c1ecaec6",
     "status": "pass"
   },
+  "local_path_redaction": {
+    "applied": true,
+    "raw_record": {
+      "path": "build/riscv64/ci/initial-evidence-unredacted.json",
+      "retention": "Ignored local file; negative results remain in both records.",
+      "sha256": "7caca08c708a1e5b6b3e233af6dbd92e1a42e0bc49b966af13d4c5ee74591e93"
+    },
+    "scope": "Local checkout and task-local toolchain prefixes in paths, errors, commands, and tracebacks."
+  },
   "local_toolchain": {
     "bottle_bytes": 7674145,
     "bottle_sha256": "acac25b80fedf3dd292f6e972e83451b12148fd436117837d52c34dbd9f58719",
@@ -324,7 +333,7 @@
         "sha256": "1a7d1428b89565f6c946ae4bd2b6d693f7693a5aab5a889abe4da986b0e7348f",
         "version_result": {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
             "--version"
           ],
           "exit_code": 0,
@@ -336,7 +345,7 @@
         "sha256": "1d5bebec2dfe7de88c1905702d35c55b26abf94b1f2d9749922af2c580e5d9da",
         "version_result": {
           "command": [
-            "/private/tmp/asm-riscv64-toolchain/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
             "--version"
           ],
           "exit_code": 0,
@@ -384,7 +393,7 @@
       "-v"
     ],
     "exit_code": 1,
-    "stderr": "setUpClass (test_native.Riscv64CliTests) ... ERROR\ntest_absent_artifact_is_a_failure_with_unrun_gates (test_runner.QualificationRunnerTests.test_absent_artifact_is_a_failure_with_unrun_gates) ... ok\ntest_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds (test_runner.QualificationRunnerTests.test_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds) ... ok\n\n======================================================================\nERROR: setUpClass (test_native.Riscv64CliTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/jannesstubbemann/.codex/worktrees/riscv64-cli/asm/tests/riscv64/test_native.py\", line 22, in setUpClass\n    raise AssertionError(f\"Required RISC-V CLI is absent: {ASM}\")\nAssertionError: Required RISC-V CLI is absent: /Users/jannesstubbemann/.codex/worktrees/riscv64-cli/asm/build/asm-riscv64-linux\n\n----------------------------------------------------------------------\nRan 2 tests in 0.054s\n\nFAILED (errors=1)\n",
+    "stderr": "setUpClass (test_native.Riscv64CliTests) ... ERROR\ntest_absent_artifact_is_a_failure_with_unrun_gates (test_runner.QualificationRunnerTests.test_absent_artifact_is_a_failure_with_unrun_gates) ... ok\ntest_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds (test_runner.QualificationRunnerTests.test_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds) ... ok\n\n======================================================================\nERROR: setUpClass (test_native.Riscv64CliTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<port-worktree>/tests/riscv64/test_native.py\", line 22, in setUpClass\n    raise AssertionError(f\"Required RISC-V CLI is absent: {ASM}\")\nAssertionError: Required RISC-V CLI is absent: <port-worktree>/build/asm-riscv64-linux\n\n----------------------------------------------------------------------\nRan 2 tests in 0.054s\n\nFAILED (errors=1)\n",
     "stdout": ""
   },
   "schema": 1,

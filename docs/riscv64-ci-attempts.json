@@ -1,0 +1,72 @@
+{
+  "attempts": [
+    {
+      "artifact_sha256": null,
+      "artifact_status": "not-built",
+      "checkout_commit": "c99b14294dcd3fdbd118246bbc10861cd15c9916",
+      "checks": {
+        "binfmt_registration": {
+          "observation": "The log reports qemu-riscv64 already enabled in the kernel.",
+          "outcome": "pass"
+        },
+        "build": {
+          "outcome": "not-run"
+        },
+        "dependency_installation": {
+          "outcome": "pass"
+        },
+        "evidence_upload": {
+          "error": "No artifacts were uploaded because every configured evidence path was absent.",
+          "outcome": "fail"
+        },
+        "focused_tests": {
+          "outcome": "not-run"
+        },
+        "handler_status_check": {
+          "command": "rg '^enabled$' /proc/sys/fs/binfmt_misc/qemu-riscv64",
+          "error": "rg: command not found",
+          "exit_code": 127,
+          "outcome": "fail"
+        },
+        "make_test": {
+          "outcome": "not-run"
+        },
+        "runtime": {
+          "outcome": "not-run"
+        }
+      },
+      "correction": {
+        "changes": [
+          "Use grep -qx enabled without adding a dependency.",
+          "Create initial failed/unrun evidence before setup commands.",
+          "Keep a workspace fallback if protected-checkout preparation fails.",
+          "Collect installed package versions immediately after successful installation."
+        ],
+        "local_validation": [
+          "Workflow YAML parses.",
+          "Initial JSON evidence generation passed with all runtime checks not-run.",
+          "Handler status check accepts enabled and rejects disabled.",
+          "git diff --check passed."
+        ],
+        "outcome": "implemented-not-run-in-ci"
+      },
+      "head_commit": "69075ce68896ae5fc17f7885085f436c2b895c7d",
+      "outcome": "fail",
+      "raw_log": {
+        "path": "build/riscv64/ci/41939533640/full.log",
+        "retention": "Ignored local file; the run URL also contains the job log.",
+        "sha256": "ffdbb6f88d1c8a72acbd80eae43b31bb0b60fac31fb1103328d110c4ace9c4ce"
+      },
+      "run_id": 41939533640,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41939533640",
+      "runner_image": "ubuntu-24.04",
+      "runner_image_version": "20261025.353",
+      "scope": "runtime not reached"
+    }
+  ],
+  "execution_mode": "emulated",
+  "native_qualified": false,
+  "release_qualified": false,
+  "schema": 1,
+  "target": "riscv64-linux"
+}

@@ -105,6 +105,14 @@ The Apple Clang installation exposed no RISC-V target.
 No Linux user-mode execution was available on that macOS host.
 These observations are retained in the [initial evidence record](riscv64-qualification-initial.json).
 
+## CI attempts
+
+The first [CI run](https://github.com/stubbi/asm/actions/runs/41939533640) stopped during setup because `rg` was absent.
+It did not build or execute the RISC-V CLI.
+The [CI attempt record](riscv64-ci-attempts.json) retains the source commits, failure, and raw-log digest.
+The corrected workflow initializes failed/unrun evidence before setup commands.
+The correction still requires a new CI run.
+
 ## Primary references
 
 The [RISC-V ABI specification](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/) defines the public calling convention and ELF flags.
