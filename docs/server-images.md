@@ -2,10 +2,11 @@
 
 Status: build and qualification implementation, 5 November 2026.
 
-This path builds the assembly runtime foundation for Linux AMD64, ARM64, and RISC-V64.
+This path builds the canonical-export assembly runtime for Linux AMD64, ARM64, and RISC-V64.
 An entry in the build matrix is not a supported-target claim.
 Each architecture must compile its actual port and pass the complete runtime suite.
-The new image jobs have not yet supplied that evidence.
+The canonical-export image jobs have not yet supplied that evidence.
+Earlier foundation-image results do not qualify this additional routing and database behavior.
 
 The operator outcome is an immutable image connected to its source, executable, target, and observed checks.
 The governing principles are dependable reuse and trust earned through evidence.
@@ -71,6 +72,8 @@ It includes no Python application backend, compiler, test fixture, or PostgreSQL
 HTTP ingress TLS remains a separate deployment requirement.
 
 The qualification stage extends the exact runtime filesystem with Python, OpenSSL tools, PostgreSQL tools, and the owned fixture.
+Only that stage includes canonical migration SQL, registry validators, the operator helper, and accepted manifest records.
+Those fixture inputs do not add an application backend or operator credential to the runtime.
 The harness compares the runtime layer prefix and executable hashes.
 It also compares hashes for every shared library reported by the runtime loader.
 The added test layer cannot silently substitute a different executable dependency.
@@ -83,9 +86,11 @@ The harness observes UID, GID, effective capabilities, privilege state, and the 
 
 The existing runtime suite creates its own PostgreSQL cluster, CA, credentials, and records.
 It accepts no existing database or production credential.
-All current tests must execute, at least eleven tests must exist, and no test may skip.
+All current tests must execute, at least sixteen tests must exist, and no test may skip.
 The result identifies source, image ID, ELF target, executable digest, library digests, execution mode, and test count.
-These are foundation checks, not a complete registry qualification.
+The report scope is `assembly-canonical-exports`.
+The publication gate rejects foundation reports, other scopes, incomplete test counts, and skipped tests.
+These checks do not qualify the complete registry or its deployment.
 
 ## Verified inputs
 
@@ -160,6 +165,7 @@ Replace `FULL_COMMIT_ID` with the exact reviewed 40-character commit ID.
 Use the matching platform, tags, and execution mode for another architecture.
 The Docker context must include the server and its three retained experiment fixture inputs.
 It must also include this harness and the root license.
+Include `tools/registry.py`, `tools/registry_admin.py`, and the accepted records under `registry/packages/`.
 
 The workflow retains build logs and runtime logs after successful or failed checks.
 Successful jobs also retain the exact runtime image archive, its checksum, and qualification JSON.
@@ -185,7 +191,8 @@ The resulting index must contain exactly those platforms and digests.
 The job reads the index again through its immutable digest and records that result.
 The combined index also receives provenance.
 
-These images still contain the incomplete registry foundation.
-Canonical exports, operator commands, service discovery, metrics, and recovery remain unqualified.
+These images still contain an incomplete registry implementation.
+Canonical HTTP image checks, operator deployment, service discovery, metrics, capacity, and recovery remain unqualified.
+The four-export catalog contract in PR #29 must be integrated before final qualification of this slice.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
 No cluster, DNS, credential, release, or live service changes follow from this image workflow.

@@ -180,13 +180,20 @@ The canonical component's [qualification record](catalog/README.md#qualification
 The test-only [native Linux run 41946260936](https://github.com/stubbi/asm/actions/runs/41946260936) demonstrated the missing HTTP feature.
 At source `61cad046fc17794f2704638094720fe7effcfb80`, all three new exact-export subtests failed with HTTP 404 instead of HTTP 200.
 Its twelve-test suite retained the three failures; the existing reference suite passed sixteen tests.
-The subsequent implementation still requires its own native and emulated runtime results.
+The [native Linux run 42006909140](https://github.com/stubbi/asm/actions/runs/42006909140) tested source `6d7bb947281e9d6565ff04a1292f193840d8035a`.
+All sixteen AMD64 HTTP tests passed without skips in 5.866 seconds.
+The separate canonical SQL suite passed nineteen applicable tests; its macOS-only ACL case skipped.
+Ubuntu Clang 18.1.3 assembled the x86-64, AArch64, and RV64GC/LP64D source files.
+The cross-assembly step did not link or execute AArch64 or RISC-V code.
+This run covers the original three-export contract, before the pending fourth-feed integration in PR #29.
+Canonical image qualification and target runtime evidence remain separate requirements.
 Local cross-assembly passed for x86-64 and AArch64 after the routing change.
 Apple's installed clang cannot assemble the RISC-V target; no local RISC-V assembly or execution result is claimed.
 
 These requirements remain open:
 
-- Runtime qualification of canonical HTTP serving on each declared server target.
+- Runtime qualification of canonical HTTP serving on ARM64 and RISC-V64.
+- Runtime and image qualification after the pending four-export catalog integration.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
 - Bounded hostname resolution compatible with private service discovery.
 - Database connection reuse and measured admission behavior under saturation.

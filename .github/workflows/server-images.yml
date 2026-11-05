@@ -142,7 +142,7 @@ jobs:
           set -euo pipefail
           sha256sum --check runtime.sha256
           jq --exit-status --arg revision "$GITHUB_SHA" --arg arch "$ASM_ARCH" \
-            '.status == "pass" and .scope == "assembly-runtime-foundation" and .source_revision == $revision and .architecture == $arch and .tests_run >= 11 and .tests_skipped == 0' qualification.json
+            '.schema == 1 and .status == "pass" and .scope == "assembly-canonical-exports" and .source_revision == $revision and .architecture == $arch and .tests_run >= 16 and .tests_skipped == 0' qualification.json
           docker load --input runtime.tar
           test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
           test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Architecture}}')" = "$ASM_ARCH"
