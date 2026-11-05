@@ -42,10 +42,13 @@ def minimal_arm_elf():
     return bytes(data)
 
 
-def arm_native_evidence(commit, version, binary):
+def arm_native_evidence(commit, version, binary, *, selected_target=False):
     """Synthetic consumer fixture; no native execution or qualification claim."""
+    targets = (["x86_64-linux", "aarch64-linux", "riscv64-linux"]
+               if selected_target else ["aarch64-linux"])
     return {
-        "schema": 1, "source_commit": commit, "version": version, "target": "aarch64-linux",
+        "schema": 2 if selected_target else 1,
+        "source_commit": commit, "version": version, "target": "aarch64-linux",
         "asset": {"file": f"asm-{version}-aarch64-linux", "bytes": len(binary),
                   "sha256": hashlib.sha256(binary).hexdigest()},
         "platform": {"system": "Linux", "machine": "aarch64", "kernel": "6.8.0-fixture",
@@ -53,7 +56,7 @@ def arm_native_evidence(commit, version, binary):
         "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
         "version_check": {"status": "pass", "runner": "native", "stdout": f"asm {version} (aarch64-linux)\n", "exit_code": 0},
         "targets_check": {"status": "pass", "runner": "native",
-                          "result": {"host": "aarch64-linux", "targets": ["aarch64-linux"]}, "exit_code": 0},
+                          "result": {"host": "aarch64-linux", "targets": targets}, "exit_code": 0},
         "tests": {"status": "pass", "command": ["make", "test"], "suite": "tests", "tests_run": 4,
                   "skipped": 0, "exit_code": 0, "output_sha256": hashlib.sha256(b"synthetic test output").hexdigest()},
         "tool_versions": {"make": "GNU Make fixture", "as": "GNU assembler fixture",
@@ -485,7 +488,7 @@ class ReleaseTests(unittest.TestCase):
         cls.arm_input = cls.base / "native-arm-input"
         cls.arm_input.mkdir()
         cls.arm_binary = minimal_arm_elf()
-        cls.arm_evidence = arm_native_evidence(cls.commit, cls.version, cls.arm_binary)
+        cls.arm_evidence = arm_native_evidence(cls.commit, cls.version, cls.arm_binary, selected_target=True)
         (cls.arm_input / cls.arm_evidence["asset"]["file"]).write_bytes(cls.arm_binary)
         (cls.arm_input / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(cls.arm_evidence))
         cls.first = cls.base / "first-release"
