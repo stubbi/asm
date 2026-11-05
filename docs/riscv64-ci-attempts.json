@@ -180,6 +180,120 @@
       "remaining_failures": "The next full run must distinguish remaining source defects, fixture assumptions, and emulator syscall boundaries. No failure was disabled or relabelled as passing.",
       "run_id": 41940165957,
       "run_url": "https://github.com/stubbi/asm/actions/runs/41940165957"
+    },
+    {
+      "artifact": {
+        "abi": "LP64",
+        "architecture_attributes": "Attribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p0_m2p0_zmmul1p0\"\n",
+        "bytes": 602992,
+        "elf_flags": 0,
+        "elf_machine": 243,
+        "isa": "RV64IM",
+        "os": "Linux",
+        "path": "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+        "required_cpu_features": [
+          "M"
+        ],
+        "sha256": "13a217847ab8912f6e73ab780d4dd7f60cd4e9554f700ca243e457974b4925ce"
+      },
+      "checkout_commit": "47877cdc54c173fffd38fce0bf1782129748503e",
+      "checks": {
+        "artifact": {
+          "outcome": "pass"
+        },
+        "artifact_binding": {
+          "outcome": "pass"
+        },
+        "focused_tests": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/riscv64",
+            "-p",
+            "test_*.py",
+            "-v"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/focused-tests.log",
+          "log_sha256": "87609ba42aa75c90a7d0acb28c8b8bf7b51def1fbd4d795e321428014f044678",
+          "outcome": "pass",
+          "seconds": 0.465,
+          "skipped_checks": false,
+          "tests_run": 12,
+          "timed_out": false
+        },
+        "make_test": {
+          "command": [
+            "make",
+            "test",
+            "ARCH=riscv64",
+            "PYTHON=/usr/bin/python3"
+          ],
+          "exit_code": 2,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/make-test.log",
+          "log_sha256": "bac13f65841e48b08470608c08b00139409bb6df9d8b4f679b62caa490e261ee",
+          "outcome": "fail",
+          "seconds": 56.648,
+          "skipped_checks": false,
+          "tests_run": 293,
+          "timed_out": false
+        },
+        "runtime": {
+          "command": [
+            "/tmp/asm-riscv64-ci/build/asm-riscv64-linux",
+            "targets",
+            "--json"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/runtime.log",
+          "log_sha256": "4bd2ac6414de1dbdea12a2acc3d7c20bf22c7d932b6a654af3782c3d6a847bdc",
+          "outcome": "pass",
+          "seconds": 0.004,
+          "skipped_checks": false,
+          "timed_out": false
+        },
+        "toolchain": {
+          "command": [
+            "/tmp/asm-riscv64-probe-8pi9b5vi/probe"
+          ],
+          "exit_code": 0,
+          "log": "/tmp/asm-riscv64-ci/build/riscv64-qualification-logs/toolchain.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "seconds": 0.003,
+          "skipped_checks": false,
+          "timed_out": false
+        }
+      },
+      "execution_mode": "emulated",
+      "head_commit": "6b3c368ece33047e7cf4d4068f2b40e166ad2f43",
+      "native_qualified": false,
+      "observed_cli_suite": {
+        "errors": 2,
+        "failures": 68,
+        "tests": 293
+      },
+      "observed_focused_suite": {
+        "errors": 0,
+        "failures": 0,
+        "tests": 12
+      },
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/41941931995/artifacts/riscv64-emulated-47877cdc54c173fffd38fce0bf1782129748503e/asm-riscv64-ci/build/riscv64-qualification.json",
+        "sha256": "8b18d1a65c2d94586bf4b63c3d54543150a3a1fcc37f2239f0cda1ef0ef8a862"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/41941931995/full.log",
+        "sha256": "daeeeb86442567fe56763268301aeafeb5a8f4e6f355f5c1f82308b978f0d166"
+      },
+      "release_qualified": false,
+      "remaining_failures": "Protected HOME and direct installation checks stop most program/self-update cases before transport; five valid archive ABI-harness cases return failure. Failure-injection paths remain unproven and cannot be skipped.",
+      "run_id": 41941931995,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/41941931995"
     }
   ],
   "execution_mode": "emulated",

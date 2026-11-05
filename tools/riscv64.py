@@ -235,7 +235,11 @@ def prepare(source):
                 data=label+':'+rest
                 if source.name in ('asm.s','self_update.s','self_update_metadata.s'):
                     data=data.replace('aarch64-unknown-linux-gnu','riscv64-unknown-linux-gnu').replace('aarch64-linux','riscv64-linux').replace('aarch64 assembly','riscv64 assembly')
-                elif source.name=='registry.s' and label=='registry_host':data=data.replace('aarch64-linux','riscv64-linux')
+                elif source.name=='registry.s':
+                    if label in ('registry_host', 'registry_err_install_target'):
+                        data=data.replace('aarch64-linux','riscv64-linux')
+                    elif label=='registry_err_elf':
+                        data=data.replace('AArch64 ELF','RISC-V64 ELF')
                 output.append(data.replace('ARM_STAT_','RV_STAT_'));continue
         parts=code.split(None,1);op=parts[0];args=parts[1] if len(parts)>1 else ''
         if source.name=='elf.s' and op=='ARM_IMM' and args.strip()=='w11, 183':args='w11, 243'

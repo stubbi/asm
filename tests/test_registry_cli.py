@@ -190,10 +190,13 @@ class RegistryCliTests(unittest.TestCase):
                 self.artifact.write_bytes(data)
                 self.digest = hashlib.sha256(data).hexdigest()
                 self.write_index(self.row(kind="executable"))
-                self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
+                result = self.cli("install", "stubbi/hello", "--artifact", self.artifact, "--output", "rejected", code=1)
+                if TARGET == "riscv64-linux":
+                    self.assertIn("supported RISC-V64 ELF executable", result.stderr)
                 self.assertFalse((self.work / "rejected").exists())
         self.write_index(self.row(kind="executable", target=OTHER_TARGET))
-        self.cli("install", "stubbi/hello", "--target", OTHER_TARGET, "--output", "rejected", code=2)
+        result = self.cli("install", "stubbi/hello", "--target", OTHER_TARGET, "--output", "rejected", code=2)
+        self.assertIn(f"installation requires {TARGET}", result.stderr)
 
     def test_fifo_inputs_fail_without_blocking(self):
         self.write_index(self.row())
