@@ -13,3 +13,4 @@ from test_programs_cli import InstalledProgramTests
 
 from test_native_link import NativeLinkTests
 from test_archive_cli import NativeArchiveTests
+from test_cross_build_cli import CrossBuildTests

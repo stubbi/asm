@@ -27,7 +27,10 @@ class NativeMacTests(unittest.TestCase):
         self.assertEqual(ASM.read_bytes()[:4], bytes.fromhex('cffaedfe'))
         self.assertEqual(json.loads(self.cli('version', '--json').stdout)['host'], 'aarch64-macos')
         self.assertIn('Usage:', self.cli('help').stdout)
-        self.assertEqual(json.loads(self.cli('targets', '--json').stdout)['targets'], ['aarch64-macos'])
+        self.assertEqual(json.loads(self.cli('targets', '--json').stdout), {
+            'host': 'aarch64-macos',
+            'targets': ['x86_64-linux', 'aarch64-linux', 'riscv64-linux', 'aarch64-macos'],
+        })
         subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(ASM)], check=True)
 
     def test_first_project(self):

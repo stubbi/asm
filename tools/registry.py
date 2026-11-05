@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import gzip
 import hashlib
 import io
@@ -28,6 +29,9 @@ SCHEMA = 1
 HEADER = "# asm-registry-v1\n"
 TARGETS = {"x86_64-linux": 62, "aarch64-linux": 183, "riscv64-linux": 243}
 TARGETS["aarch64-macos"] = 0x0100000C
+# Project declarations retain reference ports before their executable formats
+# and native CLI hosts qualify for registry publication.
+PROJECT_TARGETS = set(TARGETS) | {"x86_64-macos", "x86_64-windows", "aarch64-windows"}
 KINDS = {"source", "executable"}
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 16 * 1024 * 1024
@@ -37,6 +41,13 @@ MAX_INDEX_BYTES = 1024 * 1024
 MAX_ROWS = 4096
 MAX_ROW_BYTES = 2048
 MAX_PATH_BYTES = 240
+MAX_RESOLUTION_MANIFEST_BYTES = 8190
+MAX_DEPENDENCIES = 64
+MAX_FEATURES = 64
+MAX_FEATURE_ENTRIES = 64
+MAX_REQUIREMENT_BYTES = 128
+MAX_REQUIREMENT_TERMS = 8
+MAX_PROJECT_BYTES = 8190
 LICENSES = {
     "AGPL-3.0-only", "AGPL-3.0-or-later", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "GPL-2.0-only",
     "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "ISC",
@@ -462,21 +473,35 @@ def read_archive(data: bytes) -> dict[str, bytes]:
     raise RegistryError("tar end marker is missing")
 
 
-def validate_project(files: dict[str, bytes], name: str, version: str, target: str) -> None:
-    require("asm.toml" in files, "source archive needs asm.toml")
-    require(any(path in files for path in ("LICENSE", "LICENSE.txt", "LICENSE.md")), "source archive needs a license file")
-    require(any(path in files for path in ("README", "README.md", "README.txt")), "source archive needs a README")
-    try:
-        project = tomllib.loads(files["asm.toml"].decode("utf-8"))
-        require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
-        require(project["package"]["version"] == version, "project version does not match release")
-        build = exact_keys(project["build"], {"source", "target", "link", "libraries", "check"},
+def project_builds(project: object) -> dict[str, dict]:
+    """Validate every declared recipe without reading files or selecting a host."""
+    project = exact_keys(project, {"package", "build", "target", "resolution", "dependencies", "features"},
+                         {"package"}, "project")
+    package = exact_keys(project["package"], {"name", "version"}, {"name", "version"}, "project package")
+    require(isinstance(package["name"], str), "project name must be text")
+    package_name("owner/" + package["name"])
+    version_tuple(package["version"])
+    require(("build" in project) != ("target" in project),
+            "project needs either build or target tables")
+    if "build" in project:
+        build = exact_keys(project["build"], {"source", "target", "test", "link", "libraries", "check"},
                            {"source", "target"}, "project build")
-        require(build["target"] == target, "project target does not match artifact")
-        source = portable_path(build["source"])
-        require(not any(part.startswith("@") for part in source.split("/")), "build source cannot be a response file")
-        require(source in files, "declared assembly source is missing")
-        require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
+        require(isinstance(build["target"], str) and build["target"] in PROJECT_TARGETS,
+                "unsupported project target")
+        builds = {build["target"]: build}
+    else:
+        builds = project["target"]
+        require(isinstance(builds, dict) and 0 < len(builds) <= len(PROJECT_TARGETS),
+                "project needs one to seven target tables")
+        for target, build in builds.items():
+            require(target in PROJECT_TARGETS, "unsupported project target")
+            exact_keys(build, {"source", "test", "link", "libraries", "check"}, {"source"},
+                       "project target")
+    for build in builds.values():
+        for field in ("source", "test"):
+            if field in build:
+                path = portable_path(build[field])
+                require(path.endswith((".s", ".S", ".asm")), f"build {field} must be an assembly file")
         for field in ("link", "libraries", "check"):
             if field in build:
                 plain_text(build[field], 255, f"build {field}")
@@ -489,12 +514,186 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
             require(len(names) <= 8 and all(re.fullmatch(r"[a-z][a-z0-9_-]{0,30}", item) for item in names),
                     "build libraries must contain up to eight names separated by one space")
         if "check" in build:
-            checker = portable_path(build["check"])
-            require(not any(part.startswith("@") for part in checker.split("/")), "build check cannot be a response file")
-            require(checker.endswith(".c"), "build check must be a C file")
-            require(checker in files, "declared compile checker is missing")
-    except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            require(portable_path(build["check"]).endswith(".c"), "build check must be a C file")
+    return builds
+
+
+def project_build(project: object, target: str) -> dict:
+    """Select one explicit target after validating all project recipes."""
+    builds = project_builds(project)
+    require(isinstance(target, str) and target in PROJECT_TARGETS, "unsupported project target")
+    require(target in builds, "project target does not match artifact")
+    return builds[target]
+
+
+def validate_project(files: dict[str, bytes], name: str, version: str, target: str) -> dict:
+    """Validate project contents and return the parsed source manifest."""
+    require("asm.toml" in files, "source archive needs asm.toml")
+    require(any(path in files for path in ("LICENSE", "LICENSE.txt", "LICENSE.md")), "source archive needs a license file")
+    require(any(path in files for path in ("README", "README.md", "README.txt")), "source archive needs a README")
+    try:
+        project = tomllib.loads(files["asm.toml"].decode("utf-8"))
+        versioned = bool({"resolution", "dependencies", "features"} & project.keys())
+        if versioned:
+            validate_resolution_project(files["asm.toml"], project)
+        require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
+        require(project["package"]["version"] == version, "project version does not match release")
+        extended = "target" in project or bool({"test", "link", "libraries", "check"} & project["build"].keys())
+        if extended or versioned:
+            require(len(files["asm.toml"]) <= MAX_PROJECT_BYTES, "source asm.toml exceeds 8190 bytes")
+            builds = project_builds(project)
+            require(isinstance(target, str) and target in builds, "project target does not match artifact")
+            for build in builds.values():
+                for field in ("source", "test", "check"):
+                    if field in build:
+                        require(build[field] in files, f"declared build {field} is missing")
+        else:
+            # Unversioned legacy archives keep their historical metadata and
+            # size contract. New recipes and schema-1 resolution are bounded.
+            require(project["build"]["target"] == target, "project target does not match artifact")
+            source = portable_path(project["build"]["source"])
+            require(source in files, "declared assembly source is missing")
+            require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
+    except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RegistryError("invalid source asm.toml") from error
+    return project
+
+
+def validate_requirement(value: object) -> None:
+    """Validate a range over the existing bounded, numeric registry versions."""
+    requirement = plain_text(value, MAX_REQUIREMENT_BYTES, "dependency requirement")
+    if requirement == "*":
+        return
+    if requirement.startswith(("^", "~")):
+        version_tuple(requirement[1:])
+        return
+    terms = requirement.split(",")
+    require(len(terms) <= MAX_REQUIREMENT_TERMS, "dependency requirement has too many comparators")
+    for term in terms:
+        match = re.fullmatch(r"(<=|>=|<|>|=)?[ \t]*([^ \t]+)", term.strip(" \t"))
+        require(match is not None, "dependency requirement has an invalid comparator")
+        require(len(terms) == 1 or match[1] is not None, "range intersections need explicit comparators")
+        version_tuple(match[2])
+
+
+def feature_name(value: object) -> str:
+    require(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", value) is not None,
+            "feature name must contain at most 32 lowercase ASCII characters")
+    return value
+
+
+def feature_entries(value: object, label: str) -> list[str]:
+    require(isinstance(value, list) and len(value) <= MAX_FEATURE_ENTRIES,
+            f"{label} must be an array with at most {MAX_FEATURE_ENTRIES} entries")
+    require(all(isinstance(entry, str) for entry in value), f"{label} entries must be text")
+    require(len(set(value)) == len(value), f"{label} contains duplicate entries")
+    return value
+
+
+def validate_resolution_syntax(data: bytes) -> None:
+    """Restrict versioned metadata to the native parser's single-line subset.
+
+    tomllib supplies duplicate-key and TOML checks. This second check rejects
+    escapes, multiline values, literal strings, dotted keys, nested tables,
+    and non-ASCII bytes that the native resolver does not interpret.
+    """
+    require(0 < len(data) <= MAX_RESOLUTION_MANIFEST_BYTES, "resolution manifest exceeds 8190 bytes")
+    require(all(byte in (9, 10, 13) or 32 <= byte <= 126 for byte in data),
+            "resolution manifest must use ASCII text")
+    quoted = r'"[\x20-\x21\x23-\x5b\x5d-\x7e]*"'
+    bare = r"[a-z][a-z0-9_-]*"
+    space = r"[ \t]*"
+    array = rf"\[{space}(?:{quoted}(?:{space},{space}{quoted})*{space},?{space})?\]"
+    value = rf"(?:{quoted}|true|false|{array})"
+    item = rf"{bare}{space}={space}{value}"
+    inline = rf"\{{{space}{item}(?:{space},{space}{item})*{space}\}}"
+    values = {"package": quoted, "build": quoted, "resolution": quoted,
+              "dependencies": rf"(?:{quoted}|{inline})", "features": array}
+    section = None
+    for line in data.decode("ascii").splitlines():
+        in_string = False
+        for offset, char in enumerate(line):
+            if char == '"':
+                in_string = not in_string
+            elif char == "#" and not in_string:
+                line = line[:offset]
+                break
+        line = line.strip(" \t")
+        if not line:
+            continue
+        if line.startswith("["):
+            require(line in {f"[{name}]" for name in values}, "unsupported resolution manifest section")
+            section = line[1:-1]
+            continue
+        require(section in values, "resolution manifest field needs a section")
+        key = quoted if section == "dependencies" else rf"(?:{bare}|{quoted})" if section == "features" else bare
+        require(re.fullmatch(rf"{key}{space}={space}{values[section]}", line) is not None,
+                "resolution manifest uses unsupported TOML syntax")
+
+
+def validate_resolution_project(data: bytes, project: dict) -> None:
+    """Check source-bound dependency and feature declarations without resolving."""
+    validate_resolution_syntax(data)
+    exact_keys(project, {"package", "build", "resolution", "dependencies", "features"},
+               {"package", "build", "resolution"}, "resolution project")
+    exact_keys(project["package"], {"name", "version"}, {"name", "version"}, "project package")
+    exact_keys(project["build"], {"source", "target"}, {"source", "target"}, "project build")
+    resolution = exact_keys(project["resolution"], {"schema"}, {"schema"}, "resolution")
+    require(resolution["schema"] == "1", "unsupported resolution schema")
+    dependencies = project.get("dependencies", {})
+    features = project.get("features", {})
+    require(isinstance(dependencies, dict) and len(dependencies) <= MAX_DEPENDENCIES,
+            "project can declare at most 64 dependencies")
+    require(isinstance(features, dict) and len(features) <= MAX_FEATURES,
+            "project can declare at most 64 features")
+    optional = set()
+    for name, dependency in dependencies.items():
+        package_name(name)
+        if isinstance(dependency, str):
+            validate_requirement(dependency)
+            continue
+        dependency = exact_keys(dependency, {"version", "optional", "default-features", "features"},
+                                {"version"}, "dependency")
+        validate_requirement(dependency["version"])
+        for field in ("optional", "default-features"):
+            require(type(dependency.get(field, field == "default-features")) is bool,
+                    f"dependency {field} must be a boolean")
+        if dependency.get("optional", False):
+            optional.add(name)
+        for feature in feature_entries(dependency.get("features", []), "dependency features"):
+            feature_name(feature)
+    edges = {}
+    for name, entries in features.items():
+        feature_name(name)
+        edges[name] = []
+        for entry in feature_entries(entries, "feature"):
+            if entry.startswith("dep:"):
+                package_name(entry[4:])
+                require(entry[4:] in optional, "dep: feature must select a declared optional dependency")
+            elif "/" in entry:
+                dependency, separator, feature = entry.rpartition("/")
+                package_name(dependency)
+                feature_name(feature)
+                require(dependency in dependencies, "feature selects an undeclared dependency")
+            else:
+                feature_name(entry)
+                require(entry in features, "feature selects an undeclared local feature")
+                edges[name].append(entry)
+    visited = set()
+    active = set()
+
+    def visit(name: str) -> None:
+        require(name not in active, "local feature references contain a cycle")
+        if name in visited:
+            return
+        active.add(name)
+        for child in edges[name]:
+            visit(child)
+        active.remove(name)
+        visited.add(name)
+
+    for name in edges:
+        visit(name)
 
 
 def validate_elf(data: bytes, target: str) -> None:
@@ -568,11 +767,38 @@ def validate_executable(data: bytes, target: str) -> None:
         validate_elf(data, target)
 
 
-def validate_artifact(data: bytes, record: dict, artifact: dict) -> None:
+class _SourceDependencyMetadata:
+    """Owned declarations derived only after source artifact validation.
+
+    The immutable payload does not borrow manifest lists or published records.
+    Identity includes the source's project name, version, target, size and hash.
+    Namespace ownership remains a separate publication check.
+    """
+    __slots__ = ("identity", "payload")
+
+    def __init__(self, project: dict, artifact: dict):
+        self.identity = (project["package"]["name"], project["package"]["version"],
+                         (project["build"]["target"] if "build" in project else artifact["target"]),
+                         artifact["bytes"], artifact["sha256"])
+        dependencies = []
+        for name, declaration in sorted(project.get("dependencies", {}).items()):
+            declaration = {"version": declaration} if isinstance(declaration, str) else declaration
+            dependencies.append({"name": name, "requirement": declaration["version"],
+                "optional": declaration.get("optional", False),
+                "default_features": declaration.get("default-features", True),
+                "features": declaration.get("features", [])})
+        self.payload = json_bytes({"schema": 1, "source_sha256": artifact["sha256"],
+            "dependencies": dependencies, "features": project.get("features", {})})
+
+
+def validate_artifact(data: bytes, record: dict, artifact: dict, *,
+                      dependency_metadata: dict[str, _SourceDependencyMetadata] | None = None) -> None:
     require(len(data) == artifact["bytes"], "artifact byte size mismatch")
     require(hashlib.sha256(data).hexdigest() == artifact["sha256"], "artifact SHA-256 mismatch")
     if artifact["kind"] == "source":
-        validate_project(read_archive(data), record["name"], record["version"], artifact["target"])
+        project = validate_project(read_archive(data), record["name"], record["version"], artifact["target"])
+        if dependency_metadata is not None:
+            dependency_metadata[artifact["sha256"]] = _SourceDependencyMetadata(project, artifact)
     else:
         validate_executable(data, artifact["target"])
 
@@ -602,9 +828,17 @@ def legacy_tsv(tsv: str) -> str:
                    {"x86_64-linux", "aarch64-linux", "riscv64-linux"})
 
 
-def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = None) -> tuple[str, dict]:
+def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = None, *,
+                 dependency_metadata: dict[str, _SourceDependencyMetadata] | None = None) -> tuple[str, dict]:
     records = check_records(records)
     checked = checked or set()
+    dependency_metadata = dependency_metadata if dependency_metadata is not None else {}
+    require(isinstance(dependency_metadata, dict), "dependency metadata must be a verified collection")
+    for digest, metadata in dependency_metadata.items():
+        require(isinstance(digest, str) and HEX64.fullmatch(digest) is not None
+                and type(metadata) is _SourceDependencyMetadata and metadata.identity[4] == digest,
+                "dependency metadata must identify its verified source digest")
+    attached = set()
     lines = [HEADER]
     packages = {}
     rows = 0
@@ -613,7 +847,18 @@ def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = Non
         package = packages.setdefault(name, {"name": name, "summary": record["summary"],
             "license": record["license"], "repository": record["source"]["repository"],
             "latest": None, "targets": [], "versions": []})
-        artifacts = sorted(record["artifacts"], key=lambda item: (item["target"], item["kind"]))
+        artifacts = copy.deepcopy(sorted(record["artifacts"], key=lambda item: (item["target"], item["kind"])))
+        for artifact in artifacts:
+            if artifact["kind"] != "source" or artifact["sha256"] not in dependency_metadata:
+                continue
+            metadata = dependency_metadata[artifact["sha256"]]
+            require((name, record["version"]) in checked,
+                    "dependency metadata needs checked release artifacts")
+            require(metadata.identity == (name.split("/")[-1], record["version"], artifact["target"],
+                                         artifact["bytes"], artifact["sha256"]),
+                    "dependency metadata does not match its source artifact")
+            artifact["dependency_metadata"] = json.loads(metadata.payload)
+            attached.add(artifact["sha256"])
         release = {"version": record["version"], "license": record["license"], "source": record["source"],
             "yanked": record["yanked"], "artifacts": artifacts,
             "evidence": {"metadata": "validated", "artifacts": "validated" if (name, record["version"]) in checked else "not-run",
@@ -632,6 +877,7 @@ def make_indexes(records: list[dict], checked: set[tuple[str, str]] | None = Non
                 lines.append(row + "\n")
                 rows += 1
     require(rows <= MAX_ROWS, "index has too many artifact rows")
+    require(attached == set(dependency_metadata), "dependency metadata has no matching source artifact")
     tsv = "".join(lines)
     require(len(tsv.encode("ascii")) <= MAX_INDEX_BYTES, "index exceeds one MiB")
     return tsv, {"schema": SCHEMA, "packages": list(packages.values())}

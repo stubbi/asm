@@ -24,7 +24,7 @@ def main():
               'failures': len(result.failures), 'errors': len(result.errors),
               'skipped': len(result.skipped),
               'expected_failures': len(result.expectedFailures), 'unexpected_successes': len(result.unexpectedSuccesses),
-              'status': 'pass' if result.wasSuccessful() and result.testsRun >= 175 and not result.skipped and not result.expectedFailures else 'fail',
+              'status': 'pass' if result.wasSuccessful() and result.testsRun >= 206 and not result.skipped and not result.expectedFailures else 'fail',
               'failed_cases': [{'test': str(case), 'detail': detail} for case, detail in result.failures + result.errors]}
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + '\n')

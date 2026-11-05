@@ -1,6 +1,7 @@
 # Intel macOS CLI port
 
-Status: native Intel CLI qualification passed. No Intel release is declared.
+Status: the original native Intel qualification passed. The integrated candidate requires a fresh native result.
+No Intel release is declared.
 
 The user outcome is the current CLI workflow on an Intel Mac, including package management and native library linking.
 The foundation requires dependable reuse and independent evidence for each target.
@@ -114,3 +115,44 @@ The same unchanged hostile-environment test passed in the final native run.
 One follow-up commit message incorrectly described a Rosetta retry as passing.
 The retry also timed out; the local evidence record contains the correction.
 Native execution and translated execution remain distinct records.
+
+## Integration with selected-target projects
+
+The integration preserves main `bc5bfbe`, including seven project declarations, separate target outputs, and v2 dependency locks.
+Native host substitutions leave Linux recipe names and compiler triples unchanged.
+The source entry point builds native Intel macOS projects and three standalone Linux targets.
+Install Homebrew LLVM and LLD for Linux cross builds:
+
+```sh
+brew install llvm lld
+```
+
+The Intel adapter uses `/usr/local/opt/llvm/bin/clang` and `/usr/local/opt/lld/bin/ld.lld`.
+It passes explicit triples, ELF linker emulations, bounded arguments, and the existing fixed compiler environment.
+Foreign execution and cross-target native-library linking remain refused before output changes.
+The native suite now includes the shared selected-target and v2-lock cases, plus both unified reference projects.
+Qualification requires at least 206 cases, without skips or expected failures.
+The standalone workflow installs the required cross tools and retains exact-source build and runtime records.
+
+The first local integration suite ran through Rosetta: 205 cases, 15 failures, two errors, and one skip.
+Missed native update suffixes and an outdated unsupported-Intel publication assertion caused the functional failures.
+The absent Intel Homebrew cross tools caused the skip.
+Targeted update and publication cases passed after the corrections.
+An earlier two-case probe also retained a 15-second build timeout and the obsolete target-list assertion failure.
+The unified-reference probe exposed a missing Intel hello test entry and an incorrect math output expectation.
+The hello project now declares a native startup smoke test; the existing math output remains unchanged.
+A proposed archive fixture failed during setup because portable archive paths already reject `@`.
+That invalid fixture was removed; main's archive validation remains unchanged.
+Native manifest source and checker paths retain their response-file guards.
+
+The integration review covered the complete available main history from `93487e3` through `bc5bfbe`.
+It retained immutable catalog records, version-specific licenses, source-bound dependencies, hosted catalog contracts, and prior security checks.
+Independent agent review found no blocking integration defect.
+Its fixture-fidelity advisory restored native ARM64 Linux entry-source fixtures; final qualification counts include the added suffix test.
+Agent review remains advisory.
+
+This source PR has no merge dependency on distribution PR #29.
+Root Makefile selection, admitted registry targets, compatible feeds, installer/verifier mapping, and release fan-in remain distribution work.
+Published clients' legacy macOS feed must exclude unknown Intel rows.
+After 0.6.0 is published, Intel release activation requires a new version and fresh exact-byte release evidence.
+The coordinator owns merging; distribution owners own activation and signed publication.

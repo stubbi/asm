@@ -32,6 +32,19 @@ class NativeLinkArchiveTests(unittest.TestCase):
         registry.validate_project(files, "owner/server", "0.1.0", "x86_64-linux")
         return files
 
+    def test_response_file_forms_are_not_build_inputs(self):
+        for name in ["@input.c", "nested/@input.c"]:
+            files = {key: value[0] for key, value in source_files(f'link = "c"\ncheck = "{name}"\n').items()}
+            files[name] = b"-x c /dev/null\n"
+            with self.subTest(name=name), self.assertRaises(registry.RegistryError):
+                registry.validate_project(files, "owner/server", "0.1.0", "x86_64-linux")
+        files = {key: value[0] for key, value in source_files().items()}
+        files["asm.toml"] = files["asm.toml"].replace(b'source = "server.s"', b'source = "@input.s"')
+        files["@input.s"] = b"server.s\n"
+        with self.assertRaises(registry.RegistryError):
+            registry.validate_project(files, "owner/server", "0.1.0", "x86_64-linux")
+
+
     def test_server_style_archive_and_standalone_manifest_remain_valid(self):
         fields = 'link = "c"\nlibraries = "microhttpd pq pthread"\ncheck = "abi-check.c"\n'
         self.assertIn("abi-check.c", self.validate(fields))
@@ -71,18 +84,6 @@ class NativeLinkArchiveTests(unittest.TestCase):
         for fields in candidates:
             with self.subTest(fields=fields), self.assertRaises(registry.RegistryError):
                 self.validate(fields + "\n")
-
-    def test_response_file_forms_are_not_build_inputs(self):
-        for name in ["@input.c", "nested/@input.c"]:
-            files = {key: value[0] for key, value in source_files(f'link = "c"\ncheck = "{name}"\n').items()}
-            files[name] = b"-x c /dev/null\n"
-            with self.subTest(name=name), self.assertRaises(registry.RegistryError):
-                registry.validate_project(files, "owner/server", "0.1.0", "x86_64-linux")
-        files = {key: value[0] for key, value in source_files().items()}
-        files["asm.toml"] = files["asm.toml"].replace(b'source = "server.s"', b'source = "@input.s"')
-        files["@input.s"] = b"server.s\n"
-        with self.assertRaises(registry.RegistryError):
-            registry.validate_project(files, "owner/server", "0.1.0", "x86_64-linux")
 
     def test_declared_compile_checker_must_exist_in_the_archive(self):
         with self.assertRaises(registry.RegistryError):

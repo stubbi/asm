@@ -98,6 +98,20 @@ class NativeLinkTests(unittest.TestCase):
                               or (tag == 0x6FFFFFFB and bool(value & 1)))
         self.assertTrue(immediate, "ELF lacks immediate binding")
 
+    def test_response_file_checker_is_rejected_before_compilation(self):
+        self.cli("build")
+        before = (self.work / "build/app").read_bytes()
+        (self.work / "literal.c").write_text("-x c /dev/null\n")
+        for name in ["@literal.c", "nested/@literal.c"]:
+            checker = self.work / name
+            checker.parent.mkdir(exist_ok=True)
+            checker.write_text('_Static_assert(sizeof(void *) == 8, "LP64");\n')
+            self.manifest.write_text(self.base + f'link = "c"\ncheck = "{name}"\n')
+            result = self.cli("build", success=False)
+            self.assertIn("invalid or missing asm.toml", result.stderr)
+            self.assertEqual((self.work / "build/app").read_bytes(), before)
+
+
     def test_c_abi_build_and_run_have_real_libc_output(self):
         self.cli("build")
         self._assert_hardened((self.work / "build/app").read_bytes())
@@ -184,19 +198,6 @@ class NativeLinkTests(unittest.TestCase):
         self.manifest.write_text(self.base + 'link = "c"\ncheck = ".c"\n')
         self.cli("build")
         self.assertFalse((self.work / "checker-executed").exists())
-
-    def test_response_file_checker_is_rejected_before_compilation(self):
-        self.cli("build")
-        before = (self.work / "build/app").read_bytes()
-        (self.work / "literal.c").write_text("-x c /dev/null\n")
-        for name in ["@literal.c", "nested/@literal.c"]:
-            checker = self.work / name
-            checker.parent.mkdir(exist_ok=True)
-            checker.write_text('_Static_assert(sizeof(void *) == 8, "LP64");\n')
-            self.manifest.write_text(self.base + f'link = "c"\ncheck = "{name}"\n')
-            result = self.cli("build", success=False)
-            self.assertIn("invalid or missing asm.toml", result.stderr)
-            self.assertEqual((self.work / "build/app").read_bytes(), before)
 
     def test_compiler_ignores_ambient_tool_and_include_configuration(self):
         poisoned = self.work / "poisoned"

@@ -127,6 +127,151 @@ class NativePublishTests(unittest.TestCase):
         for expected, actual in zip(artifacts, record["artifacts"]):
             registry.validate_artifact(expected[2].read_bytes(), record, actual)
 
+    def target_files(self, targets=None):
+        files = source_files()
+        manifest = '[package]\nname = "math"\nversion = "0.1.0"\n'
+        for target in (targets or registry.TARGETS):
+            manifest += (f'[target.{target}]\nsource = "src/{target}.s"\n'
+                         f'test = "tests/{target}.s"\n')
+            files[f"src/{target}.s"] = (b".text\n", 0o644)
+            files[f"tests/{target}.s"] = (b".text\n", 0o644)
+        files["asm.toml"] = (manifest.encode(), 0o644)
+        return files
+
+    def test_seven_project_targets_validate_all_inputs_without_expanding_artifact_targets(self):
+        targets = ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos",
+                   "x86_64-macos", "x86_64-windows", "aarch64-windows")
+        files = self.target_files(targets)
+        self.artifact.write_bytes(registry.make_archive(files))
+        for target in ("x86_64-linux", "aarch64-linux", "riscv64-linux", "aarch64-macos"):
+            with self.subTest(artifact_target=target):
+                self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]))
+                record = json.loads(self.output.read_bytes())
+                self.assertEqual(record["artifacts"][0]["target"], target)
+                registry.validate_artifact(self.artifact.read_bytes(), record, record["artifacts"][0])
+                self.output.unlink()
+        for target in ("x86_64-macos", "x86_64-windows", "aarch64-windows"):
+            with self.subTest(inactive_target=target):
+                incomplete = {path: value for path, value in files.items() if path != f"src/{target}.s"}
+                self.artifact.write_bytes(registry.make_archive(incomplete))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+                duplicate = {**files, "asm.toml": (files["asm.toml"][0] +
+                             f'[target.{target}]\nsource = "src/{target}.s"\n'.encode(), 0o644)}
+                self.artifact.write_bytes(registry.make_archive(duplicate))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+                self.artifact.write_bytes(registry.make_archive(files))
+                arguments = self.arguments(artifacts=[(target, "source", self.artifact, self.url)])
+                if IS_MACOS and target == TARGET:
+                    # A source-port host can prepare its own record before
+                    # the shared registry/release schema admits that host.
+                    self.cli(arguments)
+                    self.assertEqual(json.loads(self.output.read_bytes())["artifacts"][0]["target"], TARGET)
+                    self.output.unlink()
+                else:
+                    self.cli(arguments, code=2)
+                    self.assertFalse(self.output.exists())
+
+    def test_multi_target_archive_matches_each_declared_artifact_target(self):
+        self.artifact.write_bytes(registry.make_archive(self.target_files()))
+        for target in registry.TARGETS:
+            with self.subTest(target=target):
+                self.cli(self.arguments(artifacts=[(target, "source", self.artifact, self.url)]))
+                record = json.loads(self.output.read_bytes())
+                self.assertEqual(record["artifacts"][0]["target"], target)
+                self.output.unlink()
+
+    def test_multi_target_archive_preserves_target_specific_native_library_fields(self):
+        files = self.target_files()
+        manifest = files["asm.toml"][0].replace(
+            b'source = "src/aarch64-linux.s"\n',
+            b'source = "src/aarch64-linux.s"\nlink = "c"\nlibraries = "pq pthread"\ncheck = "abi-arm.c"\n')
+        files["asm.toml"] = (manifest, 0o644)
+        files["abi-arm.c"] = (b'_Static_assert(sizeof(void *) == 8, "LP64");\n', 0o644)
+        self.artifact.write_bytes(registry.make_archive(files))
+        self.cli()
+        record = json.loads(self.output.read_bytes())
+        registry.validate_artifact(self.artifact.read_bytes(), record, record["artifacts"][0])
+
+    def test_legacy_source_manifest_accepts_an_explicit_test_file(self):
+        files = source_files()
+        files["asm.toml"] = (files["asm.toml"][0] + b'test = "tests/math.s"\n', 0o644)
+        files["tests/math.s"] = (b".text\n", 0o644)
+        self.artifact.write_bytes(registry.make_archive(files))
+        self.cli()
+        self.output.unlink()
+        del files["tests/math.s"]
+        self.artifact.write_bytes(registry.make_archive(files))
+        self.cli(code=1)
+        self.assertFalse(self.output.exists())
+
+    def test_multi_target_archive_checks_inactive_inputs_and_rejects_ambiguous_tables(self):
+        base = self.target_files()
+        manifest = base["asm.toml"][0]
+        changes = [
+            manifest.replace(b'src/aarch64-linux.s', b'../outside.s'),
+            manifest.replace(b'tests/aarch64-linux.s', b'missing.s'),
+            manifest.replace(b'tests/aarch64-linux.s', b'tests/wrong.c'),
+            manifest.replace(b'[target.aarch64-linux]', b'[target.unknown-linux]'),
+            manifest + b'[target.x86_64-linux]\nsource = "src/math.s"\n',
+            manifest + b'[build]\nsource = "src/math.s"\ntarget = "x86_64-linux"\n',
+            manifest + b'target = "aarch64-macos"\n',
+            manifest + b'source = "src/math.s"\n',
+            manifest + b'link = "c"\ncheck = "missing.c"\n',
+            manifest + b'libraries = "pq"\n',
+        ]
+        for candidate in changes:
+            with self.subTest(manifest=candidate):
+                files = {**base, "asm.toml": (candidate, 0o644)}
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+        for missing in ("src/aarch64-linux.s", "tests/aarch64-linux.s"):
+            with self.subTest(missing=missing):
+                files = {path: value for path, value in base.items() if path != missing}
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+
+    def test_multi_target_archive_can_publish_without_a_host_entry(self):
+        files = source_files()
+        files["asm.toml"] = (b'[package]\nname = "math"\nversion = "0.1.0"\n'
+                             b'[target.riscv64-linux]\nsource = "src/math.s"\n', 0o644)
+        self.artifact.write_bytes(registry.make_archive(files))
+        self.cli(self.arguments(artifacts=[("riscv64-linux", "source", self.artifact, self.url)]))
+        self.output.unlink()
+        self.cli(code=1)
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_source_manifest_preserves_the_archive_byte_bound(self):
+        files = source_files()
+        manifest = files["asm.toml"][0]
+        for size in (16384, 16385):
+            with self.subTest(size=size):
+                files["asm.toml"] = (manifest + b"#" + b"x" * (size - len(manifest) - 1), 0o644)
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=0 if size == 16384 else 1)
+                if size == 16384:
+                    self.assertTrue(self.output.is_file())
+                    self.output.unlink()
+                else:
+                    self.assertFalse(self.output.exists())
+
+    def test_named_target_source_manifest_uses_the_native_build_byte_bound(self):
+        files = self.target_files()
+        manifest = files["asm.toml"][0]
+        for size in (8190, 8191):
+            with self.subTest(size=size):
+                files["asm.toml"] = (manifest + b"#" + b"x" * (size - len(manifest) - 1), 0o644)
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=0 if size == 8190 else 1)
+                if size == 8190:
+                    self.assertTrue(self.output.is_file())
+                    self.output.unlink()
+                else:
+                    self.assertFalse(self.output.exists())
+
     def test_name_version_and_target_must_match_source_manifest(self):
         for kwargs in ({"name": "wrong"}, {"version": "0.2.0"}, {"target": "aarch64-linux"}):
             with self.subTest(kwargs=kwargs):
@@ -139,6 +284,46 @@ class NativePublishTests(unittest.TestCase):
             with self.subTest(removed=removed):
                 files = source_files()
                 del files[removed]
+                self.artifact.write_bytes(registry.make_archive(files))
+                self.cli(code=1)
+                self.assertFalse(self.output.exists())
+
+    def test_native_library_manifest_and_repeated_artifacts_clear_optional_fields(self):
+        files = source_files()
+        fields = b'link = "c"\nlibraries = "microhttpd pq pthread"\ncheck = "abi-check.c"\n'
+        files["asm.toml"] = (files["asm.toml"][0] + fields, 0o644)
+        files["abi-check.c"] = (b'_Static_assert(sizeof(void *) == 8, "LP64");\n', 0o644)
+        self.artifact.write_bytes(registry.make_archive(files))
+        standalone = self.work / "standalone.tar.gz"
+        standalone.write_bytes(registry.make_archive(source_files(target="aarch64-linux")))
+        artifacts = [("x86_64-linux", "source", self.artifact, self.url),
+                     ("aarch64-linux", "source", standalone, self.url.replace("math-0.1.0", "standalone"))]
+        for ordered in (artifacts, list(reversed(artifacts))):
+            with self.subTest(targets=[item[0] for item in ordered]):
+                self.cli(self.arguments(artifacts=ordered))
+                record = registry.validate_manifest(json.loads(self.output.read_bytes()))
+                for original, artifact in zip(ordered, record["artifacts"]):
+                    registry.validate_artifact(original[2].read_bytes(), record, artifact)
+                self.output.unlink()
+
+    def test_native_library_fields_reject_invalid_values_and_missing_checker(self):
+        invalid = ['link = ""', 'link = "static"', 'libraries = "pq"', 'check = "abi-check.c"',
+                   'link = "c"\nlibraries = ""', 'link = "c"\ncheck = ""',
+                   'link = "c"\nlibraries = "pq  pthread"', 'link = "c"\nlibraries = "-lpq"',
+                   'link = "c"\nlibraries = "PQ"', 'link = "c"\nlibraries = "pq/pthread"',
+                   'link = "c"\nlibraries = " pq"', 'link = "c"\nlibraries = "pq "',
+                   'link = "c"\nlibraries = "a b c d e f g h i"',
+                   'link = "c"\nlibraries = "' + "a" * 32 + '"',
+                   'link = "c"\nlibraries = "' + "a" * 256 + '"',
+                   'link = "c"\ncheck = "../abi-check.c"', 'link = "c"\ncheck = "abi-check.s"',
+                   'link = "c"\nlink = "c"', 'link = "c"\nlibraries = "pq"\nlibraries = "pq"',
+                   'link = "c"\ncheck = "abi-check.c"\ncheck = "abi-check.c"',
+                   'link = "c"\nunknown = "pq"',
+                   'link = "c"\ncheck = "abi-check.c"']
+        for fields in invalid:
+            with self.subTest(fields=fields):
+                files = source_files()
+                files["asm.toml"] = (files["asm.toml"][0] + (fields + "\n").encode(), 0o644)
                 self.artifact.write_bytes(registry.make_archive(files))
                 self.cli(code=1)
                 self.assertFalse(self.output.exists())

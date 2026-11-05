@@ -119,6 +119,15 @@ target = "x86_64-linux"
 `asm new` sets the target for your machine.
 Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 
+Source builds also accept one project with several `[target.<id>]` implementations.
+Each target has its own source, test, and optional native-library fields.
+The [hello](examples/hello/README.md) and [math](examples/math/README.md) projects keep these inputs under `targets/<id>/`.
+`asm build --target riscv64-linux` builds a separate Linux artifact.
+`asm test --target riscv64-linux --no-run` builds its test without executing it.
+Target-specific dependency selections share one v2 lock.
+This extension is unreleased.
+See the [multi-target project contract](docs/multi-target-projects.md) for tools, commands, and platform limits.
+
 ### Find a package
 
 ```sh
@@ -215,6 +224,15 @@ Publication proceeds through a pull request to the registry.
 
 Follow the [publishing guide](registry/README.md) for the commands and submission process.
 
+## Build with an AI
+
+The [Asm development skill](skills/asm-build/SKILL.md) guides requirements, target selection, package reuse, tests, and bounded performance work.
+The [MCP setup guide](docs/agents.md) connects AI clients to read-only discovery, planning, and measurement-comparison tools.
+The AI uses its authorized workspace tools to build and execute software.
+
+Hosted registry and MCP deployment remain under qualification.
+The [hosted registry contract](docs/hosted-registry.md) records the implementation scope and remaining recovery, security, and runtime gates.
+
 ## Security evidence
 
 Package records distinguish artifact checks, build provenance, formal proofs, and agent reviews.
@@ -249,7 +267,9 @@ The [repository layout](CONTRIBUTING.md#repository-layout) explains the source, 
 Follow the [design guide](design.md), [writing guide](docs/writing.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
-Python handles registry operations and release automation; JavaScript supports the website. The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
+Python handles registry operations, release automation, and the separate MCP protocol adapter; JavaScript supports the website.
+The hosted registry runtime foundation uses assembly with mature protocol and database libraries.
+The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
 
 On Linux, run `make check` from the repository root.
 On macOS, run `make test`.

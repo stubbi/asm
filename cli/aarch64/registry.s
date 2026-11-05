@@ -390,14 +390,6 @@ registry_command:
     ARM_IMM x11, 0
     cmp x10, x11
     b.ne registry_bad_args
-    ARM_ADDR x16, registry_target
-    ldr x10, [x16]
-    mov x0, x10
-    ARM_ADDR x16, registry_host
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.eq registry_install_target_error
     ARM_ADDR x16, registry_kind
     ldr x10, [x16]
     mov x0, x10
@@ -406,6 +398,10 @@ registry_command:
     ARM_CALL streq
     tst w9, w9
     b.eq registry_bad_args
+    ARM_ADDR x16, registry_target
+    ldr x9, [x16]
+    ARM_ADDR x16, project_requested_target
+    str x9, [x16]
     ARM_CALL read_manifest
 .Lregistry_load:
     P_BYTE w10, registry_mode

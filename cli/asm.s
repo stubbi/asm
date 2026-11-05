@@ -277,7 +277,7 @@ unsupported_target:
     jmp die
 
 /* Input: RAX=current argv string. Output: EAX=1 if consumed, otherwise zero.
- * --target consumes one more argument and accepts the host or its alias.
+ * --target consumes one more argument and accepts known canonical targets.
  * Malformed options exit. Stack: 8 saved bytes plus nested calls. */
 common_option:
     push rbx
@@ -302,6 +302,11 @@ common_option:
     call streq
     test eax, eax
     jnz .Lopt_locked
+    mov rdi, rbx
+    lea rsi, [rip + opt_no_run]
+    call streq
+    test eax, eax
+    jnz .Lopt_no_run
     mov rax, rbx
     call native_link_option
     test eax, eax
@@ -330,9 +335,14 @@ common_option:
     test rax, rax
     jz bad_args
     mov rdi, rax
-    call validate_target
+    call project_set_target
     test eax, eax
     jz unsupported_target
+    jmp .Lopt_yes
+.Lopt_no_run:
+    cmp byte ptr [rip + allow_no_run], 0
+    je bad_args
+    mov byte ptr [rip + no_run], 1
     jmp .Lopt_yes
 .Lopt_locked:
     cmp byte ptr [rip + allow_locked], 0
@@ -512,6 +522,7 @@ cmd_init:
     cmp byte ptr [rip + path_seen], 0
     je bad_args
 .Linit_save_cwd:
+    call project_template_check
     mov eax, SYS_open
     lea rdi, [rip + dot]
     mov esi, O_DIRECTORY + O_CLOEXEC
@@ -745,19 +756,21 @@ init_rollback:
 
 /* Strict, documented TOML subset. Sections and string fields are parsed, not
  * ignored. Unknown keys, duplicate fields, escapes and unsupported targets fail. */
-/* Input: cwd is the project. Output: package_* buffers contain validated fields.
- * Reads a regular, non-symlink asm.toml with at most 8190 bytes. Field capacities
- * include NUL: name=65, version/target=64, source/native fields=256.
- * Failure exits without build
- * changes. Stack: 32 saved bytes plus nested calls; all callee-saved restored. */
+/* Input: cwd is the project. Output: package_* contain the selected target's fields.
+ * Reads a regular, non-symlink asm.toml with at most 8190 bytes. All declared
+ * tables are validated before returning. R13D tracks the section (package=1,
+ * build=2, target=3); R14D tracks fields; R15D tracks unique sections.
+ * Owned field capacities include NUL: name=65, version/target=64, source/test/
+ * native fields=256. Failure exits without build changes; no selected target exits 2.
+ * Scratch: caller-saved. Stack: 32 saved bytes plus bounded internal calls;
+ * all SysV callee-saved registers are restored. No external ABI calls. */
 read_manifest:
     push r12
     push r13
     push r14
     push r15
-    mov byte ptr [rip + package_link], 0
-    mov byte ptr [rip + package_libraries], 0
-    mov byte ptr [rip + package_check], 0
+    mov byte ptr [rip + manifest_host_found], 0
+    mov qword ptr [rip + project_target_mask], 0
     mov eax, SYS_open
     lea rdi, [rip + manifest_path]
     mov esi, O_NOFOLLOW + O_CLOEXEC + O_NONBLOCK
@@ -883,6 +896,11 @@ read_manifest:
     test eax, eax
     jnz .Lfield_source
     lea rdi, [rip + key_buffer]
+    lea rsi, [rip + key_test]
+    call streq
+    test eax, eax
+    jnz .Lfield_test
+    lea rdi, [rip + key_buffer]
     lea rsi, [rip + key_target]
     call streq
     test eax, eax
@@ -919,10 +937,17 @@ read_manifest:
     jmp .Lfield_read
 .Lfield_source:
     cmp r13d, 2
-    jne manifest_error
+    jb manifest_error
     lea rdi, [rip + package_source]
     mov esi, 255
     mov edx, 4
+    jmp .Lfield_read
+.Lfield_test:
+    cmp r13d, 2
+    jb manifest_error
+    lea rdi, [rip + package_test]
+    mov esi, 255
+    mov edx, 128
     jmp .Lfield_read
 .Lfield_target:
     cmp r13d, 2
@@ -933,21 +958,21 @@ read_manifest:
     jmp .Lfield_read
 .Lfield_link:
     cmp r13d, 2
-    jne manifest_error
+    jb manifest_error
     lea rdi, [rip + package_link]
     mov esi, 255
     mov edx, 16
     jmp .Lfield_read
 .Lfield_libraries:
     cmp r13d, 2
-    jne manifest_error
+    jb manifest_error
     lea rdi, [rip + package_libraries]
     mov esi, 255
     mov edx, 32
     jmp .Lfield_read
 .Lfield_check:
     cmp r13d, 2
-    jne manifest_error
+    jb manifest_error
     lea rdi, [rip + package_check]
     mov esi, 255
     mov edx, 64
@@ -979,6 +1004,7 @@ read_manifest:
     inc r12
     jmp .Lline_end
 .Lmanifest_section:
+    call manifest_finish_build
     inc r12
     lea rdi, [rip + key_buffer]
     xor ecx, ecx
@@ -986,9 +1012,9 @@ read_manifest:
     mov al, [r12]
     cmp al, ']'
     je .Lsection_end
-    cmp al, 'a'
+    cmp al, 32
     jb manifest_error
-    cmp al, 'z'
+    cmp al, 126
     ja manifest_error
     cmp ecx, 31
     jae manifest_error
@@ -1007,11 +1033,74 @@ read_manifest:
     lea rsi, [rip + section_build]
     call streq
     test eax, eax
-    jz manifest_error
-    test r15d, 2
+    jz .Lsection_target
+    test r15d, 510
     jnz manifest_error
     or r15d, 2
     mov r13d, 2
+    call manifest_start_build
+    jmp .Lline_end
+.Lsection_target:
+    test r15d, 2
+    jnz manifest_error
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_x86]
+    call streq
+    mov edx, 4
+    lea rsi, [rip + target_x86]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_arm]
+    call streq
+    mov edx, 8
+    lea rsi, [rip + target_arm]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_riscv]
+    call streq
+    mov edx, 16
+    lea rsi, [rip + target_riscv]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_macos]
+    call streq
+    mov edx, 32
+    lea rsi, [rip + target_macos]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_macos_x86]
+    call streq
+    mov edx, 64
+    lea rsi, [rip + target_macos_x86]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_windows_x86]
+    call streq
+    mov edx, 128
+    lea rsi, [rip + target_windows_x86]
+    test eax, eax
+    jnz .Lsection_target_known
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + section_target_windows_arm]
+    call streq
+    mov edx, 256
+    lea rsi, [rip + target_windows_arm]
+    test eax, eax
+    jnz .Lsection_target_known
+    jmp manifest_error
+.Lsection_target_known:
+    test r15d, edx
+    jnz manifest_error
+    or r15d, edx
+    lea rdi, [rip + package_target]
+    call copy_string
+    mov r13d, 3
+    call manifest_start_build
     jmp .Lline_end
 .Lsection_package:
     test r15d, 1
@@ -1040,9 +1129,10 @@ read_manifest:
     jne .Lmanifest_comment
     jmp .Lmanifest_line
 .Lmanifest_finish:
+    call manifest_finish_build
     mov eax, r14d
-    and eax, 15
-    cmp eax, 15
+    and eax, 3
+    cmp eax, 3
     jne manifest_error
     lea rdi, [rip + package_name]
     call valid_name
@@ -1052,21 +1142,32 @@ read_manifest:
     call valid_version
     test eax, eax
     jz manifest_error
+    test r15d, 510
+    jz manifest_error
+    cmp byte ptr [rip + manifest_host_found], 0
+    je manifest_no_host
     lea rdi, [rip + package_source]
-    call valid_source
-    test eax, eax
-    jz manifest_error
-    lea rdi, [rip + package_link]
-    lea rsi, [rip + package_libraries]
-    lea rdx, [rip + package_check]
-    call native_link_validate
-    test eax, eax
-    jz manifest_error
-    call native_link_check_options
+    lea rsi, [rip + selected_source]
+    call copy_string
+    lea rdi, [rip + package_test]
+    lea rsi, [rip + selected_test]
+    call copy_string
     lea rdi, [rip + package_target]
-    call validate_target
-    test eax, eax
-    jz unsupported_target
+    lea rsi, [rip + selected_target]
+    call copy_string
+    lea rdi, [rip + package_link]
+    lea rsi, [rip + selected_link]
+    call copy_string
+    lea rdi, [rip + package_libraries]
+    lea rsi, [rip + selected_libraries]
+    call copy_string
+    lea rdi, [rip + package_check]
+    lea rsi, [rip + selected_check]
+    call copy_string
+    mov eax, r15d
+    and eax, 508
+    mov [rip + project_target_mask], eax
+    call native_link_check_options
     pop r15
     pop r14
     pop r13
@@ -1080,6 +1181,90 @@ manifest_error:
     lea rdi, [rip + err_manifest]
     mov esi, 1
     jmp die
+manifest_no_host:
+    lea rdi, [rip + err_manifest_host]
+    mov esi, 2
+    jmp die
+
+/* Input: R14D=previous fields, package_target already set for a target table.
+ * Output: keeps package name/version bits and clears build fields. Owned work
+ * buffers hold an empty source/native metadata and default tests/main.s.
+ * Capacities: source/test/native=256. Scratch:RAX/RCX/RSI/RDI; updates R14D.
+ * Stack:8 bytes for call alignment. No syscalls or external ABI calls. */
+manifest_start_build:
+    and r14d, 3
+    mov byte ptr [rip + package_source], 0
+    mov byte ptr [rip + package_link], 0
+    mov byte ptr [rip + package_libraries], 0
+    mov byte ptr [rip + package_check], 0
+    lea rdi, [rip + package_test]
+    lea rsi, [rip + test_source]
+    sub rsp, 8
+    call copy_string
+    add rsp, 8
+    ret
+
+/* Input: R13D=section, R14D=field bits, bounded package_* work buffers.
+ * Output: validates every build table, including inactive targets. Copies a
+ * selected table into owned selected_* buffers; legacy target support is checked
+ * after the complete parse. Missing fields or invalid paths/metadata exit 1.
+ * Capacities including NUL: target=64; source/test/native=256. Copies cannot
+ * overlap or exceed those matching capacities. Scratch:caller-saved; preserves
+ * R12-R15 and all SysV callee-saved registers. Stack:8 plus bounded callees.
+ * No file changes, syscalls, or external ABI calls. */
+manifest_finish_build:
+    cmp r13d, 2
+    jb .Lmanifest_build_done
+    test r14d, 4
+    jz manifest_error
+    cmp r13d, 2
+    jne .Lmanifest_validate_paths
+    test r14d, 8
+    jz manifest_error
+.Lmanifest_validate_paths:
+    sub rsp, 8
+    lea rdi, [rip + package_source]
+    call valid_source
+    test eax, eax
+    jz manifest_error
+    lea rdi, [rip + package_test]
+    call valid_source
+    test eax, eax
+    jz manifest_error
+    lea rdi, [rip + package_link]
+    lea rsi, [rip + package_libraries]
+    lea rdx, [rip + package_check]
+    call native_link_validate
+    test eax, eax
+    jz manifest_error
+    lea rdi, [rip + package_target]
+    call project_target_matches
+    test eax, eax
+    jz .Lmanifest_build_unselected
+.Lmanifest_select_build:
+    lea rdi, [rip + selected_source]
+    lea rsi, [rip + package_source]
+    call copy_string
+    lea rdi, [rip + selected_test]
+    lea rsi, [rip + package_test]
+    call copy_string
+    lea rdi, [rip + selected_target]
+    lea rsi, [rip + package_target]
+    call copy_string
+    lea rdi, [rip + selected_link]
+    lea rsi, [rip + package_link]
+    call copy_string
+    lea rdi, [rip + selected_libraries]
+    lea rsi, [rip + package_libraries]
+    call copy_string
+    lea rdi, [rip + selected_check]
+    lea rsi, [rip + package_check]
+    call copy_string
+    mov byte ptr [rip + manifest_host_found], 1
+.Lmanifest_build_unselected:
+    add rsp, 8
+.Lmanifest_build_done:
+    ret
 
 /* Input/output: R12 is the bounded manifest parser cursor. Advances over SP,
  * TAB and CR. Scratch: RAX. This parser helper intentionally updates R12. */
@@ -1177,9 +1362,9 @@ valid_source:
     xor edx, edx
 .Lsource_segment:
     mov al, [rdi + rcx]
-    cmp al, '@' /* compiler/assembler response files are not source paths */
-    je .Linvalid
     cmp al, '-'
+    je .Linvalid
+    cmp al, '@'
     je .Linvalid
     mov edx, ecx
 .Lsource_loop:
@@ -1224,9 +1409,7 @@ cmd_build:
     call parse_options_only
     call read_manifest
     call build_project
-    lea rdi, [rip + build_text]
-    lea rsi, [rip + build_json]
-    call report
+    call project_build_report
     jmp exit_ok
 cmd_run:
     mov byte ptr [rip + native_allow], 1
@@ -1263,12 +1446,15 @@ cmd_run:
     mov edi, eax
     jmp exit_code
 cmd_test:
+    mov byte ptr [rip + allow_no_run], 1
     mov byte ptr [rip + native_allow], 1
     mov byte ptr [rip + allow_locked], 1
     call parse_options_only
     call read_manifest
     mov byte ptr [rip + test_mode], 1
     call build_project
+    cmp byte ptr [rip + no_run], 0
+    jne project_test_build_report
     lea rdi, [rip + test_output]
     mov [rip + child_argv], rdi
     mov qword ptr [rip + child_argv + 8], 0
@@ -1276,21 +1462,39 @@ cmd_test:
     call spawn_wait
     test eax, eax
     jnz .Ltest_failed
+    cmp byte ptr [rip + json_mode], 0
+    jne .Ltest_report_json
     lea rdi, [rip + test_text]
-    lea rsi, [rip + test_json]
-    call report
+    call out
+    lea rdi, [rip + package_test]
+    call out
+    lea rdi, [rip + newline]
+    call out
+    jmp exit_ok
+.Ltest_report_json:
+    lea rdi, [rip + test_json]
+    call out
+    lea rdi, [rip + package_test]
+    call registry_json_string
+    lea rdi, [rip + test_json_end]
+    call out
     jmp exit_ok
 .Ltest_failed:
     mov esi, eax
     lea rdi, [rip + err_test]
     jmp die
 
-/* Input: cwd is a trusted local project; package_source was parsed and bounded.
- * test_mode selects tests/main.s. Output: build/app or build/test, plus object.
+/* Input: cwd is a trusted local project; source/test paths were bounded.
+ * test_mode selects package_test. Output: build/app or build/test, plus object.
  * Object rename occurs first; binary rename is the final publication step.
  * Returns on success. On failure, removes this process's stage and exits with
  * the child status or 1. Stage paths have capacities 64/96/96. Stack: 8 bytes. */
 build_project:
+    call project_execution_check
+    lea rdi, [rip + package_target]
+    call validate_target
+    test eax, eax
+    jz cross_build_project
     push r12
     call check_tools
     call verify_project_dependencies
@@ -1346,7 +1550,7 @@ build_project:
     lea rax, [rip + package_source]
     cmp byte ptr [rip + test_mode], 0
     je .Lbuild_source_set
-    lea rax, [rip + test_source]
+    lea rax, [rip + package_test]
 .Lbuild_source_set:
     mov [rip + child_argv + 48], rax
     mov qword ptr [rip + child_argv + 56], 0
@@ -1494,14 +1698,18 @@ spawn_wait:
     mov rdx, [rip + envp]
     lea rcx, [rip + native_cc_path]
     cmp rdi, rcx
-    je .Lspawn_compiler_environment
+    je .Lspawn_fixed_environment
     lea rcx, [rip + as_path]
     cmp rdi, rcx
-    je .Lspawn_compiler_environment
+    je .Lspawn_fixed_environment
     lea rcx, [rip + ld_path]
     cmp rdi, rcx
+    je .Lspawn_fixed_environment
+    cmp rdi, [rip + cross_as]
+    je .Lspawn_fixed_environment
+    cmp rdi, [rip + cross_ld]
     jne .Lspawn_environment_ready
-.Lspawn_compiler_environment:
+.Lspawn_fixed_environment:
     lea rdx, [rip + native_tool_env]
 .Lspawn_environment_ready:
     syscall
@@ -1518,6 +1726,10 @@ spawn_wait:
 cmd_clean:
     call parse_options_only
     call read_manifest
+    lea rdi, [rip + package_target]
+    call validate_target
+    test eax, eax
+    jz cross_clean
     mov eax, SYS_lstat
     lea rdi, [rip + build_dir]
     lea rsi, [rip + stat_buffer]
@@ -1655,9 +1867,25 @@ default_name: .asciz "app"
 key_name: .asciz "name"
 key_version: .asciz "version"
 key_source: .asciz "source"
+key_test: .asciz "test"
 key_target: .asciz "target"
 section_package: .asciz "package"
 section_build: .asciz "build"
+section_target_x86: .asciz "target.x86_64-linux"
+section_target_arm: .asciz "target.aarch64-linux"
+section_target_riscv: .asciz "target.riscv64-linux"
+section_target_macos: .asciz "target.aarch64-macos"
+target_x86: .asciz "x86_64-linux"
+target_arm: .asciz "aarch64-linux"
+target_riscv: .asciz "riscv64-linux"
+target_macos: .asciz "aarch64-macos"
+section_target_macos_x86: .asciz "target.x86_64-macos"
+target_macos_x86: .asciz "x86_64-macos"
+section_target_windows_x86: .asciz "target.x86_64-windows"
+target_windows_x86: .asciz "x86_64-windows"
+section_target_windows_arm: .asciz "target.aarch64-windows"
+target_windows_arm: .asciz "aarch64-windows"
+
 newline: .asciz "\n"
 error_prefix: .asciz "asm: "
 error_json_prefix: .asciz "{\"ok\":false,\"error\":\""
@@ -1665,13 +1893,14 @@ error_json_suffix: .asciz "\"}\n"
 err_unknown_command: .asciz "unknown command; use asm help"
 err_arguments: .asciz "invalid arguments; use asm help"
 err_output: .asciz "cannot write command output; check the output destination and try again"
-err_target: .asciz "unsupported target; this release supports x86_64-linux only"
+err_target: .asciz "unsupported target; use asm targets for supported build targets"
 err_tools: .asciz "GNU as and ld must be executable at /usr/bin/as and /usr/bin/ld"
 err_registry_tools: .asciz "registry and source commands require curl, sha256sum and gzip in /usr/bin. Install the missing tools"
 err_unimplemented: .asciz "this command is not implemented; run asm status to see command support"
 err_init_path: .asciz "cannot create project directory; new requires a path that does not exist"
 err_init_conflict: .asciz "cannot initialize project; existing files and symlink directories are never overwritten"
-err_manifest: .asciz "invalid or missing asm.toml; expected package name/version and build source/target"
+err_manifest: .asciz "invalid or missing asm.toml; use package name/version and build source/target or canonical target tables"
+err_manifest_host: .asciz "asm.toml has no selected target; add its canonical target table or select a declared target"
 err_build: .asciz "build failed; see tool diagnostics above"
 err_build_io: .asciz "cannot write build artifacts; build must be a real directory"
 err_test: .asciz "test program failed"
@@ -1681,8 +1910,8 @@ version_text: .asciz "asm 0.5.0 (x86_64-linux)\n"
 version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"host\":\"x86_64-linux\"}\n"
 license_text: .asciz "asm 0.5.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.5.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
 license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.5.0\"}\n"
-targets_text: .asciz "x86_64-linux (host; GNU as + ld)\n"
-targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\"]}\n"
+targets_text: .asciz "x86_64-linux (host; GNU as + ld)\naarch64-linux (cross; GNU target binutils)\nriscv64-linux (cross; GNU target binutils)\n"
+targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
 doctor_text: .asciz "Host: x86_64-linux\nBuild: /usr/bin/as and /usr/bin/ld\nRegistry: /usr/bin/curl and /usr/bin/sha256sum\nSource archives: /usr/bin/gzip\nRequired tools are available.\n"
 doctor_json: .asciz "{\"ok\":true,\"host\":\"x86_64-linux\",\"assembler\":\"/usr/bin/as\",\"linker\":\"/usr/bin/ld\",\"curl\":\"/usr/bin/curl\",\"sha256sum\":\"/usr/bin/sha256sum\",\"gzip\":\"/usr/bin/gzip\"}\n"
@@ -1690,8 +1919,9 @@ init_text: .asciz "Created asm.toml, src/main.s and tests/main.s.\nNext: asm run
 init_json: .asciz "{\"ok\":true,\"created\":[\"asm.toml\",\"src/main.s\",\"tests/main.s\"]}\n"
 build_text: .asciz "Built build/app\n"
 build_json: .asciz "{\"ok\":true,\"artifact\":\"build/app\"}\n"
-test_text: .asciz "Passed tests/main.s\n"
-test_json: .asciz "{\"ok\":true,\"test\":\"tests/main.s\"}\n"
+test_text: .asciz "Passed "
+test_json: .asciz "{\"ok\":true,\"test\":"
+test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
@@ -1699,9 +1929,9 @@ help_text:
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
-    .ascii "  build            Assemble and link to build/app\n"
+    .ascii "  build            Assemble and link the selected target\n"
     .ascii "  run [-- args]    Build, then run with forwarded arguments\n"
-    .ascii "  test             Assemble and execute tests/main.s\n"
+    .ascii "  test             Assemble and execute the selected test source\n"
     .ascii "  build/run/test:  --include-dir PATH, --library-dir PATH (link = c)\n"
     .ascii "  clean            Remove only Asm's named build artifacts\n"
     .ascii "  search [query]   Search the package registry\n"
@@ -1725,7 +1955,9 @@ help_text:
     .ascii "  license          Show the license, warranty, and source\n"
     .ascii "  self update      Update this user installation from the hub\n"
     .ascii "  help             Show this help\n\n"
-    .ascii "Options: --target x86_64-linux, --json, --no-color, --help\n"
+    .ascii "Options: --target <target>, --json, --no-color, --help\n"
+    .ascii "Use targets to list build targets. test --no-run builds without execution.\n"
+    .ascii "Cross-target link=c requires a target sysroot; use the native host.\n"
     .ascii "Build/run/test verify existing locks. --locked also requires asm.lock.\n"
     .ascii "For a path starting with -, use: asm new -- <path>\n"
     .ascii "JSON describes Asm's own output; child output is passed through.\n"
@@ -1736,7 +1968,7 @@ help_text:
 help_json:
     .asciz "{\"name\":\"asm\",\"version\":\"0.5.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.5.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -1759,8 +1991,16 @@ key_buffer: .skip 64
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
+package_test: .skip 256
 package_target: .skip 64
+selected_source: .skip 256
+selected_test: .skip 256
+selected_target: .skip 64
+selected_link: .skip 256
+selected_libraries: .skip 256
+selected_check: .skip 256
 manifest_buffer: .skip 8192
+manifest_host_found: .skip 1
 json_mode: .skip 1
 allow_locked: .skip 1
 require_lock: .skip 1
@@ -1775,6 +2015,7 @@ made_tests: .skip 1
 made_manifest: .skip 1
 made_main: .skip 1
 made_test: .skip 1
+.include "cli/cross_build.s"
 .include "cli/native_link.s"
 .section .note.GNU-stack,"",@progbits
 

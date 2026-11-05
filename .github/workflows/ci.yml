@@ -60,6 +60,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install Linux cross-build test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-x86-64-linux-gnu binutils-riscv64-linux-gnu qemu-user
       - name: Test native commands, parsers, and installation boundaries
         run: make check
       - name: Check installation boundaries between users
@@ -79,6 +83,10 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Install Linux cross-build test tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install llvm lld
       - name: Build and test clean native release bytes
         run: python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist
       - name: Retain exact native bytes and runtime evidence
