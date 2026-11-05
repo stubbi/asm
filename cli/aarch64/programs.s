@@ -235,8 +235,8 @@ program_commit_install:
     cbnz x10, .Lp_commit_opened
     P_LOAD x1, registry_output
     ARM_CALL program_absolute_path
-    ARM_CALL program_check_new_path
     ARM_CALL program_open_destination
+    ARM_CALL program_check_new_path
     P_LOAD x0, program_dest_fd
     P_LOAD x1, program_dest_name
     ARM_ADDR x2, program_check_stat
@@ -1183,24 +1183,212 @@ program_valid_absolute_path:
     ARM_RESTORE x19
     ret
 
-/* A missing file still belongs to its installation record. Reject a new
- * package at that path instead of generating an ambiguous inventory.
- * Input program_path, parsed rows/count. Stack: two saved registers. */
+/* A missing file still belongs to its installation record. Compare actual
+ * parent directory identities, then let that directory resolve the names.
+ * Only a parent collision needs a probe. One O_EXCL mode-000 empty file at
+ * the new destination exposes the filesystem's exact case/Unicode rules.
+ * No data is written and no execution is possible. Remove the owned probe
+ * before staging the executable. An interruption can leave an empty inert
+ * new destination; previous files and inventory bytes remain unchanged.
+ * Inputs: held destination FD/name, canonical program_path, <=128 rows.
+ * Names are borrowed from parsed rows; names[129] includes reserved asm.
+ * Stack: six saved registers. No shell, child, or Unicode approximation.
+ */
 program_check_new_path:
     ARM_SAVE x19
     ARM_SAVE x20
+    ARM_SAVE x21
+    ARM_SAVE x22
+    ARM_SAVE x23
+    ARM_SAVE x24
+    P_LOAD x0, program_dest_fd
+    ARM_ADDR x1, program_alias_parent_stat
+    ARM_CALL arm_fstat
+    tbnz x9, #63, program_path_error
     ARM_ADDR x19, program_rows
     P_LOAD x20, program_count
+    mov x22, #0
 .Lp_new_path_loop:
-    cbz x20, .Lp_new_path_done
+    cbz x20, .Lp_new_path_cli
     ARM_ADDR x0, program_path
     ldr x1, [x19, #40]
     ARM_CALL streq
     cbnz w9, program_destination_exists
+    ldr x0, [x19, #40]
+    mov x1, #0
+    ARM_CALL program_walk_parent
+    cmn x9, #2
+    b.eq .Lp_new_path_next
+    tbnz x9, #63, program_path_error
+    mov x21, x9
+    mov x0, x21
+    ARM_ADDR x1, program_alias_record_stat
+    ARM_CALL arm_fstat
+    mov x23, x9
+    mov x0, x21
+    ARM_CALL arm_close
+    tbnz x23, #63, program_path_error
+    ARM_ADDR x0, program_alias_parent_stat
+    ARM_ADDR x1, program_alias_record_stat
+    ARM_CALL program_same_identity
+    cbz w9, .Lp_new_path_next
+    P_LOAD x10, program_basename
+    ARM_ADDR x16, program_alias_names
+    str x10, [x16, x22, lsl #3]
+    add x22, x22, #1
+.Lp_new_path_next:
     add x19, x19, #64
     sub x20, x20, #1
     b .Lp_new_path_loop
+.Lp_new_path_cli:
+    /* Reserve filesystem aliases of asm, including Unicode case aliases. */
+    ARM_ADDR x0, program_reserved_path
+    mov x1, #0
+    ARM_CALL program_walk_parent
+    tbnz x9, #63, .Lp_new_path_probe
+    mov x21, x9
+    mov x0, x21
+    ARM_ADDR x1, program_alias_record_stat
+    ARM_CALL arm_fstat
+    mov x23, x9
+    mov x0, x21
+    ARM_CALL arm_close
+    tbnz x23, #63, program_path_error
+    ARM_ADDR x0, program_alias_parent_stat
+    ARM_ADDR x1, program_alias_record_stat
+    ARM_CALL program_same_identity
+    cbz w9, .Lp_new_path_probe
+    ARM_ADDR x10, program_cli_name
+    ARM_ADDR x16, program_alias_names
+    str x10, [x16, x22, lsl #3]
+    add x22, x22, #1
+.Lp_new_path_probe:
+    cbz x22, .Lp_new_path_done
+    P_STORE x22, program_alias_count
+    P_LOAD x0, program_dest_fd
+    P_LOAD x1, program_dest_name
+    ARM_IMM x2, O_NOFOLLOW + O_CLOEXEC + 193
+    mov x6, #0 /* O_EXCL probe has no read/write/execute permission bits. */
+    ARM_CALL arm_openat
+    cmn x9, #17
+    b.eq program_destination_exists
+    tbnz x9, #63, program_probe_error
+    P_STORE x9, program_probe_fd
+    P_SET 1, program_probe_active
+    mov x0, x9
+    ARM_ADDR x1, program_probe_stat
+    ARM_CALL arm_probe_fd_stat
+    tbnz x9, #63, program_probe_error
+    mov x24, #0
+.Lp_new_path_lookup:
+    ARM_ADDR x16, program_alias_names
+    ldr x1, [x16, x24, lsl #3]
+    P_LOAD x0, program_dest_fd
+    ARM_ADDR x2, program_probe_entry_stat
+    mov x6, #256
+    ARM_CALL arm_probe_stat
+    cmn x9, #2
+    b.eq .Lp_new_path_lookup_next
+    tbnz x9, #63, program_probe_error
+    ARM_ADDR x0, program_probe_stat
+    ARM_ADDR x1, program_probe_entry_stat
+    ARM_CALL program_same_identity
+    cbnz w9, .Lp_new_path_collision
+.Lp_new_path_lookup_next:
+    add x24, x24, #1
+    cmp x24, x22
+    b.lo .Lp_new_path_lookup
+    ARM_CALL program_remove_probe
+    cbnz x9, program_probe_error
 .Lp_new_path_done:
+    ARM_RESTORE x24
+    ARM_RESTORE x23
+    ARM_RESTORE x22
+    ARM_RESTORE x21
+    ARM_RESTORE x20
+    ARM_RESTORE x19
+    ret
+.Lp_new_path_collision:
+    ARM_CALL program_remove_probe
+    cbnz x9, program_probe_error
+    ARM_ADDR x16, program_alias_names
+    ldr x10, [x16, x24, lsl #3]
+    ARM_ADDR x11, program_cli_name
+    cmp x10, x11
+    b.eq program_reserved_error
+    b program_destination_exists
+
+/* x0/x1=normalized stat structures. w9=1 only for equal device and inode.
+ * Identity comparison grants no ownership, permission, or digest result.
+ * No stack or writes; scratch x10/x11. */
+program_same_identity:
+    ldr x10, [x0, #ARM_STAT_DEVICE]
+    ldr x11, [x1, #ARM_STAT_DEVICE]
+    cmp x10, x11
+    b.ne .Lp_identity_different
+    ldr x10, [x0, #ARM_STAT_INODE]
+    ldr x11, [x1, #ARM_STAT_INODE]
+    cmp x10, x11
+    b.ne .Lp_identity_different
+    mov w9, #1
+    ret
+.Lp_identity_different:
+    mov w9, #0
+    ret
+
+/* Remove only a destination that still identifies the held exclusive probe.
+ * A replacement entry is retained. ENOENT means absence already holds.
+ * x9=0 on restored absence, -1 if inspection/removal/close fails. Never exits.
+ * The probe FD is closed on every path. Same-UID races remain outside the
+ * advisory-lock contract; identity is rechecked before each unlink attempt.
+ * Stack: two saved registers. No writes to file contents or inventory.
+ */
+program_remove_probe:
+    ARM_SAVE x19
+    ARM_SAVE x20
+    mov x20, #0
+    P_LOAD x10, program_probe_active
+    cbz x10, .Lp_probe_remove_done
+    P_LOAD x19, program_probe_fd
+    tbnz x19, #63, .Lp_probe_remove_bad
+    mov x0, x19
+    ARM_ADDR x1, program_probe_stat
+    ARM_CALL arm_probe_fd_stat
+    tbnz x9, #63, .Lp_probe_remove_bad
+.Lp_probe_remove_check:
+    P_LOAD x0, program_dest_fd
+    P_LOAD x1, program_dest_name
+    ARM_ADDR x2, program_probe_entry_stat
+    mov x6, #256
+    ARM_CALL arm_probe_stat
+    cmn x9, #2
+    b.eq .Lp_probe_remove_close
+    tbnz x9, #63, .Lp_probe_remove_bad
+    ARM_ADDR x0, program_probe_stat
+    ARM_ADDR x1, program_probe_entry_stat
+    ARM_CALL program_same_identity
+    cbz w9, .Lp_probe_remove_bad
+    P_LOAD x0, program_dest_fd
+    P_LOAD x1, program_dest_name
+    mov x2, #0
+    ARM_CALL arm_unlinkat
+    cmn x9, #4
+    b.eq .Lp_probe_remove_check
+    tbnz x9, #63, .Lp_probe_remove_bad
+    b .Lp_probe_remove_close
+.Lp_probe_remove_bad:
+    mov x20, #-1
+.Lp_probe_remove_close:
+    P_LOAD x0, program_probe_fd
+    tbnz x0, #63, .Lp_probe_remove_clear
+    ARM_CALL arm_close
+    tbz x9, #63, .Lp_probe_remove_clear
+    mov x20, #-1
+.Lp_probe_remove_clear:
+    P_SET -1, program_probe_fd
+    P_SET 0, program_probe_active
+.Lp_probe_remove_done:
+    mov x9, x20
     ARM_RESTORE x20
     ARM_RESTORE x19
     ret
@@ -1297,7 +1485,62 @@ program_check_existing:
     ARM_ADDR x0, registry_temp_payload
     ARM_CALL arm_unlink
     tbnz x9, #63, program_io_error
+    ARM_CALL program_check_existing_claims
     ARM_CALL program_recheck_destination
+    ARM_RESTORE x22
+    ARM_RESTORE x21
+    ARM_RESTORE x20
+    ARM_RESTORE x19
+    ret
+
+/* Refuse mutation when another valid inventory row names the held file.
+ * Input: trusted program_current_stat and program_found; <=128 parsed rows.
+ * Walk each other parent and perform raw nofollow identity lookup. No file is
+ * created or changed. Missing paths cannot claim this existing inode; other
+ * lookup failures fail closed. A matching device/inode is ambiguous state.
+ * Owns each temporary parent FD until its immediate close. Scratch stat is
+ * program_alias_record_stat. Stack: four saved registers. Listing never calls
+ * this routine and continues to report recorded metadata without filesystem IO.
+ */
+program_check_existing_claims:
+    ARM_SAVE x19
+    ARM_SAVE x20
+    ARM_SAVE x21
+    ARM_SAVE x22
+    ARM_ADDR x19, program_rows
+    P_LOAD x20, program_count
+.Lp_existing_claim_loop:
+    cbz x20, .Lp_existing_claim_done
+    P_LOAD x10, program_found
+    cmp x19, x10
+    b.eq .Lp_existing_claim_next
+    ldr x0, [x19, #40]
+    mov x1, #0
+    ARM_CALL program_walk_parent
+    cmn x9, #2
+    b.eq .Lp_existing_claim_next
+    tbnz x9, #63, program_path_error
+    mov x21, x9
+    mov x0, x21
+    P_LOAD x1, program_basename
+    ARM_ADDR x2, program_alias_record_stat
+    mov x6, #256
+    ARM_CALL arm_probe_stat
+    mov x22, x9
+    mov x0, x21
+    ARM_CALL arm_close
+    cmn x22, #2
+    b.eq .Lp_existing_claim_next
+    tbnz x22, #63, program_state_error
+    ARM_ADDR x0, program_current_stat
+    ARM_ADDR x1, program_alias_record_stat
+    ARM_CALL program_same_identity
+    cbnz w9, program_state_error
+.Lp_existing_claim_next:
+    add x19, x19, #64
+    sub x20, x20, #1
+    b .Lp_existing_claim_loop
+.Lp_existing_claim_done:
     ARM_RESTORE x22
     ARM_RESTORE x21
     ARM_RESTORE x20
@@ -1662,6 +1905,7 @@ program_list:
  * Cleanup failure cannot replace an earlier error. Stack: one saved register. */
 program_cleanup:
     ARM_SAVE x19
+    ARM_CALL program_remove_probe
     P_LOAD x0, program_temp_fd
     tbnz x0, #63, .Lp_cleanup_temp_name
     ARM_CALL arm_close
@@ -1764,6 +2008,9 @@ program_recovery_error:
     P_SET 1, program_keep_stage
     ARM_ADDR x0, program_error_recovery
     b program_error
+program_probe_error:
+    ARM_ADDR x0, program_error_probe
+    b program_error
 program_io_error:
     ARM_ADDR x0, program_error_io
 program_error:
@@ -1778,6 +2025,7 @@ program_state_prefix: .asciz ".installed-"
 program_stage_prefix: .asciz ".asm-program-"
 program_reserved_suffix: .asciz "/.local/bin/asm"
 program_candidate: .asciz "candidate"
+program_cli_name: .asciz "asm"
 program_previous: .asciz "previous"
 program_local: .asciz "local"
 program_root: .asciz "/"
@@ -1812,6 +2060,7 @@ program_error_exists: .asciz "the destination exists or cannot be replaced; choo
 program_error_internal: .asciz "the destination is inside Asm installation state or its temporary workspace; choose another program destination"
 program_error_reserved: .asciz "HOME/.local/bin/asm is reserved for the CLI updater; use asm self update"
 program_error_recovery: .asciz "program rollback failed; preserve the .asm-program-PID directory beside the destination and its previous file for recovery"
+program_error_probe: .asciz "the program name check failed; inspect the new destination for an empty nonexecutable file before retrying"
 program_error_io: .asciz "program management could not finish; check free space, directory permissions, and retained .asm-program-PID stages"
 
 .section .data
@@ -1822,6 +2071,7 @@ program_dest_fd: .quad -1
 program_stage_fd: .quad -1
 program_current_fd: .quad -1
 program_temp_fd: .quad -1
+program_probe_fd: .quad -1
 .section .bss
 .balign 8
 program_upgrade: .skip 8
@@ -1845,6 +2095,8 @@ program_stage_created: .skip 8
 program_state_created: .skip 8
 program_cleanup_count: .skip 8
 program_internal_stat_result: .skip 8
+program_probe_active: .skip 8
+program_alias_count: .skip 8
 program_number: .skip 32
 program_state_temp: .skip 64
 program_stage_name: .skip 64
@@ -1852,6 +2104,11 @@ program_new_row: .skip 64
 program_walk_stat: .skip ARM_STAT_BYTES
 program_check_stat: .skip ARM_STAT_BYTES
 program_current_stat: .skip ARM_STAT_BYTES
+program_probe_stat: .skip ARM_STAT_BYTES
+program_probe_entry_stat: .skip ARM_STAT_BYTES
+program_alias_parent_stat: .skip ARM_STAT_BYTES
+program_alias_record_stat: .skip ARM_STAT_BYTES
+program_alias_names: .skip (PROGRAM_LIMIT + 1) * 8
 program_state_path: .skip 4096
 program_reserved_path: .skip 4096
 program_path: .skip 4096

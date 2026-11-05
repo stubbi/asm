@@ -223,6 +223,34 @@ arm_renameat2:
 3:  mov x9, #-22
 4:  MAC_RETURN
 
+/* x0=owned probe FD, x1=normalized output (128 bytes). Inspect identity only.
+ * The held probe is created exclusively with mode 000. ACL-aware file-opening
+ * checks remain mandatory everywhere that authorizes an installed executable.
+ * x9=0/negative errno; preserves x0-x7/x19-x29; stack 256 bytes plus helpers. */
+arm_probe_fd_stat:
+    MAC_SAVE
+    sub sp, sp, #160
+    mov x1, sp
+    bl _fstat
+    b mac_stat_result
+/* x0=held parent FD, x1=basename, x2=normalized output (128 bytes), x6=256.
+ * Raw nofollow identity lookup cannot authorize file ownership or permissions.
+ * It compares a mode-000 probe against a descriptor Asm already owns.
+ * x9=0/negative errno; preserves x0-x7/x19-x29; stack 256 bytes plus helpers. */
+arm_probe_stat:
+    MAC_SAVE
+    mov w3, #32 /* AT_SYMLINK_NOFOLLOW */
+    sub sp, sp, #160
+    mov x2, sp
+    bl _fstatat
+    ARM_CALL mac_result
+    tbnz x9, #63, .Lmac_probe_stat_error
+    ldr x10, [sp, #192] /* saved normalized output x2 */
+    b mac_stat_copy
+.Lmac_probe_stat_error:
+    add sp, sp, #160
+    MAC_RETURN
+
 /* Native stat temporary is 144 bytes, normalized output remains caller-owned. */
 arm_fstat:
     MAC_SAVE

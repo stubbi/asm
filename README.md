@@ -27,7 +27,7 @@ The goal is to make efficient, dependable software practical to distribute and r
 
 ## Quick start
 
-Asm 0.4.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
+Asm 0.5.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 
 ### Install the command
 
@@ -49,7 +49,7 @@ Then check the version:
 asm version
 ```
 
-On Apple Silicon, the output is `asm 0.4.0 (aarch64-macos)`.
+On Apple Silicon, the output is `asm 0.5.0 (aarch64-macos)`.
 
 <details>
 <summary>Set PATH for this terminal</summary>
@@ -125,7 +125,7 @@ Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.4.0 --target x86_64-linux --kind source
+asm fetch stubbi/hello@0.5.0 --target x86_64-linux --kind source
 ```
 
 This downloads the Linux x86-64 source archive and checks its size and SHA-256 digest.
@@ -137,14 +137,14 @@ This example requires Linux x86-64 and gzip at `/usr/bin/gzip`.
 From a project directory:
 
 ```sh
-asm add stubbi/math@0.4.0 --target x86_64-linux
+asm add stubbi/math@0.5.0 --target x86_64-linux
 asm lock
 ```
 
 Include the library in your source:
 
 ```asm
-.include "stubbi/math/0.4.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.5.0/x86_64-linux/src/min.s"
 ```
 
 The [complete example](docs/use-a-package.md) calls `asm_u64_min` and explains its calling convention.
@@ -158,12 +158,30 @@ Commit `asm.lock` with your project.
 On Linux x86-64 or ARM64:
 
 ```sh
-asm install stubbi/hello@0.4.0
+asm install stubbi/hello@0.5.0
 ```
 
 This installs the matching executable at `$HOME/.local/bin/hello`.
 Use `--output PATH` to choose another destination.
 The destination must be a new file.
+Asm records both default and custom destinations in its local inventory.
+One package identity has at most one managed installation.
+
+Inspect and manage recorded programs:
+
+```sh
+asm installed
+asm upgrade stubbi/hello
+asm uninstall stubbi/hello
+```
+
+`upgrade` selects the highest available host version from the recorded registry.
+Use `owner/name@version` to select an exact version.
+`update` and `remove` continue to manage project source dependencies.
+
+Published 0.4.0 binaries do not include these management commands.
+Updating Asm does not adopt earlier installations; programs without an inventory record remain unmanaged.
+See the [installed-program contract](docs/installed-programs.md) for file checks, recovery, and limits.
 
 ## Status
 
@@ -173,12 +191,15 @@ Asm is an early alpha.
 | --- | --- |
 | Native CLI | Linux x86-64, Linux ARM64, and Apple Silicon macOS 15+. |
 | Projects | Create, inspect, build, run, test, and clean. |
-| Packages | Search, inspect versions, download source, and install executables. |
+| Packages | Search, inspect versions, download source, install executables, list installations, upgrade, and uninstall. |
 | Dependencies | Exact versions of direct source dependencies, with a lock file. |
 | Registry | Package search, target filters, release records, and verification results. |
 | Publication | Source archives and release records submitted through reviewed pull requests. |
 | Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
 | CLI updates | Manual updates with signed release provenance. |
+
+Asm 0.5.0 adds installed-program inventory, upgrades, and uninstall.
+The [release notes](docs/releases/0.5.0.md) describe the commands and their limits.
 
 Projects build for the machine running Asm.
 Packages can provide separate artifacts for other targets, including RISC-V Linux.
@@ -193,6 +214,15 @@ A package release records its source repository, exact Git commit, target, and a
 Publication proceeds through a pull request to the registry.
 
 Follow the [publishing guide](registry/README.md) for the commands and submission process.
+
+## Build with an AI
+
+The [Asm development skill](skills/asm-build/SKILL.md) guides requirements, target selection, package reuse, tests, and bounded performance work.
+The [MCP setup guide](docs/agents.md) connects AI clients to read-only discovery, planning, and measurement-comparison tools.
+The AI uses its authorized workspace tools to build and execute software.
+
+Hosted registry and MCP deployment remain under qualification.
+The [hosted registry contract](docs/hosted-registry.md) records the implementation scope and remaining recovery, security, and runtime gates.
 
 ## Security evidence
 
@@ -228,7 +258,9 @@ The [repository layout](CONTRIBUTING.md#repository-layout) explains the source, 
 Follow the [design guide](design.md), [writing guide](docs/writing.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
-Python handles registry operations and release automation; JavaScript supports the website. The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
+Python handles registry operations, release automation, and the separate MCP protocol adapter; JavaScript supports the website.
+The hosted registry runtime foundation uses assembly with mature protocol and database libraries.
+The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
 
 On Linux, run `make check` from the repository root.
 On macOS, run `make test`.

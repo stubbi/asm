@@ -18,6 +18,15 @@ The controls in the following sections are requirements for those later services
 
 Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate Asm processes; they do not constrain other processes running as the same user.
 
+Asm 0.5.0 records installed executables in a bounded local inventory, including explicit output paths.
+Upgrade and uninstall check the recorded destination, size, and digest before changing a file.
+They also require a user-owned, single-link regular executable with protected permissions.
+They retain the package origin and reject downgrades or changed bytes for an existing version.
+Older installations remain unmanaged; updating Asm does not adopt them.
+These package checks do not inherit Asm's own release-provenance policy.
+The [installed-program contract](../installed-programs.md) states the staging, recovery, and interruption limits.
+The executable and inventory are separate filesystem entries; interruption can require manual recovery.
+
 Lock checks cover declared dependencies. GNU assembler includes and data directives can select other local files. The local build workflow is not a hermetic sandbox. Registry workers need separate isolation before they build untrusted submissions.
 
 ## Trust boundaries

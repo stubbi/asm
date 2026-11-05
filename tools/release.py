@@ -23,7 +23,10 @@ SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
     "SECURITY.md", "CODE_OF_CONDUCT.md", "LICENSING.md", "LICENSES", "cli", "docs", "examples",
-    "registry", "site", "tests", "tools", "benchmarks", "verifier",
+    "registry", "site", "tests", "tools", "benchmarks", "verifier", "skills", "server", "containers",
+    "requirements-mcp.in", "requirements-mcp.txt", ".dockerignore",
+    "experiments/assembly-server/local_postgres.py", "experiments/assembly-server/guard.sql",
+    "experiments/assembly-server/fixtures/0001_registry.sql", "experiments/assembly-server/DEPENDENCIES.md",
 ]
 HELLO_TARGETS = {
     "x86_64-linux": ("examples/hello", "as", "ld", ["--64"], None),

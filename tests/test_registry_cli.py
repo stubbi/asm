@@ -22,6 +22,9 @@ class RegistryCliTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="registry-cli-", dir=ROOT / "build")
         self.work = Path(self.temp.name)
+        self.home = self.work / "home"
+        self.home.mkdir(mode=0o700)
+        self.environment = dict(os.environ, HOME=str(self.home))
         self.artifact = self.work / "local artifact"
         self.artifact.write_bytes(b"a deterministic artifact\n")
         self.digest = hashlib.sha256(self.artifact.read_bytes()).hexdigest()
@@ -49,7 +52,8 @@ class RegistryCliTests(unittest.TestCase):
         argv = [str(ASM), *map(str, args)]
         if local_index:
             argv += ["--index", str(self.index)]
-        result = subprocess.run(argv, cwd=self.work, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(argv, cwd=self.work, env=self.environment,
+                                capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, code, (argv, result.stdout, result.stderr))
         self.assertEqual(list(self.work.glob(".asm-registry-*")), [], "Temporary files remain")
         return result

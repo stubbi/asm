@@ -37,6 +37,9 @@ ARM_SYSCALL arm_read, 63
 ARM_SYSCALL arm_write, 64
 ARM_SYSCALL arm_close, 57
 ARM_SYSCALL arm_fstat, 80
+/* Probe-only identity inspection. Never authorizes an untrusted file. */
+ARM_SYSCALL arm_probe_fd_stat, 80
+ARM_SYSCALL arm_probe_stat, 79
 ARM_SYSCALL arm_lseek, 62
 ARM_SYSCALL arm_openat, 56
 ARM_SYSCALL arm_mkdirat, 34

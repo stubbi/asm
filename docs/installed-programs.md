@@ -1,6 +1,6 @@
 # Installed programs
 
-These commands are available in source builds.
+Asm 0.5.0 adds installed-program inventory, upgrades, and uninstall on all three supported CLI hosts.
 Published 0.4.0 binaries do not include them.
 
 Asm records executable installations so people can inspect and maintain the programs they deliberately installed.
@@ -16,6 +16,8 @@ asm install owner/name@1.0.0
 
 The default destination is `$HOME/.local/bin/name`.
 Use `--output PATH` to select another destination.
+Asm records both default and explicit destinations.
+It records a relative output path as an absolute path.
 The destination must be a new file.
 Use an existing directory with no symlink or `..` path components.
 The standard `$HOME/.local/bin/asm` destination is reserved for Asm's installer and self-update command.
@@ -34,6 +36,7 @@ asm installed --json
 The inventory describes recorded installations.
 It does not establish that their current files still match the records.
 Programs installed before this feature have no record and remain unmanaged.
+Updating Asm does not adopt them.
 Asm does not infer ownership from a file name.
 
 Upgrade a recorded program:
@@ -47,6 +50,7 @@ Without an exact version, upgrade selects the highest available numeric version 
 Upgrade retains the recorded destination.
 It refuses an older version or a different registry origin.
 An equal version must retain its recorded digest and size.
+If those values match, upgrade leaves the installation unchanged.
 HTTPS installations reuse their recorded index URL unless an explicit matching origin is supplied.
 For a local-index installation, supply `--index PATH` again.
 
@@ -98,6 +102,13 @@ If a file has changed, retain it for inspection.
 Restore the exact recorded executable before retrying the management command.
 Do not delete an inventory record to make Asm overwrite an unrelated file.
 
+Installation checks filename aliases with the destination filesystem before committing a new executable.
+A temporary, empty file at the new destination has mode `000`.
+Asm removes this file before normal finalization.
+Cleanup removes this file only when it still matches the owned probe.
+Interruption or a cleanup failure can leave this file behind.
+Preserve unfamiliar or modified files during manual recovery.
+
 Private staging and an advisory inventory lock coordinate Asm operations.
 Descriptor-relative file operations protect checked directory boundaries.
 The lock does not constrain another process that runs under the same account.
@@ -108,6 +119,8 @@ Ordinary commit failures restore the prior executable and retain the prior inven
 A process interruption or power failure can leave staged files or a mismatched record.
 Retain those files and inspect their bytes before recovery.
 The commands must report mismatches instead of adopting or deleting changed files.
+Automatic crash recovery is not provided.
+Manual recovery must preserve the recorded executable bytes and inventory together.
 
 Package checks establish integrity relative to the selected index.
 They do not establish publisher identity, registry freshness, or that a program is harmless.
