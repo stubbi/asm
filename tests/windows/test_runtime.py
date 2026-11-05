@@ -897,7 +897,7 @@ class WindowsRuntimeTests(unittest.TestCase):
         return project, base
 
     def test_c_abi_project_links_kernel32_and_ucrt_with_hardened_pe_output(self):
-        project, _ = self.native_project()
+        project, base = self.native_project()
         self.assertEqual(self.cli("run", cwd=project).stdout, "native linked\n")
         data = (project / "build/app.exe").read_bytes()
         offset = struct.unpack_from("<I", data, 60)[0]
@@ -906,6 +906,81 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.assertTrue(characteristics & 0x100, "The executable lacks NX_COMPAT")
         self.assertTrue(characteristics & 0x40, "The executable lacks DYNAMIC_BASE")
         self.assertIn("native linked\n", self.cli("test", cwd=project).stdout)
+        self.assertFalse((project / "checker-executed").exists())
+
+        include = self.work / "private header files"
+        library = self.work / "private library files"
+        wrong_library = self.work / "wrong library files"
+        for directory in (include, library, wrong_library):
+            directory.mkdir()
+        header = include / "asm_private_abi.h"
+        header.write_text('#define ASM_PRIVATE_VALUE 37\n'
+                          'struct asm_private_layout { unsigned int value; unsigned char tag; };\n'
+                          'int asm_private_value(unsigned int value);\n', encoding="utf-8")
+        check = project / "abi-check.c"
+        check.write_text('#include <asm_private_abi.h>\n'
+                         '_Static_assert(ASM_PRIVATE_VALUE == 37, "private header value");\n'
+                         '_Static_assert(sizeof(struct asm_private_layout) == 8, "private layout size");\n'
+                         '_Static_assert(__builtin_offsetof(struct asm_private_layout, tag) == 4, "private field offset");\n'
+                         'int main(void) { return 97; }\n', encoding="utf-8")
+        clang, linker = TOOLCHAIN_BIN / "clang.exe", TOOLCHAIN_BIN / "lld-link.exe"
+        triple = "aarch64-pc-windows-msvc" if ARM64 else "x86_64-pc-windows-msvc"
+        machine = "arm64" if ARM64 else "x64"
+        for directory, body in ((library, 'int asm_private_value(unsigned int value) { return value + ASM_PRIVATE_VALUE; }\n'),
+                                (wrong_library, 'int asm_wrong_value(void) { return 42; }\n')):
+            source, obj = directory / "fixture.c", directory / "fixture.obj"
+            archive = directory / "asmprivatefixture.lib"
+            source.write_text('#include <asm_private_abi.h>\n' + body, encoding="utf-8")
+            commands = ([clang, "--no-default-config", "--target=" + triple, "-O2", "-ffreestanding",
+                         "-fno-builtin", "-fno-stack-protector", "-I", include, "-c", source, "-o", obj],
+                        [linker, "/lib", "/machine:" + machine, "/out:" + str(archive), obj])
+            for command in commands:
+                argv = list(map(str, command))
+                result = subprocess.run(argv, cwd=project, env=self.environment, capture_output=True,
+                                        text=True, encoding="utf-8", errors="strict", timeout=30)
+                COMMANDS.append({"test": self.id(), "argv": argv, "cwd": str(project),
+                                 "exit_code": result.returncode, "stdout": result.stdout[:65536],
+                                 "stderr": result.stderr[:65536]})
+                self.assertEqual(result.returncode, 0, (argv, result.stdout, result.stderr))
+            for role, path in (("source", source), ("coff", obj), ("archive", archive)):
+                artifact = path.read_bytes()
+                TEST_ARTIFACTS.append({"role": "native-c-abi-" + directory.name + "-" + role,
+                                       "target": TARGET, "bytes": len(artifact), "sha256": sha256(artifact)})
+        # The assembly checks the actual C return value in the target ABI return register.
+        assembly = self.native_main().replace('"native linked"', '"private library linked"')
+        assembly = (assembly.replace('mov w0, #0\n', 'mov w0, #5\nbl asm_private_value\n'
+                                     'cmp w0, #42\ncset w0, ne\n') if ARM64 else
+                    assembly.replace('xor eax, eax\n', 'mov ecx, 5\ncall asm_private_value\n'
+                                     'cmp eax, 42\nsetne al\nmovzx eax, al\n'))
+        for path in (project / "src/main.s", project / "tests/main.s"):
+            path.write_text(assembly, encoding="utf-8")
+        (project / "asm.toml").write_text(base + 'link = "c"\nlibraries = "kernel32 ucrt asmprivatefixture"\n'
+                                         'check = "abi-check.c"\n', encoding="utf-8")
+        for role, artifact in (("header", header.read_bytes()), ("check", check.read_bytes()),
+                               ("assembly", assembly.encode())):
+            TEST_ARTIFACTS.append({"role": "native-c-abi-private-" + role, "target": TARGET,
+                                   "bytes": len(artifact), "sha256": sha256(artifact)})
+        options = ("--include-dir", include.as_posix(), "--library-dir", library.as_posix())
+        self.cli("build", *options, cwd=project)
+        self.assertEqual(self.cli("run", *options, cwd=project).stdout, "private library linked\n")
+        self.assertIn("private library linked\n", self.cli("test", *options, cwd=project).stdout)
+        outputs = {path: path.read_bytes() for path in (project / "build/app.exe", project / "build/test.exe")}
+        for path, artifact in outputs.items():
+            TEST_ARTIFACTS.append({"role": "native-c-abi-private-" + path.name, "target": TARGET,
+                                   "bytes": len(artifact), "sha256": sha256(artifact)})
+        failures = (("--library-dir", library.as_posix()), ("--include-dir", include.as_posix()),
+                    ("--include-dir", (self.work / "absent header files").as_posix(),
+                     "--library-dir", library.as_posix()),
+                    ("--include-dir", include.as_posix(),
+                     "--library-dir", (self.work / "absent library files").as_posix()),
+                    ("--include-dir", include.as_posix(), "--library-dir", wrong_library.as_posix()))
+        for command in ("build", "run", "test"):
+            for arguments in failures:
+                with self.subTest(command=command, arguments=arguments):
+                    self.assertEqual(self.cli(command, *arguments, cwd=project, code=1).stdout, "")
+                    for path, content in outputs.items():
+                        self.assertEqual(path.read_bytes(), content)
+                    self.assertEqual(list((project / "build").glob(".asm-*")), [])
         self.assertFalse((project / "checker-executed").exists())
 
     def test_c_abi_failures_preserve_output_and_compile_checker_without_execution(self):
