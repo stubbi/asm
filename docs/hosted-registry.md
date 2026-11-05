@@ -1,0 +1,98 @@
+# Hosted Asm registry and agent access
+
+Status: implementation and qualification work, 5 November 2026.
+
+Asm must run as a hosted registry through the existing ScienceHub Kubernetes infrastructure.
+The skill and MCP integration must connect to that service.
+Local tooling alone does not meet this outcome.
+
+The existing private deployment preparation supplies isolated PostgreSQL, read-only request credentials, scoped operations, network rules, monitoring, and separate internal/public stages.
+It is not a running service.
+Production qualification requires actual data persistence, TLS, failure, recovery, and external client evidence.
+
+## Component and target scope
+
+Server deployment targets, MCP adapter targets, CLI hosts, and package targets have separate qualification requirements.
+An instruction set does not establish an operating system, ABI, or required CPU features.
+
+| Component | Current implementation or preparation | Qualification limit |
+| --- | --- | --- |
+| Assembly registry runtime foundation | Linux x86-64; 11 TLS/PostgreSQL runtime tests passed in CI | Catalog exports, operator commands, and deployment qualification remain incomplete. |
+| MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
+| Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
+| Package catalog | Four declared target profiles | A profile does not qualify a package artifact or a server port. |
+| Other server targets | ARM64 and RISC-V64 need separate assembly ports | MCP portability supplies no evidence for these registry implementations. |
+
+The [README](../README.md#status) states the released CLI host support.
+Intel macOS and Windows remain separate host-port requirements.
+
+[Runtime run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) and [image run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed on 5 November 2026.
+They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which contains source head `fd977e5`.
+These checks do not qualify live deployment, full registry behavior, or recovery.
+
+## Public implementation
+
+Registry application logic belongs in assembly.
+Mature libraries handle HTTP, PostgreSQL, transport security, and cryptography.
+The existing assembly experiment remains evidence for its narrower tested scope.
+Production service work must preserve its regression checks and identify additional behavior separately.
+
+The native CLI remains assembly and keeps its existing distribution contract.
+The MCP SDK remains a separate protocol adapter.
+It receives no database write credential, cluster token, publication credential, or backup identity.
+Its read-only tool annotations do not replace enforced access boundaries.
+
+## Runtime acceptance
+
+| Surface | Required result |
+| --- | --- |
+| Registry process | `asm-hub serve`; explicit bind; private connection configuration; non-root, read-only filesystem |
+| Persistence | PostgreSQL with separate reader, migrator, and operator identities |
+| Database TLS | Hostname and CA verification; new connections use projected certificate rotation |
+| Readiness | Actual schema, catalog, and least-privilege checks within two seconds |
+| Identity | Exact public source revision and source offer |
+| Compatibility | Exact v1 Linux TSV, macOS TSV, and schema-1 JSON exports |
+| MCP | Explicit public Host/Origin policy, bounded HTTP, health probes, real SDK clients through HTTPS |
+| Discovery | Canonical hosted data; errors remain distinct from no matches; no unnoticed static fallback |
+| Operations | Separate reviewed migration and idempotent import; immutable versions and exact artifact records |
+| Shutdown | Stop new work and drain within the deployment grace period |
+| Recovery | Asm-only backups, WAL delivery, isolated restore, and exact record/export comparison |
+
+The first qualified service uses `api.asm.build`.
+The existing apex and native feeds remain available during migration.
+Move apex traffic only after external checks and recovery evidence pass.
+An API subdomain alone does not migrate released clients.
+
+## MCP deployment
+
+The public adapter has an explicit service mode.
+Non-loopback binding requires an explicit HTTPS public origin and an approved catalog source.
+The SDK keeps DNS-rebinding protection enabled.
+Do not trust forwarded headers from arbitrary clients.
+Health endpoints reveal no credentials or private deployment information.
+
+The catalog source is operator configuration, never a tool argument.
+Select the existing public alpha feed, the hosted HTTPS export, or the fixed internal registry service deliberately.
+Never fall back between sources after an error.
+The compatibility catalog remains bounded; it does not establish the proposed global discovery capacity.
+
+The public service image contains only the adapter, canonical validators, skill, references, and pinned dependencies.
+Its build receives no private infrastructure source or credentials.
+Record the exact image digest and public source revision before deployment.
+Use [the adapter setup guide](agents.md) for local clients, catalog selection, and health behavior.
+
+## Release and remaining gates
+
+Use the private repository's reviewed Git and signed OCI/Flux process.
+Do not activate resources through manual cluster or DNS mutations.
+Keep internal and public activation separate.
+Never interpret manifest validation as runtime qualification.
+
+The owner temporarily waived the Entire approval gate for this rollout on 5 November 2026.
+This waiver is not a reviewer approval or a successful Entire check.
+CI, immutable images, least privilege, capacity, TLS, backups, restore, and failure checks remain required.
+No global change to review tooling is authorized by this waiver.
+
+Public publication, authenticated metadata, account recovery, revocation, and isolated build/proof workers retain their architecture gates.
+Serving a read-only registry does not establish those capabilities.
+Every release report must state which gates actually passed and which remain open.
