@@ -134,10 +134,18 @@ static const char *sample(const char *body, const char *name, const char *route,
     else
         size = snprintf(key, sizeof key, "%s{route=\"%s\",%s=\"%s\"} ", name, route, label, value);
     CHECK(size > 0 && (size_t)size < sizeof key);
-    const char *found = strstr(body, key);
-    CHECK(found && (found == body || found[-1] == '\n'));
-    CHECK(!strstr(found + size, key));
-    return found + size;
+    const char *found = NULL;
+    for (const char *line = body; *line;) {
+        if (strncmp(line, key, (size_t)size) == 0) {
+            CHECK(!found);
+            found = line + size;
+        }
+        const char *end = strchr(line, '\n');
+        CHECK(end);
+        line = end + 1;
+    }
+    CHECK(found);
+    return found;
 }
 
 static uint64_t integer_sample(const char *body, const char *name, const char *route,
@@ -191,6 +199,12 @@ static void coherent(const char *body)
 
 static void zero_exposition(void)
 {
+    /* An unlabeled sample name also occurs in HELP and TYPE metadata. */
+    static const char lookup_fixture[] =
+        "# HELP asm_http_connection_failures_total Queue failures.\n"
+        "# TYPE asm_http_connection_failures_total counter\n"
+        "asm_http_connection_failures_total 7\n";
+    CHECK(integer_sample(lookup_fixture, "asm_http_connection_failures_total", NULL, NULL, NULL) == 7);
     reset();
     char body[CAPACITY + 1];
     render(body);
