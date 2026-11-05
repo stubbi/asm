@@ -266,7 +266,7 @@ class ManagedRuntimeTests(unittest.TestCase):
                 result = self.cli('--check-args', str(count), *arguments)
                 self.assertEqual(result.stdout, '')
         arguments = [tokens[index % len(tokens)] for index in range(1024 - 3)]
-        self.cli('--check-args', '1024', *arguments, code=1)
+        self.cli('--check-args', '1024', *arguments, code=2 if runtime.ARM64 else 1)
         self.assertEqual(self.installed.read_bytes(), self.launcher)
 
     def test_incompatible_payload_fails_before_child_execution(self):
