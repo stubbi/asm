@@ -27,7 +27,7 @@ The goal is to make efficient, dependable software practical to distribute and r
 
 ## Quick start
 
-Asm 0.5.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
+Asm 0.6.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 
 ### Install the command
 
@@ -49,7 +49,7 @@ Then check the version:
 asm version
 ```
 
-On Apple Silicon, the output is `asm 0.5.0 (aarch64-macos)`.
+On Apple Silicon, the output is `asm 0.6.0 (aarch64-macos)`.
 
 <details>
 <summary>Set PATH for this terminal</summary>
@@ -119,13 +119,12 @@ target = "x86_64-linux"
 `asm new` sets the target for your machine.
 Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
 
-Source builds also accept one project with several `[target.<id>]` implementations.
+Asm 0.6.0 also accepts one project with several `[target.<id>]` implementations.
 Each target has its own source, test, and optional native-library fields.
 The [hello](examples/hello/README.md) and [math](examples/math/README.md) projects keep these inputs under `targets/<id>/`.
 `asm build --target riscv64-linux` builds a separate Linux artifact.
 `asm test --target riscv64-linux --no-run` builds its test without executing it.
 Target-specific dependency selections share one v2 lock.
-This extension is unreleased.
 See the [multi-target project contract](docs/multi-target-projects.md) for tools, commands, and platform limits.
 
 ### Find a package
@@ -134,7 +133,7 @@ See the [multi-target project contract](docs/multi-target-projects.md) for tools
 asm search hello
 asm info stubbi/hello
 asm versions stubbi/hello
-asm fetch stubbi/hello@0.5.0 --target x86_64-linux --kind source
+asm fetch stubbi/hello@0.6.0 --target x86_64-linux --kind source
 ```
 
 This downloads the Linux x86-64 source archive and checks its size and SHA-256 digest.
@@ -146,14 +145,14 @@ This example requires Linux x86-64 and gzip at `/usr/bin/gzip`.
 From a project directory:
 
 ```sh
-asm add stubbi/math@0.5.0 --target x86_64-linux
+asm add stubbi/math@0.6.0 --target x86_64-linux
 asm lock
 ```
 
 Include the library in your source:
 
 ```asm
-.include "stubbi/math/0.5.0/x86_64-linux/src/min.s"
+.include "stubbi/math/0.6.0/x86_64-linux/targets/x86_64-linux/src/min.s"
 ```
 
 The [complete example](docs/use-a-package.md) calls `asm_u64_min` and explains its calling convention.
@@ -167,7 +166,7 @@ Commit `asm.lock` with your project.
 On Linux x86-64 or ARM64:
 
 ```sh
-asm install stubbi/hello@0.5.0
+asm install stubbi/hello@0.6.0
 ```
 
 This installs the matching executable at `$HOME/.local/bin/hello`.
@@ -199,18 +198,20 @@ Asm is an early alpha.
 | Area | Available today |
 | --- | --- |
 | Native CLI | Linux x86-64, Linux ARM64, and Apple Silicon macOS 15+. |
-| Projects | Create, inspect, build, run, test, and clean. |
+| Projects | Create, inspect, build, run, test, and clean; select native or standalone Linux implementations. |
 | Packages | Search, inspect versions, download source, install executables, list installations, upgrade, and uninstall. |
-| Dependencies | Exact versions of direct source dependencies, with a lock file. |
+| Dependencies | Exact direct source dependencies, with target-specific selections in a shared lock file. |
 | Registry | Package search, target filters, release records, and verification results. |
 | Publication | Source archives and release records submitted through reviewed pull requests. |
 | Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
 | CLI updates | Manual updates with signed release provenance. |
 
-Asm 0.5.0 adds installed-program inventory, upgrades, and uninstall.
-The [release notes](docs/releases/0.5.0.md) describe the commands and their limits.
+Asm 0.6.0 adds named target implementations, standalone Linux cross builds, and target-specific dependency locks.
+The [release notes](docs/releases/0.6.0.md) describe the commands, artifact scope, and limits.
 
-Projects build for the machine running Asm.
+Projects select the native host by default.
+Explicit standalone Linux builds produce separate artifacts without executing them.
+Cross-target native-library linking remains unsupported.
 Packages can provide separate artifacts for other targets, including RISC-V Linux.
 
 Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
