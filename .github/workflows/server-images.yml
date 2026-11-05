@@ -121,9 +121,8 @@ jobs:
 
   publish:
     needs: qualify
-    # Temporary hold: the integrated actual-image 28-case gate must pass on all
-    # targets at reviewed source. Local contracts and native source tests are insufficient.
-    if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # Publish only a trusted main push after all three exact-source image gates pass.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -190,8 +189,8 @@ jobs:
 
   publish-index:
     needs: publish
-    # Keep index publication held until the admission actual-image gate is qualified.
-    if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # Form the index only from the qualified children of a trusted main push.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

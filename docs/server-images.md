@@ -163,7 +163,39 @@ The source workflow had no two-CPU or 512 MiB runtime cap.
 It did not retain the compiled fixture digest.
 That result does not qualify these derived images or establish private deployment capacity.
 The image gate records the compiled fixture digest and retains the existing container limits.
-The earlier RISC-V concurrency failure remains unresolved.
+The cause of the earlier RISC-V concurrency failure remains unresolved.
+
+## Admission image preflight
+
+[Run 42073901743](https://github.com/stubbi/asm/actions/runs/42073901743) passed on [source `b1450bd54efb12c0fb047c01117869c63e82197b`](https://github.com/stubbi/asm/commit/b1450bd54efb12c0fb047c01117869c63e82197b), attempt one.
+Each target executed all sixteen baseline and twelve admission cases without skips.
+Both publishers were skipped during that manual preflight.
+
+| Image platform | Execution | Baseline seconds | Admission seconds | Original aggregate receipt |
+| --- | --- | ---: | ---: | --- |
+| [Linux AMD64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408859645) | Native | 6.231 | 73.164 | [AMD64 JSON](server-admission-evidence/42073901743/amd64.json) |
+| [Linux ARM64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408858932) | Native | 6.414 | 75.226 | [ARM64 JSON](server-admission-evidence/42073901743/arm64.json) |
+| [Linux RISC-V64](https://github.com/stubbi/asm/actions/runs/42073901743/job/127408860034) | QEMU user emulation | 40.468 | 161.065 | [RISC-V64 JSON](server-admission-evidence/42073901743/riscv64.json) |
+
+The three JSON files retain the original aggregate report bytes.
+Each report binds both parts to the same source, runtime image, qualification image, executable, shared libraries, and fixed fixture digest.
+Both parts used two CPUs, 512 MiB memory, 128 processes, and 256 MiB noexec temporary storage.
+Each part kept its 180-second watchdog and all original deadline, setup, concurrency, and byte assertions.
+These elapsed times describe one qualification run; they are not performance benchmarks.
+
+Raw checkout logs identify the same source, and each runtime step records its twenty-eight-case aggregate success.
+Only small reports and compressed job logs were collected locally; no image payload or layer was downloaded.
+A local watcher encountered full storage while saving its exit receipt.
+The remote jobs continued independently, and collection resumed after storage recovery.
+No CI retry occurred.
+
+The previous six-client RISC-V failure remains retained above.
+This successful full run does not establish its cause or prove that admission corrected it.
+RISC-V emulation does not qualify physical hardware.
+The two-CPU fixture does not qualify the private one-CPU, 256 MiB deployment, PostgreSQL 18, startup integration, or service recovery.
+
+These receipts qualify only the recorded source and image identities.
+This final candidate changes evidence and publication conditions; its later revision and artifacts require their own exact-source gates.
 
 ## Verified inputs
 
@@ -249,11 +281,9 @@ Evidence retention is three days; release evidence needs durable retention befor
 ## Publication and limits
 
 Pull requests and manual runs have read-only repository permissions and publish nothing.
-Both image publication jobs have explicit temporary holds.
-Keep those holds until the complete actual-image gate passes for all three targets at reviewed source.
-Local contract tests and the uncapped native source result cannot release the holds.
-The expanded twenty-eight-case image gate has not run for this source.
-After the holds are deliberately removed, a main-branch publication requires every architecture qualification job to pass.
+The complete twenty-eight-case image preflight passed for all three targets at the reviewed source recorded above.
+The temporary false conditions are removed after that result.
+A trusted main-branch push still requires every architecture qualification job to pass for its exact source.
 The publication job loads the tested archive and compares its image ID with the qualification report.
 It publishes an architecture-specific source-and-run tag and records the registry digest.
 Each run attempt has a distinct tag, so a later dependency rebuild does not replace an earlier tag.
@@ -271,9 +301,10 @@ The job reads the index again through its immutable digest and records that resu
 The combined index also receives provenance.
 
 These images still contain an incomplete registry implementation.
-Canonical HTTP image checks, operator deployment, service discovery, metrics, capacity, and recovery remain unqualified.
+Canonical HTTP and admission image checks passed only for the recorded source, images, and owned fixture.
+Operator deployment, service discovery, metrics, private capacity, startup integration, PostgreSQL 18, and service recovery remain separate requirements.
 The reviewed four-export catalog contract from PR #29 is integrated.
-Its HTTP and image qualification require fresh results for this source.
+Later source revisions and artifacts require fresh exact-source results.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
 No cluster, DNS, credential, release, or live service changes follow from this image workflow.
 

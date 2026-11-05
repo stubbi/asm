@@ -1,0 +1,220 @@
+{
+  "architecture": "arm64",
+  "binary": {
+    "bytes": 79144,
+    "declaration_limit": "Declared application profile; ELF flags do not audit every instruction or qualify hardware and library CPU requirements.",
+    "declared_target": {
+      "abi": "AAPCS64 LP64",
+      "cpu_profile": "ARMv8-A",
+      "isa": "aarch64",
+      "os": "linux"
+    },
+    "elf_flags": 0,
+    "machine": 183,
+    "sha256": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+  },
+  "binary_permissions": {
+    "gid": 0,
+    "mode": "0555",
+    "uid": 0
+  },
+  "container_limits": {
+    "cpus": 2,
+    "memory_bytes": 536870912,
+    "pids": 128,
+    "tmpfs_bytes": 268435456,
+    "tmpfs_noexec": true,
+    "watchdog_seconds": 180
+  },
+  "executable_files": {
+    "/lib/aarch64-linux-gnu/libc.so.6": "70fa4c4cf57eabeb96097cce47582d02379c4cd1de3db3e98ade4dd7089a1b13",
+    "/lib/aarch64-linux-gnu/libcrypto.so.3": "809909371a1db7d2b9cac4c2fa2eff63eb6169d5979416d94155955a7ad32516",
+    "/lib/aarch64-linux-gnu/libm.so.6": "a8afb2d1f4a0c5e14c0fc82f794ec839eafe29738907aa92895410f57630bbe2",
+    "/lib/aarch64-linux-gnu/libssl.so.3": "b3b9a479537bded757b818bb787413d8f8f636135e6546c84e90688eca1dc842",
+    "/lib/aarch64-linux-gnu/libz.so.1": "6fe00acadf8119ff245855e5dcc7f26c6c0ffaf4bfa2baa88feab58f23727d65",
+    "/lib/aarch64-linux-gnu/libzstd.so.1": "1279c4edfbfb08878b5b7fb40d392c1bdc9b30100d9b7a019d4aefaf10d2046c",
+    "/lib/ld-linux-aarch64.so.1": "1b882eddacd494b060413a8aa4f0a4754ee3f84775e68cecbf8a86092b59cca6",
+    "/opt/asm/mhd/lib/libmicrohttpd.so.12": "218f1321002e3178bd3cf6380ee40dcc9cdfa53816ddf2753e96890509a290a8",
+    "/opt/asm/postgres/lib/libpq.so.5": "8974ef191d99de27b14f604afaa073d6364afa2b9e1ef4732436cf74b802364a",
+    "/usr/local/bin/asm-hub": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+  },
+  "execution": "native",
+  "fixture": {
+    "bytes": 69640,
+    "gid": 0,
+    "mode": "0444",
+    "path": "/qualification/fixtures/connect-null.so",
+    "sha256": "3f9ed5ddba3d52b21c43636fd27447924c751713edcb1610e1f6669d40fd25d0",
+    "uid": 0
+  },
+  "libraries": {
+    "libmicrohttpd": "1.0.3",
+    "libpq": "16.15"
+  },
+  "nonroot_configuration_refusal_exit": 78,
+  "observed_at": "2026-11-05T17:26:51Z",
+  "os": "linux",
+  "parts": {
+    "baseline": {
+      "architecture": "arm64",
+      "binary": {
+        "bytes": 79144,
+        "declaration_limit": "Declared application profile; ELF flags do not audit every instruction or qualify hardware and library CPU requirements.",
+        "declared_target": {
+          "abi": "AAPCS64 LP64",
+          "cpu_profile": "ARMv8-A",
+          "isa": "aarch64",
+          "os": "linux"
+        },
+        "elf_flags": 0,
+        "machine": 183,
+        "sha256": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+      },
+      "binary_permissions": {
+        "gid": 0,
+        "mode": "0555",
+        "uid": 0
+      },
+      "container_limits": {
+        "cpus": 2,
+        "memory_bytes": 536870912,
+        "pids": 128,
+        "tmpfs_bytes": 268435456,
+        "tmpfs_noexec": true,
+        "watchdog_seconds": 180
+      },
+      "executable_files": {
+        "/lib/aarch64-linux-gnu/libc.so.6": "70fa4c4cf57eabeb96097cce47582d02379c4cd1de3db3e98ade4dd7089a1b13",
+        "/lib/aarch64-linux-gnu/libcrypto.so.3": "809909371a1db7d2b9cac4c2fa2eff63eb6169d5979416d94155955a7ad32516",
+        "/lib/aarch64-linux-gnu/libm.so.6": "a8afb2d1f4a0c5e14c0fc82f794ec839eafe29738907aa92895410f57630bbe2",
+        "/lib/aarch64-linux-gnu/libssl.so.3": "b3b9a479537bded757b818bb787413d8f8f636135e6546c84e90688eca1dc842",
+        "/lib/aarch64-linux-gnu/libz.so.1": "6fe00acadf8119ff245855e5dcc7f26c6c0ffaf4bfa2baa88feab58f23727d65",
+        "/lib/aarch64-linux-gnu/libzstd.so.1": "1279c4edfbfb08878b5b7fb40d392c1bdc9b30100d9b7a019d4aefaf10d2046c",
+        "/lib/ld-linux-aarch64.so.1": "1b882eddacd494b060413a8aa4f0a4754ee3f84775e68cecbf8a86092b59cca6",
+        "/opt/asm/mhd/lib/libmicrohttpd.so.12": "218f1321002e3178bd3cf6380ee40dcc9cdfa53816ddf2753e96890509a290a8",
+        "/opt/asm/postgres/lib/libpq.so.5": "8974ef191d99de27b14f604afaa073d6364afa2b9e1ef4732436cf74b802364a",
+        "/usr/local/bin/asm-hub": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+      },
+      "execution": "native",
+      "fixture": {
+        "bytes": 69640,
+        "gid": 0,
+        "mode": "0444",
+        "path": "/qualification/fixtures/connect-null.so",
+        "sha256": "3f9ed5ddba3d52b21c43636fd27447924c751713edcb1610e1f6669d40fd25d0",
+        "uid": 0
+      },
+      "libraries": {
+        "libmicrohttpd": "1.0.3",
+        "libpq": "16.15"
+      },
+      "os": "linux",
+      "qualification_image_id": "sha256:1b59010b9fa75812b9ecbec028bdd66abcbe298d9365c5138a3ff3f3b025cc58",
+      "runtime_image_id": "sha256:a3ce54d047da43c0382299d993cad73da42321fd553387af7fc2286395f154e4",
+      "schema": 1,
+      "scope": "assembly-image-runtime-part",
+      "seconds": 6.414,
+      "security": {
+        "effective_capabilities": 0,
+        "gid": 65532,
+        "no_new_privileges": true,
+        "read_only_root": true,
+        "uid": 65532
+      },
+      "source_revision": "b1450bd54efb12c0fb047c01117869c63e82197b",
+      "status": "pass",
+      "suite": "baseline",
+      "tests_run": 16,
+      "tests_skipped": 0
+    },
+    "capacity": {
+      "architecture": "arm64",
+      "binary": {
+        "bytes": 79144,
+        "declaration_limit": "Declared application profile; ELF flags do not audit every instruction or qualify hardware and library CPU requirements.",
+        "declared_target": {
+          "abi": "AAPCS64 LP64",
+          "cpu_profile": "ARMv8-A",
+          "isa": "aarch64",
+          "os": "linux"
+        },
+        "elf_flags": 0,
+        "machine": 183,
+        "sha256": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+      },
+      "binary_permissions": {
+        "gid": 0,
+        "mode": "0555",
+        "uid": 0
+      },
+      "container_limits": {
+        "cpus": 2,
+        "memory_bytes": 536870912,
+        "pids": 128,
+        "tmpfs_bytes": 268435456,
+        "tmpfs_noexec": true,
+        "watchdog_seconds": 180
+      },
+      "executable_files": {
+        "/lib/aarch64-linux-gnu/libc.so.6": "70fa4c4cf57eabeb96097cce47582d02379c4cd1de3db3e98ade4dd7089a1b13",
+        "/lib/aarch64-linux-gnu/libcrypto.so.3": "809909371a1db7d2b9cac4c2fa2eff63eb6169d5979416d94155955a7ad32516",
+        "/lib/aarch64-linux-gnu/libm.so.6": "a8afb2d1f4a0c5e14c0fc82f794ec839eafe29738907aa92895410f57630bbe2",
+        "/lib/aarch64-linux-gnu/libssl.so.3": "b3b9a479537bded757b818bb787413d8f8f636135e6546c84e90688eca1dc842",
+        "/lib/aarch64-linux-gnu/libz.so.1": "6fe00acadf8119ff245855e5dcc7f26c6c0ffaf4bfa2baa88feab58f23727d65",
+        "/lib/aarch64-linux-gnu/libzstd.so.1": "1279c4edfbfb08878b5b7fb40d392c1bdc9b30100d9b7a019d4aefaf10d2046c",
+        "/lib/ld-linux-aarch64.so.1": "1b882eddacd494b060413a8aa4f0a4754ee3f84775e68cecbf8a86092b59cca6",
+        "/opt/asm/mhd/lib/libmicrohttpd.so.12": "218f1321002e3178bd3cf6380ee40dcc9cdfa53816ddf2753e96890509a290a8",
+        "/opt/asm/postgres/lib/libpq.so.5": "8974ef191d99de27b14f604afaa073d6364afa2b9e1ef4732436cf74b802364a",
+        "/usr/local/bin/asm-hub": "03f8430a80b46a3f7665351f7a76fd618edd2db4dfcc2d1103b9cad1155076a2"
+      },
+      "execution": "native",
+      "fixture": {
+        "bytes": 69640,
+        "gid": 0,
+        "mode": "0444",
+        "path": "/qualification/fixtures/connect-null.so",
+        "sha256": "3f9ed5ddba3d52b21c43636fd27447924c751713edcb1610e1f6669d40fd25d0",
+        "uid": 0
+      },
+      "libraries": {
+        "libmicrohttpd": "1.0.3",
+        "libpq": "16.15"
+      },
+      "os": "linux",
+      "qualification_image_id": "sha256:1b59010b9fa75812b9ecbec028bdd66abcbe298d9365c5138a3ff3f3b025cc58",
+      "runtime_image_id": "sha256:a3ce54d047da43c0382299d993cad73da42321fd553387af7fc2286395f154e4",
+      "schema": 1,
+      "scope": "assembly-image-runtime-part",
+      "seconds": 75.226,
+      "security": {
+        "effective_capabilities": 0,
+        "gid": 65532,
+        "no_new_privileges": true,
+        "read_only_root": true,
+        "uid": 65532
+      },
+      "source_revision": "b1450bd54efb12c0fb047c01117869c63e82197b",
+      "status": "pass",
+      "suite": "capacity",
+      "tests_run": 12,
+      "tests_skipped": 0
+    }
+  },
+  "qualification_image_id": "sha256:1b59010b9fa75812b9ecbec028bdd66abcbe298d9365c5138a3ff3f3b025cc58",
+  "runtime_image_id": "sha256:a3ce54d047da43c0382299d993cad73da42321fd553387af7fc2286395f154e4",
+  "schema": 1,
+  "scope": "assembly-canonical-exports-admission",
+  "seconds": 81.64,
+  "security": {
+    "effective_capabilities": 0,
+    "gid": 65532,
+    "no_new_privileges": true,
+    "read_only_root": true,
+    "uid": 65532
+  },
+  "source_revision": "b1450bd54efb12c0fb047c01117869c63e82197b",
+  "status": "pass",
+  "test_watchdog_seconds": 360,
+  "tests_run": 28,
+  "tests_skipped": 0
+}

@@ -19,7 +19,9 @@ The registered workflow was then restored from the retained original blob.
 The owner later reviewed the implementation and authorized one native source gate at commit `2881779f1927f660b367d48af08a28a3c09292be`.
 Both native targets passed all twenty-eight cases in that uncapped gate.
 The owner then authorized the local actual-image integration described below.
-That image gate remains unrun, and neither publication nor deployment is authorized.
+The image preflight later passed all three targets at the source recorded below.
+The owner authorized a local evidence and publication-condition candidate after that result.
+No push, publication, or deployment follows from preparing this final candidate.
 
 The source inspected is canonical HTTP commit `61181be91d31cc671e3827a7aa17c9e2b37afe71`.
 The public main inspected is `7efb4b7b543018d68e5c5801e5f4b7eef74772b5`.
@@ -274,7 +276,7 @@ Do not add application metrics in this task.
 Allocation-failure injection is not present in the existing HTTP fixture.
 If a deterministic allocation/header failure gate is required, coordinate a separate bounded fixture rather than claiming socket abort covers it.
 The cleanup assertions passed in the later accepted native source gate.
-The actual-image gate remains unrun.
+The later actual-image result is recorded below.
 Discovery now finds sixteen unchanged baseline methods and twelve capacity methods, for twenty-eight total cases.
 All new native cases were unrun at the initial implementation checkpoint `815eea50876b6a6bd495e5f088d735c094b7417d`.
 The accepted native result at `2881779f1927f660b367d48af08a28a3c09292be` is recorded below.
@@ -320,9 +322,9 @@ The corrected command assembled all three runtime sources; no assembly failure i
 
 The initial checkpoint lacked native GREEN, full failure cleanup, and disconnect recovery evidence.
 The later accepted native gate exercised all twenty-eight cases on AMD64 and ARM64.
-Actual-image and private resource-capacity qualification remain separate requirements.
+The later actual-image gate passed the recorded source and fixture; private resource-capacity qualification remains separate.
 An independent agent review identified two candidate-test gaps, which were corrected and reviewed again.
-That advice does not replace the missing native gate.
+That advice did not replace the executed native and image gates.
 
 ### Required actual-image integration
 
@@ -333,10 +335,11 @@ The qualifier receives a fixed precompiled read-only library through `ASM_SERVER
 It needs no compiler and loads no executable code from its temporary data directory.
 Keep the failure interposer outside the served production image.
 The source test gate alone does not establish that the final derived image contains or passes the capacity checks.
-That image-gate integration remains an explicit publication requirement for its owner.
-Both `publish` and `publish-index` in `.github/workflows/server-images.yml` now have explicit temporary false conditions.
-Do not remove those holds until the actual derived image passes the discovered complete runtime and capacity inventory.
-The legacy sixteen-case receipt cannot release the hold.
+The image-gate integration remained a publication requirement until the complete three-target preflight passed.
+Both publishers were explicitly held during that preflight, so it published nothing.
+After the owner verified all three receipts, this final candidate removes only the temporary false conjuncts.
+The trusted main-push rules, dependencies, permissions, and shared strict validator remain unchanged.
+Every later main source must pass its own complete image gate before publication.
 
 ### Native receipt boundary
 
@@ -355,13 +358,13 @@ The owner accepted native run `42060225513` at source `2881779f1927f660b367d48af
 Both native targets passed all twenty-eight hosted cases, including the fixed read-only NULL fixture.
 That uncapped source gate does not qualify the derived images.
 
-The image gate will run two sequential containers: `baseline` with all sixteen cases and `capacity` with all twelve cases.
+The image gate runs two sequential containers: `baseline` with all sixteen cases and `capacity` with all twelve cases.
 Each container retains the existing 180-second watchdog, two CPUs, 512 MiB memory, 128 processes, and 256 MiB noexec temporary filesystem.
 The combined test watchdog budget therefore increases from 180 to 360 seconds.
 The workflow orchestration step increases from five to ten minutes for preflight and cleanup around those parts.
 This preserves each callback deadline and allows the expanded coverage to finish without weakening runtime assertions.
 It adds a second owned PostgreSQL fixture and container startup to qualification cost.
-Neither the source gate nor this proposed image gate establishes private deployment capacity.
+Neither the source gate nor this image gate establishes private deployment capacity.
 
 The build stage uses the existing `test-admission-fixture` target under `/build/server`.
 Only the qualification stage receives `/qualification/fixtures/connect-null.so`, root-owned with mode `0444`.
@@ -402,8 +405,32 @@ The fix uses the same mature descriptor operations without those additional cred
 All seventeen admission-image contracts pass, including the exact-size boundary and growth case.
 The original failure log and bounded-reader evidence are under `/private/tmp/asm-admission-evidence-reader`.
 
-Docker execution, downloads, CI dispatch, publication, and merging into main are outside this local checkpoint.
-The prior six-client RISC-V failure remains visible and requires its own diagnosis.
+Docker execution and CI dispatch were outside that local checkpoint; the owner subsequently authorized exactly one image preflight.
+No CI retry occurred.
+The prior six-client RISC-V failure remains visible, and its cause remains unresolved.
+
+### Completed three-target image preflight
+
+[Run `42073901743`](https://github.com/stubbi/asm/actions/runs/42073901743), attempt one, passed source `b1450bd54efb12c0fb047c01117869c63e82197b`.
+AMD64 and ARM64 executed natively; RISC-V64 used the pinned user emulator.
+Every target passed all sixteen baseline and twelve admission cases without skips.
+RISC-V64 completed those parts in 40.468 and 161.065 seconds, within the unchanged separate 180-second watchdogs.
+The two native admission parts took 73.164 seconds on AMD64 and 75.226 seconds on ARM64.
+Each complete owned fixture used two CPUs, 512 MiB memory, 128 processes, and 256 MiB noexec temporary storage.
+Both publishers were skipped under the temporary holds.
+
+The [image result record](../../server-images.md#admission-image-preflight) links the exact source, run, jobs, and three original aggregate receipts.
+The reports are retained byte for byte under `docs/server-admission-evidence/42073901743`.
+They bind both parts to the same source, runtime and qualification images, executable, library inventory, read-only fixture digest, and isolation.
+Raw checkout logs identify the same source; runtime-step logs record aggregate twenty-eight-case success.
+Local collection used bounded report ranges and compressed job logs, without image payloads or layers.
+A local watcher encountered `ENOSPC`; its collection failure was retained separately while the remote jobs continued and passed.
+Storage recovery allowed collection to resume without a CI retry.
+
+This pass does not establish the cause of the earlier RISC-V failure or prove an admission-related correction for it.
+It does not qualify physical RISC-V hardware, private one-CPU/256 MiB capacity, PostgreSQL 18, startup integration, deployment, or service recovery.
+The final evidence and hold-release revision has no new CI result; later revisions and artifacts require their own exact-source checks.
+The current preparation does not authorize a push, PR, merge into main, or publication.
 
 The complete available Git history has not been reviewed for a merge decision.
 That review remains required before merging the eventual implementation.
