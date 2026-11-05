@@ -43,6 +43,114 @@
       "run_id": 42033134716,
       "url": "https://github.com/stubbi/asm/actions/runs/42033134716",
       "outcome": "fail"
+    },
+    {
+      "iteration": 7,
+      "run_id": 42038909292,
+      "url": "https://github.com/stubbi/asm/actions/runs/42038909292",
+      "outcome": "fail",
+      "event": "pull_request",
+      "source_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+      "source_binding": {
+        "head_commit": "502cbe525a4fef1fc4ffca861cdc7d37cd9feaf1",
+        "pr_merge_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+        "head_tree": "fed7e879b4b1f9ef07ce37214f5e2a4f5ed65860",
+        "pr_merge_tree": "fed7e879b4b1f9ef07ce37214f5e2a4f5ed65860",
+        "duplicate_push_run": 42038871860,
+        "retained_pr_run": 42038909292,
+        "reason": "Exact Git trees match; keep required PR execution and cancel redundant branch execution.",
+        "audit": {
+          "file": "build/integration-evidence/seventh-pr-source-binding.json",
+          "sha256": "7c4fc294bfd7e7690440aa7cdfd27d18fdb8dbd17c845164a61e46ca57d2a9f6"
+        },
+        "duplicate_push_run_outcome": "cancelled"
+      },
+      "separate_package_scopes": [
+        {
+          "target": "aarch64-windows",
+          "outcome": "pass",
+          "tests_run": 7,
+          "record_counts": {
+            "pass": 7
+          },
+          "receipt": {
+            "file": "build/windows-seventh-native/native-windows-packages-aarch64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/packages.json",
+            "sha256": "5f98c8ed021eb7e297c0d291a23338e7bbfa5c1ad858a4f40509b1f748788917"
+          }
+        },
+        {
+          "target": "x86_64-windows",
+          "outcome": "pass",
+          "tests_run": 7,
+          "record_counts": {
+            "pass": 7
+          },
+          "receipt": {
+            "file": "build/windows-seventh-native/native-windows-packages-x86_64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/packages.json",
+            "sha256": "9c5ea6f2e3f94ea0348fdd5d4bb8bac556503c19e60692b553a25398d5f3984a"
+          }
+        }
+      ],
+      "linux_reference_packages": {
+        "outcome": "pass",
+        "tests_run": 24,
+        "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU",
+        "native_arm64_or_riscv64_qualification": false,
+        "receipt": {
+          "file": "build/windows-seventh-native/linux-reference-packages-93e6372555de392dc2ecc8c51d8fec92bb30383a/results.json",
+          "sha256": "6151edad799046e9b88f8ccc442205ef4da935a81163b8d6aaf504ceab5b157f"
+        }
+      }
+    },
+    {
+      "iteration": 8,
+      "run_id": 42042014143,
+      "url": "https://github.com/stubbi/asm/actions/runs/42042014143",
+      "outcome": "fail",
+      "event": "workflow_dispatch",
+      "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+      "development_branch": "codex/windows-native-probes",
+      "pr_41_head": false,
+      "audit": {
+        "file": "build/integration-evidence/windows-eighth-audit.json",
+        "sha256": "841e4446b4e924527d7476aa222ed59daea6c51afad0eaed480b0d654992502a"
+      },
+      "separate_package_scopes": [
+        {
+          "target": "aarch64-windows",
+          "outcome": "pass",
+          "tests_run": 7,
+          "record_counts": {
+            "pass": 7
+          },
+          "receipt": {
+            "file": "build/windows-eighth-native/native-windows-packages-aarch64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/packages.json",
+            "sha256": "b72393d22afb3bf30bfd7357f7b73c2a4c33bd0940d2f173ab6bd5df77a904e0"
+          }
+        },
+        {
+          "target": "x86_64-windows",
+          "outcome": "pass",
+          "tests_run": 7,
+          "record_counts": {
+            "pass": 7
+          },
+          "receipt": {
+            "file": "build/windows-eighth-native/native-windows-packages-x86_64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/packages.json",
+            "sha256": "417835910a38a11e603b8e86ca97c118dc0760e0c3198c52713bc4f66a925ea3"
+          }
+        }
+      ],
+      "linux_reference_packages": {
+        "outcome": "pass",
+        "tests_run": 24,
+        "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU",
+        "native_arm64_or_riscv64_qualification": false,
+        "receipt": {
+          "file": "build/windows-eighth-native/linux-reference-packages-e147917ef5906ba92c8ab0715286bb7c25e0e409/results.json",
+          "sha256": "7fb8f77bcc7667786184c1c112c1d0a8f6776646ac8b8e09c4f4b1d9e4316f72"
+        }
+      }
     }
   ],
   "results": [
@@ -797,18 +905,516 @@
         "image_version": "20261030.294.1",
         "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1"
       }
+    },
+    {
+      "iteration": 7,
+      "source_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 44,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 135168,
+        "sha256": "fde7442871c926463df23cf3fe5b6bc2a65d546dcc6f2c41001e93946b467b67",
+        "pe_machine": 43620,
+        "sha256_after_tests": "fde7442871c926463df23cf3fe5b6bc2a65d546dcc6f2c41001e93946b467b67"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261101.203.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "windows_sdk": "10.0.26100.0",
+        "source_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+        "image_version": "20261101.203.1",
+        "msvc_runtime": "14.51.36231",
+        "image_os": "win11-vs2026-arm64",
+        "runner_architecture": "ARM64",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n"
+      },
+      "isa": "aarch64",
+      "os": "windows",
+      "abi": "Microsoft ARM64",
+      "minimum_supported_os": null,
+      "required_cpu_features": null,
+      "source_dirty": false,
+      "runtime_receipt": {
+        "file": "build/windows-seventh-native/native-windows-cli-aarch64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/runtime.json",
+        "sha256": "79b9c0cbdcacfe142e20bea77540e184cc9be82299ecd6488039a9e9b664a142"
+      },
+      "build_hashes_receipt": {
+        "file": "build/windows-seventh-native/native-windows-cli-aarch64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/build-hashes.json",
+        "sha256": "af468ad3a0c289653603cc1998bec31a323807625eeb0957e082e6614068993d"
+      },
+      "primary_unmap_probe": {
+        "receipt": {
+          "file": "build/windows-seventh-native/native-windows-cli-aarch64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/primary-unmap-probe.json",
+          "sha256": "5f9036a0b8846a52d7187baec9b0782e1d8ef756d18d107bbf76819589e181de"
+        },
+        "fixture": "error",
+        "native_cli_qualification": false,
+        "production_updater_changed": false,
+        "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+        "all_children_never_resumed": true,
+        "all_children_reaped": true,
+        "creation_image_matches": [
+          0,
+          0,
+          0
+        ],
+        "case_modes": [
+          "still_mapped",
+          "primary_unmapped",
+          "terminated"
+        ],
+        "case_error": {
+          "type": "RuntimeError",
+          "message": "The primary image headers do not match the copied CLI bytes."
+        },
+        "unmap_observations": 0,
+        "rename_observations": 0,
+        "raw_headers_retained": false,
+        "limit": "All three cases stopped at an unsupported raw-header equality precondition. The differing bytes and cause were not retained. This run provides no unmap result.",
+        "fixture_error": {
+          "type": "RuntimeError",
+          "message": "One or more fixture cases failed."
+        }
+      }
+    },
+    {
+      "iteration": 7,
+      "source_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 45,
+      "record_counts": {
+        "pass": 44,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 99328,
+        "sha256": "670ad4a9cc769a4b4a619b71d06f56d56720d329105ca4f8a1428b7b8bcb0e7c",
+        "pe_machine": 34404,
+        "sha256_after_tests": "670ad4a9cc769a4b4a619b71d06f56d56720d329105ca4f8a1428b7b8bcb0e7c"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261103.298.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "source_commit": "93e6372555de392dc2ecc8c51d8fec92bb30383a",
+        "image_version": "20261103.298.1",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "msvc_runtime": "14.51.36231",
+        "image_os": "win25-vs2026",
+        "windows_sdk": "10.0.26100.0",
+        "runner_architecture": "X64"
+      },
+      "isa": "x86_64",
+      "os": "windows",
+      "abi": "Microsoft x64",
+      "minimum_supported_os": null,
+      "required_cpu_features": null,
+      "source_dirty": false,
+      "runtime_receipt": {
+        "file": "build/windows-seventh-native/native-windows-cli-x86_64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/runtime.json",
+        "sha256": "21e7604f9e31c88d1f3cfcbab6c46cff56810f298c94db2591e5ba32434f0d3d"
+      },
+      "build_hashes_receipt": {
+        "file": "build/windows-seventh-native/native-windows-cli-x86_64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/build-hashes.json",
+        "sha256": "eb32ee162986c61e98b8776e17992c5d54b1b41825adf2786075e2da446bd2b2"
+      },
+      "primary_unmap_probe": {
+        "receipt": {
+          "file": "build/windows-seventh-native/native-windows-cli-x86_64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/primary-unmap-probe.json",
+          "sha256": "e4f71c46784146cf012cfc043f38b45ace88c9f222e60d9e68a8701ced02bca9"
+        },
+        "fixture": "error",
+        "native_cli_qualification": false,
+        "production_updater_changed": false,
+        "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+        "all_children_never_resumed": true,
+        "all_children_reaped": true,
+        "creation_image_matches": [
+          0,
+          0,
+          0
+        ],
+        "case_modes": [
+          "still_mapped",
+          "primary_unmapped",
+          "terminated"
+        ],
+        "case_error": {
+          "type": "RuntimeError",
+          "message": "The primary image headers do not match the copied CLI bytes."
+        },
+        "unmap_observations": 0,
+        "rename_observations": 0,
+        "raw_headers_retained": false,
+        "limit": "All three cases stopped at an unsupported raw-header equality precondition. The differing bytes and cause were not retained. This run provides no unmap result.",
+        "fixture_error": {
+          "type": "RuntimeError",
+          "message": "One or more fixture cases failed."
+        }
+      },
+      "ordinary_versus_mapped_rename": {
+        "receipt": {
+          "file": "build/windows-seventh-native/native-windows-cli-x86_64-windows-93e6372555de392dc2ecc8c51d8fec92bb30383a/windows-evidence/x64-adapter-diagnostics.json",
+          "sha256": "158e14f18f0103a0e5d6a8ba8a03092241afa912f44ccb23525fdd8448d677b0"
+        },
+        "scope": "owned ordinary versus suspended-image target, exact rename class65 request",
+        "native_qualification": false,
+        "request": {
+          "source_access": 1245313,
+          "parent_access": 1179777,
+          "held_target_access": 1179809,
+          "flags": 3,
+          "class": 65,
+          "filename": "asm.exe",
+          "filename_bytes": 14,
+          "buffer_bytes": 34
+        },
+        "ordinary_status": 0,
+        "ordinary_completion_status": 0,
+        "ordinary_candidate_identity_and_bytes_installed": true,
+        "ordinary_held_old_target_links": 0,
+        "suspended_image_binding": 0,
+        "suspended_status": 3221225506,
+        "suspended_completion_status": 3221225506,
+        "suspended_files_preserved": true,
+        "child_cleanup": {
+          "terminated": true,
+          "wait_status": 0
+        }
+      }
+    },
+    {
+      "iteration": 8,
+      "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+      "target": "aarch64-windows",
+      "outcome": "fail",
+      "tests_run": 46,
+      "record_counts": {
+        "pass": 45,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-aarch64-windows.exe",
+        "bytes": 135168,
+        "sha256": "03bbea059ce6c848275503ddda583526f66e8759040612bf281938edb73eff69",
+        "pe_machine": 43620,
+        "sha256_after_tests": "03bbea059ce6c848275503ddda583526f66e8759040612bf281938edb73eff69"
+      },
+      "host": {
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:38:33) [MSC v.1944 64 bit (ARM64)]",
+        "machine": "ARM64",
+        "cpu_identifier": "ARMv8 (64-bit) Family 8 Model D49 Revision   0, MICROSOFT CORPORATION",
+        "image_os": "win11-vs2026-arm64",
+        "image_version": "20261101.203.1",
+        "native_machine": 43620,
+        "observed_windows_version": [
+          10,
+          0,
+          26200,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "msvc_runtime": "14.51.36231",
+        "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+        "windows_sdk": "10.0.26100.0",
+        "runner_architecture": "ARM64",
+        "image_os": "win11-vs2026-arm64",
+        "llvm": "clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)\r\nTarget: aarch64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "image_version": "20261101.203.1"
+      },
+      "isa": "aarch64",
+      "os": "windows",
+      "abi": "Microsoft ARM64",
+      "minimum_supported_os": null,
+      "required_cpu_features": null,
+      "source_dirty": false,
+      "runtime_receipt": {
+        "file": "build/windows-eighth-native/native-windows-cli-aarch64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/runtime.json",
+        "sha256": "4b25ceea86d2ef8399523fe295fe77adffeb1d1b88758231a370dc542d1c2892"
+      },
+      "build_hashes_receipt": {
+        "file": "build/windows-eighth-native/native-windows-cli-aarch64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/build-hashes.json",
+        "sha256": "b57505f42eb2fd050d6251af3e04a08583fb6bcd902d541a38459c3c8448a790"
+      },
+      "long_application": {
+        "test": "test_runtime.WindowsRuntimeTests.test_deliberate_application_runs_beyond_two_minutes",
+        "outcome": "pass",
+        "seconds": 125.188754
+      },
+      "primary_unmap_probe": {
+        "receipt": {
+          "file": "build/windows-eighth-native/native-windows-cli-aarch64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/primary-unmap-probe.json",
+          "sha256": "5bb8c7eb09ed5816e2eea6c72a2d237a72cca9f9216edb0d56446ee6e25e48bc"
+        },
+        "fixture": "complete",
+        "native_cli_qualification": false,
+        "production_updater_changed": false,
+        "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+        "all_children_never_resumed": true,
+        "all_children_reaped": true,
+        "creation_image_matches": [
+          0,
+          0,
+          0
+        ],
+        "rename_contract": {
+          "class": 65,
+          "flags": 3,
+          "leaf": "original.exe",
+          "name_bytes": 24,
+          "buffer_bytes": 44
+        },
+        "cases": [
+          {
+            "mode": "still_mapped",
+            "unmap_status": null,
+            "memory_state_after_unmap": null,
+            "process_alive_before_rename": true,
+            "rename_status": 3221225506,
+            "rename_io_status": 3221225506,
+            "observation": "replacement-denied-files-preserved",
+            "child_exit_code": 124,
+            "reaped": true
+          },
+          {
+            "mode": "primary_unmapped",
+            "unmap_status": 0,
+            "memory_state_after_unmap": 65536,
+            "process_alive_before_rename": true,
+            "rename_status": 3221225506,
+            "rename_io_status": 3221225506,
+            "observation": "replacement-denied-files-preserved",
+            "child_exit_code": 124,
+            "reaped": true
+          },
+          {
+            "mode": "terminated",
+            "unmap_status": null,
+            "memory_state_after_unmap": null,
+            "process_alive_before_rename": false,
+            "rename_status": 0,
+            "rename_io_status": 0,
+            "observation": "replacement-succeeded",
+            "child_exit_code": 123,
+            "reaped": true
+          }
+        ],
+        "headers": {
+          "dos_bytes_per_snapshot": 64,
+          "pe_bytes_per_snapshot": 264,
+          "raw_file_and_mapped_bytes_retained": true,
+          "dos_differences": [],
+          "pe_fields_changed": [
+            "ImageBase"
+          ],
+          "all_structural_checks_passed": true,
+          "loader_mutation_cause": "not-established"
+        },
+        "conclusion": "Unmapping does not remove the measured replacement denial in this fixture."
+      }
+    },
+    {
+      "iteration": 8,
+      "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+      "target": "x86_64-windows",
+      "outcome": "fail",
+      "tests_run": 46,
+      "record_counts": {
+        "pass": 45,
+        "fail": 1
+      },
+      "artifact": {
+        "file": "asm-x86_64-windows.exe",
+        "bytes": 99328,
+        "sha256": "279f7a105cc7c4de66e7deb30eecae5fb02b6cdb8b39fe80ebdde379afbfa6ee",
+        "pe_machine": 34404,
+        "sha256_after_tests": "279f7a105cc7c4de66e7deb30eecae5fb02b6cdb8b39fe80ebdde379afbfa6ee"
+      },
+      "host": {
+        "platform": "Windows-2025Server-10.0.26100-SP0",
+        "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+        "machine": "AMD64",
+        "cpu_identifier": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
+        "image_os": "win25-vs2026",
+        "image_version": "20261030.294.1",
+        "native_machine": 34404,
+        "observed_windows_version": [
+          10,
+          0,
+          26100,
+          2,
+          ""
+        ]
+      },
+      "qualifies_native_runtime": false,
+      "failed_cases": [
+        "test_runtime.SelfUpdateRuntimeTests.test_update_replaces_exact_bytes_after_three_provenance_bindings"
+      ],
+      "toolchain": {
+        "windows_sdk": "10.0.26100.0",
+        "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+        "image_version": "20261030.294.1",
+        "image_os": "win25-vs2026",
+        "runner_architecture": "X64",
+        "llvm": "clang version 20.1.8\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files\\LLVM\\bin\r\n",
+        "msvc_runtime": "14.51.36231"
+      },
+      "isa": "x86_64",
+      "os": "windows",
+      "abi": "Microsoft x64",
+      "minimum_supported_os": null,
+      "required_cpu_features": null,
+      "source_dirty": false,
+      "runtime_receipt": {
+        "file": "build/windows-eighth-native/native-windows-cli-x86_64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/runtime.json",
+        "sha256": "b6ede5f6f4ec47b65b8a362b39efbefd49b816f1c2ff43b241676dfb2f64cafc"
+      },
+      "build_hashes_receipt": {
+        "file": "build/windows-eighth-native/native-windows-cli-x86_64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/build-hashes.json",
+        "sha256": "9d73ab1b6fa7d84e47830143227fa53132ae2b15f6476b2168e2fd0908c56192"
+      },
+      "long_application": {
+        "test": "test_runtime.WindowsRuntimeTests.test_deliberate_application_runs_beyond_two_minutes",
+        "outcome": "pass",
+        "seconds": 125.157
+      },
+      "primary_unmap_probe": {
+        "receipt": {
+          "file": "build/windows-eighth-native/native-windows-cli-x86_64-windows-e147917ef5906ba92c8ab0715286bb7c25e0e409/windows-evidence/primary-unmap-probe.json",
+          "sha256": "27be09c85077ca5a35f4eb2c9d09aab774f32160e8588d93f512af58ac9b61c9"
+        },
+        "fixture": "complete",
+        "native_cli_qualification": false,
+        "production_updater_changed": false,
+        "scope": "native section/file operations on never-resumed copies; no CLI command qualification",
+        "all_children_never_resumed": true,
+        "all_children_reaped": true,
+        "creation_image_matches": [
+          0,
+          0,
+          0
+        ],
+        "rename_contract": {
+          "class": 65,
+          "flags": 3,
+          "leaf": "original.exe",
+          "name_bytes": 24,
+          "buffer_bytes": 44
+        },
+        "cases": [
+          {
+            "mode": "still_mapped",
+            "unmap_status": null,
+            "memory_state_after_unmap": null,
+            "process_alive_before_rename": true,
+            "rename_status": 3221225506,
+            "rename_io_status": 3221225506,
+            "observation": "replacement-denied-files-preserved",
+            "child_exit_code": 124,
+            "reaped": true
+          },
+          {
+            "mode": "primary_unmapped",
+            "unmap_status": 0,
+            "memory_state_after_unmap": 65536,
+            "process_alive_before_rename": true,
+            "rename_status": 3221225506,
+            "rename_io_status": 3221225506,
+            "observation": "replacement-denied-files-preserved",
+            "child_exit_code": 124,
+            "reaped": true
+          },
+          {
+            "mode": "terminated",
+            "unmap_status": null,
+            "memory_state_after_unmap": null,
+            "process_alive_before_rename": false,
+            "rename_status": 0,
+            "rename_io_status": 0,
+            "observation": "replacement-succeeded",
+            "child_exit_code": 123,
+            "reaped": true
+          }
+        ],
+        "headers": {
+          "dos_bytes_per_snapshot": 64,
+          "pe_bytes_per_snapshot": 264,
+          "raw_file_and_mapped_bytes_retained": true,
+          "dos_differences": [],
+          "pe_fields_changed": [
+            "ImageBase"
+          ],
+          "all_structural_checks_passed": true,
+          "loader_mutation_cause": "not-established"
+        },
+        "conclusion": "Unmapping does not remove the measured replacement denial in this fixture."
+      }
     }
   ],
   "current": {
-    "source_commit": "540620a9c8ed14fc5904d07c16dda0430cf9fcb1",
-    "methods_per_target": 45,
-    "passing_methods_per_target": 44,
+    "source_commit": "e147917ef5906ba92c8ab0715286bb7c25e0e409",
+    "methods_per_target": 46,
+    "passing_methods_per_target": 45,
     "failed_method": "test_update_replaces_exact_bytes_after_three_provenance_bindings",
     "native_image_binding": "Both corrected suspended-image fixtures completed, rejected the distinct replacement and preserved both path identities and exact bytes.",
     "archive_lifecycle": "Both native dependency lifecycle and corruption-preservation cases passed.",
-    "remaining_failure": "The final native rename returns STATUS_ACCESS_DENIED after source open, DACL protection, flush and close succeed.",
+    "remaining_failure": "The positive self-update case still exits with the final-replacement error. The separate run 8 probe observes STATUS_ACCESS_DENIED while the copied process remains alive, including after successful primary-image unmapping.",
     "updater_contract": "The existing one-final-rename and precommit failure-preservation requirements remain in force.",
-    "separate_package_jobs": "Both Windows native package scopes and the GNU/QEMU Linux references passed in the sixth run."
+    "separate_package_jobs": "Both Windows native package scopes passed seven methods each in runs 7 and 8. Each Linux reference scope passed 24 methods; ARM64 and RISC-V execution used QEMU.",
+    "run_id": 42042014143,
+    "long_application": "Both targets passed the deliberate 125-second application case: x86-64 125.157 seconds; ARM64 125.188754 seconds.",
+    "primary_unmap_probe": "Both run 8 fixtures completed. Still-mapped and primary-unmapped live children denied replacement with 0xC0000022 and preserved both files. Terminated children allowed replacement with status 0.",
+    "proposed_layout": "The versioned Windows layout is a proposal awaiting user approval. These runs do not implement it."
   },
   "limits": [
     "Failed runs remain evidence; later passes do not erase their results.",
@@ -817,6 +1423,8 @@
     "Windows minimum OS and additional CPU feature requirements are not qualified. The recorded native host configurations define the observed scope.",
     "Local host shims and temporary-import cross-builds are not native Windows qualification.",
     "The updater test uses controlled transport and provenance tools. Production trust activation and release artifact admission remain separate.",
-    "Published 0.6.0 bytes and release target support are unchanged."
+    "Published 0.6.0 bytes and release target support are unchanged.",
+    "The primary-unmap probe qualifies only its native kernel operations and copied child images on the recorded hosts. It does not independently qualify the Python controller as unemulated.",
+    "The completed unmap experiment does not fix or qualify the production updater. A proposed versioned Windows layout is not an implemented capability."
   ]
 }

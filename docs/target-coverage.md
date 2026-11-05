@@ -125,20 +125,56 @@ They do not change published host support.
 
 | Component | Observed result | Remaining gate |
 | --- | --- | --- |
-| Intel macOS CLI | Native Intel qualification passed 209 cases at `4fe09795245dc0b6bf42289d0deae371680196ab`. [Run](https://github.com/stubbi/asm/actions/runs/42010080612). | Integrate the qualified source delta and recheck combined source. Complete distribution integration. |
-| Linux x86-64 and ARM64 servers | Both native targets passed the integrated package and runtime suites. [Run](https://github.com/stubbi/asm/actions/runs/42019255387). | Recheck the merge queue's combined source. Deployment has separate gates. |
-| RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
-| RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
-| Windows x86-64 CLI | The sixth native run passed 44 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 45 methods. |
-| Windows ARM64 CLI | The sixth native run passed 44 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 45 methods. |
+| Intel macOS CLI | Qualified source was integrated into `main` at `7efb4b7b543018d68e5c5801e5f4b7eef74772b5`. The combined PR 42 [native check](https://github.com/stubbi/asm/actions/runs/42042426309) also passed. | Admit a new release host only after its distribution gates pass. |
+| Linux x86-64 and ARM64 servers | Qualified source was integrated into the same `main` revision. Both combined PR 42 [native package checks](https://github.com/stubbi/asm/actions/runs/42042426289) passed. | Deployment and recovery have separate gates. |
+| RISC-V64 server | The PR 42 [emulated image check](https://github.com/stubbi/asm/actions/runs/42042426266) passed. The [extracted package](https://github.com/stubbi/asm/actions/runs/42042426725) built, then passed 17 of 19 tests. | Diagnose the connection-limit failure and simultaneous-search error. Pass all 19 extracted-package cases. |
+| RISC-V64 CLI | The PR 42 [full-system Linux guest](https://github.com/stubbi/asm/actions/runs/42042426214) passed 356 CLI and 49 focused cases without skips. | Integrate qualified source after the separate server gate passes. Physical hardware and release admission remain unqualified. |
+| Windows x86-64 CLI | The eighth native run passed 45 of 46 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 46 methods. |
+| Windows ARM64 CLI | The eighth native run passed 45 of 46 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 46 methods. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
 The sixth Windows result used source `540620a9c8ed14fc5904d07c16dda0430cf9fcb1` in [run 42033134716](https://github.com/stubbi/asm/actions/runs/42033134716).
 Subtests can produce multiple failure records for one method.
-The [Windows record](windows-native-evidence.json) retains all six failed runs and their exact artifact boundaries.
+The [Windows record](windows-native-evidence.json) retains all eight failed runs and their exact artifact boundaries.
 Successful package jobs do not establish successful CLI package workflows.
 The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
+
+The seventh Windows [run 42038909292](https://github.com/stubbi/asm/actions/runs/42038909292) tested PR merge `93e6372555de392dc2ecc8c51d8fec92bb30383a`.
+Its Git tree matches the tree of frozen PR head `502cbe525a4fef1fc4ffca861cdc7d37cd9feaf1`.
+Both targets passed 44 of 45 methods.
+The primary-image unmap fixture stopped at an unsupported raw-header equality precondition on both targets.
+It made no unmap observation and retained no differing header bytes.
+The separate x86-64 rename control succeeded for an ordinary file and denied replacement of a suspended image.
+
+The eighth Windows [run 42042014143](https://github.com/stubbi/asm/actions/runs/42042014143) used development source `e147917ef5906ba92c8ab0715286bb7c25e0e409`.
+This manual run was separate from PR 41's frozen head.
+Both targets passed 45 of 46 methods; the positive updater case remained the sole failure.
+The deliberate application case passed after 125.157 seconds on x86-64 and 125.188754 seconds on ARM64.
+Both native Windows package scopes passed seven methods in each run.
+Each Linux reference scope passed 24 methods; ARM64 and RISC-V execution used QEMU.
+
+The corrected eighth-run kernel experiment completed all three controls on both recorded Windows hosts.
+Replacement failed with `STATUS_ACCESS_DENIED` (`0xC0000022`) while each copied process remained alive.
+Successful primary-image unmapping and a confirmed free memory region did not remove this denial.
+Both denied cases preserved the original and candidate files.
+Replacement succeeded after process exit and installed the candidate file identity at the original path.
+All copied children were never resumed and were reaped.
+The retained header snapshots differ only in the PE `ImageBase` field; the mutation cause remains unestablished.
+These controls cover kernel operations and copied native images; they do not independently qualify the Python controller as unemulated.
+They do not fix or qualify the production updater.
+The versioned Windows layout remains a proposal awaiting user approval.
+
+PR 42 head `66f432bb129c0c56922ec8edfa657e82b4fb9851` and tested merge `08baae84b06ddfac88406f43c5c8c44f6875a901` have the same Git tree.
+That tree is `0cc9e50e333cadd85c7a6c7b30d8b136ed113716`.
+The retained RISC-V CLI has 632,496 bytes and SHA-256 `42167bc9a21f3d215b6182ff7c3857df2469dc3c8151d5e9cf406edffc6f7d15`.
+The full-system check uses an emulated RISC-V machine and its own Linux guest kernel.
+It includes the three required kernel-denial branches; it does not qualify physical RISC-V hardware.
+The extracted-server check uses user-mode emulation and shares the host kernel.
+All 19 extracted-server cases ran, with one assertion failure and one error.
+The retained error lacks the failed HTTP response status and body, so its cause remains unknown.
+Successful image checks do not replace that failed package gate.
+The merge queue keeps this source outside `main` until the required checks pass.
 
 The sixth candidate passed 270 native Apple Silicon CLI tests, 97 registry tests, and 20 site tests.
 The release suite ran 78 cases with 12 platform-specific skips.
