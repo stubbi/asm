@@ -2,9 +2,9 @@
 
 This directory contains an unqualified Windows x86-64 implementation candidate.
 It does not establish released Windows support.
-Four native Windows runs executed the CLI and retained failed runtime results.
-The fourth run passed basic standalone and locking workflows.
-It retained archive, updater, PE validation, and path-output failures.
+Five native Windows runs executed the CLI and retained failed runtime results.
+The fifth run passed 40 of 45 runtime methods.
+Archive workflows and successful updater replacement still failed; the displaced-image fixture also reported an error.
 Keep the failed and missing results in the qualification record.
 
 The user outcome is the existing assembly project and package workflow on Windows.
@@ -105,11 +105,11 @@ python3 tools/windows_x64.py --output build/windows/x86_64/asm.s
 clang --no-default-config -target x86_64-pc-windows-msvc -c build/windows/x86_64/asm.s -o build/windows/x86_64/asm.obj
 ```
 
-The generated assembly SHA-256 was `f8915b82ef1d1bd01e27467855d64959003faf171d993df777592d3ab97e667f`.
-The object SHA-256 was `9c67e682b2b470072a1fa1da863992552c5456d560aacddacfaba29ada5a7b67`.
+The generated assembly SHA-256 was `a0c727199fd157589bcdbb46e654f7e5604c7e25b5b52698520d889c8bf83191`.
+The object SHA-256 was `18ba9858847fde7241524ce84485c5d34dcd6d059ae248162b6f259f0c8d06ad`.
 These digests identify source and object bytes, not a qualified executable.
-The temporary-import cross-link produced 99,328 bytes with SHA-256 `0faf8ddadf57dcccee909417e42683399ee0f51fd341d9739eca75a60685e64a`.
-`build/windows/x86_64/cross-build-fourth-fixes.json` records exact compile and link arguments.
+The temporary-import cross-link produced 99,328 bytes with SHA-256 `4137a2639468caaef0d9e77606c0f91fdd217f4791434c3e9750cc6a3fa81f11`.
+`build/windows/x86_64/cross-build-sixth-candidate.json` records exact compile and link arguments.
 The first link attempt failed because its temporary import library lacked `NtSetInformationFile`.
 Adding that existing SDK export to the local import definition permitted the cross-link.
 This does not establish native SDK linking or execution.
@@ -118,8 +118,8 @@ The required `make test` run retained two macOS bootstrap timing failures among 
 One exact rerun exceeded its 20-second process deadline.
 A stalled-verifier case took 13.98 seconds against its 10-second assertion.
 `build/x64-third-required-make-test.log` retains the full result.
-A later required `make test` run passed 270 tests.
-`build/x64-fourth-required-make-test.log` retains that result separately.
+Later required `make test` runs passed 270 tests.
+`build/x64-fourth-required-make-test.log` and `build/x64-sixth-required-make-test.log` retain those results separately.
 The earlier failures remain recorded; they are not converted into passes.
 
 `pe.s` checks a bounded AMD64 PE32+ console executable container.
@@ -137,7 +137,7 @@ A fixture build must remain separate from a release build.
 
 ## Regression checks with host shims
 
-On 2026-11-05, twenty-six focused checks passed on macOS.
+On 2026-11-05, thirty focused checks passed on macOS.
 The assembly fixtures execute through Rosetta with deterministic API shims.
 Other checks inspect produced COFF layouts, Clang behavior, and diagnostic failures.
 They do not establish Windows API behavior or native filesystem effects.
@@ -236,13 +236,38 @@ That fixture later failed during its preservation check; the full scenario was n
 The earlier CLI returned success after displacement, and that negative result remains retained.
 The new production check needs the corrected native scenario before qualification.
 
-The [fourth native run](https://github.com/stubbi/asm/actions/runs/42015009621) still rejected the positive source archive.
-Supplying raw tar bytes passes the prepared archive and source-manifest parsers in the ARM host checks.
-That isolation does not establish correct Windows gzip input or capture behavior.
-The next native diagnostic records raw child status, captured length, tar validation, and source-project validation.
-It also compares empty and minimal Windows environments with a fixed gzip executable.
-Binary probe output retains only byte counts and digests.
-Source archive success remains unproven until those native observations resolve the failure.
+The [fifth native run](https://github.com/stubbi/asm/actions/runs/42019241381) still rejected the positive source archive.
+Direct gzip probes passed with both empty and minimal Windows environments.
+Each produced 10,240 bytes with the expected raw tar digest.
+This result does not establish the CLI's capture or extraction behavior.
+The diagnostic's archive index used Windows text translation and failed before decompression.
+Its corrected byte writer preserves the registry's required LF line endings.
+A simulated Windows translation case reproduces the old CRLF error and passes after correction.
+
+Source review found a separate stage-finalization access defect.
+The archive root was reopened read-only before `SetSecurityInfo` changed its protected DACL.
+That operation requires `WRITE_DAC` on the retained handle.
+The prepared private stage reopen now requests only that additional right.
+Ordinary ancestors and read-only directory opens retain their previous access masks.
+The exact stage, native-open, and protection routines reproduce access denied before correction and success afterward.
+This establishes the access contract under deterministic shims; native archive success remains unproven.
+
+The first combined stage fixture crashed because its constant followed the extracted Intel-syntax instruction.
+Clang interpreted that forward symbol as a memory operand.
+Moving the constant before the instructions corrected the fixture.
+The meaningful access-denied result was evaluated only after that correction.
+The target preparation also defines its named internal flag before all instructions.
+
+Windows device-name checks now reject superscript digits one, two, and three after COM or LPT.
+Twelve bare and extension forms reproduced acceptance before correction.
+Ordinary superscript filenames remain accepted.
+
+The next diagnostic reuses the real positive updater fixture with separately instrumented CLI bytes.
+Its test transport and verifier enforce arguments but validate no real signature.
+It records raw rename, DACL, and flush API results alongside each commit syscall result.
+The logger preserves the API return value and thread error value across trace writes.
+A deterministic error-clobber case failed before that preservation change and now passes.
+Successful replacement still needs native confirmation; no replacement fallback has been added.
 
 NTFS POSIX rename replacement of the running CLI still needs a native test.
 If Windows refuses that operation, a separately reviewed completion helper is required.
@@ -257,7 +282,7 @@ It also records child-process setup stages, API results, and Windows error codes
 An error code is meaningful only when its API result indicates failure.
 The fixture runs the generated project and retains the actual exit status.
 It records ambient HOME ownership before setting the positive fixture owner.
-The diagnostic source cross-linked to 101,376 bytes with SHA-256 `7a6b016a156cb75f101011d8649e154dc842b5417ef0d8982d3dcdca4e40b304`.
+The diagnostic source cross-linked to 101,376 bytes with SHA-256 `01281907169ff2f6870bba9099802a1c1a4d6d45a176cc5deed92edd81274386`.
 The equal-version updater check makes no network request.
 The release generator never includes the diagnostic assembly.
 
@@ -300,3 +325,6 @@ They document API behavior; they do not qualify this implementation.
 - [Native process-query availability](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntqueryinformationprocess)
 - [Pinned process-class declaration](https://github.com/winsiderss/systeminformer/blob/0a4975a4763ad202747397ef5daf5893849b5b00/phnt/include/ntpsapi.h#L208)
 - [Pinned class 44 research notes](https://github.com/m417z/ntdoc/blob/43061ffc1205edd6b49a146b03ebd243f36f3565/descriptions/processinfoclass.md#processimagefilemapping-44)
+
+- [DACL update handle access](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setsecurityinfo)
+- [Reserved Windows names](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)

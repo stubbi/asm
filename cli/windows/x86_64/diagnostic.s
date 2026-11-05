@@ -83,7 +83,7 @@ win_diag_stat_line: .ascii "STAT mode=00000000 owner=00000000 links=00000000\n"
 .text
 /* RAX=setup result. Log a bounded process stage/result; an error code is
  * meaningful only when the documented API result denotes failure. Preserve
- * RAX and internal registers. This does not enter the release executable. */
+ * RAX, LastError, and internal registers. This does not enter the release executable. */
 win_diag_process_log:
     WFRAME
     mov r12, rax
@@ -102,6 +102,8 @@ win_diag_process_log:
     lea rsi, [rip + win_diag_process_line]
     mov edx, 51
     call write_all
+    mov ecx, r13d
+    call SetLastError
     mov rax, r12
     WLEAVE
 .data

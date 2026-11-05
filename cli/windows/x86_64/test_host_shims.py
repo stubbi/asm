@@ -62,7 +62,8 @@ class HostShims(unittest.TestCase):
         cls.prepared = prep.prepare(ROOT / 'cli/asm.s')
         start = cls.platform_source.index('.macro WFRAME\n')
         end = cls.platform_source.index('.text\n', start)
-        cls.macros = '.intel_syntax noprefix\n' + cls.platform_source[start:end] + '\n.text\n'
+        constants = '\n'.join(re.findall(r'^\.equ WIN_.*$',cls.prepared,re.M)) + '\n'
+        cls.macros = '.intel_syntax noprefix\n' + constants + cls.platform_source[start:end] + '\n.text\n'
         cls.prefix = '_' if platform.system() == 'Darwin' else ''
         cls.build_pe()
         cls.build_path()
@@ -78,6 +79,9 @@ class HostShims(unittest.TestCase):
         cls.build_image_identity()
         cls.build_release_metadata()
         cls.build_display_path()
+        cls.build_arc_stage_protection()
+        cls.build_device_names()
+        cls.build_diagnostic_last_error()
 
     @classmethod
     def tearDownClass(cls):
@@ -625,6 +629,152 @@ win_path_wide: .space 8192
         for target in ['made-up','x86_64-pc-windows-msvc']:
             self.assertEqual(self.run_fixture('registry-target',target).stdout.strip(),'0')
 
+
+    @classmethod
+    def build_diagnostic_last_error(cls):
+        assembly = cls.macros + (LOCAL / 'diagnostic.s').read_text()
+        assembly += r"""
+.text
+.global diagnostic_call
+diagnostic_call:
+    WFRAME
+    mov eax, 17
+    call win_diag_process_log
+    WLEAVE
+.global diagnostic_error
+diagnostic_error:
+    mov eax, [rip + test_last_error]
+    ret
+GetLastError:
+    mov eax, [rip + test_last_error]
+    ret
+SetLastError:
+    mov [rip + test_last_error], ecx
+    ret
+write_all:
+    mov dword ptr [rip + test_last_error], 999
+    xor eax, eax
+    ret
+WideCharToMultiByte:
+    xor eax, eax
+    ret
+.data
+test_last_error: .long 42
+"""
+        driver = '#include <stdio.h>\nextern long diagnostic_call(void),diagnostic_error(void);\nint main(){long v=diagnostic_call();long e=diagnostic_error();printf("%ld %ld\\n",v,e);}\n'
+        cls.build('diagnostic-last-error',assembly,driver,['diagnostic_call','diagnostic_error'])
+
+    def test_diagnostic_logging_preserves_api_result_and_last_error(self):
+        self.assertEqual(self.run_fixture('diagnostic-last-error').stdout.strip(),'17 42')
+
+    @classmethod
+    def build_device_names(cls):
+        assembly = cls.macros + block(cls.platform_source,'win_component_safe','win_prepare_verifier_environment')
+        assembly += '\n.text\n.global device_component\ndevice_component:\n    lea rdx, [rsi*2]\n    jmp win_component_safe\n'
+        driver = r"""
+#include <stdio.h>
+#include <stdlib.h>
+extern long device_component(const unsigned short*,unsigned long);
+int main(int n,char**a){unsigned short name[32];unsigned long z=0;for(const char*p=a[1];*p;p++)name[z++]=(unsigned char)*p;name[z++]=strtoul(a[2],0,0);if(atoi(a[3])){name[z++]='.';name[z++]='s';}printf("%ld\n",device_component(name,z));}
+"""
+        cls.build('device-names',assembly,driver,['device_component'])
+
+    def test_superscript_reserved_devices_are_rejected_without_broad_unicode_rejection(self):
+        for prefix in ['COM','LPT']:
+            for digit in [0xb9,0xb2,0xb3]:
+                for extension in [0,1]:
+                    with self.subTest(prefix=prefix,digit=digit,extension=extension):
+                        r = self.run_fixture('device-names',prefix,str(digit),str(extension))
+                        self.assertEqual(r.returncode,0,r.stderr)
+                        self.assertEqual(r.stdout.strip(),'0')
+        for prefix,digit in [('data',0xb9),('data',0xb2),('data',0xb3),('COM',0x2074),('LPT',0x2074)]:
+            for extension in [0,1]:
+                self.assertEqual(self.run_fixture('device-names',prefix,str(digit),str(extension)).stdout.strip(),'1')
+
+    @classmethod
+    def build_arc_stage_protection(cls):
+        assembly = cls.macros + '\n.equ ARC_DIRECTORY,722944\n' + block(cls.prepared,'arc_create_stage','arc_member_parent')
+        assembly += '\n.text\n' + block(cls.platform_source,'win_nt_open','win_drive_path')
+        assembly += '\n.text\n' + block(cls.platform_source,'win_protect','win_ntfs')
+        assembly += r"""
+.text
+.global protect_arc_stage
+protect_arc_stage:
+    WFRAME
+    call arc_create_stage
+    test eax, eax
+    jnz 1f
+    mov rdi, [rip + arc_root_fd]
+    call win_protect
+1:  WLEAVE
+win_syscall:
+    WFRAME
+    cmp eax, 318
+    je .Lstage_random
+    cmp eax, 258
+    je .Lstage_mkdir
+    cmp eax, 257
+    jne .Lstage_unknown
+    mov r10, rdx
+    xor edi, edi
+    lea rsi, [rip + test_stage_wide]
+    mov edx, 10
+    xor r8d, r8d
+    call win_nt_open
+    WLEAVE
+.Lstage_random:
+    mov rax, rsi
+    mov qword ptr [rdi], 0
+    mov qword ptr [rdi + 8], 0
+    WLEAVE
+.Lstage_mkdir:
+    xor eax, eax
+    WLEAVE
+.Lstage_unknown:
+    mov rax, -38
+    WLEAVE
+NtCreateFile:
+    mov [rip + test_stage_access], edx
+    mov qword ptr [rcx], 77
+    xor eax, eax
+    ret
+GetFileInformationByHandleEx:
+    mov qword ptr [r8], 16
+    mov eax, 1
+    ret
+SetSecurityInfo:
+    mov eax, 5
+    cmp rcx, 77
+    jne 1f
+    test dword ptr [rip + test_stage_access], 0x40000
+    jz 1f
+    xor eax, eax
+1:  ret
+CloseHandle:
+    ret
+win_nt_error:
+    mov rax, -13
+    ret
+.data
+arc_parent_fd: .quad 7
+arc_root_fd: .quad -1
+arc_stage_created: .byte 0
+arc_random: .space 16
+arc_hex: .asciz "0123456789abcdef"
+arc_stage_name: .asciz ".asm-stage-00000000000000000000000000000000"
+.p2align 2
+test_stage_access: .long 0
+test_stage_wide: .short 's','t','a','g','e',0
+win_private_sd: .space 64
+win_private_acl: .space 4096
+"""
+        driver = '#include <stdio.h>\nextern long protect_arc_stage(void);\nint main(){printf("%ld\\n",protect_arc_stage());}\n'
+        cls.build('arc-stage-protection',assembly,driver,['protect_arc_stage'])
+
+    def test_private_archive_stage_open_permits_required_dacl_finalization(self):
+        r = self.run_fixture('arc-stage-protection')
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(r.stdout.strip(),'0')
 
     @classmethod
     def build_release_metadata(cls):
@@ -1186,6 +1336,20 @@ class DiagnosticEvidence(unittest.TestCase):
         self.assertEqual(row['stdout'],'')
         self.assertEqual(row['stdout_bytes'],len(data))
         self.assertEqual(row['stdout_sha256'],self.module.hashlib.sha256(data).hexdigest())
+
+    def test_source_probe_index_keeps_lf_under_windows_text_translation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            project = work / 'project'
+            (project / 'src').mkdir(parents=True)
+            (project / 'asm.toml').write_bytes(b'[package]\nname = "hello"\n')
+            (project / 'src/main.s').write_bytes(b'.text\n')
+            def windows_text(path, text, *args, **options):
+                return path.write_bytes(text.replace('\n','\r\n').encode('utf-8'))
+            with mock.patch.object(Path,'write_text',autospec=True,side_effect=windows_text):
+                artifact,index,raw = self.module.source_fixture(work,project)
+            self.assertNotIn(b'\r',index.read_bytes())
+            self.assertEqual(index.read_bytes().splitlines()[0],b'# asm-registry-v1')
 
     def test_os_error_and_later_exception_preserve_collected_rows(self):
         report = {'commands': []}

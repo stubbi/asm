@@ -369,7 +369,10 @@ win_nt_open:
 4:  test r14d, 64
     jz 8f
     or edx, 0x40000 /* created files need WRITE_DAC for final protection */
-8:  test r14d, 0x20000000
+8:  test r14d, WIN_OPEN_SET_DACL /* private stage's later protection needs WRITE_DAC */
+    jz 11f
+    or edx, 0x40000
+11: test r14d, 0x20000000
     jz 9f
     or edx, 0x40002
 9:  test r14d, 0x40000000 /* internal image-only FILE_EXECUTE access */
@@ -3101,10 +3104,17 @@ win_component_safe:
     jmp .Lwcs_good
 .Lwcs_four:
     movzx eax, word ptr [rdi + 6]
+    cmp eax, 0xb9 /* Windows also recognizes superscript1/2/3 devices */
+    je .Lwcs_device_digit
+    cmp eax, 0xb2
+    je .Lwcs_device_digit
+    cmp eax, 0xb3
+    je .Lwcs_device_digit
     cmp eax, '1'
     jb .Lwcs_good
     cmp eax, '9'
     ja .Lwcs_good
+.Lwcs_device_digit:
     movzx eax, word ptr [rdi]
     or eax, 32
     cmp eax, 'c'

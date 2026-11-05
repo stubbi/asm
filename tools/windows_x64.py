@@ -25,6 +25,9 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     if source.name == 'elf.s':
         return (LOCAL / 'pe.s').read_text()
     if source.name == 'asm.s':
+        anchor = '.intel_syntax noprefix\n'
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor + '.equ WIN_OPEN_SET_DACL, 0x04000000\n', 1)
         text = replace_routine(text, '_start', '.Lglobals', '''_start:
     cld
     call win_initialize
@@ -246,6 +249,12 @@ def prepare(source, toolchain_bin='C:/Program Files/LLVM/bin'):
     jne bad_args
 .Lwin_native_directory_absolute:''')
     if source.name == 'archive.s':
+        begin, end = text.index('arc_create_stage:\n'), text.index('arc_member_parent:\n')
+        stage = text[begin:end]
+        anchor = '    mov edx, ARC_DIRECTORY\n'
+        assert stage.count(anchor) == 1
+        stage = stage.replace(anchor, '    mov edx, ARC_DIRECTORY + WIN_OPEN_SET_DACL\n')
+        text = text[:begin] + stage + text[end:]
         text = replace_routine(text, 'arc_decompress', 'arc_is_zero', '''arc_decompress:
     jmp win_decompress
 ''')

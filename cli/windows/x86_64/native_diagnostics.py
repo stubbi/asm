@@ -21,6 +21,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+import sys
+import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 LOCAL = Path(__file__).resolve().parent
@@ -28,7 +30,10 @@ LIMIT = 65536
 
 
 def diagnostic_source(module):
-    source = module.prepare(ROOT / 'cli/asm.s')
+    return instrument_source(module.prepare(ROOT / 'cli/asm.s'))
+
+
+def instrument_source(source):
     anchor = '    call NtCreateFile\n    test eax, eax\n'
     if source.count(anchor) != 1:
         raise ValueError('NtCreateFile diagnostic anchor changed')
@@ -74,6 +79,19 @@ def diagnostic_source(module):
         anchor = '    call ' + function + '\n'
         assert source.count(anchor) >= 1
         source = source.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], ' + str(stage) + '\n    call win_diag_process_log\n')
+    for function, stage in [('NtSetInformationFile', 17), ('SetSecurityInfo', 18), ('FlushFileBuffers', 19)]:
+        anchor = '    call ' + function + '\n'
+        assert source.count(anchor) == 1
+        source = source.replace(anchor, anchor + '    mov dword ptr [rip + win_diag_process_stage], ' + str(stage) + '\n    call win_diag_process_log\n')
+    begin = source.index('self_commit_update:\n')
+    end = source.index('self_update_cleanup:\n', begin)
+    body = source[begin:end].split('    call win_syscall\n')
+    assert len(body) == 7, 'self commit syscall contract changed'
+    traced = body[0]
+    for index, remaining in enumerate(body[1:]):
+        traced += ('    call win_syscall\n    mov dword ptr [rip + win_diag_process_stage], ' +
+                   str(20+index) + '\n    call win_diag_process_log\n' + remaining)
+    source = source[:begin] + traced + source[end:]
     return source + '\n' + (LOCAL / 'diagnostic.s').read_text()
 
 
@@ -251,8 +269,58 @@ def source_fixture(work, project):
     fields = ['fixture/hello','0.1.0','x86_64-windows','source',
               hashlib.sha256(payload).hexdigest(),'https://fixture.invalid/source.tar.gz',
               str(len(payload)),'Diagnostic source fixture']
-    index.write_text('# asm-registry-v1\n' + '\t'.join(fields) + '\n')
+    index.write_bytes(('# asm-registry-v1\n' + '\t'.join(fields) + '\n').encode('utf-8'))
     return artifact, index, stream.getvalue()
+
+
+def update_probe(report, binary):
+    """Reuse the exact positive runtime fixture with separately traced CLI bytes.
+
+    The fixture enforces arguments and supplies bytes. It validates no real
+    signature and gives no production provenance qualification.
+    """
+    test_directory = ROOT / 'tests/windows'
+    previous = {key: os.environ.get(key) for key in ['ASM_WINDOWS_EXE','ASM_WINDOWS_TARGET']}
+    try:
+        os.environ['ASM_WINDOWS_EXE'] = str(binary)
+        os.environ['ASM_WINDOWS_TARGET'] = 'x86_64-windows'
+        sys.path.insert(0, str(test_directory))
+        spec = importlib.util.spec_from_file_location('x64_update_diagnostic_runtime', test_directory / 'test_runtime.py')
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
+    finally:
+        if sys.path and sys.path[0] == str(test_directory):
+            sys.path.pop(0)
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    class UpdateDiagnostic(runtime.SelfUpdateRuntimeTests):
+        @classmethod
+        def build_cli(cls, source, name):
+            return super().build_cli(instrument_source(source), 'diagnostic-' + name)
+
+        @classmethod
+        def build_command(cls, argv):
+            command = list(argv)
+            if str(command[0]).lower().endswith('clang.exe') and '--no-default-config' not in command:
+                command.insert(1, '--no-default-config')
+            return super().build_command(command)
+
+    result = unittest.TestResult()
+    suite = unittest.TestSuite([UpdateDiagnostic('test_update_replaces_exact_bytes_after_three_provenance_bindings')])
+    try:
+        suite.run(result)
+    finally:
+        report['commands'].extend(runtime.COMMANDS)
+        report['update_probe_artifacts'] = runtime.TEST_ARTIFACTS
+        report['update_probe'] = {'outcome': 'pass' if result.wasSuccessful() else 'fail',
+            'tests_run': result.testsRun, 'native_qualification': False,
+            'scope': 'Test-only transport/verifier fixtures and instrumented assembly',
+            'failures': [{'test': str(test), 'detail': detail[:LIMIT]} for test,detail in result.failures],
+            'errors': [{'test': str(test), 'detail': detail[:LIMIT]} for test,detail in result.errors]}
 
 
 def main():
@@ -267,6 +335,7 @@ def main():
     report = {'process_stages': {str(i+1): name for i,name in enumerate(['win_wide','win_wide_command','win_build_environment','win_explicit_environment','CreatePipe','SetHandleInformation','win_inherit_duplicate','CreateFileW','InitializeProcThreadAttributeList','UpdateProcThreadAttribute','CreateProcessW'])}, 'kind': 'windows-x64-adapter-diagnostics', 'native_qualification': False, 'commands': []}
 
     report['process_stages'].update({'12': 'gzip-capture-status', '13': 'gzip-capture-bytes', '14': 'tar-validation', '15': 'source-project-validation', '16': 'raw-child-exit-code'})
+    report['process_stages'].update({'17': 'NtSetInformationFile-status', '18': 'SetSecurityInfo-error', '19': 'FlushFileBuffers-bool', '20': 'commit-open-result', '21': 'commit-protect-result', '22': 'commit-flush-result', '23': 'commit-close-result', '24': 'commit-rename-result', '25': 'commit-failure-close-result'})
 
     def run(argv, **options):
         return run_recorded(report, argv, **options)
@@ -322,6 +391,7 @@ def main():
                     report['security'] = api_security([
                         *reversed(installation.parents), installation, new_project,
                         new_project / 'asm.toml', new_project / 'src/main.s'])
+                    update_probe(report, binary)
     result = collect_evidence(args.evidence, report, collect)
     print('Adapter diagnostic evidence:', args.evidence)
     return result
