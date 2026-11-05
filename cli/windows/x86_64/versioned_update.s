@@ -30,6 +30,8 @@ win_managed_open_installation:
     call win_syscall
     cmp rax, -11
     je self_busy
+    cmp rax, -13
+    je self_permissions_error
     test rax, rax
     js self_filesystem_error
     mov eax, 138

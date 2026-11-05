@@ -1732,7 +1732,7 @@ win_duplicate:
     mov rax, -22
     WLEAVE
 
-/* Directory locks use a private, no-share file anchored to the directory.
+/* Directory locks use a checked private file anchored to the directory.
  * The lock HANDLE remains associated with the descriptor and is released
  * when that descriptor closes. Existing lock files are reusable; no unlink
  * race controls lock ownership. RDI=fd RSI=LOCK_EX|LOCK_NB or LOCK_UN.
@@ -1789,6 +1789,25 @@ win_lock:
     lea rax, [rip + win_handles]
     mov qword ptr [rax + rdi*8], 0
 .Lwl_native_lock:
+    /* Validate this same held lock, including an existing OPEN_IF result.
+     * win_stat maps owner1 to the current user and unsafe grants to mode18.
+     * Require one link and a regular file before kernel lock admission.
+     * Local stat[144] occupies rbp-352..rbp-209, above API argument storage. */
+    mov rdi, r13
+    lea rsi, [rbp - 352]
+    call win_stat
+    test rax, rax
+    js .Lwl_close_permissions
+    cmp qword ptr [rbp - 336], 1
+    jne .Lwl_close_permissions
+    cmp dword ptr [rbp - 324], 1
+    jne .Lwl_close_permissions
+    mov eax, [rbp - 328]
+    test eax, 3072 + 18
+    jnz .Lwl_close_permissions
+    and eax, 61440
+    cmp eax, 32768
+    jne .Lwl_close_permissions
     /* LockFileEx gives kernel-held nonblocking byte-range exclusion. */
     mov rcx, r13
     mov edx, 1
@@ -1819,6 +1838,11 @@ win_lock:
     mov rcx, r13
     call CloseHandle
     mov rax, -11
+    WLEAVE
+.Lwl_close_permissions:
+    mov rcx, r13
+    call CloseHandle
+    mov rax, -13
     WLEAVE
 .Lwl_bad:
     mov rax, -9

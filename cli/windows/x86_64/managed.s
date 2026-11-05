@@ -581,12 +581,12 @@ win_managed_snapshot_ready:
     mov rdx, [rip + wm_fields + 40]
     call win_managed_metadata_record
     test rax, rax
-    js win_managed_error
+    jnz win_managed_error
     lea rdi, [rip + wm_payload_meta]
     lea rsi, [rip + wm_launcher_meta]
     call win_managed_compatible
     test rax, rax
-    js win_managed_compatibility_error
+    jnz win_managed_compatibility_error
     cmp dword ptr [rip + wm_role], 1
     je .Lwm_start_launch
     /* Retained payloads remain usable after selection changes. Their own
@@ -683,7 +683,7 @@ win_managed_metadata_record:
 .Lwm_meta_record_bad:
     mov rax, -22
     WLEAVE
-/* RDI=three LE uint32, RSI=validated canonical version. EAX=0/-22.
+/* RDI=three LE uint32, RSI=validated canonical version. RAX=0/-22.
  * Scratch caller-save. No allocations. */
 win_managed_version_text:
     xor r8d, r8d
@@ -711,9 +711,9 @@ win_managed_version_text:
     xor eax, eax
     ret
 .Lwm_version_bad:
-    mov eax, -22
+    mov rax, -22
     ret
-/* RDI=payload metadata, RSI=actual held launcher metadata. EAX=0/-22.
+/* RDI=payload metadata, RSI=actual held launcher metadata. RAX=0/-22.
  * Validated schema/protocol1 inputs; compare lexicographic minimum version. */
 win_managed_compatible:
     xor ecx, ecx

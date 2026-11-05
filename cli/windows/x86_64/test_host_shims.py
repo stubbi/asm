@@ -1703,6 +1703,156 @@ query_status: .long 0
         cls.build_cleanup(macros, source)
         cls.build_launcher(macros, platform_source)
         cls.build_held_rename(macros, platform_source)
+        cls.build_startup_requirements(macros, source)
+        cls.build_lock_admission(macros, platform_source)
+
+    @classmethod
+    def build_startup_requirements(cls, macros, source):
+        start = source.index('    lea rdi, [rip + wm_payload_meta]\n    mov rsi, [rip + wm_fields]\n')
+        end = source.index('    cmp dword ptr [rip + wm_role], 1\n', start)
+        decision = source[start:end]
+        assembly = macros + '\n.text\n' + block(source, 'win_managed_metadata_record', 'win_managed_cleanup')
+        assembly += r'''
+.text
+.global check_startup_requirements
+check_startup_requirements:
+    WFRAME
+    cmp edi, 0
+    je .Lrequirements_ready
+    mov dword ptr [rip + wm_payload_meta + 40], 7
+    cmp edi, 1
+    jne 1f
+    mov dword ptr [rip + wm_launcher_meta + 28], 8
+    jmp .Lrequirements_ready
+1:  lea rax, [rip + next_minimum]
+    mov [rip + wm_fields + 40], rax
+    cmp edi, 2
+    je .Lrequirements_ready
+    lea rax, [rip + wrong_version]
+    mov [rip + wm_fields], rax
+.Lrequirements_ready:
+'''
+        assembly += decision + '''    xor eax,eax
+    WLEAVE
+win_managed_error:
+win_managed_compatibility_error:
+    mov rax,-1
+    WLEAVE
+.data
+wm_payload_meta: .quad 0,0,0
+    .long 0,6,1,0,6,0
+    .space 16
+wm_launcher_meta: .quad 0,0,0
+    .long 0,6,0,0,6,0
+    .space 16
+wm_fields: .quad good_version,0,0,0,0,good_minimum
+good_version: .asciz "0.6.1"
+wrong_version: .asciz "0.6.2"
+good_minimum: .asciz "0.6.0"
+next_minimum: .asciz "0.7.0"
+'''
+        cls.build('startup-requirements', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern long check_startup_requirements(int);\nint main(int n,char**a){printf("%ld\\n",check_startup_requirements(atoi(a[1])));}\n', ['check_startup_requirements'])
+
+    @classmethod
+    def build_lock_admission(cls, macros, source):
+        assembly = macros + '\n.text\n' + block(source, 'win_lock', 'win_getdents')
+        assembly += r'''
+.text
+.global check_lock_admission
+check_lock_admission:
+    WFRAME
+    mov [rip + lock_case], edi
+    mov edi,3
+    mov esi,6
+    call win_lock
+    mov r12,rax
+    cmp dword ptr [rip + lock_case],0
+    je .Llock_expect_valid
+    cmp dword ptr [rip + close_count],1
+    jne .Llock_test_bad
+    cmp dword ptr [rip + lock_calls],0
+    jne .Llock_test_bad
+    cmp qword ptr [rip + win_locks + 24],0
+    jne .Llock_test_bad
+    jmp .Llock_test_done
+.Llock_expect_valid:
+    cmp dword ptr [rip + close_count],0
+    jne .Llock_test_bad
+    cmp dword ptr [rip + lock_calls],1
+    jne .Llock_test_bad
+    cmp qword ptr [rip + win_locks + 24],77
+    jne .Llock_test_bad
+.Llock_test_done:
+    mov rax,r12
+    WLEAVE
+.Llock_test_bad:
+    /* Preserve the actual bad admission as a test result, not a crash. */
+    mov eax,999
+    WLEAVE
+win_handle:
+    mov eax,55
+    ret
+win_ntfs:
+    xor eax,eax
+    ret
+GetFileInformationByHandle:
+    mov dword ptr [rdx],16
+    mov eax,1
+    ret
+win_nt_open:
+    mov eax,77
+    ret
+win_duplicate:
+    ud2
+win_stat:
+    cmp rdi,77
+    jne .Llock_stat_bad
+    mov qword ptr [rsi + 16],1
+    mov dword ptr [rsi + 24],0x81c0
+    mov dword ptr [rsi + 28],1
+    mov eax,[rip + lock_case]
+    cmp eax,1
+    jne 1f
+    mov qword ptr [rsi + 16],2
+1:  cmp eax,2
+    jne 2f
+    or dword ptr [rsi + 24],18
+2:  cmp eax,3
+    jne 3f
+    mov dword ptr [rsi + 28],2
+3:  cmp eax,4
+    jne 4f
+    mov dword ptr [rsi + 24],0x41c0
+4:  cmp eax,5
+    je .Llock_stat_bad
+    xor eax,eax
+    ret
+.Llock_stat_bad:
+    mov rax,-13
+    ret
+LockFileEx:
+    cmp rcx,77
+    jne .Llock_stat_bad
+    inc dword ptr [rip + lock_calls]
+    mov eax,1
+    ret
+CloseHandle:
+    cmp rcx,77
+    jne .Llock_stat_bad
+    inc dword ptr [rip + close_count]
+    mov eax,1
+    ret
+.data
+lock_case: .long 0
+close_count: .long 0
+lock_calls: .long 0
+.p2align 3
+win_locks: .space 2048
+win_handles: .space 2048
+win_lock_overlapped: .space 32
+win_lock_name: .short 46,97,115,109,46,108,111,99,107,0
+'''
+        cls.build('lock-admission', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern long check_lock_admission(int);\nint main(int n,char**a){printf("%ld\\n",check_lock_admission(atoi(a[1])));}\n', ['check_lock_admission'])
 
     @classmethod
     def build_held_rename(cls, macros, platform_source):
@@ -2139,6 +2289,20 @@ close_count: .long 0
                 result = self.run_fixture('held-rename', str(status), str(mode))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), str(expected))
+
+    def test_startup_rejects_record_minimum_and_launcher_incompatibility(self):
+        for mode, expected in [(0,0), (1,-1), (2,-1), (3,-1)]:
+            with self.subTest(mode=mode):
+                result = self.run_fixture('startup-requirements', str(mode))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected))
+
+    def test_lock_admission_checks_held_file_and_closes_refusals(self):
+        for mode in range(6):
+            with self.subTest(mode=mode):
+                result = self.run_fixture('lock-admission', str(mode))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), '0' if mode == 0 else '-13')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
