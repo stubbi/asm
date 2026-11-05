@@ -324,7 +324,10 @@ win_managed_hold:
     mov rax, -13
     WLEAVE
 /* RDI=dirfd,RSI=component,EDX=slot,R10D=directory boolean.
- * RAX=0/-errno; owns the opened descriptor even on stat failure. */
+ * RAX=0/-errno; owns the opened descriptor even on stat failure.
+ * Directory anchors permit write sharing for kernel publication opens;
+ * private ownership, DACL and retained identities remain mandatory.
+ * Regular-file snapshots deny write sharing throughout their lifetime. */
 win_managed_open_slot:
     WFRAME
     mov r12d, edx
@@ -332,7 +335,7 @@ win_managed_open_slot:
     mov edx, 0x08000000
     test r13d, r13d
     jz 1f
-    or edx, 65536
+    mov edx, 65536
 1:  cmp r12d, 4
     je 2f
     cmp r12d, 8

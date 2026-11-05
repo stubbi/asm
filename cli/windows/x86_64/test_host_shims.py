@@ -1705,6 +1705,168 @@ query_status: .long 0
         cls.build_held_rename(macros, platform_source)
         cls.build_startup_requirements(macros, source)
         cls.build_lock_admission(macros, platform_source)
+        cls.build_directory_publication(macros, source)
+
+    @classmethod
+    def build_directory_publication(cls, macros, managed):
+        source = (LOCAL / 'versioned_update.s').read_text()
+        start = source.index('    mov eax, 258\n', source.index('win_managed_commit_update:\n'))
+        end = source.index('.Lwmu_published:\n', start)
+        assembly = macros + '\n.text\n.global check_publication\ncheck_publication:\n    WFRAME\n'
+        assembly += source[start:end]
+        assembly += '''
+.Lwmu_published:
+    xor eax,eax
+    WLEAVE
+self_io_error:
+    mov rax,-5
+    WLEAVE
+self_permissions_error:
+    mov rax,-13
+    WLEAVE
+self_changed:
+    mov rax,-116
+    WLEAVE
+'''
+        assembly += block(source, 'win_managed_candidate', 'win_managed_commit_update')
+        assembly += source[source.index('win_managed_same_fd:\n'):]
+        assembly += '\n.text\n' + block(managed, 'win_managed_version_text', 'win_managed_cleanup')
+        assembly += block((ROOT / 'cli/self_update.s').read_text(), 'self_check_file_stat', 'self_check_destination')
+        assembly += f'''
+.text
+win_syscall:
+    WFRAME
+    mov rcx,rdx
+    mov rdx,rsi
+    mov rsi,rdi
+    mov rdi,rax
+    call {cls.prefix}publication_io
+    WLEAVE
+win_open: jmp {cls.prefix}publication_open
+win_managed_rename_fd: jmp {cls.prefix}publication_rename
+win_hash_fd: jmp {cls.prefix}publication_hash
+win_managed_pe: jmp {cls.prefix}publication_metadata
+streq: jmp {cls.prefix}publication_same
+win_handle:
+    mov rax,rdi
+    ret
+.data
+registry_selected: .quad selection
+selection: .quad 0,selected_version,0,0,selected_hash,0,0
+selected_version: .asciz "0.6.1"
+selected_hash: .asciz "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+registry_expected_size: .quad 4096
+self_uid: .long 1
+self_binary_name: .asciz "asm.exe"
+wm_version_stage: .asciz "version"
+.p2align 3
+self_stage_fd: .quad 10
+wm_versions_fd: .quad 20
+wm_candidate_fd: .quad 30
+wm_candidate_dir_fd: .quad -1
+wm_existing_dir_fd: .quad -1
+wm_existing_fd: .quad -1
+wm_candidate_stat: .space 144
+wm_stat: .space 144
+wm_hash: .space 65
+wm_candidate_meta: .space 64
+wm_launcher_meta: .space 24
+    .long 0,6,0
+    .space 28
+'''
+        driver = r'''
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern long check_publication(void);
+static int mode,child_open=1,moved,published,closes,hashes,metadata;
+int publication_same(const char*a,const char*b){return strcmp(a,b)==0;}
+long publication_io(long n,long fd,void*buffer,long extra){
+    if(n==258)return fd==10?0:-22;
+    if(n==3){if(fd!=30||!child_open)abort();child_open=0;closes++;return mode==10?-5:0;}
+    if(n!=5)abort();
+    memset(buffer,0,144);uint64_t*s=buffer;uint32_t*w=buffer;
+    s[0]=7;s[1]=(fd==40||fd==50)?100:200;s[2]=1;w[6]=(fd==40||fd==50)?0040700:0100700;w[7]=1;s[6]=4096;
+    if(fd==50&&mode==1)s[1]=900; /* an existing valid digest directory */
+    if(fd==60&&mode==1)s[1]=901;
+    if(fd==50&&mode==2)s[1]++;
+    if(fd==60&&mode==3)s[1]++;
+    if(fd==60&&mode==6)s[2]=2;
+    if(fd==60&&mode==7)w[7]=0;
+    if(fd==60&&mode==8)w[6]|=0020;
+    if(fd==50&&mode==9)w[6]|=0002;
+    if(fd==50&&mode==14)w[6]=0100700;
+    return 0;
+}
+long publication_open(long parent,const char*name,unsigned flags){
+    if(parent==10&&!strcmp(name,"version"))return 40;
+    if(parent==20&&!strcmp(name,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")){
+        if(child_open||(!published&&mode!=1))abort();return mode==13?-2:50;
+    }
+    if(parent==50&&!strcmp(name,"asm.exe")){
+        if(!(flags&0x08000000))abort();return mode==12?-2:60;
+    }
+    abort();
+}
+long publication_rename(long source,long parent,const char*name,long no_replace){
+    if(no_replace!=1)abort();
+    if(source==30&&parent==40&&!strcmp(name,"asm.exe")){if(!child_open)abort();moved++;return 0;}
+    if(source!=40||parent!=20||!moved)abort();
+    /* Measured class65 behavior: an open descendant prevents this rename. */
+    if(child_open)return -13;
+    if(mode==1)return -17;
+    if(mode==11)return -13;
+    published++;return 0;
+}
+long publication_hash(long fd,long size,char*out){
+    if(fd!=60||size!=4096)abort();hashes++;memset(out,mode==4?'b':'a',64);out[64]=0;return 0;
+}
+long publication_metadata(long fd,long size,uint32_t*out){
+    if(fd!=60||size!=4096)abort();metadata++;memset(out,0,64);out[7]=6;out[8]=mode==15?2:1;out[10]=6;return mode==5?-22:0;
+}
+int main(int n,char**a){mode=atoi(a[1]);long r=check_publication();printf("%ld %d %d %d %d %d\n",r,closes,moved,published,hashes,metadata);}
+'''
+        cls.build('directory-publication', assembly, driver, ['check_publication'])
+
+        assembly = macros + '\n.text\n' + block(managed, 'win_managed_open_slot', 'win_managed_startup')
+        assembly += r'''
+.text
+.global check_snapshot_open
+check_snapshot_open:
+    mov r10d,edi
+    mov edx,esi
+    jmp win_managed_open_slot
+win_open:
+    mov [rip + open_flags],edx
+    mov eax,30
+    ret
+win_managed_hold:
+    mov eax,[rip + open_flags]
+    ret
+.data
+open_flags: .long 0
+'''
+        cls.build('snapshot-open', assembly, '#include <stdio.h>\n#include <stdlib.h>\nextern long check_snapshot_open(int,int);\nint main(int n,char**a){printf("%ld\\n",check_snapshot_open(atoi(a[1]),atoi(a[2])));}\n', ['check_snapshot_open'])
+
+    def test_directory_publication_closes_descendant_and_revalidates_destination(self):
+        for mode, expected in [(0,'0 1 1 1 1 1'), (1,'0 1 1 0 1 1')]:
+            with self.subTest(mode=mode):
+                result = self.run_fixture('directory-publication', str(mode))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
+        for mode in range(2,16):
+            with self.subTest(mode=mode):
+                result = self.run_fixture('directory-publication', str(mode))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotEqual(result.stdout.split()[0], '0')
+
+    def test_directory_snapshots_allow_publication_without_file_write_sharing(self):
+        for directory, slot, expected in [(1,2,65536),(1,3,65536),(1,7,65536),(0,6,0x08000000),(0,8,0x0a000000)]:
+            with self.subTest(directory=directory,slot=slot):
+                result = self.run_fixture('snapshot-open', str(directory), str(slot))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected))
 
     @classmethod
     def build_startup_requirements(cls, macros, source):

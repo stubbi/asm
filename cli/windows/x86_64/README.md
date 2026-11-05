@@ -125,6 +125,11 @@ It flushes a new record and verifies its held file identity and exact bytes.
 One held-source rename over `current.tsv` activates the update.
 The candidate is never executed during this process.
 
+Directory publication closes the staged payload handle while retaining its identity and the source directory handle.
+After publication, the updater opens the destination through the held versions directory.
+It checks both identities and repeats payload ownership, access, link-count, digest, and metadata checks before preparing the selection record.
+Directory handles permit write sharing for kernel publication opens; payload and record handles still deny write sharing.
+
 Record readers permit read and delete sharing, but deny write sharing.
 A launcher with an old snapshot can start that old payload after activation.
 A retained payload can run ordinary commands, but only the active payload can update the installation.
@@ -141,6 +146,13 @@ Host shims execute extracted assembly for record parsing, metadata, borrowed has
 The hashing shim checks descriptor control flow with a fake BCrypt result; it does not qualify Windows cryptography.
 Cross-linking uses temporary import libraries and does not establish native SDK or runtime success.
 The integration report records exact source and artifact digests and retains failed checks.
+
+[Native probe 42076905685](https://github.com/stubbi/asm/actions/runs/42076905685) tested source `01baa2c227c398e9ba6b64610d48249183ff5e90` on both Windows targets.
+The original directory publication returned `C0000043` with a destination handle that denied write sharing.
+Allowing directory write sharing still returned `C0000022` while a descendant remained open.
+Closing the descendant permitted publication and preserved the directory identity and file bytes.
+These inert-file probes establish the observed kernel behavior, not a successful CLI update.
+The corrected updater still requires coordinator-owned native lifecycle qualification.
 
 ## Retained earlier evidence
 

@@ -84,7 +84,7 @@ win_managed_recheck_entry:
     mov edx, 0x08000000
     test r13d, r13d
     jz 1f
-    or edx, 65536
+    mov edx, 65536
 1:  xor r10d, r10d
     call win_open
     test rax, rax
@@ -370,6 +370,21 @@ win_managed_payload_flush:
     call win_managed_rename_fd
     test rax, rax
     js self_io_error
+    /* NTFS refuses to rename a directory with an open descendant. Retain
+     * this verified file identity, then close the only staged descendant.
+     * The held source directory remains the rename authority. */
+    mov rdi, [rip + wm_candidate_fd]
+    mov eax, 5
+    lea rsi, [rip + wm_candidate_stat]
+    call win_syscall
+    test rax, rax
+    js self_io_error
+    mov rdi, [rip + wm_candidate_fd]
+    mov qword ptr [rip + wm_candidate_fd], -1
+    mov eax, 3
+    call win_syscall
+    test rax, rax
+    js self_io_error
     mov rbx, [rip + registry_selected]
     mov rdi, [rip + wm_candidate_dir_fd]
     call win_handle
@@ -381,12 +396,15 @@ win_managed_payload_flush:
     mov rdx, [rbx + 32]
     mov ecx, 1
     call win_managed_rename_fd
+    mov r14d, 1 /* new publication must retain both directory and file IDs */
     test rax, rax
-    jns .Lwmu_published
+    jns .Lwmu_open_published
     cmp rax, -17
     jne self_io_error
+    xor r14d, r14d
     /* A prior exact digest publication is reusable only after complete
      * directory security and held artifact checks. Other bytes remain intact. */
+.Lwmu_open_published:
     mov rdi, [rip + wm_versions_fd]
     mov rsi, [rbx + 32]
     mov edx, 65536
@@ -406,6 +424,18 @@ win_managed_payload_flush:
     jne self_permissions_error
     test dword ptr [rip + wm_stat + 24], 18
     jnz self_permissions_error
+    mov eax, [rip + wm_stat + 24]
+    and eax, 61440
+    cmp eax, 16384
+    jne self_permissions_error
+    test r14d, r14d
+    jz .Lwmu_open_published_file
+    mov rdi, [rip + wm_existing_dir_fd]
+    mov rsi, [rip + wm_candidate_dir_fd]
+    call win_managed_same_fd
+    test rax, rax
+    js self_changed
+.Lwmu_open_published_file:
     mov rdi, [rip + wm_existing_dir_fd]
     lea rsi, [rip + self_binary_name]
     mov edx, 0x1a000000
@@ -414,6 +444,25 @@ win_managed_payload_flush:
     test rax, rax
     js self_io_error
     mov [rip + wm_existing_fd], rax
+    test r14d, r14d
+    jz .Lwmu_verify_published_file
+    mov rdi, rax
+    mov eax, 5
+    lea rsi, [rip + wm_stat]
+    call win_syscall
+    test rax, rax
+    js self_io_error
+    mov rax, [rip + wm_stat]
+    cmp rax, [rip + wm_candidate_stat]
+    jne self_changed
+    mov rax, [rip + wm_stat + 8]
+    cmp rax, [rip + wm_candidate_stat + 8]
+    jne self_changed
+.Lwmu_verify_published_file:
+    /* Reopened by the held destination: single link, owner/DACL, exact
+     * size/digest, metadata version, and held launcher compatibility. Keep
+     * this deny-write-share descriptor through the final location recheck. */
+    mov rax, [rip + wm_existing_fd]
     mov rdi, rax
     call win_managed_candidate
     test rax, rax
@@ -544,11 +593,8 @@ win_managed_record_flush:
     js self_changed
     mov [rip + wm_final_dir_fd], rax
     mov rdi, rax
-    mov rsi, [rip + wm_candidate_dir_fd]
-    cmp qword ptr [rip + wm_existing_dir_fd], 0
-    jl 1f
     mov rsi, [rip + wm_existing_dir_fd]
-1:  call win_managed_same_fd
+    call win_managed_same_fd
     test rax, rax
     js self_changed
     mov rdi, [rip + wm_final_dir_fd]
@@ -560,11 +606,8 @@ win_managed_record_flush:
     js self_changed
     mov [rip + wm_final_fd], rax
     mov rdi, rax
-    mov rsi, [rip + wm_candidate_fd]
-    cmp qword ptr [rip + wm_existing_fd], 0
-    jl 1f
     mov rsi, [rip + wm_existing_fd]
-1:  call win_managed_same_fd
+    call win_managed_same_fd
     test rax, rax
     js self_changed
     mov rdi, [rip + wm_final_fd]
@@ -611,6 +654,7 @@ wm_next_name: .asciz "current.next"
 wm_update_fds:
 wm_candidate_fd: .quad -1
 wm_candidate_dir_fd: .quad -1
+/* Held published destination, whether newly published or already present. */
 wm_existing_dir_fd: .quad -1
 wm_existing_fd: .quad -1
 wm_next_fd: .quad -1
@@ -622,6 +666,7 @@ wm_min_text: .space 33
 wm_decimal: .space 32
 wm_next_record: .space 257
 wm_next_length: .space 8
+wm_candidate_stat: .space 144
 
 .text
 /* RDI=borrowed flushed source HANDLE with DELETE, RSI=held parent HANDLE,
