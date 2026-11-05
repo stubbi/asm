@@ -116,3 +116,33 @@ The server, Intel macOS, hosted-image, reference-package, and release sessions h
 The RISC-V CLI assignment preserves the dependency session's existing work.
 The coordination workspace passed its imported native macOS baseline: 215 tests.
 This result does not qualify either Windows port.
+
+## Implementation checkpoints
+
+The initial audit above remains historical.
+These later checks retain their own source and artifact boundaries.
+They do not change published host support.
+
+| Component | Observed result | Remaining gate |
+| --- | --- | --- |
+| Intel macOS CLI | Native Intel qualification passed 175 cases at `cea61bdfc8f87555f93d2e00bde15063f3df680b`. [Run](https://github.com/stubbi/asm/actions/runs/41940484143). | Requalify the unified target contracts, then complete distribution integration. |
+| Linux x86-64 and ARM64 servers | Both native targets passed the corrected schema-privilege suites. [Run](https://github.com/stubbi/asm/actions/runs/41944988752). | Preserve the [exact package evidence](server-package-evidence.json) during integration. Deployment has separate gates. |
+| RISC-V64 server | The hosted foundation passed an explicitly emulated image suite. [Run](https://github.com/stubbi/asm/actions/runs/41941462037). | Run the extracted package through the RISC-V CLI and target-native build tools. |
+| RISC-V64 CLI | A complete source port and guest qualification work are in progress. | Finish the unified parser integration and complete CLI tests under a RISC-V guest kernel. |
+| Windows x86-64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix access checks and process execution. Pass the expanded 44-case suite and updater identity checks. |
+| Windows ARM64 CLI | Native SDK linkage and execution succeeded; the 40-case runtime suite failed. | Fix the observed runtime failures. Pass the expanded 44-case suite and updater identity checks. |
+| Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
+| Windows verifier | The frozen helper source builds for both Windows targets. | Run independent native Go suites with protected NTFS fixtures. Trust activation remains separate. |
+
+The second Windows result used source `74221fc69af0b19444dede9eb71c400effdd1855` in [run 41947783095](https://github.com/stubbi/asm/actions/runs/41947783095).
+The first [failed run](https://github.com/stubbi/asm/actions/runs/41942208419) remains part of the evidence.
+Successful package jobs do not establish successful CLI package workflows.
+The expanded suite includes named target selection, nonexecuting test builds, inactive recipe failures, and target-specific dependency locks.
+
+The combined worktree passed 263 native Apple Silicon CLI tests, 73 registry tests, and seven server-evidence parser tests.
+Earlier local bootstrap timeouts remain recorded in the coordination ledger.
+These local checks do not replace a clean release build or another target's runtime qualification.
+
+The merge queue owns integration into `main`.
+The bounded 0.6.0 release retains only its independently qualified existing hosts.
+Later host additions require a new version and their own release evidence.
