@@ -853,8 +853,9 @@ win_managed_lock:
     ret
 /* Close owned candidate/next-record files before shared stage deletion.
  * No inputs or result. Each slot becomes -1 before close; repeated calls are
- * safe. Preserve other contexts and the original error. Changes x0/x9-x11,
- * x16 and flags; stack16 plus arm_close. No name-based deletion occurs here.
+ * safe. Preserve other contexts and the original error. arm_close can change
+ * ABI caller-saved registers and flags; stack16 plus arm_close.
+ * No name-based deletion occurs here.
  * Legacy FileDispositionInfo retains names while these file handles remain.
  */
 win_managed_release_stage_files:
