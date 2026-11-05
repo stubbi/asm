@@ -129,8 +129,8 @@ They do not change published host support.
 | Linux x86-64 and ARM64 servers | Qualified source was integrated into the same `main` revision. Both combined PR 42 [native package checks](https://github.com/stubbi/asm/actions/runs/42042426289) passed. | Deployment and recovery have separate gates. |
 | RISC-V64 server | The PR 42 [emulated image check](https://github.com/stubbi/asm/actions/runs/42042426266) passed. The [extracted package](https://github.com/stubbi/asm/actions/runs/42042426725) built, then passed 17 of 19 tests. | Diagnose the connection-limit failure and simultaneous-search error. Pass all 19 extracted-package cases. |
 | RISC-V64 CLI | The PR 42 [full-system Linux guest](https://github.com/stubbi/asm/actions/runs/42042426214) passed 356 CLI and 49 focused cases without skips. | Integrate qualified source after the separate server gate passes. Physical hardware and release admission remain unqualified. |
-| Windows x86-64 CLI | The eighth native run passed 45 of 46 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 46 methods. |
-| Windows ARM64 CLI | The eighth native run passed 45 of 46 methods; updater replacement failed. | Complete atomic updater replacement and recovery. Pass all 46 methods. |
+| Windows x86-64 CLI | The eighth native run passed 45 of 46 direct-layout methods; updater replacement failed. | Pass the current 118-case managed suite on native x86-64 Windows. |
+| Windows ARM64 CLI | The eighth native run passed 45 of 46 direct-layout methods; updater replacement failed. | Pass the current 118-case managed suite on native ARM64 Windows. |
 | Reference packages | Both Windows package jobs and the Linux GNU/QEMU package job passed. | Retain execution-mode labels and recheck changed package inputs. |
 | Windows verifier | Both native Go suites passed all 19 mandatory Windows cases. [Run](https://github.com/stubbi/asm/actions/runs/42013532036). | Bind release checks to executed artifact bytes. Trust activation remains separate. |
 
@@ -163,7 +163,8 @@ All copied children were never resumed and were reaped.
 The retained header snapshots differ only in the PE `ImageBase` field; the mutation cause remains unestablished.
 These controls cover kernel operations and copied native images; they do not independently qualify the Python controller as unemulated.
 They do not fix or qualify the production updater.
-The versioned Windows layout remains a proposal awaiting user approval.
+The user approved the versioned Windows layout on 5 November 2026.
+Managed source is implemented; native qualification remains pending.
 
 PR 42 head `66f432bb129c0c56922ec8edfa657e82b4fb9851` and tested merge `08baae84b06ddfac88406f43c5c8c44f6875a901` have the same Git tree.
 That tree is `0cc9e50e333cadd85c7a6c7b30d8b136ed113716`.

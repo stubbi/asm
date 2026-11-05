@@ -84,7 +84,10 @@ It cannot produce native qualification evidence.
 
 ## Observable acceptance checks
 
-The [runtime suite](../tests/windows/test_runtime.py) runs 45 test cases through native PE executables.
+The [current driver](../tools/windows_test.py) collects 118 cases per target across five modules.
+The suite includes native command, managed installation, recovery, resolver, and child-image checks.
+Three recovery checks inspect test orchestration.
+Native execution remains required.
 Each child has a timeout.
 The tests use temporary directories and deterministic archive contents.
 They check exit codes, standard output, standard error, and file effects.
@@ -109,7 +112,7 @@ This matches the private-directory ownership requirement enforced by the CLI.
 | Installed programs | Install, list, upgrade, deliberate execution, uninstall, hardlinks, and edited-file preservation |
 | Publication preparation | Source and PE records contain exact digests; invalid source, ABI fields, and existing outputs fail |
 | Native libraries | An assembly `main` calls Kernel32 and UCRT; a compile-only checker asserts LLP64 |
-| Self-update | Exact replacement, three provenance bindings, substituted identity rejection, and finalization failure preservation |
+| Self-update | Exact selection-record activation, three provenance bindings, substituted identity rejection, and finalization failure preservation |
 | Capture deadline | The exact capture loop checks an advancing clock while one-byte reads remain continuously available |
 
 Microsoft documents [Windows path aliases](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) and [reparse-point operations](https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-point-operations).
@@ -118,8 +121,8 @@ The tests observe named hostile cases; they do not establish the absence of all 
 
 The self-update cases compile separate test-only assembly executables.
 They replace two fixed tool paths with native PE fixtures.
-They retain the parser, staging, identity checks, process control, and replacement mechanism under test.
-The finalization variant injects an invalid directory handle only at the final replacement call.
+They retain the parser, staging, identity checks, process control, and activation mechanism under test.
+The finalization variant injects an invalid directory handle only at the final selection-record rename.
 The test requires all three successful verifier bindings before that failure.
 
 The displaced-image case starts the CLI with its [primary thread suspended](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags).

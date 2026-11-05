@@ -1,13 +1,15 @@
 # Proposed Windows versioned installation
 
-Status: approved for implementation by the user on 5 November 2026. Implementation and qualification are pending.
+Status: approved by the user on 5 November 2026.
+Managed source is implemented; native qualification remains pending.
 
 ## Intent and evidence
 
 The user wants the CLI and server to work across the selected major architectures.
-Windows x64 and ARM64 currently pass 45 of 46 native runtime methods.
-The remaining failure is successful self-update replacement.
-The 125-second ordinary-application case passes on both targets.
+The earlier direct-layout candidate passed 45 of 46 native runtime methods on Windows x64 and ARM64.
+Successful self-update replacement was the remaining failure.
+The current managed suite has no native result.
+That earlier candidate passed the 125-second ordinary-application case on both targets.
 
 [Native run 42042014143](https://github.com/stubbi/asm/actions/runs/42042014143) tested source `e147917ef5906ba92c8ab0715286bb7c25e0e409`.
 On both hosts, replacement failed with `STATUS_ACCESS_DENIED` while the original process remained alive.
