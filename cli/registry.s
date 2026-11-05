@@ -241,16 +241,13 @@ registry_command:
     je registry_bad_args
     cmp qword ptr [rip + registry_output], 0
     jne registry_bad_args
-    mov rdi, [rip + registry_target]
-    lea rsi, [rip + registry_host]
-    call streq
-    test eax, eax
-    jz registry_install_target_error
     mov rdi, [rip + registry_kind]
     lea rsi, [rip + registry_source_kind]
     call streq
     test eax, eax
     jz registry_bad_args
+    mov rax, [rip + registry_target]
+    mov [rip + project_requested_target], rax
     call read_manifest
 .Lregistry_load:
     cmp byte ptr [rip + registry_mode], 5

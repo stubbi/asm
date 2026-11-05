@@ -14,7 +14,7 @@
       "limits": [
         "The reference executable uses the separate Linux x86-64 system-call convention; the math routine uses the System V AMD64 callable ABI.",
         "The reference object format is little-endian ELF64.",
-        "The native CLI builds only for its own host target.",
+        "Published Asm 0.5.0 builds only for its own host target; unreleased source builds also support standalone Linux cross builds.",
         "An empty feature list means this guidance specifies no optional CPU extension; it does not qualify every package or machine.",
         "The registry target name does not select CPU features, ABI revisions, or runtime libraries.",
         "No Linux kernel minimum is established by this reference."
@@ -29,11 +29,11 @@
       "required_cpu_features": [],
       "native_cli": true,
       "build_tools": ["GNU as", "GNU ld (Binutils)", "Asm for native project builds", "aarch64-linux-gnu-as and aarch64-linux-gnu-ld for external cross-assembly", "qemu-aarch64 for optional Linux user-mode emulation"],
-      "execution_evidence": "Current native CLI host in README.md and cli/commands.json. docs/specs/registry.md records QEMU execution of the reference example. examples/hello-aarch64/README.md supplies native and cross-tool commands. Reviewed 2026-11-04; these are distinct evidence scopes.",
+      "execution_evidence": "Current native CLI host in README.md and cli/commands.json. docs/specs/registry.md records QEMU execution of the reference example. examples/hello/targets/aarch64-linux/README.md supplies native and cross-tool commands. Reviewed 2026-11-04; these are distinct evidence scopes.",
       "limits": [
         "The freestanding reference uses the separate Linux AArch64 system-call convention. A callable routine needs its own AAPCS64 contract and tests.",
         "The reference object format is little-endian ELF64.",
-        "The native CLI builds only for its own host target; external cross tools are separate.",
+        "Published Asm 0.5.0 builds only for its own host; unreleased source builds select standalone Linux targets with fixed cross tools.",
         "Emulated reference output does not establish physical-target performance.",
         "An empty feature list does not qualify optional instructions in a selected artifact.",
         "The registry does not select library ABIs or CPU features.",
@@ -55,7 +55,7 @@
         "Intel macOS is unsupported.",
         "Linux syscall conventions do not apply to macOS.",
         "Apple reserves x18; external calls require Apple's stack and argument conventions.",
-        "The native CLI builds only for its own host target.",
+        "Published Asm 0.5.0 builds only for its own host target; unreleased source builds also support standalone Linux cross builds.",
         "An empty feature list does not establish compatibility for optional instructions.",
         "The recorded ad-hoc signature does not identify the publisher; Developer ID signing and notarization were not run."
       ]
@@ -69,11 +69,11 @@
       "required_cpu_features": [],
       "native_cli": false,
       "build_tools": ["riscv64-linux-gnu-as -march=rv64i -mabi=lp64", "riscv64-linux-gnu-ld -z noexecstack", "qemu-riscv64 or qemu-riscv64-static for Linux user-mode emulation"],
-      "execution_evidence": "docs/specs/registry.md records assembly, linking, and QEMU execution of the reference example. examples/hello-riscv64/README.md specifies RV64I, LP64, and disabled linker relaxation. Reviewed 2026-11-04; no physical RISC-V execution or performance claim follows.",
+      "execution_evidence": "docs/specs/registry.md records assembly, linking, and QEMU execution of the reference example. examples/hello/targets/riscv64-linux/README.md specifies RV64I, LP64, and disabled linker relaxation. Reviewed 2026-11-04; no physical RISC-V execution or performance claim follows.",
       "limits": [
         "The reference uses little-endian RV64I, LP64, and the Linux RISC-V system-call convention.",
-        "There is no native RISC-V Asm CLI or general Asm cross-build support.",
-        "Use documented external tools; asm run does not build or execute this target.",
+        "There is no native RISC-V Asm CLI. Unreleased source builds can cross-build standalone RISC-V Linux with explicit tools.",
+        "Use asm build --target riscv64-linux with an unreleased source CLI and its documented tools. asm run never executes this foreign target.",
         "The empty optional-feature list applies only to the RV64I reference; a registry target name can cover packages with other requirements.",
         "LP64 does not imply LP64D or floating-point extensions.",
         "Emulated output does not qualify physical hardware or native performance.",

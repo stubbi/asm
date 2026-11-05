@@ -4,12 +4,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Synthetic ELF fixtures are inspected only; they are never executed.
 """
 import importlib.util
+import io
 import json
 from pathlib import Path
 import platform
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -46,7 +48,7 @@ class ServerQualificationTests(unittest.TestCase):
     def recorder_inputs(self, work):
         binary = work / "server"
         binary.write_bytes(elf())
-        for name, count in (("native-link", 8), ("reference", 18), ("hosted", 11)):
+        for name, count in (("native-link", 8), ("reference", 19), ("hosted", 11)):
             (work / (name + "-tests.log")).write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
         (work / "build-failure-tests.log").write_text('{"status":"pass","tests":4}\n')
         output = work / "qualification.json"
@@ -64,6 +66,28 @@ class ServerQualificationTests(unittest.TestCase):
         with patch.object(sys, "argv", arguments), patch.object(record.platform, "uname", return_value=linux), \
                 patch.object(record.subprocess, "run", side_effect=tool_result):
             return record.main()
+
+    def test_reference_suite_requires_all_nineteen_tests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            arguments, output = self.recorder_inputs(work)
+            manifest = (b'[package]\nname = "asm-server"\nversion = "0.1.0"\n'
+                        b'[build]\nsource = "server.s"\ntarget = "x86_64-linux"\n')
+            files = {"asm.toml": manifest, "server.s": b".text\n",
+                     "README.md": b"Assembly server fixture.\n", "LICENSE": b"AGPL-3.0-or-later\n"}
+            with tarfile.open(work / "source.tar.gz", "w:gz") as archive:
+                for name, data in files.items():
+                    member = tarfile.TarInfo(name)
+                    member.mode = 0o644
+                    member.size = len(data)
+                    archive.addfile(member, io.BytesIO(data))
+            for count, expected, status in ((19, 0, "pass"), (18, 1, "fail")):
+                with self.subTest(count=count):
+                    (work / "reference-tests.log").write_text(f"Ran {count} tests in 1.0s\n\nOK\n")
+                    self.assertEqual(self.run_recorder(arguments), expected)
+                    report = json.loads(output.read_text())
+                    self.assertEqual(report["status"], status)
+                    self.assertEqual(report["tests"]["reference"]["status"], status)
 
     def test_missing_source_archive_cannot_receive_a_pass_record(self):
         with tempfile.TemporaryDirectory() as temporary:

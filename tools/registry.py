@@ -29,6 +29,9 @@ SCHEMA = 1
 HEADER = "# asm-registry-v1\n"
 TARGETS = {"x86_64-linux": 62, "aarch64-linux": 183, "riscv64-linux": 243}
 TARGETS["aarch64-macos"] = 0x0100000C
+# Project declarations retain reference ports before their executable formats
+# and native CLI hosts qualify for registry publication.
+PROJECT_TARGETS = set(TARGETS) | {"x86_64-macos", "x86_64-windows", "aarch64-windows"}
 KINDS = {"source", "executable"}
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 16 * 1024 * 1024
@@ -44,6 +47,7 @@ MAX_FEATURES = 64
 MAX_FEATURE_ENTRIES = 64
 MAX_REQUIREMENT_BYTES = 128
 MAX_REQUIREMENT_TERMS = 8
+MAX_PROJECT_BYTES = 8190
 LICENSES = {
     "AGPL-3.0-only", "AGPL-3.0-or-later", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "GPL-2.0-only",
     "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "ISC",
@@ -469,23 +473,35 @@ def read_archive(data: bytes) -> dict[str, bytes]:
     raise RegistryError("tar end marker is missing")
 
 
-def validate_project(files: dict[str, bytes], name: str, version: str, target: str) -> dict:
-    """Validate project contents and return the parsed source manifest."""
-    require("asm.toml" in files, "source archive needs asm.toml")
-    require(any(path in files for path in ("LICENSE", "LICENSE.txt", "LICENSE.md")), "source archive needs a license file")
-    require(any(path in files for path in ("README", "README.md", "README.txt")), "source archive needs a README")
-    try:
-        project = tomllib.loads(files["asm.toml"].decode("utf-8"))
-        if {"resolution", "dependencies", "features"} & project.keys():
-            validate_resolution_project(files["asm.toml"], project)
-        require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
-        require(project["package"]["version"] == version, "project version does not match release")
-        build = exact_keys(project["build"], {"source", "target", "link", "libraries", "check"},
+def project_builds(project: object) -> dict[str, dict]:
+    """Validate every declared recipe without reading files or selecting a host."""
+    project = exact_keys(project, {"package", "build", "target", "resolution", "dependencies", "features"},
+                         {"package"}, "project")
+    package = exact_keys(project["package"], {"name", "version"}, {"name", "version"}, "project package")
+    require(isinstance(package["name"], str), "project name must be text")
+    package_name("owner/" + package["name"])
+    version_tuple(package["version"])
+    require(("build" in project) != ("target" in project),
+            "project needs either build or target tables")
+    if "build" in project:
+        build = exact_keys(project["build"], {"source", "target", "test", "link", "libraries", "check"},
                            {"source", "target"}, "project build")
-        require(build["target"] == target, "project target does not match artifact")
-        source = portable_path(build["source"])
-        require(source in files, "declared assembly source is missing")
-        require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
+        require(isinstance(build["target"], str) and build["target"] in PROJECT_TARGETS,
+                "unsupported project target")
+        builds = {build["target"]: build}
+    else:
+        builds = project["target"]
+        require(isinstance(builds, dict) and 0 < len(builds) <= len(PROJECT_TARGETS),
+                "project needs one to seven target tables")
+        for target, build in builds.items():
+            require(target in PROJECT_TARGETS, "unsupported project target")
+            exact_keys(build, {"source", "test", "link", "libraries", "check"}, {"source"},
+                       "project target")
+    for build in builds.values():
+        for field in ("source", "test"):
+            if field in build:
+                path = portable_path(build[field])
+                require(path.endswith((".s", ".S", ".asm")), f"build {field} must be an assembly file")
         for field in ("link", "libraries", "check"):
             if field in build:
                 plain_text(build[field], 255, f"build {field}")
@@ -498,10 +514,47 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
             require(len(names) <= 8 and all(re.fullmatch(r"[a-z][a-z0-9_-]{0,30}", item) for item in names),
                     "build libraries must contain up to eight names separated by one space")
         if "check" in build:
-            checker = portable_path(build["check"])
-            require(checker.endswith(".c"), "build check must be a C file")
-            require(checker in files, "declared compile checker is missing")
-    except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            require(portable_path(build["check"]).endswith(".c"), "build check must be a C file")
+    return builds
+
+
+def project_build(project: object, target: str) -> dict:
+    """Select one explicit target after validating all project recipes."""
+    builds = project_builds(project)
+    require(isinstance(target, str) and target in PROJECT_TARGETS, "unsupported project target")
+    require(target in builds, "project target does not match artifact")
+    return builds[target]
+
+
+def validate_project(files: dict[str, bytes], name: str, version: str, target: str) -> dict:
+    """Validate project contents and return the parsed source manifest."""
+    require("asm.toml" in files, "source archive needs asm.toml")
+    require(any(path in files for path in ("LICENSE", "LICENSE.txt", "LICENSE.md")), "source archive needs a license file")
+    require(any(path in files for path in ("README", "README.md", "README.txt")), "source archive needs a README")
+    try:
+        project = tomllib.loads(files["asm.toml"].decode("utf-8"))
+        versioned = bool({"resolution", "dependencies", "features"} & project.keys())
+        if versioned:
+            validate_resolution_project(files["asm.toml"], project)
+        require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
+        require(project["package"]["version"] == version, "project version does not match release")
+        extended = "target" in project or bool({"test", "link", "libraries", "check"} & project["build"].keys())
+        if extended or versioned:
+            require(len(files["asm.toml"]) <= MAX_PROJECT_BYTES, "source asm.toml exceeds 8190 bytes")
+            builds = project_builds(project)
+            require(isinstance(target, str) and target in builds, "project target does not match artifact")
+            for build in builds.values():
+                for field in ("source", "test", "check"):
+                    if field in build:
+                        require(build[field] in files, f"declared build {field} is missing")
+        else:
+            # Unversioned legacy archives keep their historical metadata and
+            # size contract. New recipes and schema-1 resolution are bounded.
+            require(project["build"]["target"] == target, "project target does not match artifact")
+            source = portable_path(project["build"]["source"])
+            require(source in files, "declared assembly source is missing")
+            require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
+    except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RegistryError("invalid source asm.toml") from error
     return project
 
@@ -725,7 +778,8 @@ class _SourceDependencyMetadata:
 
     def __init__(self, project: dict, artifact: dict):
         self.identity = (project["package"]["name"], project["package"]["version"],
-                         project["build"]["target"], artifact["bytes"], artifact["sha256"])
+                         (project["build"]["target"] if "build" in project else artifact["target"]),
+                         artifact["bytes"], artifact["sha256"])
         dependencies = []
         for name, declaration in sorted(project.get("dependencies", {}).items()):
             declaration = {"version": declaration} if isinstance(declaration, str) else declaration

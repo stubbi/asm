@@ -53,7 +53,11 @@ class NativeCliTests(unittest.TestCase):
         self.assertEqual(json.loads(self.cli("version", "--json").stdout)["version"], VERSION)
         self.assertTrue(json.loads(self.cli("doctor", "--json").stdout)["ok"])
         self.assertIn("new", json.loads(self.cli("help", "--json").stdout)["commands"])
-        self.assertEqual(json.loads(self.cli("targets", "--json").stdout), {"host": TARGET, "targets": [TARGET]})
+        build_targets = ["x86_64-linux", "aarch64-linux", "riscv64-linux"]
+        if IS_MACOS:
+            build_targets.append("aarch64-macos")
+        self.assertEqual(json.loads(self.cli("targets", "--json").stdout),
+                         {"host": TARGET, "targets": build_targets})
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
         self.assertIn("yank", status["unimplemented"])
@@ -297,6 +301,103 @@ class NativeCliTests(unittest.TestCase):
         self.cli("nosuchcommand", code=2)
         self.replace_manifest(project, TARGET, OTHER_TARGET)
         self.cli("build", cwd=project, code=2)
+
+    def target_manifest(self, project, entries):
+        text = '[package]\nname = "hello"\nversion = "0.1.0"\n'
+        for target, fields in entries:
+            text += f'\n[target.{target}]\n'
+            text += ''.join(f'{key} = "{value}"\n' for key, value in fields.items())
+        (project / "asm.toml").write_text(text)
+
+    def test_multiple_targets_select_native_source_and_test_in_any_order(self):
+        project = self.project()
+        (project / "src/foreign.s").write_text("foreign instructions must not be assembled\n")
+        (project / "tests/native.s").write_text(exit_source(0))
+        # A selected test must replace the default, which deliberately fails.
+        (project / "tests/main.s").write_text(exit_source(17))
+        entries = [
+            (TARGET, {"source": "src/main.s", "test": "tests/native.s"}),
+            (OTHER_TARGET, {"source": "src/foreign.s", "link": "c", "libraries": "pthread"}),
+        ]
+        for ordered in (entries, list(reversed(entries))):
+            with self.subTest(order=[target for target, _ in ordered]):
+                self.target_manifest(project, ordered)
+                self.cli("build", "--target", TRIPLE, cwd=project)
+                result = self.cli("run", cwd=project)
+                self.assertEqual(result.stdout, "Hello from asm!\n")
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(self.cli("test", cwd=project).stdout, "Passed tests/native.s\n")
+                result = self.cli("test", "--json", cwd=project)
+                self.assertEqual(json.loads(result.stdout), {"ok": True, "test": "tests/native.s"})
+                self.cli("clean", cwd=project)
+                self.assertFalse((project / "build/app").exists())
+
+    def test_legacy_manifest_accepts_explicit_test_and_preserves_default(self):
+        project = self.project()
+        self.cli("test", cwd=project)
+        (project / "tests/custom.s").write_text(exit_source(0))
+        with (project / "asm.toml").open("a") as manifest:
+            manifest.write('test = "tests/custom.s"\n')
+        self.assertEqual(self.cli("test", cwd=project).stdout, "Passed tests/custom.s\n")
+
+    def test_invalid_target_tables_preserve_previous_artifacts(self):
+        project = self.project()
+        self.cli("build", cwd=project)
+        previous = (project / "build/app").read_bytes()
+        package = '[package]\nname = "hello"\nversion = "0.1.0"\n'
+        native = f'\n[target.{TARGET}]\nsource = "src/main.s"\n'
+        foreign = f'\n[target.{OTHER_TARGET}]\nsource = "src/foreign.s"\n'
+        malformed = [
+            package + native + native,
+            package + native + f'\n[build]\nsource = "src/main.s"\ntarget = "{TARGET}"\n',
+            package + f'\n[build]\nsource = "src/main.s"\ntarget = "{TARGET}"\n' + native,
+            package + native + '\n[target.unknown]\nsource = "src/main.s"\n',
+            package + native + foreign.replace("src/foreign.s", "../outside.s"),
+            package + foreign.replace("src/foreign.s", "../outside.s") + native,
+            package + native + foreign + 'test = "../outside.s"\n',
+            package + native + foreign + 'libraries = "pthread"\n',
+            package + native + foreign + 'source = "src/another.s"\n',
+            package + native + f'\n[target.{OTHER_TARGET}]\n',
+            package + native + f'target = "{TARGET}"\n',
+            package + native + 'test = "tests/main.s"\ntest = "tests/other.s"\n',
+            package + native + foreign + 'unknown = "value"\n',
+            package + native + '[package]\nname = "other"\nversion = "0.1.0"\n',
+        ]
+        for content in malformed:
+            with self.subTest(content=content):
+                (project / "asm.toml").write_text(content)
+                result = self.cli("build", "--json", cwd=project, code=1)
+                self.assertFalse(json.loads(result.stderr)["ok"])
+                self.assertEqual(result.stdout, "")
+                self.assertEqual((project / "build/app").read_bytes(), previous)
+                self.assertEqual(list((project / "build").glob(".asm-*")), [])
+
+    def test_missing_native_entry_and_foreign_override_fail_before_build(self):
+        project = self.project()
+        self.cli("build", cwd=project)
+        previous = (project / "build/app").read_bytes()
+        self.target_manifest(project, [(OTHER_TARGET, {"source": "src/main.s"})])
+        result = self.cli("build", "--json", cwd=project, code=2)
+        self.assertIn("target", json.loads(result.stderr)["error"])
+        self.target_manifest(project, [(TARGET, {"source": "src/main.s"})])
+        self.cli("build", "--target", OTHER_TARGET, cwd=project, code=2)
+        self.assertEqual((project / "build/app").read_bytes(), previous)
+
+    def test_target_specific_failed_test_reports_failure(self):
+        project = self.project()
+        (project / "tests/failure.s").write_text(exit_source(23))
+        self.target_manifest(project, [(TARGET, {"source": "src/main.s", "test": "tests/failure.s"})])
+        result = self.cli("test", "--json", cwd=project, code=23)
+        self.assertFalse(json.loads(result.stderr)["ok"])
+        self.assertEqual(result.stdout, "")
+
+    def test_multi_target_hello_example_uses_native_implementation(self):
+        project = self.work / "example"
+        shutil.copytree(ROOT / "examples/hello", project, ignore=shutil.ignore_patterns("build"))
+        result = self.cli("run", cwd=project)
+        self.assertEqual(result.stdout, "Hello from asm!\n")
+        self.assertEqual(result.stderr, "")
+        self.cli("test", cwd=project)
 
     def test_leading_dash_path_with_separator(self):
         self.cli("new", "--", "-literal")

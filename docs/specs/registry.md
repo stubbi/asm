@@ -35,10 +35,17 @@ target = "x86_64-linux"
 
 The native CLI accepts a small TOML subset. The publication record is separate. Registry validation checks that the project name, version, and target agree with that record. It also requires the declared assembly source, a README, and a license file.
 
-Source builds accept the optional native library fields described in [the build contract](../native-linking.md).
-A package that declares a compile-only ABI check must include its source file in the archive.
-Library names are bounded metadata, not linker flags or shell commands.
+Source builds accept the optional native library fields in [the build contract](../native-linking.md).
+Archives must include each declared compile-only ABI checker.
+Library names are bounded metadata, not flags or shell commands.
 Published Asm 0.5.0 binaries do not accept these fields.
+
+Unreleased source builds also accept `[target.<id>]` tables with independent source, test, and native-library fields.
+The [multi-target contract](../multi-target-projects.md) defines the seven declaration IDs, target selection, output paths, and v2 locks.
+All declared inputs, including inactive implementations, must be valid and present in the source archive.
+Registry artifact target support remains the four targets listed below.
+The existing schema-1 dependency metadata validator remains unchanged.
+Combining that metadata schema with named target tables remains unsupported.
 
 ## Release record
 
@@ -99,7 +106,8 @@ Target names do not yet encode every ISA extension, ABI revision, dialect, or li
 
 The AArch64 and RISC-V examples have been assembled, linked, and run under QEMU user-mode emulation.
 That result is distinct from a test on physical hardware.
-A native RISC-V CLI, general cross-build support, library ABI selection, and transitive dependency resolution remain future work.
+A native RISC-V CLI, cross-target native-library sysroots, and library ABI selection remain future work.
+Unreleased source builds support standalone Linux cross builds and target-specific direct dependency locks.
 
 macOS executables use thin arm64 Mach-O, the Apple ABI, PIE, and a non-executable stack.
 Native validation checks bounded commands, segment protections, entry points, deployment requirements, and the code signature.

@@ -11,8 +11,8 @@ Dependable reuse requires explicit inputs, retained ABI checks, and understandab
 
 ## Manifest
 
-The existing four required manifest fields remain unchanged.
-These optional quoted strings belong to `[build]`:
+The legacy four required manifest fields remain supported.
+These optional quoted strings belong to `[build]` or an individual `[target.<id>]` table:
 
 ```toml
 link = "c"
@@ -23,6 +23,7 @@ check = "abi-check.c"
 `link = "c"` selects the system C ABI and startup objects.
 Without `link`, Asm retains its existing standalone build.
 Other link values are errors.
+Named target tables do not share or inherit these fields.
 `libraries` and `check` require `link = "c"`.
 Duplicate fields and explicitly empty strings are errors.
 
@@ -77,6 +78,12 @@ A separate assembly protocol package requires its own contract, security review,
 This build extension does not qualify such a replacement or change the architecture's transport and cryptography requirements.
 
 ## Validation record
+
+The [multi-target completion record](multi-target-projects-completion-evidence.json) retains the target-selection and dependency-lock checks.
+Those Linux runs used an ARM virtual machine and an emulated x86-64 Linux machine.
+They do not establish physical Linux hardware qualification.
+Cross-target native-library linking still requires a separate sysroot contract.
+
 
 The [server package record](server-package-evidence.json) retains native Linux x86-64 and ARM64 qualification.
 Each target passed eight native-link tests, 19 extracted-package tests, 11 hosted-runtime tests, and four failure-preservation checks.

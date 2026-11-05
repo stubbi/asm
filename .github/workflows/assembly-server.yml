@@ -124,6 +124,15 @@ jobs:
             BUILD="$RUNNER_TEMP/hosted-server-build" SOURCE_REVISION="$GITHUB_SHA" \
             MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" \
             2>&1 | tee "$RUNNER_TEMP/server-port-evidence/hosted-tests.log"
+      - name: Check canonical catalog publication with PostgreSQL TLS
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
+          make hosted-registry-test
       - name: Check build failure preserves both executables
         shell: bash
         run: |
