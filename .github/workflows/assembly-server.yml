@@ -57,6 +57,56 @@ jobs:
           docker build --platform linux/amd64 --file containers/operator.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
             --tag asm-operator:qualification-amd64 . 2>&1 | tee "$ASM_EVIDENCE/build-qualification.log"
+      - name: Save explicitly unqualified images before diagnostic probes and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_UNQUALIFIED="$RUNNER_TEMP/asm-operator-unqualified-images"
+          mkdir -m 700 "$ASM_UNQUALIFIED"
+          docker image inspect asm-operator:runtime-amd64 asm-operator:qualification-amd64 \
+            > "$ASM_UNQUALIFIED/unqualified-inspections.json"
+          docker save --output "$ASM_UNQUALIFIED/unqualified-images.tar" \
+            asm-operator:runtime-amd64 asm-operator:qualification-amd64
+          (cd "$ASM_UNQUALIFIED" && sha256sum unqualified-images.tar > unqualified-images.sha256)
+      - name: Retain unqualified archives separately without publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unqualified-operator-images-amd64-${{ github.sha }}
+          path: ${{ runner.temp }}/asm-operator-unqualified-images/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Observe bounded synthetic setup diagnostics without changing qualification
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          python3 - <<'PY' 2>&1 | tee "$ASM_EVIDENCE/diagnostics.jsonl"
+          from pathlib import Path
+          import json, subprocess, sys, uuid
+          sys.path.insert(0, "tools")
+          import test_operator_image as image
+          from registry_admin import clean_environment, run_bounded
+          name = "asm-operator-diagnostic-" + uuid.uuid4().hex
+          source = str(Path("tools/diagnose_operator_image.py").resolve())
+          try:
+              result = run_bounded(["docker", "run", "--rm", "--name", name, "--platform", "linux/amd64", *image.security(),
+                  "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m,uid=65532,gid=65532,mode=0700",
+                  "--mount", "type=bind,src=" + source + ",dst=/qualification/tools/diagnose_operator_image.py,readonly",
+                  "--entrypoint", "/usr/bin/python3", "asm-operator:qualification-amd64",
+                  "-I", "/qualification/tools/diagnose_operator_image.py"],
+                  environment=clean_environment(), output_limit=131072, timeout=45)
+              sys.stdout.buffer.write(result)
+          except (ValueError, OSError):
+              print(json.dumps({"scope": "unqualified_operator_diagnostics", "reason": "probe_execution_failed"}))
+              raise SystemExit(1)
+          finally:
+              try:
+                  subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=10)
+              except (OSError, subprocess.TimeoutExpired):
+                  print(json.dumps({"scope": "unqualified_operator_diagnostics", "reason": "probe_cleanup_failed"}))
+                  raise SystemExit(1)
+          PY
       - name: Run actual image commands and all applicable isolated SQL and preparation tests
         timeout-minutes: 6
         shell: bash
