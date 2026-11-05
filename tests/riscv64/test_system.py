@@ -16,6 +16,53 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SystemEvidenceTests(unittest.TestCase):
+    def test_guest_startup_timeout_keeps_polling_within_the_boot_deadline(self):
+        spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class StartupRunner(module.Runner):
+            attempts = 0
+            output_limit = False
+
+            def ssh(self, script, name, timeout=60, *, check=True):
+                if script == "true\n":
+                    self.attempts += 1
+                    if self.output_limit:
+                        return self.run([sys.executable, "-c", "print('x'*100000)"], name, 10,
+                                        check=check, maximum_log_bytes=1024)
+                    delay = "import time; time.sleep(1)" if self.attempts == 1 else "pass"
+                    return self.run([sys.executable, "-c", delay], name,
+                                    .05 if self.attempts == 1 else 10, check=check)
+                return self.run([sys.executable, "-c", "pass"], name, 10)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            runner = StartupRunner(path, path)
+            runner.qemu = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                            start_new_session=True)
+            try:
+                try:
+                    runner.ready()
+                except (ValueError, subprocess.TimeoutExpired) as error:
+                    self.fail(f"Transient startup timeout aborted the boot deadline: {error}")
+                self.assertEqual(runner.attempts, 2)
+                self.assertEqual(len(list(path.glob("ssh-readiness-*.log"))), 2)
+            finally:
+                runner.stop()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            runner = StartupRunner(path, path)
+            runner.output_limit = True
+            runner.qemu = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                            start_new_session=True)
+            try:
+                with self.assertRaisesRegex(ValueError, "output exceeds"):
+                    runner.ready()
+                self.assertEqual(runner.attempts, 1)
+            finally:
+                runner.stop()
+
     def test_unbounded_child_output_fails_and_retains_a_bounded_log(self):
         spec = importlib.util.spec_from_file_location("system_runner", ROOT / "tools/riscv64_system.py")
         module = importlib.util.module_from_spec(spec)

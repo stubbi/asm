@@ -509,6 +509,48 @@
       ],
       "run_id": 41943502913,
       "run_url": "https://github.com/stubbi/asm/actions/runs/41943502913"
+    },
+    {
+      "artifact_status": "not-built",
+      "checkout_commit": "a4424335ad788c671e443aadf01c905179401685",
+      "checks": {
+        "binding": {
+          "outcome": "not-run"
+        },
+        "boot": {
+          "error": "Timed out: ssh-readiness.log",
+          "outcome": "fail"
+        },
+        "images": {
+          "outcome": "pass"
+        },
+        "provision": {
+          "outcome": "not-run"
+        },
+        "qualification": {
+          "outcome": "not-run"
+        },
+        "source": {
+          "outcome": "pass"
+        }
+      },
+      "correction": "Retry only subprocess.TimeoutExpired readiness probes within the unchanged overall deadline. Retain every probe log; authentication, trust and output-bound failures remain fatal.",
+      "emulation_kind": "system",
+      "execution_mode": "emulated",
+      "head_commit": "57b6d5c2cd7e40842741ac8e8cfa8564d0d4b807",
+      "outcome": "fail",
+      "raw_evidence": {
+        "path": "build/riscv64/ci/42009042720/artifacts/riscv64-system-emulated-a4424335ad788c671e443aadf01c905179401685-1/report.json",
+        "sha256": "b29a81fdd5e6e6e8c25183824681480fcdfdc4bb3dc0145573490559436a505a"
+      },
+      "raw_log": {
+        "path": "build/riscv64/ci/42009042720/full.log",
+        "sha256": "6a800cbc6be01461354d0794cb1f2b0263fd462f4b7cffdc927b054398b373b7"
+      },
+      "run_id": 42009042720,
+      "run_url": "https://github.com/stubbi/asm/actions/runs/42009042720",
+      "scope": "guest boot reached; CLI qualification not run",
+      "setup_failure": "A transient 10-second SSH readiness probe timeout escaped the intended 900-second guest readiness loop. All pinned image digests passed; serial output reached Ubuntu24.04.5 login and cloud-init around guest uptime68seconds."
     }
   ],
   "execution_mode": "emulated",

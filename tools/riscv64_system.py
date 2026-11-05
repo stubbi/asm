@@ -141,7 +141,7 @@ class Runner:
             if process.stderr:
                 process.stderr.close()
         if timed_out:
-            raise ValueError(f"Timed out: {name}")
+            raise subprocess.TimeoutExpired(list(map(str, command)), timeout)
         if exceeded:
             raise ValueError(f"Command output exceeds {maximum_log_bytes} bytes: {name}")
         if check and process.returncode:
@@ -282,12 +282,24 @@ class Runner:
 
     def ready(self):
         deadline = min(self.deadline, time.monotonic() + LIMITS["boot_seconds"])
+        probes = []
         while time.monotonic() < deadline:
             if self.qemu.poll() is not None:
                 raise ValueError("QEMU exited before guest readiness; inspect serial.log and qemu.log")
-            if self.ssh("true\n", "ssh-readiness.log", 10, check=False) == 0:
+            name = f"ssh-readiness-{len(probes) + 1:03d}.log"
+            try:
+                status = self.ssh("true\n", name, min(10, deadline - time.monotonic()), check=False)
+                probes.append({"log": name, "exit_code": status, "outcome": "ready" if status == 0 else "not-ready"})
+            except subprocess.TimeoutExpired:
+                status = None
+                probes.append({"log": name, "outcome": "timeout"})
+            (self.output / "boot-probes.json").write_text(json.dumps(probes, indent=2) + "\n")
+            if status == 0:
                 self.ssh("sudo -n cloud-init status --wait\n", "cloud-init.log", int(deadline - time.monotonic()))
                 return
+            output = (self.output / name).read_text(errors="replace")
+            if re.search(r"Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|Permission denied|Bad configuration", output):
+                raise ValueError(f"Guest SSH trust/authentication failed: {name}")
             time.sleep(3)
         raise ValueError("Guest did not become ready within 900 seconds")
 
