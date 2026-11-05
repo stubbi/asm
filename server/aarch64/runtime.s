@@ -42,6 +42,7 @@ path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
 path_linux: .asciz "/registry/v1/index.tsv"
 path_macos: .asciz "/registry/v1/index-macos.tsv"
+path_all: .asciz "/registry/v1/index-all.tsv"
 path_index: .asciz "/registry/v1/index.json"
 empty: .asciz ""
 header_te: .asciz "Transfer-Encoding"
@@ -917,6 +918,10 @@ handle_request:
     bl strcmp
     cbz w0, .Lmacos_export
     mov x0, x20
+    ADDR x1, path_all
+    bl strcmp
+    cbz w0, .Lall_export
+    mov x0, x20
     ADDR x1, path_index
     bl strcmp
     cbz w0, .Ljson_export
@@ -944,6 +949,9 @@ handle_request:
     b .Ltsv_export
 .Lmacos_export:
     ADDR x0, path_macos
+    b .Ltsv_export
+.Lall_export:
+    ADDR x0, path_all
 .Ltsv_export:
     mov w23, #MAX_TSV
     ADDR x24, type_tsv

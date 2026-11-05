@@ -282,31 +282,34 @@ class RuntimeTests(unittest.TestCase):
     def test_exports_reject_missing_null_duplicate_and_unready_results(self):
         columns = "route,body,sha256,media_type,revision,acceptance_commit"
         variants = [
-            "SELECT " + columns + " FROM {source} UNION ALL SELECT " + columns + " FROM {source}",
-            "SELECT " + columns + " FROM {source} WHERE false",
+            ("SELECT " + columns + " FROM {source} UNION ALL SELECT " + columns + " FROM {source}", self.exports),
+            ("SELECT " + columns + " FROM {source} WHERE false", self.exports),
         ]
         for path in self.exports:
             variants.extend((
-                "SELECT " + columns + " FROM {source} WHERE route <> '" + path + "'",
-                "SELECT route,CASE WHEN route='" + path + "' THEN NULL::text ELSE body END AS body,"
-                    "sha256,media_type,revision,acceptance_commit FROM {source}",
+                ("SELECT " + columns + " FROM {source} WHERE route <> '" + path + "'", self.exports),
+                ("SELECT route,CASE WHEN route='" + path + "' THEN NULL::text ELSE body END AS body,"
+                    "sha256,media_type,revision,acceptance_commit FROM {source}", (path,)),
             ))
-        for select in variants:
+        for select, paths in variants:
             with self.subTest(select=select), self.export_view(select):
-                for path in self.exports:
+                for path in paths:
                     code, _, body = self.request(path)
                     self.assertEqual(code, 503)
                     self.assertEqual(body["error"]["code"], "temporarily_unavailable")
                 self.assertEqual(self.request("/health/live")[0], 200)
         original = self.admin.execute("SELECT sha384 FROM asm_catalog.schema_version")[0][0]
-        self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=repeat('0',96)")
-        try:
-            self.assertEqual(self.request("/health/ready")[0], 503)
-            for path in self.exports:
-                self.assertEqual(self.request(path)[0], 503)
-            self.assertEqual(self.request("/health/live")[0], 200)
-        finally:
-            self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=$1", [original])
+        for marker in ("0" * 96,
+                       "259a54d22fcd1e53addf4f5f197d7ca0f7c5040e2492776fc60a30f59cd1428a6618f4ec39fa1f3df867d4b05ee2d9ae"):
+            with self.subTest(marker=marker):
+                self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=$1", [marker])
+                try:
+                    self.assertEqual(self.request("/health/ready")[0], 503)
+                    for path in self.exports:
+                        self.assertEqual(self.request(path)[0], 503)
+                    self.assertEqual(self.request("/health/live")[0], 200)
+                finally:
+                    self.admin.execute("UPDATE asm_catalog.schema_version SET sha384=$1", [original])
         self.assertEqual(self.request("/health/ready")[0], 200)
 
     def test_export_body_byte_limits_preserve_boundary_bytes(self):

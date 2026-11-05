@@ -193,6 +193,7 @@ The combined index also receives provenance.
 
 These images still contain an incomplete registry implementation.
 Canonical HTTP image checks, operator deployment, service discovery, metrics, capacity, and recovery remain unqualified.
-The four-export catalog contract in PR #29 must be integrated before final qualification of this slice.
+The reviewed four-export catalog contract from PR #29 is integrated.
+Its HTTP and image qualification require fresh results for this source.
 Passing these jobs cannot remove a deployment hold or establish a running registry.
 No cluster, DNS, credential, release, or live service changes follow from this image workflow.

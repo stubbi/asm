@@ -26,6 +26,7 @@ path_ready: .asciz "/health/ready"
 path_status: .asciz "/api/v2/status"
 path_linux: .asciz "/registry/v1/index.tsv"
 path_macos: .asciz "/registry/v1/index-macos.tsv"
+path_all: .asciz "/registry/v1/index-all.tsv"
 path_index: .asciz "/registry/v1/index.json"
 empty: .asciz ""
 header_te: .asciz "Transfer-Encoding"
@@ -838,6 +839,11 @@ handle_request:
     test eax, eax
     jz .Lmacos_export
     mov rdi, r12
+    lea rsi, [rip + path_all]
+    call strcmp@PLT
+    test eax, eax
+    jz .Lall_export
+    mov rdi, r12
     lea rsi, [rip + path_index]
     call strcmp@PLT
     test eax, eax
@@ -865,6 +871,9 @@ handle_request:
     jmp .Ltsv_export
 .Lmacos_export:
     lea rax, [rip + path_macos]
+    jmp .Ltsv_export
+.Lall_export:
+    lea rax, [rip + path_all]
 .Ltsv_export:
     mov r14d, MAX_TSV
     lea r15, [rip + type_tsv]

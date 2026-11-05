@@ -23,7 +23,8 @@ The process accepts no migration, grant, or import command.
 | `GET /health/ready` | Check the canonical migration, actual catalog reads, and reader privileges |
 | `GET /api/v2/status` | Return the build's exact source revision and source URL |
 | `GET /registry/v1/index.tsv` | Return the exact Linux compatibility feed, at most 1048576 bytes |
-| `GET /registry/v1/index-macos.tsv` | Return the exact full compatibility feed, at most 1048576 bytes |
+| `GET /registry/v1/index-macos.tsv` | Return the exact four-target macOS compatibility feed, at most 1048576 bytes |
+| `GET /registry/v1/index-all.tsv` | Return the exact full six-target feed, at most 1048576 bytes |
 | `GET /registry/v1/index.json` | Return the exact schema 1 JSON export, at most 4194304 bytes |
 
 TSV responses use `text/tab-separated-values; charset=utf-8`.
@@ -46,6 +47,9 @@ Each command drains completely before the next command starts.
 Connection, transaction setup, guard, export, and result handling share one two-second monotonic deadline.
 The fixed connection options enforce read-only transactions, a one-second statement timeout, and a 200 ms lock timeout.
 The guard checks the exact canonical migration digest and actual reader permissions.
+The reviewed schema enforces non-null stored export bodies and canonical publication bytes.
+Each export read separately rejects a null result before HTTP response creation.
+Trusted administrator changes to database objects remain outside these guarantees.
 No import means no ready catalog; the process refuses startup with exit 78.
 Use the separate [operator procedure](catalog/README.md) to migrate, grant, bind namespaces, and import accepted records.
 
@@ -116,7 +120,7 @@ Projected-volume rotation must still pass against the actual private deployment.
 
 Use a matching Linux x86-64, ARMv8-A AArch64, or RV64GC/LP64D host.
 Use GNU libmicrohttpd 1.0.3 and libpq/PostgreSQL 16.15.
-Use Python 3.10 or later and an OpenSSL command for the integration fixture.
+Use Python 3.11 or later and an OpenSSL command for the integration fixture.
 The build-time C program checks ABI constants only.
 It is not linked into the application.
 Application routing, configuration policy, connection lifecycle, and deadlines are assembly.
@@ -142,12 +146,14 @@ It verifies ownership before database changes.
 It accepts no existing database target or production credentials.
 It applies the pinned canonical migration with the explicit operator helper.
 It seeds all current accepted manifest records through the catalog operator functions.
+Synthetic six-target source metadata distinguishes the Linux, macOS, and full feed vocabularies in the owned fixture.
 It does not download or execute package artifacts.
 Python supplies test orchestration only.
 
 Tests cover private-file rejection, malformed configuration, duplicate fields, TLS identity failures, privileged-role rejection, and changed read permissions.
 They also cover certificate replacement, a stalled handshake, encrypted-key prompt refusal, health, source identity, and idle SIGTERM.
-Feed tests compare all three current exports byte for byte and check their content types.
+Feed tests compare all four current exports byte for byte and check their content types.
+They check fixed three-target, four-target, and six-target TSV vocabularies and refuse near-prefix request paths.
 Database-result probes cover missing, null, duplicate, unavailable, oversized, and stalled results.
 Trusted fixture administration temporarily changes a view for these probes, then restores it.
 The maximum-size body probes test transport bounds; their repeated bytes are not canonical package records.
@@ -185,15 +191,21 @@ All sixteen AMD64 HTTP tests passed without skips in 5.866 seconds.
 The separate canonical SQL suite passed nineteen applicable tests; its macOS-only ACL case skipped.
 Ubuntu Clang 18.1.3 assembled the x86-64, AArch64, and RV64GC/LP64D source files.
 The cross-assembly step did not link or execute AArch64 or RISC-V code.
-This run covers the original three-export contract, before the pending fourth-feed integration in PR #29.
+This run covers the original three-export contract, before the fourth-feed contract in PR #29.
 Canonical image qualification and target runtime evidence remain separate requirements.
+The four-export [test-first run 42012402145](https://github.com/stubbi/asm/actions/runs/42012402145) tested source `9ebcb125cf301b6dce481a3836ea482b1b53915f`.
+Its sixteen runtime methods produced fifteen failures because the fourth route still returned HTTP 404.
+Four errors came from a new, overbroad test expectation after trusted fixture administration made one view result null.
+The corrected test requests the affected route and preserves its null-result refusal.
+It does not require unrelated valid routes to fail after that trusted administrator change.
+The reviewed SQL, reader guard, and enforced non-null storage constraints remain unchanged.
 Local cross-assembly passed for x86-64 and AArch64 after the routing change.
 Apple's installed clang cannot assemble the RISC-V target; no local RISC-V assembly or execution result is claimed.
 
 These requirements remain open:
 
 - Runtime qualification of canonical HTTP serving on ARM64 and RISC-V64.
-- Runtime and image qualification after the pending four-export catalog integration.
+- Runtime and image qualification of the integrated four-export catalog contract.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
 - Bounded hostname resolution compatible with private service discovery.
 - Database connection reuse and measured admission behavior under saturation.
