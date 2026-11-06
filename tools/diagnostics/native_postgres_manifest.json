@@ -1,0 +1,104 @@
+{
+  "architecture": "amd64",
+  "comparison_limit": "Backend architecture and build differ; this does not isolate QEMU overhead.",
+  "config": "sha256:5bbe1b33f05489cf9ea1aa962ce6599cc238094344de42ce3f40e2478c9714bf",
+  "copyright_sha256": "3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd",
+  "copyright_source": "https://raw.githubusercontent.com/postgres/postgres/7d3e000c5961a544302072058a1184e9a588837b/COPYRIGHT",
+  "dockerfile": {
+    "bytes": 8297,
+    "sha256": "fe71997624a91b220fceebdcea5bb4ecd82e0b6e61d73662226217d91635c67d",
+    "url": "https://raw.githubusercontent.com/docker-library/postgres/9d15534160ade17f2b6c455a39ee967c49b1937d/16/alpine3.23/Dockerfile"
+  },
+  "index": "sha256:dd13b38648acf4290f7a51b025ad7dc1f6964d3afe0c723a5f836e1484d1a486",
+  "layers": [
+    {
+      "digest": "sha256:74c614fb2c68574f50c582dcc9c18c46618bd6ff2019768190aacfb861ce51d2",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 3852589
+    },
+    {
+      "digest": "sha256:3389248b81cc027ba623321618db0d73633d1ae55695e327bdecc051daa04ce5",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 971
+    },
+    {
+      "digest": "sha256:5dc999939acd89344ef290474a17a1ecddc7730959db95cb1146e319c15c1bb4",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 900020
+    },
+    {
+      "digest": "sha256:079dc5b16b2501be0bc8deb410b82b1eab1e90f98e6618fc60622411debce890",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 170
+    },
+    {
+      "digest": "sha256:997953ba4d829090dc0cdb5644023685414cf2fbd0a422a18ead36eb384207f4",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 116
+    },
+    {
+      "digest": "sha256:c66f5ea40456c90153146ec501234545324301ae6caefd90aec49e675c97e8a9",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 110800023
+    },
+    {
+      "digest": "sha256:3c64ce6890ae511cfa7f17b241095c0c4c6fa17ae9159109c3d603386295b601",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 9675
+    },
+    {
+      "digest": "sha256:5032131b2571c9ab30bc868c28ef1ea95f7a670b85497ecd0faa0a0fe863d9aa",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 128
+    },
+    {
+      "digest": "sha256:0307034abf956e1479bd7d8d9a651d9d0ae7e01f1efaa18caf4faf6c5159f9c0",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 169
+    },
+    {
+      "digest": "sha256:af6c7acfcc14508d5db7e0b7a8690a8e111f4876fe84b1f62e3b7f3d761177bf",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 6105
+    },
+    {
+      "digest": "sha256:7cd4fefe7cc3985e80840a18533c75de1a8bd720336c952ccf3f37b90bd25401",
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 184
+    }
+  ],
+  "official_mapping": {
+    "bytes": 4947,
+    "sha256": "facda23efee37367d38fe706ad38062f5850989572b7a2b9a7ffdba7d64f225c",
+    "url": "https://raw.githubusercontent.com/docker-library/official-images/1b851c635e093e70beddd58d633ddaf5e307abfc/library/postgres"
+  },
+  "os": "linux",
+  "platform_manifest": "sha256:751329300ebdcbde5461c14fac796c8840d13fc74cc49b9b94745b0285907961",
+  "postgres_version": "16.15",
+  "qualification": "UNQUALIFIED",
+  "registry": "docker.io/library/postgres",
+  "rootfs_diff_ids": [
+    "sha256:7900194cf2429d4e860306cd85f7b1d04154ef522ab603ff058bd8221b0cee62",
+    "sha256:f43c34c70c0667edf9ef520169d48ead889c6eb6367cce3b8dba08c7bd6d1a4d",
+    "sha256:3eb6b078a1bdffd8216b60f41b6111862ae27c3240771e8f1c33164496f9374b",
+    "sha256:3baf91a8c7af22cff1a53f01d1a52a7918c92b6c73d07eef85343b2c9048e8b5",
+    "sha256:12347bf5488da3fae3513ab280bd7500350caba07088c1b54b19839d01218c21",
+    "sha256:dbe3942c5c677aa6cf84e15df721473f37525b41455be0c84149de9962d6e099",
+    "sha256:0984b69da70d6555d11d550a00a06305e381b7b22218fc9c7602fdabb7b6f302",
+    "sha256:418fab1375f73452e4e73878d090edb765fe5d7270901b439455b885a5872fae",
+    "sha256:46ddc0b7837352b4a1272a742492c5b6d8183c2031652053cd11b7c1f515b071",
+    "sha256:efa8124226616e2fa84ab5500fba43cccf04ba7e8ca4c193f632faf3ef76887c",
+    "sha256:934a8c54380d142fd95f8047ccf722649891988fd06e0309b8c216b50642010f"
+  ],
+  "schema": 1,
+  "scope": "pinned-native-postgres-comparison",
+  "source_archive_sha256": "c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed",
+  "source_directory": "16/alpine3.23",
+  "source_revision": "9d15534160ade17f2b6c455a39ee967c49b1937d",
+  "tag": "16.15-alpine3.23",
+  "tooling_license": {
+    "bytes": 1084,
+    "sha256": "87ffd2c45e3f90cfa3407b5c40ef8333e87c3e875e4895f8b64df758198deafc",
+    "url": "https://raw.githubusercontent.com/docker-library/postgres/9d15534160ade17f2b6c455a39ee967c49b1937d/LICENSE"
+  }
+}

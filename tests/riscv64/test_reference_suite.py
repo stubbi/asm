@@ -252,6 +252,30 @@ class ServerTests(unittest.TestCase):
             self.assertNotIn("private", result.stdout + result.stderr)
             self.assertEqual(args[3].read_text().splitlines(), ["import", "setup", "class_cleanup"])
 
+    def test_backend_control_is_separate_from_the_acceptance_suite(self):
+        for failure in (False, True):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                deadline = time.monotonic() + 30
+                source, registration, trace, events = self.fixture(Path(temporary), deadline)
+                def compare(cls, actual_source, actual_deadline):
+                    self.assertEqual(actual_source, source)
+                    self.assertEqual(actual_deadline, deadline)
+                    with events.open("a") as output: output.write("backend-control\n")
+                    if failure: raise RuntimeError("private provider password")
+                    return {"outcome": "pass", "diagnostic_method_invocations": 4, "http_assertions_outcome": "fail"}
+                output = io.StringIO()
+                with mock.patch.dict(sys.modules, {"riscv64_reference_backend": SimpleNamespace(run_backend_comparison=compare)}), \
+                        contextlib.redirect_stdout(output):
+                    result = self.suite.run_suite(source, registration, trace, deadline, native_backend=True)
+                self.assertEqual(result, int(failure))
+                self.assertEqual(events.read_text().splitlines(), ["import", "backend-control"])
+                self.assertNotIn("private", output.getvalue())
+                record = json.loads(output.getvalue().removeprefix("ASM_REFERENCE_BACKEND="))
+                self.assertEqual(record["tests_run"], 0)
+                self.assertEqual(record["acceptance_suite"], "not-run")
+                self.assertEqual(record["diagnostic_method_replays"], 0 if failure else 4)
+                self.assertEqual(record["http_assertions_outcome"], "not-run" if failure else "fail")
+
     def test_cost_probe_preserves_comparison_failure_and_always_finishes_cleanup(self):
         # Catch losing the original failure, exposing provider text, or skipping
         # owned-cluster cleanup after a measurement/publication failure.

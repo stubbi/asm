@@ -201,7 +201,7 @@ def image_archive_contract(archive, expected_id=IMAGE_ID):
     return config
 
 
-def initial_report(*, phase_probe=False):
+def initial_report(*, phase_probe=False, native_backend=False):
     report = {"schema": 1, "scope": "retained-riscv64-reference-server-observations",
             "qualification": "UNQUALIFIED", "outcome": "fail", "execution": "qemu-user", "target": "riscv64-linux",
             "application_qualified": False, "native_qualified": False, "release_qualified": False,
@@ -223,6 +223,14 @@ def initial_report(*, phase_probe=False):
         report.update(scope="retained-riscv64-reference-server-phase-probe",
                       comparison_order=["direct", "proxy"],
                       query_cost_probe={"scope": "UNQUALIFIED-database-query-cost", "after_original_cohorts": True})
+    if native_backend:
+        report.update(scope="retained-riscv64-reference-backend-control", acceptance_suite="not-run",
+                      comparison_order_backend=["A1", "B1", "B2", "A2"])
+        report.pop("comparison_order", None)
+        report.pop("query_cost_probe", None)
+        report["not_run"] = [{"file": name, "tests": count, "outcome": "not-run",
+                              "reason": "This diagnostic replays one original method against four fresh clusters."}
+                             for name, count in combined.SUITE_FILES.items()]
     return report
 
 
@@ -290,6 +298,34 @@ def sanitized_phase_summary(guest, observation):
     return summary
 
 
+def sanitized_backend_summary(guest, observation):
+    """Expose only fixed outcomes and bounded numeric per-arm HTTP readback."""
+    def outcome(value):
+        return value if value in ("pass", "fail") else "not-run"
+    summary = {"schema": 1, "scope": "reference-backend-control-summary", "qualification": "UNQUALIFIED",
+               "original_19_test_gate": "fail", "acceptance_suite": "not-run", "tests_run": 0,
+               "collection_outcome": "pass" if observation.get("outcome") == "pass" else "fail",
+               "http_assertions_outcome": outcome(observation.get("http_assertions_outcome")),
+               "arms": []}
+    arms = observation.get("arms", [])
+    for arm in arms if type(arms) is list and len(arms) <= 4 else []:
+        if type(arm) is not dict or arm.get("label") not in ("A1", "B1", "B2", "A2"):
+            continue
+        section = {"label": arm["label"], "method_outcome": outcome(arm.get("method_outcome")),
+                   "cleanup_complete": arm.get("cleanup_complete") is True, "http": []}
+        rows = arm.get("records", [])
+        for row in rows if type(rows) is list and len(rows) <= 16 else []:
+            if type(row) is not dict or type(row.get("index")) is not int or not 1 <= row["index"] <= 16:
+                continue
+            elapsed = row.get("elapsed_seconds")
+            section["http"].append({"index": row["index"], "status": row.get("status")
+                if type(row.get("status")) is int and 100 <= row["status"] <= 599 else None,
+                "elapsed_us": round(elapsed * 1000000) if type(elapsed) in (int, float)
+                and math.isfinite(elapsed) and 0 <= elapsed <= 180 else None})
+        summary["arms"].append(section)
+    return summary
+
+
 def publish_phase_summary(report, output):
     """Make small failure readback available even if full collection is incomplete."""
     collected = report.get("collection", {}).get("collected", [])
@@ -304,10 +340,11 @@ def publish_phase_summary(report, output):
             except (OSError, ValueError, TypeError, RecursionError):
                 pass
         documents.append(value)
-    summary = sanitized_phase_summary(*documents)
+    summary = (sanitized_backend_summary if report.get("scope") == "retained-riscv64-reference-backend-control"
+               else sanitized_phase_summary)(*documents)
     permitted = {"archive-inputs", "trace-build", "image-load", "server-artifact", "image-inspection",
                  "registration", "container-create", "container-inspection", "runtime", "collection", "cleanup",
-                 "host-evidence"}
+                 "host-evidence", "native-overlay"}
     stage = report.get("failure_stage")
     summary["host"] = {"failure_stage": stage if stage in permitted else "unknown",
                        "collection_complete": set(collected) == {
@@ -359,10 +396,10 @@ def finish_host_report(report, output, *, started, deadline, phase_probe):
             raise
 
 
-def container_contract(container, source=None):
+def container_contract(container, source=None, *, expected_image=IMAGE_ID):
     config, host = container.get("Config", {}), container.get("HostConfig", {})
     permitted = {"PATH", "HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED", "LC_ALL", "TZ", "QEMU_LD_PREFIX"}
-    if (container.get("Image") != IMAGE_ID or config.get("User") != "65532:65532"
+    if (container.get("Image") != expected_image or config.get("User") != "65532:65532"
             or any(item.split("=", 1)[0] not in permitted for item in config.get("Env", []))
             or host.get("NetworkMode") != "none" or host.get("Memory") != 2147483648
             or host.get("NanoCpus") != 2000000000 or host.get("PidsLimit") != 256
@@ -387,7 +424,9 @@ def assertion_contract(base, fixture):
     return sorted(original)
 
 
-def _materialize_context(destination, revision, fixture_revision, repository, phase_probe=False):
+def _materialize_context(destination, revision, fixture_revision, repository, phase_probe=False, native_backend=False):
+    if native_backend and not phase_probe:
+        raise ValueError("The backend comparison requires the phase probe.")
     import registry
     import release
     for commit in (revision, fixture_revision, BASE_REVISION):
@@ -422,6 +461,9 @@ def _materialize_context(destination, revision, fixture_revision, repository, ph
                              "tools/riscv64_reference_build.py", "tools/riscv64_reference_suite.py",
                              "tools/riscv64_reference_performance.py",
                              "tests/riscv64/test_reference_trace.py"})
+    if native_backend:
+        driver_names.update({"tools/riscv64_reference_backend.py", "tools/riscv64_reference_native.py",
+                             "tools/diagnostics/native_postgres_manifest.json", "tools/diagnostics/native_postgres.COPYRIGHT"})
     driver = registry.git_files(repository, revision, ".", sorted(driver_names))
     if set(driver) != driver_names:
         raise ValueError("The workflow commit lacks the complete diagnostic driver.")
@@ -435,18 +477,21 @@ def _materialize_context(destination, revision, fixture_revision, repository, ph
         "source_files": len(fixture), "assertions_unchanged": True}
     if phase_probe:
         receipt["phase_probe"] = True
+    if native_backend:
+        receipt["native_backend"] = True
     combined.write_report(destination / "input-manifest.json", receipt)
     (destination / "input-manifest.json").chmod(0o444)
 
 
-def prepare_context(destination, revision, fixture_revision, *, phase_probe=False):
+def prepare_context(destination, revision, fixture_revision, *, phase_probe=False, native_backend=False):
     worker = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
               "from riscv64_server_observations import _materialize_context; "
-              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]), sys.argv[6] == '1')")
+              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]), sys.argv[6] == '1', sys.argv[7] == '1')")
     with tempfile.TemporaryDirectory(prefix="asm-observations-source-") as temporary:
         log = Path(temporary) / "source.log"
         result = combined.bounded_process([sys.executable, "-c", worker, str(Path(__file__).resolve().parent),
-            str(destination.absolute()), revision, fixture_revision, str(ROOT), "1" if phase_probe else "0"], log, timeout=120)
+            str(destination.absolute()), revision, fixture_revision, str(ROOT), "1" if phase_probe else "0",
+            "1" if native_backend else "0"], log, timeout=120)
         if result["outcome"] != "pass":
             raise ValueError("Cannot materialize the exact diagnostic source: " + log.read_text(errors="replace")[-2048:])
 
@@ -460,19 +505,36 @@ def library_contract(path, expected):
             "comparison_to_failed_run": "exact-byte-match"}
 
 
-def run_server_suite(source, log, *, phase_probe=False):
+def run_server_suite(source, log, *, phase_probe=False, native_backend=False):
+    if native_backend and not phase_probe:
+        raise ValueError("The backend comparison requires the phase probe.")
     arguments = [sys.executable, "-m", "unittest", "test_server.ServerTests", "-v"]
     if phase_probe:
         arguments = [sys.executable, Path(__file__).with_name("riscv64_reference_suite.py"),
                      "--source", source, "--registration", source.parent / "binfmt-registration.json",
                      "--trace-directory", source.parent / "trace", "--deadline", str(time.monotonic() + 180),
-                     "--query-cost-probe"]
+                     "--native-backend" if native_backend else "--query-cost-probe"]
     result = combined.bounded_process(arguments, log, cwd=source, timeout=180)
     text = log.read_text(errors="replace")
     counts = re.findall(r"^Ran (\d+) tests? in [0-9.]+s$", text, re.M)
     result.update(tests_run=int(counts[0]) if len(counts) == 1 else None,
                   tests_skipped=None if re.search(r"\bskipped\b", text) else 0,
                   log_sha256=digest(log))
+    if native_backend:
+        result.update(tests_run=0, tests_skipped=0, acceptance_suite="not-run")
+        markers = re.findall(r"^ASM_REFERENCE_BACKEND=(.{1,4096})$", text, re.M)
+        try:
+            marker = load_object(markers[0]) if len(markers) == 1 else {}
+            if (type(marker.get("schema")) is not int or marker["schema"] != 1
+                    or marker.get("scope") != "UNQUALIFIED-reference-backend-control"
+                    or marker.get("outcome") != "pass" or type(marker.get("tests_run")) is not int
+                    or marker["tests_run"] != 0 or marker.get("acceptance_suite") != "not-run"
+                    or type(marker.get("diagnostic_method_replays")) is not int or marker["diagnostic_method_replays"] != 4
+                    or marker.get("http_assertions_outcome") not in ("pass", "fail") or counts):
+                raise ValueError("The backend collection result is incomplete or incorrectly scoped.")
+        except ValueError:
+            result.update(outcome="fail", contract_error="The backend collection result is incomplete or incorrectly scoped.")
+        return result
     if result["outcome"] == "pass":
         try:
             combined.suite_contract(text, 14)
@@ -481,10 +543,11 @@ def run_server_suite(source, log, *, phase_probe=False):
     return result
 
 
-def retain_observation(build, output):
+def retain_observation(build, output, *, native_backend=False):
     # The single ServerTests class creates one private causal record. Never
     # collect PostgreSQL files, connection URLs, server logs, or arbitrary globs.
-    paths = list(build.glob("reference-causal-*/diagnostic.json"))
+    paths = ([build / "reference-backend/diagnostic.json"] if native_backend
+             else list(build.glob("reference-causal-*/diagnostic.json")))
     if len(paths) != 1:
         raise ValueError("Require exactly one bounded causal observation record.")
     source = paths[0]
@@ -494,7 +557,7 @@ def retain_observation(build, output):
     data = source.read_bytes()
     record = load_object(data)
     if (type(record.get("schema")) is not int or record["schema"] != 1 or record.get("qualification") != "UNQUALIFIED"
-            or record.get("scope") != "reference-server-causal-diagnostic"
+            or record.get("scope") != ("reference-backend-control" if native_backend else "reference-server-causal-diagnostic")
             or record.get("base_commit") != BASE_REVISION
             or not isinstance(record.get("runtime"), dict) or record["runtime"].get("sha256") != SERVER_SHA
             or record.get("runtime", {}).get("bytes") != SERVER_BYTES):
@@ -575,8 +638,8 @@ def trace_smoke(trace_directory, output):
     return report
 
 
-def inside(output, *, phase_probe=False):
-    report = initial_report(phase_probe=phase_probe)
+def inside(output, *, phase_probe=False, native_backend=False):
+    report = initial_report(phase_probe=phase_probe, native_backend=native_backend)
     build = INSIDE_WORK / "build"
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -590,7 +653,8 @@ def inside(output, *, phase_probe=False):
         if (type(inputs.get("schema")) is not int or inputs["schema"] != 2
                 or inputs.get("base_revision") != BASE_REVISION or inputs.get("source_files") != 33
                 or inputs.get("assertions_unchanged") is not True or len(inputs.get("test_methods", [])) != 14
-                or inputs.get("phase_probe", False) is not phase_probe):
+                or inputs.get("phase_probe", False) is not phase_probe
+                or inputs.get("native_backend", False) is not native_backend):
             raise ValueError("The diagnostic source receipt is incomplete.")
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
@@ -617,8 +681,9 @@ def inside(output, *, phase_probe=False):
                 raise ValueError("The diagnostic forwarding check failed before the server suite.")
         build.mkdir(mode=0o700)
         report["server_tests"] = run_server_suite(context / "source", output.parent / "server_package.log",
-                                                 phase_probe=phase_probe)
-        report["observation"] = retain_observation(build, output.parent / "observations/qualification.json")
+                                                 phase_probe=phase_probe, native_backend=native_backend)
+        report["observation"] = retain_observation(build, output.parent / "observations/qualification.json",
+                                                   native_backend=native_backend)
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
                 raise ValueError("The diagnostic source changed during the test run.")
@@ -633,7 +698,7 @@ def inside(output, *, phase_probe=False):
     return 0 if report["outcome"] == "pass" else 1
 
 
-def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_source=None):
+def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_source=None, native_backend=False):
     started = time.monotonic()
     host_deadline = started + 600
     operation_deadline = host_deadline - 90
@@ -643,11 +708,13 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
             raise ValueError("The shared host " + phase + " deadline elapsed.")
         return seconds
     output.mkdir(parents=True, exist_ok=True)
-    report = initial_report(phase_probe=phase_probe)
+    report = initial_report(phase_probe=phase_probe, native_backend=native_backend)
     name = "asm-reference-observations-" + uuid.uuid4().hex
     created = False
     stage = "archive-inputs"
     try:
+        if native_backend and not phase_probe:
+            raise ValueError("The backend comparison requires the phase probe.")
         if phase_probe and mhd_source is None:
             raise ValueError("The phase probe requires the pinned MHD header source archive.")
         # Temporary archive bytes are retained only until Docker has loaded the
@@ -700,6 +767,16 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
                 or info["RootFS"]["Layers"] != image_config["rootfs"]["diff_ids"]
                 or info["Config"].get("Env", []) != image_config["config"].get("Env", [])):
             raise ValueError("The loaded image differs from its checked archive configuration.")
+        selected_image = IMAGE_ID
+        if native_backend:
+            stage = "native-overlay"
+            from riscv64_reference_native import prepare_native
+            report["native_overlay"] = prepare_native(context, output, operation_deadline)
+            selected_image = report["native_overlay"]["new_image_id"]
+            if (report["native_overlay"].get("outcome") != "pass"
+                    or re.fullmatch(r"sha256:[0-9a-f]{64}", selected_image) is None):
+                raise ValueError("The native backend overlay is incomplete.")
+            combined.write_report(output / "native-overlay.json", report["native_overlay"])
         mounted = str(context.resolve())
         if "," in mounted:
             raise ValueError("The diagnostic context path cannot contain a mount separator.")
@@ -713,11 +790,13 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
                   "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "2g", "--cpus", "2",
                   "--mount", "type=bind,src=" + mounted + ",dst=/inputs,readonly",
                   "--workdir", "/work", "--env", "LC_ALL=C", "--env", "TZ=UTC", "--env", "QEMU_LD_PREFIX=/",
-                  "--entrypoint", "/usr/bin/python3", IMAGE_ID,
+                  "--entrypoint", "/usr/bin/python3", selected_image,
                   "/inputs/runner/tools/riscv64_server_observations.py", "--inside", "--output",
                   str(INSIDE_WORK / "evidence/qualification.json")]
         if phase_probe:
             create.append("--phase-probe")
+        if native_backend:
+            create.append("--native-backend-probe")
         stage = "container-create"
         create_timeout = remaining(30, operation_deadline, "operation")
         created = True
@@ -725,7 +804,7 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
         stage = "container-inspection"
         container = load_json(combined.command(["docker", "inspect", name],
             timeout=remaining(30, operation_deadline, "operation")).stdout)[0]
-        container_contract(container, mounted)
+        container_contract(container, mounted, expected_image=selected_image)
         report["container"] = {"image": container["Image"], "config": container["Config"], "host_config": container["HostConfig"]}
         stage = "runtime"
         report["runtime"] = combined.bounded_process(["docker", "start", "--attach", name], output / "runtime.log",
@@ -779,11 +858,24 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
                             or any(guest.get(key) is not False for key in
                                    ("application_qualified", "native_qualified", "release_qualified"))
                             or guest.get("original_19_test_gate") != "fail"
-                            or guest.get("server_tests", {}).get("tests_run") != 14
+                            or guest.get("server_tests", {}).get("tests_run") != (0 if native_backend else 14)
                             or guest.get("server_tests", {}).get("tests_skipped") != 0
                             or digest(output / "observations/qualification.json") != guest.get("observation", {}).get("sha256")
                             or digest(output / "server_package.log") != guest.get("server_tests", {}).get("log_sha256")):
                         raise ValueError("The guest diagnostic is failed, incomplete, or incorrectly scoped.")
+                    if native_backend:
+                        observation = load_object((output / "observations/qualification.json").read_bytes())
+                        if (guest.get("scope") != "retained-riscv64-reference-backend-control"
+                                or guest.get("acceptance_suite") != "not-run"
+                                or guest.get("server_tests", {}).get("acceptance_suite") != "not-run"
+                                or observation.get("outcome") != "pass"
+                                or observation.get("measurement_complete") is not True
+                                or observation.get("acceptance_tests_run") != 0
+                                or observation.get("acceptance_tests_not_run") != 19
+                                or observation.get("historical_original19") != "FAIL"
+                                or any(observation.get(key) is not False for key in
+                                       ("application_qualified", "native_qualified", "release_qualified"))):
+                            raise ValueError("The backend collection is incomplete or incorrectly scoped.")
                     if "error" not in report and report.get("runtime", {}).get("outcome") == "pass":
                         report["outcome"] = "pass"
                 except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
@@ -816,24 +908,28 @@ def main():
     parser.add_argument("--context", type=Path)
     parser.add_argument("--output", type=Path, default=INSIDE_WORK / "evidence/qualification.json")
     parser.add_argument("--phase-probe", action="store_true")
+    parser.add_argument("--native-backend-probe", action="store_true")
     parser.add_argument("--mhd-source", type=Path)
     args = parser.parse_args()
+    if args.native_backend_probe and not args.phase_probe:
+        parser.error("Supply --phase-probe with --native-backend-probe.")
     if args.self_test:
         suite = unittest.defaultTestLoader.discover(str(ROOT / "tests/riscv64"), pattern="test_server_observations.py")
         return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
     if args.prepare_context:
         if not args.revision or not args.fixture_revision:
             parser.error("Supply --revision and --fixture-revision with --prepare-context.")
-        prepare_context(args.prepare_context, args.revision, args.fixture_revision, phase_probe=args.phase_probe)
+        prepare_context(args.prepare_context, args.revision, args.fixture_revision, phase_probe=args.phase_probe,
+                        native_backend=args.native_backend_probe)
         return 0
     if args.inside:
-        return inside(args.output, phase_probe=args.phase_probe)
+        return inside(args.output, phase_probe=args.phase_probe, native_backend=args.native_backend_probe)
     if not all((args.image_zip, args.server_zip, args.context)):
         parser.error("Supply --image-zip, --server-zip, and --context with --run-image.")
     if args.phase_probe and args.mhd_source is None:
         parser.error("Supply --mhd-source with the phase probe.")
     return run_image(args.image_zip, args.server_zip, args.context, args.output,
-                     phase_probe=args.phase_probe, mhd_source=args.mhd_source)
+                     phase_probe=args.phase_probe, mhd_source=args.mhd_source, native_backend=args.native_backend_probe)
 
 
 if __name__ == "__main__":

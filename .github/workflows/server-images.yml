@@ -1,4 +1,4 @@
-name: UNQUALIFIED RISC-V query cost measurement
+name: UNQUALIFIED PostgreSQL backend comparison
 
 # This isolated branch diagnoses a failed gate. It cannot publish an image.
 on:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   observe:
-    name: Observe original cases, cohorts, and query cost (UNQUALIFIED)
+    name: Compare fixed RISC-V HTTP requests with native PostgreSQL (UNQUALIFIED)
     runs-on: ubuntu-24.04
     # The inner host budget is 600 seconds, including evidence collection.
     # This outer budget also covers checkout, downloads, source selection, and upload.
@@ -42,10 +42,11 @@ jobs:
           import json
           import os
           from pathlib import Path
-          report = {"schema": 1, "scope": "UNQUALIFIED-riscv-server-phase-probe", "outcome": "fail",
+          report = {"schema": 1, "scope": "UNQUALIFIED-reference-backend-control", "outcome": "fail",
                     "source_revision": os.environ["GITHUB_SHA"], "execution": "qemu-user",
                     "application_qualified": False, "native_qualified": False, "release_qualified": False,
-                    "original_19_test_gate": "fail", "error": "The diagnostic has not completed."}
+                    "original_19_test_gate": "fail", "acceptance_suite": "not-run", "acceptance_tests_run": 0,
+                    "error": "The diagnostic has not completed."}
           Path(os.environ["ASM_EVIDENCE"], "initial-report.json").write_text(json.dumps(report, indent=2) + "\n")
           PYTHON
           python3 tools/riscv64_server_observations.py --self-test \
@@ -131,8 +132,10 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$ASM_FIXTURE_REVISION" 04c93b3f0200173298d24f22a06393bc359a1af0
           python3 tools/riscv64_server_observations.py --prepare-context "$ASM_CONTEXT" \
-            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION" --phase-probe
+            --revision "$GITHUB_SHA" --fixture-revision "$ASM_FIXTURE_REVISION" --phase-probe --native-backend-probe
           cp "$ASM_CONTEXT/input-manifest.json" "$ASM_EVIDENCE/input-manifest.json"
+          cp tools/diagnostics/native_postgres.COPYRIGHT "$ASM_EVIDENCE/native-postgres.COPYRIGHT"
+          cp tools/diagnostics/native_postgres_manifest.json "$ASM_EVIDENCE/native-postgres-manifest.json"
       - name: Install the pinned emulator and diagnostic build tools
         timeout-minutes: 5
         shell: bash
@@ -186,7 +189,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests/riscv64 -p 'test_reference_*.py' -v \
             2>&1 | tee "$ASM_EVIDENCE/reference-self-tests.log"
-      - name: Observe the fixed binary and measure the owned query workload
+      - name: Compare original and native backend packages within the shared budget
         timeout-minutes: 12
         shell: bash
         run: |
@@ -194,13 +197,14 @@ jobs:
           python3 tools/riscv64_server_observations.py --run-image \
             --image-zip "$ASM_INPUTS/image.zip" --server-zip "$ASM_INPUTS/server.zip" \
             --context "$ASM_CONTEXT" --output "$ASM_EVIDENCE" --phase-probe \
+            --native-backend-probe \
             --mhd-source "$ASM_INPUTS/mhd-source.tar.gz"
       - name: Retain bounded observations from success or failure
         timeout-minutes: 2
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: UNQUALIFIED-server-phase-probe-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: UNQUALIFIED-reference-backend-control-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: server-observations-evidence/
           if-no-files-found: error
           retention-days: 14

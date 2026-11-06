@@ -234,7 +234,9 @@ def check_deadline(deadline):
 
 
 def run_suite(source: Path, registration_path: Path, trace_directory: Path, deadline: float,
-              *, query_cost_probe=False) -> int:
+              *, query_cost_probe=False, native_backend=False) -> int:
+    if query_cost_probe and native_backend:
+        raise ValueError(ERROR)
     check_deadline(deadline)
     fixture_path = source / "test_server.py"
     fixture_data = bounded_bytes(fixture_path, MAX_JSON)
@@ -262,6 +264,29 @@ def run_suite(source: Path, registration_path: Path, trace_directory: Path, dead
         raise ValueError(ERROR)
     cls.attribution_config = module.BinfmtFifoConfig(registration=registration, runner_deadline=deadline)
     cls.trace_config = module.PhaseTraceConfig(library_path=library, sha256=sha256, read_records=read_records)
+    if native_backend:
+        # The helper owns each fresh cluster and replays one unchanged method.
+        # Do not install the acceptance-suite teardown or run its other cohorts.
+        summary = {"schema": 1, "scope": "UNQUALIFIED-reference-backend-control",
+                   "outcome": "fail", "tests_run": 0, "acceptance_suite": "not-run",
+                   "diagnostic_method_replays": 0, "http_assertions_outcome": "not-run", "errors": []}
+        try:
+            from riscv64_reference_backend import run_backend_comparison
+            measurement = run_backend_comparison(cls, source, deadline)
+            check_deadline(deadline)
+            count = measurement.get("diagnostic_method_invocations")
+            if type(count) is int and 0 <= count <= 4:
+                summary["diagnostic_method_replays"] = count
+            assertions = measurement.get("http_assertions_outcome")
+            if assertions in ("pass", "fail", "not-run"):
+                summary["http_assertions_outcome"] = assertions
+            if (measurement.get("outcome") == "pass" and summary["diagnostic_method_replays"] == 4
+                    and summary["http_assertions_outcome"] in ("pass", "fail")):
+                summary["outcome"] = "pass"
+        except BaseException as error:
+            summary["errors"] = [{"stage": "backend-control", "type": error_type(error)}]
+        print("ASM_REFERENCE_BACKEND=" + json.dumps(summary, separators=(",", ":")), flush=True)
+        return int(summary["outcome"] != "pass")
     original_teardown = cls.tearDownClass.__func__
 
     @classmethod
@@ -307,18 +332,20 @@ def main():
     parser.add_argument("--registration", type=Path)
     parser.add_argument("--trace-directory", type=Path)
     parser.add_argument("--deadline", type=float)
-    parser.add_argument("--query-cost-probe", action="store_true")
+    probe = parser.add_mutually_exclusive_group()
+    probe.add_argument("--query-cost-probe", action="store_true")
+    probe.add_argument("--native-backend", action="store_true")
     args = parser.parse_args()
     try:
         if args.capture_registration:
-            if args.run_id is None or args.query_cost_probe or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
+            if args.run_id is None or args.query_cost_probe or args.native_backend or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
                 parser.error("Supply only --run-id with --capture-registration.")
             capture_registration(args.capture_registration, run_id=args.run_id)
             return 0
         if any(value is None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
             parser.error("Supply --source, --registration, --trace-directory, and --deadline.")
         return run_suite(args.source, args.registration, args.trace_directory, args.deadline,
-                         query_cost_probe=args.query_cost_probe)
+                         query_cost_probe=args.query_cost_probe, native_backend=args.native_backend)
     except Exception:
         print(ERROR, file=sys.stderr)
         return 1

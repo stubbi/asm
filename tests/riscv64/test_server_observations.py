@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import zipfile
@@ -132,6 +133,93 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(report["original_19_test_gate"], "fail")
         self.assertEqual(report["limits"]["suite_seconds"], 180)
         self.assertFalse(report["application_qualified"])
+
+    def test_backend_report_keeps_acceptance_not_run_even_before_guest_setup(self):
+        report = self.runner.initial_report(phase_probe=True, native_backend=True)
+        self.assertEqual(report["scope"], "retained-riscv64-reference-backend-control")
+        self.assertEqual(report["acceptance_suite"], "not-run")
+        self.assertEqual(sum(row["tests"] for row in report["not_run"]), 19)
+        self.assertNotIn("comparison_order", report)
+        self.assertNotIn("query_cost_probe", report)
+        self.assertEqual(report["original_19_test_gate"], "fail")
+        with tempfile.TemporaryDirectory() as temporary, redirect_stdout(io.StringIO()):
+            self.runner.publish_phase_summary(report, Path(temporary))
+            summary = json.loads((Path(temporary) / "phase-summary.json").read_text())
+        self.assertEqual(summary["scope"], "reference-backend-control-summary")
+        self.assertEqual(summary["arms"], [])
+        self.assertEqual(summary["acceptance_suite"], "not-run")
+        self.assertEqual(summary["http_assertions_outcome"], "not-run")
+        self.assertNotIn("cohorts", summary)
+
+    def test_backend_summary_omits_private_values_and_preserves_failed_assertions(self):
+        private = "postgresql://private-password@private-host/database"
+        observation = {"outcome": "pass", "http_assertions_outcome": "fail", "error": private,
+                       "arms": [{"label": "A1", "outcome": "pass", "method_outcome": "fail",
+                                 "error": private, "records": [{"index": 1, "status": 503,
+                                     "elapsed_seconds": 1.9, "body_base64": private}]}]}
+        summary = self.runner.sanitized_backend_summary({"server_tests": {"tests_run": 0}}, observation)
+        self.assertNotIn(private, json.dumps(summary))
+        self.assertEqual(summary["http_assertions_outcome"], "fail")
+        self.assertEqual(summary["arms"][0]["method_outcome"], "fail")
+        self.assertEqual(summary["arms"][0]["http"], [{"index": 1, "status": 503, "elapsed_us": 1900000}])
+
+    def test_backend_collection_selects_only_fixed_master_and_keeps_legacy_single_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            build = base / "build"
+            for directory in ("reference-causal-one", "reference-causal-two", "reference-backend"):
+                (build / directory).mkdir(parents=True)
+                (build / directory / "diagnostic.json").write_text("{}")
+            master = {"schema": 1, "scope": "reference-backend-control", "qualification": "UNQUALIFIED",
+                      "base_commit": self.runner.BASE_REVISION,
+                      "runtime": {"sha256": self.runner.SERVER_SHA, "bytes": self.runner.SERVER_BYTES}}
+            data = json.dumps(master).encode()
+            (build / "reference-backend/diagnostic.json").write_bytes(data)
+            output = base / "saved/qualification.json"
+            self.runner.retain_observation(build, output, native_backend=True)
+            self.assertEqual(output.read_bytes(), data)
+            with self.assertRaises(ValueError):
+                self.runner.retain_observation(build, output)
+            self.assertEqual(output.read_bytes(), data)
+            master["runtime"]["sha256"] = "0" * 64
+            (build / "reference-backend/diagnostic.json").write_text(json.dumps(master))
+            with self.assertRaises(ValueError):
+                self.runner.retain_observation(build, output, native_backend=True)
+            self.assertEqual(output.read_bytes(), data)
+
+    def test_backend_runner_has_explicit_zero_test_collection_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            log = base / "server_package.log"
+            calls = []
+            def run(arguments, destination, **kwargs):
+                calls.append((arguments, kwargs))
+                destination.write_text('ASM_REFERENCE_BACKEND={"schema":1,"scope":"UNQUALIFIED-reference-backend-control",'
+                    '"outcome":"pass","tests_run":0,"acceptance_suite":"not-run",'
+                    '"diagnostic_method_replays":4,"http_assertions_outcome":"fail","errors":[]}\n')
+                return {"outcome": "pass", "exit_code": 0}
+            with mock.patch.object(self.runner.combined, "bounded_process", side_effect=run):
+                result = self.runner.run_server_suite(base / "source", log, phase_probe=True, native_backend=True)
+            self.assertEqual(result["outcome"], "pass")
+            self.assertEqual(result["tests_run"], 0)
+            self.assertEqual(result["acceptance_suite"], "not-run")
+            self.assertIn("--native-backend", calls[0][0])
+            self.assertNotIn("--query-cost-probe", calls[0][0])
+            self.assertEqual(calls[0][1]["timeout"], 180)
+
+    def test_backend_runner_rejects_acceptance_logs_and_missing_collection_marker(self):
+        for text in ('Ran 14 tests in 1.0s\n\nOK\n',
+                     'ASM_REFERENCE_BACKEND={"outcome":"pass","tests_run":14,"acceptance_suite":"not-run"}\n',
+                     'ASM_REFERENCE_BACKEND={"outcome":"fail","tests_run":0,"acceptance_suite":"not-run"}\n'):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                def run(arguments, destination, **kwargs):
+                    destination.write_text(text)
+                    return {"outcome": "pass", "exit_code": 0}
+                with mock.patch.object(self.runner.combined, "bounded_process", side_effect=run):
+                    result = self.runner.run_server_suite(base / "source", base / "server.log",
+                                                         phase_probe=True, native_backend=True)
+                self.assertEqual(result["outcome"], "fail")
 
     def test_phase_log_summary_cannot_publish_body_or_arbitrary_error_text(self):
         private = "postgresql://private-password@private-host/database"
@@ -297,7 +385,7 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(json.loads(destination.read_text())["outcome"], "pass")
             self.assertFalse(marker.exists())
 
-    def _host_failure_scenario(self, base, *, extraction_seconds=0, create_timeout=False):
+    def _host_failure_scenario(self, base, *, extraction_seconds=0, create_timeout=False, native_backend=False):
         """Replace only unavailable Docker; retain real host files and failure reports."""
         context = base / "context"
         context.mkdir()
@@ -309,7 +397,9 @@ class ObservationTests(unittest.TestCase):
         image_config = {"rootfs": {"diff_ids": []}, "config": {"Env": []}}
         image = {"Id": self.runner.IMAGE_ID, "Architecture": "riscv64", "Os": "linux",
                  "RootFS": {"Layers": []}, "Config": {"Env": []}}
-        container = {"Image": self.runner.IMAGE_ID, "Config": {"User": "65532:65532", "Env": []},
+        overlay_image = "sha256:" + "1" * 64
+        container = {"Image": overlay_image if native_backend else self.runner.IMAGE_ID,
+                     "Config": {"User": "65532:65532", "Env": []},
                      "HostConfig": {"NetworkMode": "none", "Memory": 2147483648, "NanoCpus": 2000000000,
                                     "PidsLimit": 256, "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"]},
                      "Mounts": [{"Destination": "/inputs", "Source": str(context.resolve()), "RW": False, "Type": "bind"}]}
@@ -328,6 +418,9 @@ class ObservationTests(unittest.TestCase):
                 clock[0] += timeout
                 return subprocess.CompletedProcess(arguments, 0, stdout=json.dumps([container]).encode())
             elif arguments[1] == "create":
+                if native_backend:
+                    self.assertIn(overlay_image, arguments)
+                    self.assertIn("--native-backend-probe", arguments)
                 clock[0] += timeout
                 if create_timeout:
                     raise subprocess.TimeoutExpired(arguments[0], timeout)
@@ -343,14 +436,34 @@ class ObservationTests(unittest.TestCase):
             calls.append(("collect", timeout))
             clock[0] += timeout
             raise ValueError("The failed container has no requested record.")
+        def trace(archive, destination, **kwargs):
+            (destination / "trace").mkdir()
+            outputs = {}
+            for filename in ("reference_libpq_trace.so", "libreference_provider.so", "reference_trace_check"):
+                (destination / "trace" / filename).write_bytes(b"helper")
+                outputs[filename] = {"bytes": 6, "sha256": hashlib.sha256(b"helper").hexdigest()}
+            return {"outcome": "pass", "outputs": outputs}
+        def overlay(destination, retained, deadline):
+            self.assertEqual(destination, context)
+            self.assertEqual(deadline, 510)
+            self.assertTrue((destination / "asm-server-riscv64-linux").exists())
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+            calls.append(("native-overlay", 60))
+            clock[0] += 60
+            return {"outcome": "pass", "new_image_id": overlay_image}
         output = base / "evidence"
         with mock.patch.object(self.runner, "extract_zip_member", side_effect=extraction), \
              mock.patch.object(self.runner, "image_archive_contract", return_value=image_config), \
              mock.patch.object(self.runner.time, "monotonic", side_effect=lambda: clock[0]), \
              mock.patch.object(self.runner.combined, "command", side_effect=command), \
              mock.patch.object(self.runner.combined, "bounded_process", side_effect=runtime), \
-             mock.patch.object(self.runner.combined, "collect_file", side_effect=collect):
-            result = self.runner.run_image(base / "image.zip", server_zip, context, output)
+             mock.patch.object(self.runner.combined, "collect_file", side_effect=collect), \
+             mock.patch("riscv64_reference_suite.capture_registration", return_value={}), \
+             mock.patch.dict(sys.modules, {"riscv64_reference_native": SimpleNamespace(prepare_native=overlay),
+                                           "riscv64_reference_build": SimpleNamespace(prepare_trace=trace)}):
+            result = self.runner.run_image(base / "image.zip", server_zip, context, output,
+                                           phase_probe=native_backend, native_backend=native_backend,
+                                           mhd_source=base / "source.tar.gz" if native_backend else None)
         return result, json.loads((output / "UNQUALIFIED-host-report.json").read_text()), calls
 
     def test_shared_host_deadline_reserves_collection_after_runtime_timeout(self):
@@ -362,6 +475,17 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(report["host_elapsed_seconds"], 600)
             self.assertEqual(report["outcome"], "fail")
             self.assertTrue(all(timeout > 0 for _, timeout in calls))
+
+    def test_native_overlay_cost_uses_original_host_budget_and_bound_container(self):
+        with tempfile.TemporaryDirectory() as temporary, redirect_stdout(io.StringIO()):
+            result, report, calls = self._host_failure_scenario(Path(temporary), native_backend=True)
+            self.assertEqual(result, 1)
+            self.assertEqual(dict(calls)["runtime"], 240)
+            self.assertLess([kind for kind, _ in calls].index("native-overlay"),
+                            [kind for kind, _ in calls].index("create"))
+            self.assertEqual(report["host_elapsed_seconds"], 600)
+            self.assertEqual(report["scope"], "retained-riscv64-reference-backend-control")
+            self.assertEqual(report["acceptance_suite"], "not-run")
 
     def test_source_io_cannot_start_docker_after_the_operation_budget(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -436,6 +560,21 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(report["outcome"], "fail")
             self.assertEqual(report["qualification"], "UNQUALIFIED")
             self.assertIn("error", report)
+
+    def test_backend_flag_requires_phase_probe_and_early_failure_keeps_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "qualification.json"
+            arguments = [sys.executable, str(ROOT / "tools/riscv64_server_observations.py"),
+                         "--inside", "--native-backend-probe", "--output", str(output)]
+            result = subprocess.run(arguments, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(output.exists())
+            result = subprocess.run(arguments + ["--phase-probe"], capture_output=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            report = json.loads(output.read_text())
+            self.assertEqual(report["scope"], "retained-riscv64-reference-backend-control")
+            self.assertEqual(report["acceptance_suite"], "not-run")
+            self.assertEqual(sum(row["tests"] for row in report["not_run"]), 19)
 
     def test_real_suite_failure_stays_nonzero_with_all_fourteen_tests(self):
         with tempfile.TemporaryDirectory() as temporary:
