@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="176" height="40" viewBox="0 0 176 40" role="img" aria-labelledby="title">
+  <title id="title">Supports Asm</title>
+  <rect x=".5" y=".5" width="175" height="39" rx="6" fill="#fff" stroke="#62695c"/>
+  <text x="16" y="25" fill="#232820" font-family="system-ui, sans-serif" font-size="14">Supports</text>
+  <path d="m99 15 5 5-5 5" fill="none" stroke="#3f5633" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="113" y="25" fill="#232820" font-family="system-ui, sans-serif" font-size="17" font-weight="600">asm</text>
+</svg>

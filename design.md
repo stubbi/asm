@@ -111,6 +111,17 @@ At a 320-pixel viewport, content must not cause page-level horizontal scrolling.
 
 Do not depend on hover to expose required information. Honor `prefers-reduced-motion`. Do not add autoplay, carousels, parallax, or ornamental animation. Icons beside text are decorative and must be hidden from assistive technology.
 
+## Sponsorship
+
+The sponsorship page uses the shared palette with a separate, scoped stylesheet.
+It keeps tiers, prices, limits, agreement terms, and contact routes available without JavaScript.
+Display the USD 100,000 monthly goal as a target, never as funds raised.
+Confirm limited-tier availability before an agreement; do not infer it from public logos.
+Show real payment links only after the corresponding provider listing is active.
+Keep a visible email address beside the enquiry route.
+Only confirmed sponsors with recognition consent can appear in sponsor placements.
+Keep paid recognition separate from package ranking and release evidence.
+
 ## Verification before publication
 
 Check the claims against the current executable, `cli/commands.json`, release records, and specifications. Test the documented command sequence on the supported host. Do not carry forward an old success message after the implementation changes.
