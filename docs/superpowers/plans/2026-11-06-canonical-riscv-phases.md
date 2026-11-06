@@ -110,9 +110,11 @@ The original sixteen/twelve-case qualification remains outside this diagnostic's
 
 ## Local preparation evidence
 
-The successor aggregate passed 76 checks: 20 builder, 18 guest, 18 observer/parser, and 20 host/core checks.
-It retains the original 75 cases and adds a late-output receipt invalidation regression, including failed rewrite and removal paths.
+The successor aggregate passed 77 checks: 20 builder, 18 guest, 18 observer/parser, and 21 host/core checks.
+It retains the original 75 cases and adds late-output invalidation and host-to-guest identity regressions.
+The new cases cover failed receipt writes and self-consistent revision, output, and manifest identity mismatches.
 These checks use controlled fixtures and a typed mock provider. They do not qualify the target ABI or the application.
 The host transport checks use the complete closed guest schema without replacing its validation function.
+The host checks bind guest input and build identities to host-verified values captured before execution.
 Retained local failures include the original map-cancellation assumption, ephemeral tmpfs collection, source-mode binding, and SDK ownership joins.
 No RISC-V application, container, CI run, or private profile has executed for this candidate.

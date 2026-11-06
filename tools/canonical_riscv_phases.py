@@ -406,7 +406,13 @@ def publish_stream(path, output):
     return guest, records, controlled, rejected
 
 
-def guest_contract(guest, trace, records):
+def guest_contract(guest, trace, records, *, inputs, build, budget):
+    input_keys = ("canonical_revision", "diagnostic_revision", "sdk_revision", "trees", "observer", "observer_test",
+                  "started_ns", "deadline_ns")
+    budget_contract(inputs, budget)
+    need(guest["inputs"] == {key: inputs[key] for key in input_keys} and
+         guest["diagnostic_revision"] == inputs["diagnostic_revision"] and
+         guest["build"]["identity"] == build["identity"] and guest["build"]["outputs"] == build["outputs"])
     need(guest.get("scope") == SCOPE and guest.get("qualification") == "UNQUALIFIED" and
          guest.get("canonical_revision") == CANONICAL and guest.get("collector_complete") is True and
          guest.get("cleanup_complete") is True and all(guest.get(name) is False for name in
@@ -485,7 +491,11 @@ def run_host(image_zip, mhd_source, sdk, context, output, revision, budget):
                 mhd_source=Path(mhd_source), deadline=(budget.deadline_ns - 90000000000) / 1000000000,
                 timeout=min(120, budget.remaining(120)), observer_sha256=inputs["observer"]["sha256"],
                 observer_test_sha256=inputs["observer_test"]["sha256"])
-            build_contract(context)
+            verified_build = build_contract(context)
+            approved_build = {"identity": identity(context / "canonical-build/manifest.json"),
+                              "outputs": {name: {key: value[key] for key in
+                                  ("bytes", "sha256", "elf_machine", "elf_flags", "mode")}
+                                  for name, value in verified_build["outputs"].items()}}
             for filename in (*canonical_riscv_build.OUTPUTS, "manifest.json"):
                 source = context / "canonical-build" / filename
                 modules.observations.retain_host_file(source, output / filename, limit=1024 * 1024)
@@ -543,7 +553,7 @@ def run_host(image_zip, mhd_source, sdk, context, output, revision, budget):
                     if rejected is not None:
                         report["rejected_trace"] = rejected
                         raise ValueError(ERROR)
-                    guest_contract(guest, trace, records)
+                    guest_contract(guest, trace, records, inputs=inputs, build=approved_build, budget=budget)
                     report["collector_complete"] = "failure_stage" not in report
                 except (Exception, KeyboardInterrupt) as error:
                     report["collection_failure_type"] = type(error).__name__

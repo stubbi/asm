@@ -3,6 +3,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 No application, PostgreSQL, RISC-V executable, or container runs here.
 """
+import copy
 import hashlib
 import importlib.util
 import json
@@ -36,7 +37,7 @@ def http_records():
 
 class CanonicalPhaseContracts(unittest.TestCase):
     def host_fixture(self, base, *, bad_trace=False, runtime_failed=False, late_runtime=False, build_failed=False,
-                     oom_killed=False, missing_stream=False, extra_mount=None):
+                     oom_killed=False, missing_stream=False, extra_mount=None, guest_mutation=None):
         sys.path.insert(0, str(ROOT / "tools"))
         import canonical_riscv_build
         fixture_spec = importlib.util.spec_from_file_location("canonical_guest_fixture", ROOT / "tests/riscv64/test_canonical_guest.py")
@@ -73,6 +74,8 @@ class CanonicalPhaseContracts(unittest.TestCase):
             return SimpleNamespace(stdout=b"controlled tool version\n")
         def run(arguments, log, **kwargs):
             commands.append((list(map(str, arguments)), kwargs["timeout"]))
+            if guest_mutation is not None:
+                guest_mutation(guest)
             log.write_bytes(b"PRIVATE_UNCONTROLLED_GUEST_STDERR\n" if missing_stream else
                             b"ASM_CANONICAL_GUEST=" + json.dumps(guest).encode() + b"\n" + raw)
             if late_runtime:
@@ -100,9 +103,16 @@ class CanonicalPhaseContracts(unittest.TestCase):
                 raise ValueError("Controlled build failure.")
             target = context / "canonical-build"
             target.mkdir()
-            for name in (*canonical_riscv_build.OUTPUTS, "manifest.json"):
+            outputs = {}
+            for name in canonical_riscv_build.OUTPUTS:
                 (target / name).write_bytes(b"controlled artifact bytes")
-            return {"outcome": "pass"}
+                outputs[name] = dict(driver.identity(target / name), elf_machine=243, elf_flags=5, mode="0555")
+            manifest = {"outcome": "pass", "qualification": "UNQUALIFIED", "source_revision": driver.CANONICAL,
+                        "outputs": outputs}
+            (target / "manifest.json").write_text(json.dumps(manifest) + "\n")
+            guest["build"]["outputs"] = copy.deepcopy(outputs)
+            guest["build"]["identity"] = driver.identity(target / "manifest.json")
+            return manifest
         original_file, original_identity = driver.bounded_file, driver.identity
         def read(path, maximum):
             if str(path).startswith("/proc/sys/fs/binfmt_misc/"):
@@ -114,8 +124,10 @@ class CanonicalPhaseContracts(unittest.TestCase):
         now = original_ns()
         clock = {"now": now}
         budget = driver.Budget(now, now + 600000000000)
-        with patch.object(driver, "context_contract", return_value=(guest["inputs"], modules)), \
-                patch.object(driver, "sdk_modules", return_value=modules), patch.object(driver, "build_contract", return_value={}), \
+        guest["inputs"].update(started_ns=budget.started_ns, deadline_ns=budget.deadline_ns)
+        inputs = copy.deepcopy(guest["inputs"])
+        with patch.object(driver, "context_contract", return_value=(inputs, modules)), \
+                patch.object(driver, "sdk_modules", return_value=modules), \
                 patch.object(driver, "bounded_file", side_effect=read), patch.object(driver, "identity", side_effect=identify), \
                 patch.object(driver.platform, "system", return_value="Linux"), patch.object(driver.platform, "machine", return_value="x86_64"), \
                 patch.object(driver.time, "monotonic_ns", side_effect=(lambda: clock["now"]) if late_runtime else original_ns), \
@@ -123,6 +135,29 @@ class CanonicalPhaseContracts(unittest.TestCase):
             result = driver.run_host(base / "image.zip", base / "mhd.tar.gz", base / "sdk", context, output,
                                      guest["diagnostic_revision"], budget)
         return result, json.loads((output / "host-report.json").read_text()), commands, output
+
+    def test_host_rejects_self_consistent_guest_identity_mismatches_and_retains_records(self):
+        def revision(value):
+            value["diagnostic_revision"] = value["inputs"]["diagnostic_revision"] = "4" * 40
+        mutations = (revision,
+                     lambda value: value["build"]["outputs"]["asm-hub"].update(sha256="4" * 64),
+                     lambda value: value["build"]["identity"].update(sha256="4" * 64))
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as directory:
+                result, report, _, output = self.host_fixture(Path(directory), guest_mutation=mutate)
+                self.assertEqual(result, 1)
+                self.assertFalse(report["collector_complete"])
+                self.assertTrue(report["cleanup_complete"])
+                self.assertEqual(report["collection_failure_type"], "ValueError")
+                self.assertTrue((output / "qualification.json").is_file())
+                self.assertTrue((output / "server_package.log").is_file())
+                retained = json.loads((output / "qualification.json").read_text())
+                if index == 0:
+                    self.assertEqual(retained["diagnostic_revision"], "4" * 40)
+                    self.assertEqual(retained["inputs"]["diagnostic_revision"], "4" * 40)
+                else:
+                    metadata = retained["build"]["outputs"]["asm-hub"] if index == 1 else retained["build"]["identity"]
+                    self.assertEqual(metadata["sha256"], "4" * 64)
 
     def test_mock_host_charges_late_runtime_and_cleanup_to_original_clock(self):
         with tempfile.TemporaryDirectory() as directory:
