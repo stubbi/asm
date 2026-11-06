@@ -2,7 +2,7 @@
 
 **Goal:** Inspect whether a native PostgreSQL package changes completed searches with the same RISC-V application and clients.
 
-**Scope:** One isolated diagnostic. No product or permanent qualification-environment change is selected.
+**Scope:** An isolated diagnostic with one bounded setup repair. No product or permanent qualification-environment change is selected.
 The original 19-test failure and the rejected SQL candidate remain independent evidence.
 The rejected candidate and its result are retained on `codex/reference-query-candidate`, including documentation commit `8055e0e`.
 
@@ -98,7 +98,7 @@ The failure concerns the build recipe. It provides no native PostgreSQL feasibil
 No native loader preflight, PostgreSQL cluster, diagnostic method, or HTTP request ran.
 The complete 19-test acceptance suite remains `not-run` for this diagnostic.
 The historical original gate remains failed. All qualification flags remain false.
-No second run or permanent environment change was selected.
+This source ran once. No permanent environment change was selected.
 
 The verified artifact contains 25 files with 171,290 expanded bytes.
 
@@ -114,5 +114,25 @@ Its source tree is `cdbd88a6af03b7cf6c4bb8d85f52fcf8083cf2df02dbe2a174954b6b6985
 Its runner tree is `8df352fc36c1163786c5dd855f7bc74bce11c7e1305130a97feaad71ce9a6c83`.
 The original RISC-V psql contains 553,368 bytes with SHA-256 `9b1e1fa100e97bcfb6b6bcc8c1731e7758e3c716622bb6ebe42239b93df793e2`.
 
-A possible repair would give the retained image an owned local tag and verify that tag against its exact image ID.
-That repair and any further run require a separate selection.
+## Selected bounded setup repair
+
+The coordinator subsequently selected a local-tag repair and one follow-up run.
+The original failure and its artifacts remain unchanged.
+The repair assigns a unique owned local tag to the already checked retained image.
+The recipe uses this tag in `FROM` and keeps `--pull=false`.
+The harness checks the tag before the build and after each build attempt.
+Each check requires the original image ID, architecture, operating system, configuration, and root filesystem layers.
+The existing overlay layer-prefix, configuration, RISC-V byte, authentication, resource, deadline, and cleanup checks remain required.
+Tag checks are not race-free. The disposable CI runner's Docker daemon remains trusted.
+
+The focused regression exercises the real build wrapper and its generated recipe with a controlled Docker process.
+It catches the observed bare-ID reference and confirms that failed builds cannot publish new input receipts.
+Before-build and after-build tag changes also prevent receipt publication.
+No local engine, registry, package, or qualification control changes are selected.
+
+Docker documents [tagging a local image by ID](https://docs.docker.com/reference/cli/docker/image/tag/).
+Its [build command documentation](https://docs.docker.com/reference/cli/docker/buildx/build/) defines the pull option.
+These sources were checked on 2026-11-06. Actual local-tag resolution remains a follow-up runtime check.
+
+The repair passed 18 focused tests, 115 reference tests, 32 observation tests, workflow lint, and diff checks.
+Independent review found no blocking defect. These results do not establish that the actual overlay build succeeds.

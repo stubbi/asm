@@ -105,12 +105,13 @@ class NativeTests(unittest.TestCase):
                 self.n.check_baseline(bad)
 
     def test_recipe_adds_only_disjoint_paths_without_run_env_or_entrypoint(self):
-        recipe = self.n.overlay_recipe().splitlines()
+        base_tag = "asm-native-base:" + "a" * 32
+        recipe = self.n.overlay_recipe(base_tag).splitlines()
         commands = [line.split()[0] for line in recipe]
         self.assertEqual(commands.count("FROM"), 2)
         self.assertEqual(set(commands), {"FROM", "COPY"})
         self.assertIn(self.n.NATIVE_IMAGE, recipe[0])
-        self.assertIn(self.n.BASE_IMAGE, recipe[1])
+        self.assertIn(base_tag, recipe[1])
         self.assertIn("COPY --from=native / /opt/asm/native-postgres/rootfs/", recipe)
         self.assertIn("COPY --from=native /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1", recipe)
         self.assertIn("COPY musl.path /etc/ld-musl-x86_64.path", recipe)
@@ -264,24 +265,42 @@ class NativeTests(unittest.TestCase):
             overlay["RootFS"]["Layers"].append("native")
             baseline = self.baseline()
             calls = []
-            def fake(args, log, deadline, **kwargs):
+            owned_tag = None
+            def fake(arguments, log, **kwargs):
+                nonlocal owned_tag
+                args = arguments[arguments.index("docker") + 1:]
                 calls.append(args)
+                data = b""
+                if args[:2] == ["image", "tag"]:
+                    self.assertEqual(args[2], self.n.BASE_IMAGE)
+                    self.assertRegex(args[3], r"^asm-native-base:[0-9a-f]{32}$")
+                    owned_tag = args[3]
                 if args[:2] == ["image", "inspect"]:
-                    value = ({"Id": asset["config"], "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": asset["rootfs_diff_ids"]}} if args[2] == self.n.NATIVE_IMAGE else base if args[2] == self.n.BASE_IMAGE else overlay)
-                    return json.dumps([value]).encode()
+                    value = ({"Id": asset["config"], "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": asset["rootfs_diff_ids"]}} if args[2] == self.n.NATIVE_IMAGE else base if args[2] in (self.n.BASE_IMAGE, owned_tag) else overlay)
+                    data = json.dumps([value]).encode()
                 if args[0] == "start":
-                    return json.dumps(baseline).encode()
+                    data = json.dumps(baseline).encode()
                 if args[0] == "build":
                     directory = Path(args[-1])
                     self.assertEqual(set(p.name for p in directory.iterdir()), {"Dockerfile", "musl.path", "wrappers"})
-                    self.assertNotIn("RUN ", (directory / "Dockerfile").read_text())
-                return b""
-            with mock.patch.object(self.n, "_docker", side_effect=fake):
+                    recipe = (directory / "Dockerfile").read_text()
+                    self.assertNotIn("RUN ", recipe)
+                    # The observed bare sha256 FROM was parsed as a repository.
+                    # Inspect the recipe passed through the real build wrapper.
+                    self.assertIsNotNone(owned_tag)
+                    self.assertEqual(recipe.splitlines()[1], "FROM --platform=linux/riscv64 " + owned_tag)
+                    self.assertIn("--pull=false", args)
+                    self.assertIn("--network=none", args)
+                log.write_bytes(data)
+                return {"outcome": "pass", "exit_code": 0}
+            with mock.patch.object(self.n, "bounded_process", side_effect=fake):
                 result = self.n.prepare_native(context, output, time.monotonic() + 30)
             self.assertEqual(result["new_image_id"], overlay["Id"])
             self.assertEqual(json.loads((context / "native-baseline-risc.json").read_bytes()), baseline)
             self.assertEqual((context / "native-postgres-manifest.json").stat().st_mode & 0o777, 0o444)
-            self.assertEqual([args[0] for args in calls], ["pull", "image", "image", "create", "start", "rm", "build", "image"])
+            build_index = next(i for i, args in enumerate(calls) if args[0] == "build")
+            self.assertEqual(calls[build_index - 1], ["image", "inspect", owned_tag])
+            self.assertEqual(calls[build_index + 1], ["image", "inspect", owned_tag])
 
     def test_late_publication_failure_removes_new_receipts(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -296,7 +315,7 @@ class NativeTests(unittest.TestCase):
             overlay["RootFS"]["Layers"].append("native")
             def fake(args, *unused, **kwargs):
                 if args[:2] == ["image", "inspect"]:
-                    value = ({"Id": asset["config"], "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": asset["rootfs_diff_ids"]}} if args[2] == self.n.NATIVE_IMAGE else base if args[2] == self.n.BASE_IMAGE else overlay)
+                    value = ({"Id": asset["config"], "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": asset["rootfs_diff_ids"]}} if args[2] == self.n.NATIVE_IMAGE else base if args[2] == self.n.BASE_IMAGE or args[2].startswith("asm-native-base:") else overlay)
                     return json.dumps([value]).encode()
                 if args[0] == "start":
                     return json.dumps(self.baseline()).encode()
@@ -310,6 +329,42 @@ class NativeTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     self.n.prepare_native(context, output, time.monotonic() + 30)
             self.assertEqual(list(context.iterdir()), [])
+
+    def test_changed_local_tag_or_failed_build_never_publishes_receipts(self):
+        for failure in ("before", "after", "build"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                context, output = root / "context", root / "output"
+                context.mkdir()
+                output.mkdir()
+                asset = self.n.asset_manifest()
+                base = {"Id": self.n.BASE_IMAGE, "Architecture": "riscv64", "Os": "linux",
+                        "RootFS": {"Layers": ["base"]}, "Config": {}}
+                checked, built = [], []
+                def fake(args, *unused, **kwargs):
+                    if args[:2] == ["image", "inspect"]:
+                        value = base
+                        if args[2] == self.n.NATIVE_IMAGE:
+                            value = {"Id": asset["config"], "Architecture": "amd64", "Os": "linux",
+                                     "RootFS": {"Layers": asset["rootfs_diff_ids"]}}
+                        elif args[2].startswith("asm-native-base:"):
+                            checked.append("before" if not checked else "after")
+                            if checked[-1] == failure:
+                                value = {**base, "Id": "sha256:" + "f" * 64}
+                        return json.dumps([value]).encode()
+                    if args[0] == "start":
+                        return json.dumps(self.baseline()).encode()
+                    if args[0] == "build":
+                        built.append(True)
+                        if failure == "build":
+                            raise RuntimeError("The observed build failed.")
+                    return b""
+                with mock.patch.object(self.n, "_docker", side_effect=fake):
+                    with self.assertRaises(RuntimeError if failure == "build" else ValueError):
+                        self.n.prepare_native(context, output, time.monotonic() + 30)
+                self.assertEqual(list(context.iterdir()), [])
+                self.assertEqual(bool(built), failure != "before")
+                self.assertEqual(checked, ["before"] if failure == "before" else ["before", "after"])
 
     def test_resource_snapshot_copies_only_numeric_whitelisted_fields(self):
         with tempfile.TemporaryDirectory() as temporary:

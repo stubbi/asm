@@ -198,6 +198,13 @@ def check_overlay(base, overlay):
         raise ValueError("The native overlay changed its base configuration or layers.")
 
 
+def check_base_tag(base, actual):
+    """Check an owned alias; concurrent daemon changes are still possible."""
+    if (actual.get("Id") != BASE_IMAGE or any(actual.get(key) != base.get(key)
+            for key in ("Id", "Architecture", "Os", "RootFS", "Config"))):
+        raise ValueError("The owned local base tag changed its image binding.")
+
+
 def musl_path():
     return "\n".join(str(ROOT / path) for path in ("lib", "usr/local/lib", "usr/lib")) + "\n"
 
@@ -217,8 +224,10 @@ def wrapper(name):
             + "exec " + str(ROOT / "usr/local/bin" / name) + ' "$@"\n')
 
 
-def overlay_recipe():
-    return ("FROM --platform=linux/amd64 " + NATIVE_IMAGE + " AS native\nFROM --platform=linux/riscv64 " + BASE_IMAGE + "\n"
+def overlay_recipe(base_tag):
+    if type(base_tag) is not str or re.fullmatch(r"asm-native-base:[0-9a-f]{32}", base_tag) is None:
+        raise ValueError("Use the owned local base tag for the diagnostic build.")
+    return ("FROM --platform=linux/amd64 " + NATIVE_IMAGE + " AS native\nFROM --platform=linux/riscv64 " + base_tag + "\n"
             "COPY --from=native / /opt/asm/native-postgres/rootfs/\n"
             "COPY --from=native /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1\n"
             "COPY musl.path /etc/ld-musl-x86_64.path\n"
@@ -248,6 +257,7 @@ def prepare_native(context: Path, output: Path, deadline: float) -> dict:
     asset = asset_manifest()
     name = "asm-native-baseline-" + uuid.uuid4().hex
     tag = "asm-native-overlay:" + uuid.uuid4().hex
+    base_tag = "asm-native-base:" + uuid.uuid4().hex
     published = []
     with tempfile.TemporaryDirectory(prefix=".native-overlay-", dir=context.parent) as temporary:
         stage = Path(temporary)
@@ -274,7 +284,8 @@ def prepare_native(context: Path, output: Path, deadline: float) -> dict:
         finally:
             if created:
                 _docker(["rm", "--force", name], output / "native-remove-baseline.log", deadline, config=config, cap=5)
-        (stage / "Dockerfile").write_text(overlay_recipe())
+        recipe = overlay_recipe(base_tag)
+        (stage / "Dockerfile").write_text(recipe)
         (stage / "musl.path").write_text(musl_path())
         (stage / "wrappers").mkdir()
         for command in ("initdb", "postgres", "psql"):
@@ -287,7 +298,12 @@ def prepare_native(context: Path, output: Path, deadline: float) -> dict:
         outside_config.mkdir()
         config = outside_config
         try:
-            run(["build", "--platform=linux/riscv64", "--pull=false", "--network=none", "--progress=plain", "--tag", tag, str(stage)], "build-overlay", 60)
+            run(["image", "tag", BASE_IMAGE, base_tag], "tag-base")
+            check_base_tag(base, _json(run(["image", "inspect", base_tag], "inspect-base-tag-before"))[0])
+            try:
+                run(["build", "--platform=linux/riscv64", "--pull=false", "--network=none", "--progress=plain", "--tag", tag, str(stage)], "build-overlay", 60)
+            finally:
+                check_base_tag(base, _json(run(["image", "inspect", base_tag], "inspect-base-tag-after"))[0])
             overlay = _json(run(["image", "inspect", tag], "inspect-overlay"))[0]
             check_overlay(base, overlay)
             if not re.fullmatch(r"sha256:[0-9a-f]{64}", overlay.get("Id", "")):
@@ -295,11 +311,13 @@ def prepare_native(context: Path, output: Path, deadline: float) -> dict:
             shutil.rmtree(outside_config)
             report = {"schema": 1, "scope": "native-backend-copy-overlay", "qualification": "UNQUALIFIED", "outcome": "pass",
                       "new_image_id": overlay["Id"], "overlay_tag": tag, "base_image_id": BASE_IMAGE,
+                      "base_tag": base_tag, "base_tag_checked_before_and_after": True,
                       "native_image": NATIVE_IMAGE, "native_config": asset["config"], "native_rootfs_diff_ids": asset["rootfs_diff_ids"],
                       "base_rootfs_diff_ids": base["RootFS"]["Layers"], "overlay_rootfs_diff_ids": overlay["RootFS"]["Layers"],
                       "base_config_sha256": hashlib.sha256(json.dumps(base["Config"], sort_keys=True).encode()).hexdigest(),
-                      "dockerfile_sha256": hashlib.sha256(overlay_recipe().encode()).hexdigest(), "risc_baseline": baseline,
-                      "limitations": ["Backend architecture and build differ.", "The original application remains unqualified."]}
+                      "dockerfile_sha256": hashlib.sha256(recipe.encode()).hexdigest(), "risc_baseline": baseline,
+                      "limitations": ["Backend architecture and build differ.", "Local tag checks are not race-free.",
+                                      "The original application remains unqualified."]}
             for destination, data in zip(destinations, [json.dumps(baseline, sort_keys=True).encode(), _read(MANIFEST, 32768)]):
                 temporary_file = stage / destination.name
                 temporary_file.write_bytes(data)
