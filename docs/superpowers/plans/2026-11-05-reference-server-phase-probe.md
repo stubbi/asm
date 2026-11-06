@@ -262,3 +262,51 @@ Local checks passed: 94 reference checks, 28 observation checks, and 20 shared h
 Actionlint and the Git whitespace check passed.
 Review corrections reject unsupported summary schemas and preserve SQL-only scope before guest collection.
 The original HTTP and 19-method acceptance results remain separate from this comparison.
+
+### Measured candidate result
+
+[Run 42204735599](https://github.com/stubbi/asm/actions/runs/42204735599) tested source `e7e1ad42dfd599b9cbab5fb5fb9a79f0e8b54fe3`.
+Baseline SQL SHA-256 was `5cd15a09fa823567a83b4042b799a33e9bd379ec3cd346b96371c02ebd234b0d`.
+Candidate SQL SHA-256 was `556594715aac9fbb0ba7f3689b2c48ea7733be8152c4167460f9db7ce41df4b4`.
+The retained PostgreSQL 16.15 image ran under pinned RISC-V emulation and the unchanged resource and authentication limits.
+The workload used the original 23-package catalog, 16 queries, and eight workers in each fixed ABBA wave.
+No statistics refresh ran during this comparison.
+
+Real PostgreSQL 16.15 equivalence passed all 47 pairs, 16 groups, and 23 original package checks.
+Cleanup and the unchanged benchmark catalog checks passed.
+The 64 timed attempts produced these completion counts:
+
+| Wave | Completed | Failed |
+| --- | ---: | ---: |
+| A1 baseline | 16 | 0 |
+| B1 candidate | 14 | 2 |
+| B2 candidate | 14 | 2 |
+| A2 baseline | 15 | 1 |
+
+All 59 successful result digests matched the checked original package digests.
+Four failures returned result status 7 and SQLSTATE `57014`, which identifies query cancellation.
+One candidate attempt reached its shared client deadline.
+The provider error text was excluded; the cancellation origin is not independently established.
+
+Eleven package indexes completed all four waves.
+For those indexes, the median candidate-minus-baseline query interval was positive 59.870 milliseconds.
+Each index compares the mean of its two candidate samples with its two baseline samples.
+These complete cases exclude failed attempts and do not remove fixed-order or cache effects.
+Candidate query and total-interval tails also increased in this run.
+
+Structural samples showed single release/publication scans instead of 23 repeated lookups.
+Root shared-buffer hits decreased from 103 to 11.
+These sequential instrumented samples do not establish a latency benefit.
+CPU quota throttling occurred in 134 of 135 measured periods across the four waves.
+The counters cover the whole container and do not isolate authentication, database, client, or scheduling costs.
+
+The measurement completed in 16.595091 seconds, including the semantic gate.
+The workflow passed its evidence-collection contract; this result does not establish a candidate performance improvement.
+The baseline remains the application query.
+The original 19-method result remains failed; those methods were not run by this SQL-only comparison.
+Application, native, and release qualification flags remain false.
+
+Artifact `13496330930` contains 61,942 ZIP bytes with SHA-256 `1be4a50171d1de1105bbb9038e912e806daba28f007363d3e1b657979fdd4e3c`.
+Its observation contains 78,256 bytes with SHA-256 `469f3615e3add43066f1b93f72411beeb9e3ca9699c915259e5ec5a611302c4f`.
+All 21 expanded members were retained and independently checked against the ZIP.
+The local `candidate-analysis.json` retains all wave distributions, failed attempts, and complete-case paired samples.
