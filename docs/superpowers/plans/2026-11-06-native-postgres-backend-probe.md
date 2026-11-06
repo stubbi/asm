@@ -75,9 +75,44 @@ No permanent environment change follows without result review and an explicit se
 - [x] Test file collisions, malformed metadata, wrong executables, late work, and failed cleanup.
 - [x] Verify fixture, request, resource, authentication, and component bindings in the harness.
 - [x] Freeze the proposal and implementation before the one selected dispatch.
-- [ ] Retain positive and negative results with exact artifact digests.
+- [x] Retain positive and negative results with exact artifact digests.
 
 Local checks on 2026-11-06 passed: 114 reference tests, 32 observation tests, 20 shared harness tests, workflow lint, and diff checks.
 Independent reviews found no remaining blocker for the single diagnostic.
 These checks used synthetic fixtures. Actual image construction, required native loading, PostgreSQL setup, and HTTP behavior remain untested.
 The preflight checks required core tools, PL/pgSQL, and bootstrap data. Unused modules remain untested.
+
+## Selected run: overlay construction failed
+
+[Run 42212647687](https://github.com/stubbi/asm/actions/runs/42212647687), job `127874824059`, tested commit `3225e87eacd6cf72869bcd802d5a1ec0b3376ad1`.
+The job failed at `native-overlay` after 14.871 host seconds.
+The pinned native image download and config/rootfs checks passed.
+The original RISC-V baseline and the absent overlay targets passed their checks.
+The baseline container was removed before the overlay build began.
+
+The recipe supplied the retained image's bare local ID in `FROM`.
+BuildKit interpreted this value as a registry reference under `docker.io/library/sha256`.
+The registry lookup failed before `COPY` ran.
+The failure concerns the build recipe. It provides no native PostgreSQL feasibility or latency result.
+
+No native loader preflight, PostgreSQL cluster, diagnostic method, or HTTP request ran.
+The complete 19-test acceptance suite remains `not-run` for this diagnostic.
+The historical original gate remains failed. All qualification flags remain false.
+No second run or permanent environment change was selected.
+
+The verified artifact contains 25 files with 171,290 expanded bytes.
+
+| Evidence | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Artifact `13500425819` ZIP | 52,386 | `353a062c04a76fa226298db3f03ce7c7cb75030673a818dd0554b9b12cb13817` |
+| Host report | 30,109 | `a7a34bb3433474938e0250d848c5c14311f8d1757f9f5b7c47ed5452271bf05f` |
+| Input manifest | 1,374 | `bbbe963c00c3380b395673025d3db12401c22c2f7dd916fad8d38c60a795a95b` |
+| Derived local analysis | 2,594 | `e8c10bc2a906278afd8f2b3b90d8bc34d5c413aa147273518c16bc17dc8a2b59` |
+
+The input manifest matches the frozen local context exactly.
+Its source tree is `cdbd88a6af03b7cf6c4bb8d85f52fcf8083cf2df02dbe2a174954b6b69853506`.
+Its runner tree is `8df352fc36c1163786c5dd855f7bc74bce11c7e1305130a97feaad71ce9a6c83`.
+The original RISC-V psql contains 553,368 bytes with SHA-256 `9b1e1fa100e97bcfb6b6bcc8c1731e7758e3c716622bb6ebe42239b93df793e2`.
+
+A possible repair would give the retained image an owned local tag and verify that tag against its exact image ID.
+That repair and any further run require a separate selection.
