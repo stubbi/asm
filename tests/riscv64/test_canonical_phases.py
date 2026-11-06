@@ -132,6 +132,37 @@ class CanonicalPhaseContracts(unittest.TestCase):
             self.assertFalse(report["cleanup_complete"])
             self.assertGreater(report["host_elapsed_ns"], 600000000000)
 
+    def test_late_output_invalidates_success_before_a_failing_rewrite(self):
+        original_ns, original_write, original_unlink = time.monotonic_ns, Path.write_text, Path.unlink
+        for failure in (None, "rewrite", "unlink"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                clock = {"now": original_ns()}
+                def write(path, text, *args, **kwargs):
+                    value = json.loads(text) if path.name == "host-report.json" else None
+                    if value is not None and value.get("failure_stage") == "late-output" and failure == "rewrite":
+                        raise OSError("Controlled late receipt rewrite failure.")
+                    result = original_write(path, text, *args, **kwargs)
+                    if value is not None and value.get("collector_complete") is True:
+                        clock["now"] = value["deadline_ns"] + 1
+                    return result
+                def unlink(path, *args, **kwargs):
+                    if path.name == "host-report.json" and failure == "unlink":
+                        raise OSError("Controlled late receipt invalidation failure.")
+                    return original_unlink(path, *args, **kwargs)
+                with patch.object(driver.time, "monotonic_ns", side_effect=lambda: clock["now"]), \
+                        patch.object(Path, "write_text", new=write), patch.object(Path, "unlink", new=unlink):
+                    if failure is None:
+                        result, report, _, _ = self.host_fixture(base)
+                        self.assertEqual(result, 1)
+                        self.assertFalse(report["collector_complete"])
+                        self.assertEqual(report["failure_stage"], "late-output")
+                    else:
+                        with self.assertRaises(OSError):
+                            self.host_fixture(base)
+                if failure == "rewrite":
+                    self.assertFalse((base / "output/host-report.json").exists())
+
     def test_mock_host_retains_bounded_build_failure_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             result, report, _, output = self.host_fixture(Path(directory), build_failed=True)

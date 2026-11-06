@@ -568,6 +568,8 @@ def run_host(image_zip, mhd_source, sdk, context, output, revision, budget):
             if after_write > budget.deadline_ns:
                 report.update(collector_complete=False, failure_stage="late-output", completed_ns=after_write,
                               host_elapsed_ns=after_write - budget.started_ns)
+                # Do not retain success if the failure rewrite cannot complete.
+                report_path.unlink()
                 report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return 0 if report["collector_complete"] else 1
 

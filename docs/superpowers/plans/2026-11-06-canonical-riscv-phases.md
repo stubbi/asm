@@ -110,7 +110,8 @@ The original sixteen/twelve-case qualification remains outside this diagnostic's
 
 ## Local preparation evidence
 
-The focused local aggregate passed 75 checks: 20 builder, 18 guest, 18 observer/parser, and 19 host/core checks.
+The successor aggregate passed 76 checks: 20 builder, 18 guest, 18 observer/parser, and 20 host/core checks.
+It retains the original 75 cases and adds a late-output receipt invalidation regression, including failed rewrite and removal paths.
 These checks use controlled fixtures and a typed mock provider. They do not qualify the target ABI or the application.
 The host transport checks use the complete closed guest schema without replacing its validation function.
 Retained local failures include the original map-cancellation assumption, ephemeral tmpfs collection, source-mode binding, and SDK ownership joins.
