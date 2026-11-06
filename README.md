@@ -5,7 +5,7 @@
 Asm is a package registry and command-line tool for assembly projects.
 Create a project, use packages, and share releases with their source and verification results.
 
-[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md)
+[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md) · [Sponsor Asm](https://asm.build/sponsors.html)
 
 ## A new era for software
 
@@ -260,6 +260,13 @@ asm version
 `make` selects the native implementation for your machine.
 The root `asm.toml` describes the Linux x86-64 reference build.
 The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
+
+## Support Asm
+
+Help fund maintainer time, registry operations, security work, and documentation.
+The [sponsorship page](https://asm.build/sponsors.html) lists company and individual options, recognition, and terms.
+Sponsorships are arranged by email.
+Confirm availability and payment details before you pay.
 
 ## Contribute
 
