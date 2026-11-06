@@ -956,7 +956,7 @@ class WindowsRuntimeTests(unittest.TestCase):
                           for path in project.rglob('*') if path.is_file()}
                 options = ('--index', self.index) if command == 'resolve' else ()
                 self.cli(command, *options, '--artifacts', directory,
-                         cwd=project, code=1 if ARM64 else 2)
+                         cwd=project, code=2)
                 if command == 'resolve':
                     self.assertFalse((project / 'asm.lock').exists())
                 else:

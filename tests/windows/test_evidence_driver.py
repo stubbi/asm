@@ -154,6 +154,51 @@ class EvidenceDriverTests(unittest.TestCase):
 
 
 class FaultObservationTests(unittest.TestCase):
+    def test_marker_compile_timeout_preserves_original_error_and_partial_streams(self):
+        vectors = ((b'partial\x00stdout', b'partial\xffstderr'), (None, None),
+                   (b'', b''), (b'\xff' * 10000, b'\x00' * 10000))
+        for stdout, stderr in vectors:
+            with self.subTest(stdout_bytes=None if stdout is None else len(stdout),
+                              stderr_bytes=None if stderr is None else len(stderr)):
+                raised, observed = [], []
+
+                def timeout_compile(argv, **options):
+                    self.assertEqual(options, {'capture_output': True, 'timeout': 30})
+                    error = subprocess.TimeoutExpired(argv, 30, output=stdout, stderr=stderr)
+                    raised.append(error)
+                    raise error
+
+                class CapturedResult(driver.EvidenceResult):
+                    def addError(self, test, error):
+                        observed.append(error[1])
+                        super().addError(test, error)
+
+                case = FaultObservationTests('test_fault_marker_function_writes_exact_stage_and_fails_closed')
+                with patch.object(subprocess, 'run', side_effect=timeout_compile):
+                    result = unittest.TextTestRunner(stream=io.StringIO(), resultclass=CapturedResult).run(case)
+                self.assertEqual(len(raised), 1, 'The actual marker compiler path did not run exactly once.')
+                self.assertEqual(len(observed), 1)
+                self.assertIs(observed[0], raised[0])
+                error = observed[0]
+                self.assertIs(type(error), subprocess.TimeoutExpired)
+                self.assertEqual(error.timeout, 30)
+                self.assertIs(error.stdout, stdout)
+                self.assertIs(error.stderr, stderr)
+                notes = getattr(error, '__notes__', [])
+                self.assertEqual(len(notes), 2)
+                for name, value, note in zip(('stdout', 'stderr'), (stdout, stderr), notes):
+                    prefix = 'marker compiler timeout ' + name + ': '
+                    if value is None:
+                        self.assertEqual(note, prefix + 'unavailable (None)')
+                    else:
+                        self.assertEqual(note, prefix + f'captured bytes={len(value)} '
+                                         f'truncated={len(value) > 1024} prefix_hex={value[:1024].hex()}')
+                    self.assertLessEqual(len(note), 2200)
+                    self.assertIn(note, result.records[0]['detail'])
+                self.assertEqual((result.testsRun, len(result.failures), len(result.errors)), (1, 0, 1))
+                self.assertEqual([row['outcome'] for row in result.records], ['error'])
+                self.assertFalse(driver.qualifies_result(result))
+
     def test_fault_mocks_do_not_collide_with_real_kernel32_imports(self):
         # A separate startup needs the real import thunk. A strong mock with
         # that API name collides even when the mock translation unit compiles.
@@ -437,8 +482,18 @@ int main(int argc, char **argv) {
             root = Path(temporary)
             source, binary = root / 'marker.c', root / 'marker.exe'
             source.write_text(harness)
-            built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
-                                    '-o', str(binary)], capture_output=True, timeout=30)
+            try:
+                built = subprocess.run([compiler, *target_arguments, '-std=c11', '-O0', str(source),
+                                        '-o', str(binary)], capture_output=True, timeout=30)
+            except subprocess.TimeoutExpired as error:
+                for name, value in (('stdout', error.stdout), ('stderr', error.stderr)):
+                    prefix = 'marker compiler timeout ' + name + ': '
+                    if value is None:
+                        error.add_note(prefix + 'unavailable (None)')
+                    else:
+                        error.add_note(prefix + f'captured bytes={len(value)} '
+                                       f'truncated={len(value) > 1024} prefix_hex={value[:1024].hex()}')
+                raise
             self.assertEqual(built.returncode, 0, (built.stdout.decode(errors='replace'),
                                                   built.stderr.decode(errors='replace')))
             stages = ((1, b'payload_flush'), (2, b'record_write'),
