@@ -206,3 +206,59 @@ The follow-up passed 72 reference checks, 25 observation checks, and 20 shared h
 Actionlint and the Git whitespace check passed.
 Two independent source reviews found no remaining blocker after the deadline and evidence-bound corrections.
 These checks use synthetic database boundaries and do not establish a target runtime result.
+
+## One SQL candidate and paired comparison
+
+The coordinator accepted the investigation and authorized one SQL candidate.
+The user outcome is completed searches within the existing limits.
+The candidate remains separate from the application until measured results and review support adoption.
+
+Preserve the original query and its digest.
+Keep the existing latest-release lookup for unfiltered listings.
+For a nonempty search, select latest eligible releases once with `DISTINCT ON`.
+Apply the package cursor before release selection.
+Apply the summary filter after latest eligible release selection.
+Compute owner and target presentation after the 20-row page.
+Materialize only the bounded matching and page results.
+
+The extra SQL branch protects unfiltered pagination from an unconditional release-history sort.
+The search branch can still inspect more release history in catalogs with many versions.
+Extra query text can increase planning cost.
+The comparison must expose these trade-offs without assuming an improvement.
+
+### Task: Prove query behavior
+
+Files: `tools/diagnostics/reference_search_candidate.sql`, `tools/diagnostics/reference_search_cases.py`, and `tests/riscv64/test_reference_search_cases.py`.
+Interface: `verify(case, baseline, candidate, deadline) -> dict` returns bounded case outcomes and digest bindings.
+
+- [ ] Test independent expected results and exact baseline/candidate bytes.
+- [ ] Cover older matching summaries, yanked fallback, unpublished releases, numeric versions, target ordering, cursors, pages, and empty results.
+- [ ] Roll back temporary semantic records before measurement.
+- [ ] Preserve the original 23-package query hashes.
+- [ ] Use native PostgreSQL 18 only for a separately labeled semantic smoke check.
+- [ ] Require real PostgreSQL 16.15 equivalence before measurement.
+
+### Task: Reuse the bounded measurement
+
+Files: `tools/riscv64_reference_performance.py`, `tools/riscv64_reference_suite.py`, `tools/riscv64_server_observations.py`, and their current tests.
+Interface: run the concrete candidate check through the existing connector and collector.
+
+- [ ] Use four ordinary-query waves in baseline, candidate, candidate, baseline order.
+- [ ] Retain all 64 attempts, failures, result hashes, connection intervals, and CPU counters.
+- [ ] Keep 16 requests, eight workers, SCRAM, resources, and all existing time limits.
+- [ ] Keep the original catalog statistics unchanged.
+- [ ] Run no statistics refresh during this comparison.
+- [ ] Keep original acceptance results and qualification flags separate.
+- [ ] Run relevant local checks and independent review before the single remote comparison.
+
+The native semantic smoke used PostgreSQL 18.6 and libpq/psql 18.1.
+All 47 query pairs passed in 16 case groups.
+All 23 original package result hashes matched.
+Rollback, case-database removal, and the unchanged benchmark catalog checks passed.
+The report binds the exact helper, queries, migration, and local tool bytes.
+This smoke does not replace the PostgreSQL 16.15 gate.
+
+Local checks passed: 94 reference checks, 28 observation checks, and 20 shared harness checks.
+Actionlint and the Git whitespace check passed.
+Review corrections reject unsupported summary schemas and preserve SQL-only scope before guest collection.
+The original HTTP and 19-method acceptance results remain separate from this comparison.

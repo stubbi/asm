@@ -23,6 +23,8 @@ from riscv64_combined import bounded_process, elf_machine
 
 ERROR = "Invalid bounded query-cost evidence."
 QUERY_SHA = "5cd15a09fa823567a83b4042b799a33e9bd379ec3cd346b96371c02ebd234b0d"
+CANDIDATE_SHA = "556594715aac9fbb0ba7f3689b2c48ea7733be8152c4167460f9db7ce41df4b4"
+CANDIDATE_PATH = Path(__file__).parent / "diagnostics/reference_search_candidate.sql"
 MAX_BYTES = 65536
 MAX_DEPTH = 32
 MAX_NODES = 256
@@ -522,6 +524,163 @@ def run_diagnostic(case, source: Path, deadline: float) -> dict:
                 if "plan" in row:
                     row["plan"]["Plan"].pop("Plans", None)
                     row["full_tree_retained"] = False
+        report.update(outcome="fail", comparison_valid=False, failure="retained-byte-bound")
+    if (type(deadline) in (int, float) and math.isfinite(deadline)
+            and time.monotonic() >= min(deadline, started + 30)):
+        report.update(outcome="fail", comparison_valid=False, failure="deadline")
+    report["seconds"] = round(time.monotonic() - started, 6)
+    return report
+
+
+def _candidate_guard(case):
+    """Require the owned main process and its attribution helper to be stopped."""
+    if (case.fixture_ready is not True or case.attribution is None
+            or not case._owned_server_stopped(case.server, case.attribution)
+            or case.attribution.failure is not None): raise ValueError(ERROR)
+    record = case.attribution.record
+    if (type(record.get("returncode")) is not int or record["returncode"] != 0
+            or record.get("cleanup_errors") != [] or record.get("released") is not True
+            or record.get("target_ready") is not True or "failure" in record): raise ValueError(ERROR)
+
+
+def _candidate_equivalence(value):
+    """Retain the semantic helper's fixed schema without arbitrary strings."""
+    if (type(value) is not dict or type(value.get("schema")) is not int or value["schema"] != 1
+            or value.get("scope") != "reference-search-sql-equivalence"
+            or value.get("qualification") != "UNQUALIFIED" or value.get("outcome") not in ("pass", "fail")
+            or type(value.get("expected_cases")) is not int or value["expected_cases"] != 16): raise ValueError(ERROR)
+    result = {key: value[key] for key in ("schema", "scope", "qualification", "outcome", "expected_cases")}
+    if value.get("failure") in ("invalid-input", "database-operation", "equivalence", "cleanup", "deadline"):
+        result["failure"] = value["failure"]
+    for key in ("baseline_sha256", "candidate_sha256"):
+        if type(value.get(key)) is not str or not re.fullmatch(r"[0-9a-f]{64}", value[key]): raise ValueError(ERROR)
+        result[key] = value[key]
+    result["elapsed_seconds"] = _number(value["elapsed_seconds"])
+    cleanup = value["cleanup"]
+    flags = ("transaction_rolled_back", "case_database_dropped", "original_catalog_unchanged")
+    if type(cleanup) is not dict or any(type(cleanup.get(key)) is not bool for key in flags): raise ValueError(ERROR)
+    result["cleanup"] = {key: cleanup[key] for key in flags}
+    for key, count in (("cases", 16), ("original_queries", 23)):
+        rows = value[key]
+        if type(rows) is not list or len(rows) != count: raise ValueError(ERROR)
+        result[key] = []
+        for index, row in enumerate(rows, 1):
+            if (type(row) is not dict or type(row.get("index")) is not int or row["index"] != index
+                    or row.get("outcome") not in ("pass", "fail", "not-run")): raise ValueError(ERROR)
+            safe = {"index": index, "outcome": row["outcome"]}
+            for field in ("baseline_sha256", "candidate_sha256", "expected_sha256"):
+                digest = row.get(field)
+                if type(digest) is not str or not re.fullmatch(r"[0-9a-f]{64}|", digest): raise ValueError(ERROR)
+                if row["outcome"] == "pass" and not digest: raise ValueError(ERROR)
+                safe[field] = digest
+            if key == "cases":
+                checks = row.get("checks")
+                if type(checks) is not int or not 0 <= checks <= 256 or (row["outcome"] == "pass" and not checks):
+                    raise ValueError(ERROR)
+                safe["checks"] = checks
+            result[key].append(safe)
+    passed = value["original_queries_passed"]
+    if type(passed) is not int or not 0 <= passed <= 23: raise ValueError(ERROR)
+    result["original_queries_passed"] = passed
+    if (not all(result["cleanup"].values()) or passed != 23
+            or any(row["outcome"] != "pass" or row["baseline_sha256"] != row["candidate_sha256"]
+                   for key in ("cases", "original_queries") for row in result[key])):
+        result["outcome"] = "fail"
+    return result
+
+
+def _candidate_pairs(waves):
+    """Compare exact result bytes for each index with successful A and B samples."""
+    records, mismatches, paired = [], [], 0
+    for index in range(1, 17):
+        sides = {side: [row["result_sha256"] for wave in waves if wave["label"].startswith(side)
+                       for row in wave["records"] if row["index"] == index and row["outcome"] == "pass"]
+                 for side in ("A", "B")}
+        available = bool(sides["A"] and sides["B"])
+        matched = len(set(sides["A"] + sides["B"])) == 1 if available else None
+        if available: paired += 1
+        if matched is False: mismatches.append(index)
+        records.append({"index": index, "successful_A": len(sides["A"]), "successful_B": len(sides["B"]),
+                        "matched": matched})
+    return {"paired_indexes": paired, "mismatched_indexes": mismatches,
+            "all_matched": paired > 0 and not mismatches, "records": records}
+
+
+def run_candidate(case, source: Path, deadline: float) -> dict:
+    """Gate a fixed SQL candidate, then collect four plain ABBA query waves."""
+    started = time.monotonic()
+    report = {"schema": 1, "scope": "reference-query-candidate-abba", "qualification": "UNQUALIFIED",
+        "outcome": "fail", "application_qualified": False, "native_qualified": False, "release_qualified": False,
+        "original_19_test_gate": "fail", "http_tests": "not-run", "order": ["A1", "B1", "B2", "A2"],
+        "baseline_sha256": QUERY_SHA, "candidate_sha256": CANDIDATE_SHA, "waves": [],
+        "structural_samples": {"outcome": "not-run", "reason": "comparison-not-complete", "records": []},
+        "limits": {"seconds": 30, "per_query_seconds": 2, "statement_ms": 1000, "lock_ms": 200,
+            "workers": 8, "queries_per_wave": 16, "search_result_bytes": 16384,
+            "plan_result_bytes": MAX_BYTES, "plan_nodes": MAX_NODES, "report_bytes": 512 * 1024},
+        "limits_of_evidence": ["A passing diagnostic records usable measurements; individual query failures remain failures.",
+            "The original HTTP tests and direct/proxy cohorts are not repeated or qualified by this SQL diagnostic.",
+            "The semantic gate uses a separate owned database; the 23-package measurement catalog is read-only.",
+            "ABBA is a fixed run order; cache, scheduling, and elapsed-order effects are not isolated.",
+            "setup_connect_ms includes Python/ctypes setup, connection startup, authentication and scheduling.",
+            "query_ms includes protocol, scheduling, result transfer and drain; it is not isolated server CPU.",
+            "Optional EXPLAIN samples describe structure after ABBA; their instrumented timings are not plain-query comparisons.",
+            "EXPLAIN ANALYZE TIMING OFF still measures total execution and adds instrumentation.",
+            "Catalog statistics are estimates; cgroup CPU counters include all work in the container."]}
+    try:
+        if type(deadline) not in (int, float) or not math.isfinite(deadline): raise ValueError(ERROR)
+        deadline = min(deadline, started + 30)
+        _budget(deadline)
+        if "LD_PRELOAD" in os.environ or any(key.startswith("PG") for key in os.environ): raise ValueError(ERROR)
+        _candidate_guard(case)
+        baseline = _read(source / "search.sql", 16384)
+        candidate = _read(CANDIDATE_PATH, 16384)
+        if hashlib.sha256(baseline).hexdigest() != QUERY_SHA or hashlib.sha256(candidate).hexdigest() != CANDIDATE_SHA:
+            raise ValueError(ERROR)
+        baseline, candidate = baseline.decode("ascii"), candidate.decode("ascii")
+        report.update(baseline_bytes=len(baseline), candidate_bytes=len(candidate))
+        fixture = importlib.import_module("local_postgres")
+        helper = importlib.import_module("diagnostics.reference_search_cases")
+        if (Path(fixture.__file__).resolve() != (source / "local_postgres.py").resolve()
+                or Path(helper.__file__).resolve() != CANDIDATE_PATH.with_name("reference_search_cases.py").resolve()):
+            raise ValueError(ERROR)
+        report["semantics"] = _candidate_equivalence(helper.verify(case, baseline, candidate, deadline))
+        semantics = report["semantics"]
+        if (semantics["outcome"] != "pass" or semantics["baseline_sha256"] != QUERY_SHA
+                or semantics["candidate_sha256"] != CANDIDATE_SHA): raise ValueError(ERROR)
+        _budget(deadline)
+        url = _url(case)
+        report["controls_before"] = _control(fixture, url, deadline)
+        for label, query in (("A1", baseline), ("B1", candidate), ("B2", candidate), ("A2", baseline)):
+            before = _cpu_stat()
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                rows = list(pool.map(lambda index: _row(fixture, url, query, index, False, deadline), range(1, 17)))
+            report["waves"].append({"label": label, "query_sha256": QUERY_SHA if label.startswith("A") else CANDIDATE_SHA,
+                "records": rows, "successful": sum(row["outcome"] == "pass" for row in rows),
+                "collection_complete": len(rows) == 16, "cpu_before": before, "cpu_after": _cpu_stat()})
+        report["paired_results"] = _candidate_pairs(report["waves"])
+        if deadline - time.monotonic() >= 6:
+            samples = []
+            for label, query in (("A", baseline), ("B", candidate)):
+                row = _row(fixture, url, query, 1, True, deadline)
+                _retain_plans([row])
+                samples.append({"label": label, **row})
+            report["structural_samples"] = {"outcome": "complete", "records": samples}
+        else:
+            report["structural_samples"]["reason"] = "insufficient-shared-budget"
+        report["controls_after"] = _control(fixture, url, deadline)
+        before, after = report["controls_before"], report["controls_after"]
+        report["statistics_unchanged"] = (before.get("outcome") == "pass" and after.get("outcome") == "pass"
+            and before["stats"] == after["stats"])
+        report["comparison_valid"] = (report["statistics_unchanged"] and report["paired_results"]["all_matched"]
+            and all(wave["collection_complete"] and wave["successful"] > 0 for wave in report["waves"]))
+        _budget(deadline)
+        if report["comparison_valid"]: report["outcome"] = "pass"
+    except Exception:
+        report["failure"] = "invalid-preconditions-or-incomplete-measurement"
+    if len(json.dumps(report, indent=2).encode()) > 512 * 1024:
+        for row in report["structural_samples"]["records"]:
+            if "plan" in row: row["plan"]["Plan"].pop("Plans", None)
+            row["full_tree_retained"] = False
         report.update(outcome="fail", comparison_valid=False, failure="retained-byte-bound")
     if (type(deadline) in (int, float) and math.isfinite(deadline)
             and time.monotonic() >= min(deadline, started + 30)):

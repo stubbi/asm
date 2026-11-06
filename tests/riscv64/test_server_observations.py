@@ -133,6 +133,20 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(report["limits"]["suite_seconds"], 180)
         self.assertFalse(report["application_qualified"])
 
+    def test_sql_comparison_records_http_methods_as_not_run(self):
+        report = self.runner.initial_report(phase_probe=True, query_candidate=True)
+        self.assertEqual(report["scope"], "retained-riscv64-query-candidate")
+        self.assertEqual(sum(item["tests"] for item in report["not_run"]), 19)
+        self.assertEqual(report["original_19_test_gate"], "fail")
+        self.assertFalse(report["application_qualified"])
+        self.assertFalse(report["native_qualified"])
+        self.assertFalse(report["release_qualified"])
+        self.assertTrue(all("does not run" in item["reason"] for item in report["not_run"]))
+        summary = self.runner.sanitized_phase_summary(report, {})
+        self.assertEqual(summary["scope"], "reference-query-candidate-summary")
+        self.assertEqual(summary["cohorts"], [])
+        self.assertEqual(summary["original_methods_not_run"], 19)
+
     def test_phase_log_summary_cannot_publish_body_or_arbitrary_error_text(self):
         private = "postgresql://private-password@private-host/database"
         guest = {"outcome": "fail", "error": private,
@@ -207,6 +221,19 @@ class ObservationTests(unittest.TestCase):
             summary = json.loads((base / "phase-summary.json").read_text())
             self.assertEqual(summary["host"]["failure_stage"], "runtime")
             self.assertFalse(summary["host"]["collection_complete"])
+
+    def test_sql_failure_before_guest_collection_retains_sql_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = self.runner.initial_report(phase_probe=True, query_candidate=True)
+            report["failure_stage"] = "trace-build"
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.runner.publish_phase_summary(report, Path(temporary))
+            summary = json.loads((Path(temporary) / "phase-summary.json").read_text())
+            self.assertEqual(summary["scope"], "reference-query-candidate-summary")
+            self.assertEqual(summary["cohorts"], [])
+            self.assertEqual(summary["original_methods_not_run"], 19)
+            self.assertEqual(summary["host"]["failure_stage"], "trace-build")
             self.assertEqual(summary["original_19_test_gate"], "fail")
 
     def test_late_final_report_io_cannot_leave_a_passing_result(self):
@@ -450,6 +477,28 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(result["outcome"], "fail")
             self.assertNotEqual(result["exit_code"], 0)
             self.assertIn("Ran 14 tests", (base / "server_package.log").read_text())
+
+    def test_sql_summary_cannot_be_replaced_by_http_counts_or_ambiguous_output(self):
+        good = {"schema": 1, "scope": "UNQUALIFIED-query-candidate", "outcome": "pass",
+                "tests_run": 0, "http_methods_not_run": 14, "errors": []}
+        cases = [(good, False, True), (dict(good, tests_run=14), False, False),
+                 (dict(good, tests_run=False), False, False), (good, True, False),
+                 (dict(good, errors=[{"type": "RuntimeError"}]), False, False),
+                 (dict(good, schema=99), False, False), (dict(good, extra=1), False, False),
+                 (dict(good, http_methods_not_run=14.0), False, False), (dict(good, schema=float("nan")), False, False)]
+        for summary, duplicate, passes in cases:
+            with self.subTest(summary=summary, duplicate=duplicate), tempfile.TemporaryDirectory() as temporary:
+                log = Path(temporary) / "sql.log"
+                def process(arguments, output, **kwargs):
+                    line = "ASM_REFERENCE_SQL=" + json.dumps(summary) + "\n"
+                    output.write_text(line * (2 if duplicate else 1))
+                    return {"outcome": "pass", "exit_code": 0, "bytes": output.stat().st_size}
+                with mock.patch.object(self.runner.combined, "bounded_process", side_effect=process):
+                    result = self.runner.run_server_suite(Path(temporary), log, phase_probe=True, query_candidate=True)
+                self.assertEqual(result["outcome"], "pass" if passes else "fail")
+                if passes:
+                    self.assertEqual(result["tests_run"], 0)
+                    self.assertEqual(result["http_methods_not_run"], 14)
 
     def test_oversized_or_multiple_observations_preserve_prior_output(self):
         with tempfile.TemporaryDirectory() as temporary:

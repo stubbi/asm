@@ -233,8 +233,39 @@ def check_deadline(deadline):
         raise ValueError(ERROR)
 
 
+def candidate_suite(cls, source, deadline):
+    """Use the owned fixture for SQL only; no HTTP method is an acceptance result."""
+    errors, setup, measurement = [], False, {"outcome": "fail"}
+    try:
+        check_deadline(deadline)
+        cls.setUpClass()
+        setup = True
+        cls.stop_server()
+        check_deadline(deadline)
+        from riscv64_reference_performance import run_candidate
+        measurement = run_candidate(cls, source, deadline)
+        cls.diagnostic.optional_update("query_candidate", measurement)
+        check_deadline(deadline)
+    except BaseException as error:
+        errors.append({"stage": "candidate", "type": error_type(error)})
+    finally:
+        if setup:
+            try:
+                cls.tearDownClass()
+            except BaseException as error:
+                errors.append({"stage": "teardown", "type": error_type(error)})
+        cls.doClassCleanups()
+        for _kind, error, _traceback in cls.tearDown_exceptions:
+            errors.append({"stage": "cleanup", "type": error_type(error)})
+    success = measurement.get("outcome") == "pass" and not errors and time.monotonic() < deadline
+    summary = {"schema": 1, "scope": "UNQUALIFIED-query-candidate", "outcome": "pass" if success else "fail",
+               "tests_run": 0, "http_methods_not_run": 14, "errors": errors}
+    print("ASM_REFERENCE_SQL=" + json.dumps(summary, separators=(",", ":")))
+    return 0 if success else 1
+
+
 def run_suite(source: Path, registration_path: Path, trace_directory: Path, deadline: float,
-              *, query_cost_probe=False) -> int:
+              *, query_cost_probe=False, sql_candidate=False) -> int:
     check_deadline(deadline)
     fixture_path = source / "test_server.py"
     fixture_data = bounded_bytes(fixture_path, MAX_JSON)
@@ -262,6 +293,8 @@ def run_suite(source: Path, registration_path: Path, trace_directory: Path, dead
         raise ValueError(ERROR)
     cls.attribution_config = module.BinfmtFifoConfig(registration=registration, runner_deadline=deadline)
     cls.trace_config = module.PhaseTraceConfig(library_path=library, sha256=sha256, read_records=read_records)
+    if sql_candidate:
+        return candidate_suite(cls, source, deadline)
     original_teardown = cls.tearDownClass.__func__
 
     @classmethod
@@ -307,18 +340,20 @@ def main():
     parser.add_argument("--registration", type=Path)
     parser.add_argument("--trace-directory", type=Path)
     parser.add_argument("--deadline", type=float)
-    parser.add_argument("--query-cost-probe", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--query-cost-probe", action="store_true")
+    group.add_argument("--query-candidate", action="store_true")
     args = parser.parse_args()
     try:
         if args.capture_registration:
-            if args.run_id is None or args.query_cost_probe or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
+            if args.run_id is None or args.query_cost_probe or args.query_candidate or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
                 parser.error("Supply only --run-id with --capture-registration.")
             capture_registration(args.capture_registration, run_id=args.run_id)
             return 0
         if any(value is None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
             parser.error("Supply --source, --registration, --trace-directory, and --deadline.")
         return run_suite(args.source, args.registration, args.trace_directory, args.deadline,
-                         query_cost_probe=args.query_cost_probe)
+                         query_cost_probe=args.query_cost_probe, sql_candidate=args.query_candidate)
     except Exception:
         print(ERROR, file=sys.stderr)
         return 1

@@ -3,6 +3,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import ctypes
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -144,6 +145,215 @@ class PerformanceTests(unittest.TestCase):
                 mock.patch.object(self.module, "_pg_config", return_value={"outcome": "pass", "with_llvm": False}), \
                 mock.patch.object(self.module, "_connect", side_effect=lambda fixture, url, deadline: FakeDatabase(url, deadline=deadline)):
             return self.module.run_diagnostic(case, source, time.monotonic() + 10)
+
+    def test_candidate_input_exists_before_the_owned_comparison(self):
+        self.assertTrue((ROOT / "tools/diagnostics/reference_search_candidate.sql").is_file(),
+                        "The fixed candidate SQL input is absent.")
+
+    def candidate_fixture(self, base):
+        case, source, fixture = self.fixture(base)
+        case.attribution = SimpleNamespace(failure=None, record={"returncode": 0,
+            "cleanup_errors": [], "released": True, "target_ready": True})
+        case.diagnostic.data = {}  # SQL-only mode does not run HTTP comparison arms.
+        return case, source, fixture
+
+    def candidate_semantics(self, case, baseline, candidate, deadline):
+        digest = "a" * 64
+        return {"schema": 1, "scope": "reference-search-sql-equivalence", "qualification": "UNQUALIFIED",
+            "outcome": "pass", "expected_cases": 16,
+            "cases": [{"index": index, "outcome": "pass", "checks": 1,
+                "baseline_sha256": digest, "candidate_sha256": digest, "expected_sha256": digest}
+                for index in range(1, 17)],
+            "original_queries": [{"index": index, "outcome": "pass", "baseline_sha256": digest,
+                "candidate_sha256": digest, "expected_sha256": digest} for index in range(1, 24)],
+            "original_queries_passed": 23,
+            "cleanup": {"transaction_rolled_back": True, "case_database_dropped": True,
+                "original_catalog_unchanged": True},
+            "baseline_sha256": hashlib.sha256(baseline.encode()).hexdigest(),
+            "candidate_sha256": hashlib.sha256(candidate.encode()).hexdigest(), "elapsed_seconds": 0.1}
+
+    def run_candidate_fixture(self, case, source, fixture, *, verify=None, deadline=None):
+        helper = SimpleNamespace(__file__=str(ROOT / "tools/diagnostics/reference_search_cases.py"),
+                                 verify=verify or self.candidate_semantics)
+        with mock.patch.dict(sys.modules, {"local_postgres": fixture,
+                "diagnostics.reference_search_cases": helper}), \
+                mock.patch.object(self.module, "_connect", side_effect=lambda fixture, url, deadline: FakeDatabase(url, deadline=deadline)):
+            return self.module.run_candidate(case, source, time.monotonic() + 30 if deadline is None else deadline)
+
+    def test_candidate_orders_four_plain_waves_after_semantics_without_statistics_mutation(self):
+        self.assertTrue(callable(getattr(self.module, "run_candidate", None)), "The candidate measurement entry point is absent.")
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            baseline = (source / "search.sql").read_text()
+            candidate = (ROOT / "tools/diagnostics/reference_search_candidate.sql").read_text()
+            def verify(*args):
+                self.assertFalse(any(call[0] in (baseline, candidate) for call in FakeDatabase.calls))
+                return self.candidate_semantics(*args)
+            report = self.run_candidate_fixture(case, source, fixture, verify=verify)
+            self.assertEqual(report["outcome"], "pass")
+            self.assertEqual([wave["label"] for wave in report["waves"]], ["A1", "B1", "B2", "A2"])
+            self.assertEqual([len(wave["records"]) for wave in report["waves"]], [16] * 4)
+            plain = [call for call in FakeDatabase.calls if call[0] in (baseline, candidate)]
+            self.assertEqual([call[0] for call in plain], [baseline] * 16 + [candidate] * 32 + [baseline] * 16)
+            self.assertTrue(all(wave["successful"] == 16 for wave in report["waves"]))
+            self.assertTrue(report["paired_results"]["all_matched"])
+            self.assertEqual(report["paired_results"]["paired_indexes"], 16)
+            self.assertTrue(report["statistics_unchanged"])
+            self.assertTrue(all(not call[0].startswith("ANALYZE") for call in FakeDatabase.calls))
+            self.assertEqual(report["candidate_sha256"], hashlib.sha256(candidate.encode()).hexdigest())
+            self.assertEqual(report["original_19_test_gate"], "fail")
+            self.assertEqual(report["http_tests"], "not-run")
+            self.assertTrue(all(report[key] is False for key in ("application_qualified", "native_qualified", "release_qualified")))
+            self.assertNotIn(SECRET, json.dumps(report))
+            self.assertTrue(all(instance.closed for instance in FakeDatabase.instances))
+            self.assertTrue(all(urlsplit(instance.url).username == "reader" for instance in FakeDatabase.instances))
+            self.assertTrue(all(instance.deadline - instance.started <= 2 for instance in FakeDatabase.instances))
+
+    def test_candidate_retains_only_the_fixed_semantic_failure_enum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            def verify(*args):
+                report = self.candidate_semantics(*args)
+                report.update(outcome="fail", failure="equivalence", provider_error=SECRET)
+                return report
+            report = self.run_candidate_fixture(case, source, fixture, verify=verify)
+            self.assertEqual(report["semantics"].get("failure"), "equivalence")
+            self.assertNotIn(SECRET, json.dumps(report))
+            self.assertEqual(report["waves"], [])
+
+    def test_candidate_changed_oversized_non_ascii_or_linked_input_prevents_database_work(self):
+        for failure in ("changed", "oversized", "non-ascii", "symlink"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                case, source, fixture = self.candidate_fixture(base)
+                candidate = base / "candidate.sql"
+                if failure == "changed": candidate.write_text("SELECT private")
+                if failure == "oversized": candidate.write_bytes(b"x" * 16385)
+                if failure == "non-ascii": candidate.write_bytes(b"\xff")
+                if failure == "symlink": candidate.symlink_to(ROOT / "tools/diagnostics/reference_search_candidate.sql")
+                with mock.patch.object(self.module, "CANDIDATE_PATH", candidate):
+                    report = self.run_candidate_fixture(case, source, fixture,
+                        verify=lambda *args: self.fail("Changed candidate reached the semantic gate"))
+                self.assertEqual(report["outcome"], "fail")
+                self.assertFalse(FakeDatabase.calls)
+                self.assertNotIn(SECRET, json.dumps(report))
+
+    def test_candidate_stops_before_abba_when_equivalence_or_case_cleanup_fails(self):
+        for failure in ("case", "case-count", "original", "cleanup", "binding", "provider"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                case, source, fixture = self.candidate_fixture(Path(temporary))
+                def verify(*args):
+                    report = self.candidate_semantics(*args)
+                    if failure == "case": report["cases"][0]["outcome"] = "fail"
+                    if failure == "case-count": report["cases"].pop()
+                    if failure == "original": report["original_queries"][0]["candidate_sha256"] = "b" * 64
+                    if failure == "cleanup": report["cleanup"]["case_database_dropped"] = False
+                    if failure == "binding": report["candidate_sha256"] = "b" * 64
+                    if failure == "provider": raise RuntimeError(SECRET)
+                    return report
+                report = self.run_candidate_fixture(case, source, fixture, verify=verify)
+                self.assertEqual(report["outcome"], "fail")
+                self.assertEqual(report["waves"], [])
+                self.assertNotIn(SECRET, json.dumps(report))
+                FakeDatabase.calls, FakeDatabase.instances = [], []
+
+    def test_candidate_rejects_unsafe_preconditions_before_semantics_or_connections(self):
+        for failure in ("active", "not-ready", "attribution", "cleanup", "baseline", "pg-env", "preload", "deadline"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                case, source, fixture = self.candidate_fixture(Path(temporary))
+                if failure == "active": case.server.poll = lambda: None
+                if failure == "not-ready": case.fixture_ready = False
+                if failure == "attribution": case.attribution.failure = RuntimeError(SECRET)
+                if failure == "cleanup": case.attribution.record["cleanup_errors"] = [SECRET]
+                if failure == "baseline": (source / "search.sql").write_text("SELECT private")
+                environment = {"PGSERVICE": SECRET} if failure == "pg-env" else {"LD_PRELOAD": SECRET} if failure == "preload" else {}
+                end = time.monotonic() - 1 if failure == "deadline" else time.monotonic() + 30
+                with mock.patch.dict(self.module.os.environ, environment):
+                    report = self.run_candidate_fixture(case, source, fixture,
+                        verify=lambda *args: self.fail("Unsafe preconditions reached the semantic gate"), deadline=end)
+                self.assertEqual(report["outcome"], "fail")
+                self.assertFalse(FakeDatabase.calls)
+                self.assertNotIn(SECRET, json.dumps(report))
+
+    def test_candidate_exact_body_mismatch_fails_after_retaining_all_64_rows(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            candidate = (ROOT / "tools/diagnostics/reference_search_candidate.sql").read_text()
+            original = self.module._query
+            def changed_body(db, sql, params, deadline, **kwargs):
+                raw = original(db, sql, params, deadline, **kwargs)
+                if sql == candidate:
+                    value = json.loads(raw)
+                    value["packages"][0]["summary"] = "Different result bytes"
+                    return json.dumps(value).encode()
+                return raw
+            with mock.patch.object(self.module, "_query", changed_body):
+                report = self.run_candidate_fixture(case, source, fixture)
+            self.assertEqual(report["outcome"], "fail")
+            self.assertEqual(sum(len(wave["records"]) for wave in report["waves"]), 64)
+            self.assertFalse(report["paired_results"]["all_matched"])
+            self.assertEqual(report["paired_results"]["mismatched_indexes"], list(range(1, 17)))
+
+    def test_candidate_partial_query_failures_remain_visible_without_becoming_query_success(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            original = self.module._row
+            def failing_row(fixture, url, query, index, explain, deadline):
+                if index != 1: return original(fixture, url, query, index, explain, deadline)
+                return {"index": index, "outcome": "fail", "attempted": True,
+                    "stage": "query", "failure": "provider-status", "status": 7, "sqlstate": "57014"}
+            with mock.patch.object(self.module, "_row", failing_row):
+                report = self.run_candidate_fixture(case, source, fixture)
+            self.assertEqual(report["outcome"], "pass")
+            self.assertEqual([wave["successful"] for wave in report["waves"]], [15] * 4)
+            self.assertEqual(sum(row["outcome"] == "fail" for wave in report["waves"] for row in wave["records"]), 4)
+            self.assertEqual(report["paired_results"]["paired_indexes"], 15)
+
+    def test_candidate_control_statistics_change_invalidates_the_comparison(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            original, calls = self.module._control, []
+            def changed_control(*args):
+                result = original(*args)
+                if calls: result["stats"][0]["reltuples"] = 1
+                calls.append(True)
+                return result
+            with mock.patch.object(self.module, "_control", changed_control):
+                report = self.run_candidate_fixture(case, source, fixture)
+            self.assertEqual(report["outcome"], "fail")
+            self.assertFalse(report["statistics_unchanged"])
+
+    def test_candidate_optional_plans_run_only_after_abba_with_enough_shared_budget(self):
+        for remaining in (30, 5):
+            with self.subTest(remaining=remaining), tempfile.TemporaryDirectory() as temporary:
+                case, source, fixture = self.candidate_fixture(Path(temporary))
+                report = self.run_candidate_fixture(case, source, fixture, deadline=time.monotonic() + remaining)
+                explains = [index for index, call in enumerate(FakeDatabase.calls) if call[0].startswith("EXPLAIN ")]
+                plain = [index for index, call in enumerate(FakeDatabase.calls)
+                         if not call[0].startswith(("SELECT json_build_object", "EXPLAIN "))]
+                if remaining == 30:
+                    self.assertEqual(len(explains), 2)
+                    self.assertGreater(min(explains), max(plain))
+                    self.assertEqual(report["structural_samples"]["outcome"], "complete")
+                else:
+                    self.assertFalse(explains)
+                    self.assertEqual(report["structural_samples"]["outcome"], "not-run")
+                FakeDatabase.calls, FakeDatabase.instances = [], []
+
+    def test_candidate_final_serialization_cannot_hide_a_late_deadline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            case, source, fixture = self.candidate_fixture(Path(temporary))
+            original_clock, original_dumps, offset = time.monotonic, json.dumps, [0]
+            def late_dumps(value, *args, **kwargs):
+                encoded = original_dumps(value, *args, **kwargs)
+                if type(value) is dict and value.get("scope") == "reference-query-candidate-abba": offset[0] = 31
+                return encoded
+            with mock.patch.object(self.module.json, "dumps", late_dumps), \
+                    mock.patch.object(self.module.time, "monotonic", lambda: original_clock() + offset[0]):
+                report = self.run_candidate_fixture(case, source, fixture)
+            self.assertEqual(report["outcome"], "fail")
+            self.assertEqual(sum(len(wave["records"]) for wave in report["waves"]), 64)
+            self.assertGreaterEqual(report["seconds"], 31)
 
     def test_four_ordered_waves_keep_fixed_parameters_private_and_connection_deadlines_shared(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -252,6 +252,38 @@ class ServerTests(unittest.TestCase):
             self.assertNotIn("private", result.stdout + result.stderr)
             self.assertEqual(args[3].read_text().splitlines(), ["import", "setup", "class_cleanup"])
 
+    def test_sql_candidate_runs_no_http_methods_and_preserves_failure_and_cleanup(self):
+        for outcome, cleanup_error, setup_error in (
+                ("pass", False, False), ("fail", False, False), ("pass", True, False), ("pass", False, True)):
+            with self.subTest(outcome=outcome, cleanup_error=cleanup_error, setup_error=setup_error), tempfile.TemporaryDirectory() as temporary:
+                deadline = time.monotonic() + 30
+                source, registration, trace, events = self.fixture(Path(temporary), deadline,
+                    cleanup_error=cleanup_error, setup_error=setup_error)
+                path = source / "test_server.py"
+                path.write_text(path.read_text().replace('    attribution_config=None',
+                    '    @classmethod\n    def stop_server(cls): mark("stop")\n    attribution_config=None'))
+                receipt = json.loads(registration.read_text())
+                receipt["fixture_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                registration.write_text(json.dumps(receipt))
+                def probe(case, actual_source, actual_deadline):
+                    self.assertEqual(actual_source, source)
+                    self.assertEqual(actual_deadline, deadline)
+                    with events.open("a") as stream: stream.write("measurement\n")
+                    class Diagnostic:
+                        def optional_update(self, key, value):
+                            with events.open("a") as stream: stream.write(key + ":" + value["outcome"] + "\n")
+                    case.diagnostic = Diagnostic()
+                    return {"outcome": outcome}
+                output = io.StringIO()
+                with mock.patch.dict(sys.modules, {"riscv64_reference_performance": SimpleNamespace(run_candidate=probe)}), \
+                        contextlib.redirect_stdout(output):
+                    result = self.suite.run_suite(source, registration, trace, deadline, sql_candidate=True)
+                self.assertEqual(result, int(outcome != "pass" or cleanup_error or setup_error))
+                expected = (["import", "setup", "class_cleanup"] if setup_error else
+                    ["import", "setup", "stop", "measurement", "query_candidate:" + outcome, "teardown", "class_cleanup"])
+                self.assertEqual(events.read_text().splitlines(), expected)
+                self.assertNotIn("private", output.getvalue())
+
     def test_cost_probe_preserves_comparison_failure_and_always_finishes_cleanup(self):
         # Catch losing the original failure, exposing provider text, or skipping
         # owned-cluster cleanup after a measurement/publication failure.

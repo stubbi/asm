@@ -201,7 +201,7 @@ def image_archive_contract(archive, expected_id=IMAGE_ID):
     return config
 
 
-def initial_report(*, phase_probe=False):
+def initial_report(*, phase_probe=False, query_candidate=False):
     report = {"schema": 1, "scope": "retained-riscv64-reference-server-observations",
             "qualification": "UNQUALIFIED", "outcome": "fail", "execution": "qemu-user", "target": "riscv64-linux",
             "application_qualified": False, "native_qualified": False, "release_qualified": False,
@@ -223,10 +223,17 @@ def initial_report(*, phase_probe=False):
         report.update(scope="retained-riscv64-reference-server-phase-probe",
                       comparison_order=["direct", "proxy"],
                       query_cost_probe={"scope": "UNQUALIFIED-database-query-cost", "after_original_cohorts": True})
+    if query_candidate:
+        report.update(scope="retained-riscv64-query-candidate", comparison_order=["A1", "B1", "B2", "A2"])
+        report.pop("query_cost_probe", None)
+        report["not_run"].append({"file": "test_server.py", "tests": 14, "outcome": "not-run",
+                                 "reason": "This scoped SQL comparison does not run HTTP acceptance methods."})
+        for section in report["not_run"]:
+            section["reason"] = "This scoped SQL comparison does not run the original acceptance methods."
     return report
 
 
-def sanitized_phase_summary(guest, observation):
+def sanitized_phase_summary(guest, observation, *, query_candidate=False):
     """Return bounded numeric readback without bodies, configuration, or errors."""
     from riscv64_reference_trace import RANGES, ENUMS
 
@@ -237,6 +244,18 @@ def sanitized_phase_summary(guest, observation):
         return value if isinstance(value, dict) else {}
 
     tests = mapping(guest.get("server_tests"))
+    if query_candidate or guest.get("scope") == "retained-riscv64-query-candidate":
+        benchmark = mapping(observation.get("query_candidate"))
+        waves = benchmark.get("waves", [])
+        counts = []
+        if isinstance(waves, list) and len(waves) <= 4:
+            for label, wave in zip(("A1", "B1", "B2", "A2"), waves):
+                if isinstance(wave, dict) and wave.get("label") == label:
+                    counts.append({"label": label, "successful": integer(wave.get("successful"), 0, 16)})
+        return {"schema": 1, "scope": "reference-query-candidate-summary", "qualification": "UNQUALIFIED",
+                "original_19_test_gate": "fail", "original_methods_not_run": 19, "tests_run": 0,
+                "exit_code": integer(tests.get("exit_code"), -255, 255), "cohorts": [], "waves": counts,
+                "measurement": benchmark.get("outcome") if benchmark.get("outcome") in ("pass", "fail") else "inconclusive"}
     summary = {"schema": 1, "scope": "reference-phase-probe-summary", "qualification": "UNQUALIFIED",
                "original_19_test_gate": "fail", "tests_run": integer(tests.get("tests_run"), 0, 14),
                "exit_code": integer(tests.get("exit_code"), -255, 255), "cohorts": []}
@@ -304,7 +323,8 @@ def publish_phase_summary(report, output):
             except (OSError, ValueError, TypeError, RecursionError):
                 pass
         documents.append(value)
-    summary = sanitized_phase_summary(*documents)
+    summary = sanitized_phase_summary(*documents,
+        query_candidate=report.get("scope") == "retained-riscv64-query-candidate")
     permitted = {"archive-inputs", "trace-build", "image-load", "server-artifact", "image-inspection",
                  "registration", "container-create", "container-inspection", "runtime", "collection", "cleanup",
                  "host-evidence"}
@@ -387,7 +407,7 @@ def assertion_contract(base, fixture):
     return sorted(original)
 
 
-def _materialize_context(destination, revision, fixture_revision, repository, phase_probe=False):
+def _materialize_context(destination, revision, fixture_revision, repository, phase_probe=False, query_candidate=False):
     import registry
     import release
     for commit in (revision, fixture_revision, BASE_REVISION):
@@ -422,6 +442,9 @@ def _materialize_context(destination, revision, fixture_revision, repository, ph
                              "tools/riscv64_reference_build.py", "tools/riscv64_reference_suite.py",
                              "tools/riscv64_reference_performance.py",
                              "tests/riscv64/test_reference_trace.py"})
+    if query_candidate:
+        driver_names.update({"tools/diagnostics/reference_search_candidate.sql",
+                             "tools/diagnostics/reference_search_cases.py"})
     driver = registry.git_files(repository, revision, ".", sorted(driver_names))
     if set(driver) != driver_names:
         raise ValueError("The workflow commit lacks the complete diagnostic driver.")
@@ -435,18 +458,21 @@ def _materialize_context(destination, revision, fixture_revision, repository, ph
         "source_files": len(fixture), "assertions_unchanged": True}
     if phase_probe:
         receipt["phase_probe"] = True
+    if query_candidate:
+        receipt["query_candidate"] = True
     combined.write_report(destination / "input-manifest.json", receipt)
     (destination / "input-manifest.json").chmod(0o444)
 
 
-def prepare_context(destination, revision, fixture_revision, *, phase_probe=False):
+def prepare_context(destination, revision, fixture_revision, *, phase_probe=False, query_candidate=False):
     worker = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
               "from riscv64_server_observations import _materialize_context; "
-              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]), sys.argv[6] == '1')")
+              "_materialize_context(Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5]), sys.argv[6] == '1', sys.argv[7] == '1')")
     with tempfile.TemporaryDirectory(prefix="asm-observations-source-") as temporary:
         log = Path(temporary) / "source.log"
         result = combined.bounded_process([sys.executable, "-c", worker, str(Path(__file__).resolve().parent),
-            str(destination.absolute()), revision, fixture_revision, str(ROOT), "1" if phase_probe else "0"], log, timeout=120)
+            str(destination.absolute()), revision, fixture_revision, str(ROOT), "1" if phase_probe else "0",
+            "1" if query_candidate else "0"], log, timeout=120)
         if result["outcome"] != "pass":
             raise ValueError("Cannot materialize the exact diagnostic source: " + log.read_text(errors="replace")[-2048:])
 
@@ -460,20 +486,37 @@ def library_contract(path, expected):
             "comparison_to_failed_run": "exact-byte-match"}
 
 
-def run_server_suite(source, log, *, phase_probe=False):
+def run_server_suite(source, log, *, phase_probe=False, query_candidate=False):
     arguments = [sys.executable, "-m", "unittest", "test_server.ServerTests", "-v"]
     if phase_probe:
         arguments = [sys.executable, Path(__file__).with_name("riscv64_reference_suite.py"),
                      "--source", source, "--registration", source.parent / "binfmt-registration.json",
                      "--trace-directory", source.parent / "trace", "--deadline", str(time.monotonic() + 180),
-                     "--query-cost-probe"]
+                     "--query-candidate" if query_candidate else "--query-cost-probe"]
     result = combined.bounded_process(arguments, log, cwd=source, timeout=180)
     text = log.read_text(errors="replace")
     counts = re.findall(r"^Ran (\d+) tests? in [0-9.]+s$", text, re.M)
     result.update(tests_run=int(counts[0]) if len(counts) == 1 else None,
                   tests_skipped=None if re.search(r"\bskipped\b", text) else 0,
                   log_sha256=digest(log))
-    if result["outcome"] == "pass":
+    if query_candidate:
+        summaries = [line.removeprefix("ASM_REFERENCE_SQL=") for line in text.splitlines()
+                     if line.startswith("ASM_REFERENCE_SQL=")]
+        try:
+            if len(summaries) != 1:
+                raise ValueError("The SQL comparison summary is missing or ambiguous.")
+            summary = load_object(summaries[0])
+            if (set(summary) != {"schema", "scope", "outcome", "tests_run", "http_methods_not_run", "errors"}
+                    or type(summary["schema"]) is not int or summary["schema"] != 1
+                    or summary.get("scope") != "UNQUALIFIED-query-candidate" or summary.get("outcome") != "pass"
+                    or type(summary.get("tests_run")) is not int or summary["tests_run"] != 0
+                    or type(summary.get("http_methods_not_run")) is not int or summary["http_methods_not_run"] != 14
+                    or summary.get("errors") != []):
+                raise ValueError("The SQL comparison failed or has an incorrect scope.")
+            result.update(tests_run=0, http_methods_not_run=14)
+        except (ValueError, TypeError, KeyError):
+            result.update(outcome="fail", contract_error="The scoped SQL comparison is incomplete or failed.")
+    elif result["outcome"] == "pass":
         try:
             combined.suite_contract(text, 14)
         except ValueError as error:
@@ -575,8 +618,8 @@ def trace_smoke(trace_directory, output):
     return report
 
 
-def inside(output, *, phase_probe=False):
-    report = initial_report(phase_probe=phase_probe)
+def inside(output, *, phase_probe=False, query_candidate=False):
+    report = initial_report(phase_probe=phase_probe, query_candidate=query_candidate)
     build = INSIDE_WORK / "build"
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -590,7 +633,8 @@ def inside(output, *, phase_probe=False):
         if (type(inputs.get("schema")) is not int or inputs["schema"] != 2
                 or inputs.get("base_revision") != BASE_REVISION or inputs.get("source_files") != 33
                 or inputs.get("assertions_unchanged") is not True or len(inputs.get("test_methods", [])) != 14
-                or inputs.get("phase_probe", False) is not phase_probe):
+                or inputs.get("phase_probe", False) is not phase_probe
+                or inputs.get("query_candidate", False) is not query_candidate):
             raise ValueError("The diagnostic source receipt is incomplete.")
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
@@ -617,7 +661,7 @@ def inside(output, *, phase_probe=False):
                 raise ValueError("The diagnostic forwarding check failed before the server suite.")
         build.mkdir(mode=0o700)
         report["server_tests"] = run_server_suite(context / "source", output.parent / "server_package.log",
-                                                 phase_probe=phase_probe)
+                                                 phase_probe=phase_probe, query_candidate=query_candidate)
         report["observation"] = retain_observation(build, output.parent / "observations/qualification.json")
         for name in ("source", "runner"):
             if combined.tree_digest(context / name) != inputs[name + "_tree_sha256"]:
@@ -633,7 +677,7 @@ def inside(output, *, phase_probe=False):
     return 0 if report["outcome"] == "pass" else 1
 
 
-def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_source=None):
+def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_source=None, query_candidate=False):
     started = time.monotonic()
     host_deadline = started + 600
     operation_deadline = host_deadline - 90
@@ -643,7 +687,7 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
             raise ValueError("The shared host " + phase + " deadline elapsed.")
         return seconds
     output.mkdir(parents=True, exist_ok=True)
-    report = initial_report(phase_probe=phase_probe)
+    report = initial_report(phase_probe=phase_probe, query_candidate=query_candidate)
     name = "asm-reference-observations-" + uuid.uuid4().hex
     created = False
     stage = "archive-inputs"
@@ -718,6 +762,8 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
                   str(INSIDE_WORK / "evidence/qualification.json")]
         if phase_probe:
             create.append("--phase-probe")
+        if query_candidate:
+            create.append("--query-candidate")
         stage = "container-create"
         create_timeout = remaining(30, operation_deadline, "operation")
         created = True
@@ -779,7 +825,9 @@ def run_image(image_zip, server_zip, context, output, *, phase_probe=False, mhd_
                             or any(guest.get(key) is not False for key in
                                    ("application_qualified", "native_qualified", "release_qualified"))
                             or guest.get("original_19_test_gate") != "fail"
-                            or guest.get("server_tests", {}).get("tests_run") != 14
+                            or guest.get("server_tests", {}).get("tests_run") != (0 if query_candidate else 14)
+                            or (query_candidate and (guest.get("scope") != "retained-riscv64-query-candidate"
+                                or guest.get("server_tests", {}).get("http_methods_not_run") != 14))
                             or guest.get("server_tests", {}).get("tests_skipped") != 0
                             or digest(output / "observations/qualification.json") != guest.get("observation", {}).get("sha256")
                             or digest(output / "server_package.log") != guest.get("server_tests", {}).get("log_sha256")):
@@ -816,24 +864,28 @@ def main():
     parser.add_argument("--context", type=Path)
     parser.add_argument("--output", type=Path, default=INSIDE_WORK / "evidence/qualification.json")
     parser.add_argument("--phase-probe", action="store_true")
+    parser.add_argument("--query-candidate", action="store_true")
     parser.add_argument("--mhd-source", type=Path)
     args = parser.parse_args()
+    if args.query_candidate and not args.phase_probe:
+        parser.error("The SQL comparison requires the reviewed phase-probe inputs.")
     if args.self_test:
         suite = unittest.defaultTestLoader.discover(str(ROOT / "tests/riscv64"), pattern="test_server_observations.py")
         return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
     if args.prepare_context:
         if not args.revision or not args.fixture_revision:
             parser.error("Supply --revision and --fixture-revision with --prepare-context.")
-        prepare_context(args.prepare_context, args.revision, args.fixture_revision, phase_probe=args.phase_probe)
+        prepare_context(args.prepare_context, args.revision, args.fixture_revision, phase_probe=args.phase_probe,
+                        query_candidate=args.query_candidate)
         return 0
     if args.inside:
-        return inside(args.output, phase_probe=args.phase_probe)
+        return inside(args.output, phase_probe=args.phase_probe, query_candidate=args.query_candidate)
     if not all((args.image_zip, args.server_zip, args.context)):
         parser.error("Supply --image-zip, --server-zip, and --context with --run-image.")
     if args.phase_probe and args.mhd_source is None:
         parser.error("Supply --mhd-source with the phase probe.")
     return run_image(args.image_zip, args.server_zip, args.context, args.output,
-                     phase_probe=args.phase_probe, mhd_source=args.mhd_source)
+                     phase_probe=args.phase_probe, mhd_source=args.mhd_source, query_candidate=args.query_candidate)
 
 
 if __name__ == "__main__":
