@@ -156,3 +156,53 @@ If removal or rewriting fails, the runner attempts a bounded failure marker and 
 Total filesystem failure can prevent both removal and marker publication. The CI result remains authoritative.
 The corrected local checks passed: 25 observation checks, 53 reference checks, and 20 shared harness checks.
 Actionlint and the Git whitespace check passed. The time limits and qualification flags retain their earlier values.
+
+## Controlled query-cost follow-up
+
+Run 42118833683 retained complete associations for all three request groups.
+Six requests returned HTTP 503, including one direct request.
+Those results do not establish a relay-only cause or a database bottleneck.
+
+The integration coordinator authorized one bounded follow-up measurement.
+This serves maintainers who need a specific cause before changing the application.
+The evidence and resource principles require unchanged acceptance limits and visible failures.
+
+Run the original methods and direct/proxy groups before additional measurements.
+Keep their outcomes, assertions, source bytes, authentication, and resource limits.
+Use the same owned 23-package catalog after all three application processes stop.
+Measure the fixed search query before a separate instrumented query group.
+Use `EXPLAIN ANALYZE BUFFERS TIMING OFF` for the instrumented group.
+Use 16 queries and eight workers in each additional group.
+Share one two-second connection-and-query deadline for each measurement.
+Keep the application's one-second statement limit and 200-millisecond lock limit.
+Charge the additional work to the original suite deadline, with a 30-second local cap.
+
+Retain connection setup intervals separately from query intervals.
+Label Python library setup as part of its measured connection interval.
+Keep authentication and scheduling costs unseparated unless the evidence distinguishes them.
+Reduce the database plan to bounded numeric fields and fixed plan names.
+Keep full plan trees for at most two successful queries in each instrumented group.
+Retain summary timings and explicit tree-retention status for every instrumented query.
+Exclude SQL, parameters, raw plans, connection URLs, credentials, and provider messages.
+Record database build settings, catalog estimates, hardware, and CPU accounting where available.
+Keep instrumented planning and execution measurements distinct from uninstrumented query timings.
+
+A complete diagnostic is not an application pass or a target qualification.
+Preserve failed requests and missing measurements in its record.
+Keep the initial catalog statistics unchanged for both initial groups.
+The coordinator also authorized a separate statistics control in the same diagnostic.
+Analyze only the six seeded lookup tables after those initial groups.
+Repeat the same query and instrumented groups after that control.
+Keep the fixed run order and cache limitations visible.
+Keep SQL, authentication, requests, resources, and deadlines unchanged.
+The temporary statistics control does not change the selected fixture or application source.
+
+The measurement follows the PostgreSQL 16 [EXPLAIN](https://www.postgresql.org/docs/16/sql-explain.html) and [ANALYZE](https://www.postgresql.org/docs/16/sql-analyze.html) contracts.
+Planning time excludes parsing and rewriting.
+Execution time excludes parsing, rewriting, planning, and ordinary result transmission.
+Instrumented measurements do not isolate authentication, scheduling, or emulation costs.
+
+The follow-up passed 72 reference checks, 25 observation checks, and 20 shared harness checks locally.
+Actionlint and the Git whitespace check passed.
+Two independent source reviews found no remaining blocker after the deadline and evidence-bound corrections.
+These checks use synthetic database boundaries and do not establish a target runtime result.

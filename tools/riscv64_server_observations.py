@@ -221,7 +221,8 @@ def initial_report(*, phase_probe=False):
                              "The observer adds work and can affect measured timing."]}
     if phase_probe:
         report.update(scope="retained-riscv64-reference-server-phase-probe",
-                      comparison_order=["direct", "proxy"])
+                      comparison_order=["direct", "proxy"],
+                      query_cost_probe={"scope": "UNQUALIFIED-database-query-cost", "after_original_cohorts": True})
     return report
 
 
@@ -419,6 +420,7 @@ def _materialize_context(destination, revision, fixture_revision, repository, ph
     if phase_probe:
         driver_names.update({"tools/diagnostics/reference_libpq_trace.c", "tools/riscv64_reference_trace.py",
                              "tools/riscv64_reference_build.py", "tools/riscv64_reference_suite.py",
+                             "tools/riscv64_reference_performance.py",
                              "tests/riscv64/test_reference_trace.py"})
     driver = registry.git_files(repository, revision, ".", sorted(driver_names))
     if set(driver) != driver_names:
@@ -463,7 +465,8 @@ def run_server_suite(source, log, *, phase_probe=False):
     if phase_probe:
         arguments = [sys.executable, Path(__file__).with_name("riscv64_reference_suite.py"),
                      "--source", source, "--registration", source.parent / "binfmt-registration.json",
-                     "--trace-directory", source.parent / "trace", "--deadline", str(time.monotonic() + 180)]
+                     "--trace-directory", source.parent / "trace", "--deadline", str(time.monotonic() + 180),
+                     "--query-cost-probe"]
     result = combined.bounded_process(arguments, log, cwd=source, timeout=180)
     text = log.read_text(errors="replace")
     counts = re.findall(r"^Ran (\d+) tests? in [0-9.]+s$", text, re.M)

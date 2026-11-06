@@ -233,7 +233,8 @@ def check_deadline(deadline):
         raise ValueError(ERROR)
 
 
-def run_suite(source: Path, registration_path: Path, trace_directory: Path, deadline: float) -> int:
+def run_suite(source: Path, registration_path: Path, trace_directory: Path, deadline: float,
+              *, query_cost_probe=False) -> int:
     check_deadline(deadline)
     fixture_path = source / "test_server.py"
     fixture_data = bounded_bytes(fixture_path, MAX_JSON)
@@ -273,6 +274,17 @@ def run_suite(source: Path, registration_path: Path, trace_directory: Path, dead
         except BaseException as error:
             errors.append(("comparison", error))
         finally:
+            if query_cost_probe:
+                try:
+                    check_deadline(deadline)
+                    from riscv64_reference_performance import run_diagnostic
+                    measurement = run_diagnostic(case, source, deadline)
+                    case.diagnostic.optional_update("query_cost_probe", measurement)
+                    if measurement.get("outcome") != "pass":
+                        raise ValueError("The bounded query-cost measurement is incomplete.")
+                    check_deadline(deadline)
+                except BaseException as error:
+                    errors.append(("query-cost", error))
             try:
                 original_teardown(case)
             except BaseException as error:
@@ -295,16 +307,18 @@ def main():
     parser.add_argument("--registration", type=Path)
     parser.add_argument("--trace-directory", type=Path)
     parser.add_argument("--deadline", type=float)
+    parser.add_argument("--query-cost-probe", action="store_true")
     args = parser.parse_args()
     try:
         if args.capture_registration:
-            if args.run_id is None or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
+            if args.run_id is None or args.query_cost_probe or any(value is not None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
                 parser.error("Supply only --run-id with --capture-registration.")
             capture_registration(args.capture_registration, run_id=args.run_id)
             return 0
         if any(value is None for value in (args.source, args.registration, args.trace_directory, args.deadline)):
             parser.error("Supply --source, --registration, --trace-directory, and --deadline.")
-        return run_suite(args.source, args.registration, args.trace_directory, args.deadline)
+        return run_suite(args.source, args.registration, args.trace_directory, args.deadline,
+                         query_cost_probe=args.query_cost_probe)
     except Exception:
         print(ERROR, file=sys.stderr)
         return 1

@@ -4,7 +4,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 No package, PostgreSQL, Docker, or target executable runs in these tests.
 """
 import hashlib
+import contextlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import struct
@@ -12,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -248,6 +251,47 @@ class ServerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("private", result.stdout + result.stderr)
             self.assertEqual(args[3].read_text().splitlines(), ["import", "setup", "class_cleanup"])
+
+    def test_cost_probe_preserves_comparison_failure_and_always_finishes_cleanup(self):
+        # Catch losing the original failure, exposing provider text, or skipping
+        # owned-cluster cleanup after a measurement/publication failure.
+        for comparison_error, probe_failure, measurement_outcome in (
+                (False, False, "pass"), (False, True, "pass"), (False, False, "fail"),
+                (True, False, "pass"), (True, True, "pass"), (True, False, "fail")):
+            with self.subTest(comparison_error=comparison_error, probe_failure=probe_failure,
+                              measurement_outcome=measurement_outcome), tempfile.TemporaryDirectory() as temporary:
+                deadline = time.monotonic() + 30
+                source, registration, trace, events = self.fixture(Path(temporary), deadline, comparison_error=comparison_error)
+                def probe(case, actual_source, actual_deadline):
+                    self.assertEqual(actual_source, source)
+                    self.assertEqual(actual_deadline, deadline)
+                    with events.open("a") as stream:
+                        stream.write("measurement\n")
+                    class Diagnostic:
+                        def optional_update(self, key, report):
+                            with events.open("a") as stream:
+                                stream.write(key + ":" + report["outcome"] + "\n")
+                    case.diagnostic = Diagnostic()
+                    if probe_failure:
+                        raise RuntimeError("private provider URL and password")
+                    return {"outcome": measurement_outcome}
+                output = io.StringIO()
+                module = SimpleNamespace(run_diagnostic=probe)
+                with mock.patch.dict(sys.modules, {"riscv64_reference_performance": module}), contextlib.redirect_stderr(output):
+                    result = self.suite.run_suite(source, registration, trace, deadline, query_cost_probe=True)
+                self.assertEqual(result, int(comparison_error or probe_failure or measurement_outcome == "fail"))
+                values = events.read_text().splitlines()
+                suffix = ["comparison", "measurement"]
+                if not probe_failure:
+                    suffix += ["query_cost_probe:" + measurement_outcome]
+                self.assertEqual(values[-(len(suffix) + 2):], suffix + ["teardown", "class_cleanup"])
+                self.assertNotIn("private", output.getvalue())
+                if comparison_error:
+                    self.assertIn("comparison: RuntimeError", output.getvalue())
+                if probe_failure:
+                    self.assertIn("query-cost: RuntimeError", output.getvalue())
+                elif measurement_outcome == "fail":
+                    self.assertIn("query-cost: ValueError", output.getvalue())
 
     def test_invalid_duplicate_oversized_or_changed_metadata_fails_before_import(self):
         for change in ("registration", "duplicate", "oversize", "scope", "library", "elf", "method", "deadline"):

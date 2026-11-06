@@ -1,4 +1,4 @@
-name: UNQUALIFIED RISC-V server phase comparison
+name: UNQUALIFIED RISC-V query cost measurement
 
 # This isolated branch diagnoses a failed gate. It cannot publish an image.
 on:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   observe:
-    name: Observe the original cases and direct/proxy cohorts (UNQUALIFIED)
+    name: Observe original cases, cohorts, and query cost (UNQUALIFIED)
     runs-on: ubuntu-24.04
     # The inner host budget is 600 seconds, including evidence collection.
     # This outer budget also covers checkout, downloads, source selection, and upload.
@@ -178,6 +178,7 @@ jobs:
               sha256sum -- "$ASM_CRT_PATH"
             done
           } > "$ASM_EVIDENCE/environment.txt"
+          lscpu --json > "$ASM_EVIDENCE/host-cpu.json"
       - name: Check trace forwarding, source capture, and bounded build tooling
         timeout-minutes: 1
         shell: bash
@@ -185,7 +186,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests/riscv64 -p 'test_reference_*.py' -v \
             2>&1 | tee "$ASM_EVIDENCE/reference-self-tests.log"
-      - name: Observe the exact failed binary with the reviewed phase fixture
+      - name: Observe the fixed binary and measure the owned query workload
         timeout-minutes: 12
         shell: bash
         run: |
