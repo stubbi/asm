@@ -1,6 +1,6 @@
 # Hosted Asm registry and agent access
 
-Status: implementation and qualification work, 5 November 2026.
+Status: implementation and scoped qualification work, 6 November 2026.
 
 Asm must run as a hosted registry through the existing ScienceHub Kubernetes infrastructure.
 The skill and MCP integration must connect to that service.
@@ -9,7 +9,7 @@ Local tooling alone does not meet this outcome.
 The existing private deployment preparation supplies isolated PostgreSQL, read-only request credentials, scoped operations, network rules, monitoring, and separate internal/public stages.
 It is not a running service.
 Production qualification requires actual data persistence, TLS, failure, recovery, and external client evidence.
-The [selected PostgreSQL 18 compatibility gate](postgres18-qualification.md#measured-preflight) passed an isolated native AMD64 preflight at its recorded source.
+The [selected PostgreSQL 18 compatibility gate](postgres18-qualification.md#combined-source-preflight) passed an isolated native AMD64 preflight at its recorded source.
 It does not establish private-cluster or deployment qualification.
 
 ## Component and target scope
@@ -20,18 +20,29 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 | Component | Current implementation or preparation | Qualification limit |
 | --- | --- | --- |
 | Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | The recorded PostgreSQL 18.6 preflight covers AMD64 only. Deployment and other PostgreSQL 18 database architectures retain separate gates. |
-| Assembly request metrics | Candidate fixed-label counter and histogram implementation on the three Linux ports | Combined-source metrics qualification and observed alert delivery remain pending. |
+| Assembly request metrics | Fixed-label counters and histograms on the three Linux ports | Recorded native AMD64 and ARM64 checks passed. RISC-V and observed alert delivery retain separate gates. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
-| Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |
+| Package catalog | Six accepted target labels | A declared label does not qualify an artifact, native CLI host, or server port. |
 
 The [README](../README.md#status) states the released CLI host support.
 Intel macOS and Windows remain separate host-port requirements.
 
-The combined source candidate adds metrics to the existing admission and PostgreSQL 18 test paths.
-Its HTTP baseline requires 22 cases, including all six metrics cases and the 19 named metrics unit checks.
-The separate [resource profile](deployment-envelope.md) requires 22 baseline, twelve admission, and three envelope cases.
-These 37 cases remain unqualified for the combined source.
+The [combined native record](server-metrics-evidence/42118754579/manifest.json) tested source `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b` on AMD64 and ARM64.
+Each target passed 34 hosted cases without skips: 22 runtime and twelve admission cases.
+The nineteen named metrics unit checks passed separately from those counts.
+The reports retain exact executable, metrics-tool, and admission-fixture hashes.
+
+The [AMD64 image and resource record](deployment-envelope-evidence/42118769226/manifest.json) tested source `2d9e80ad1bec850eaa576dc3a4980f8783d0893f`.
+Its only change from parent `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b` is the reviewed manual workflow.
+The ordinary PostgreSQL 18 gate passed 44 applicable cases plus the explicit macOS exclusion.
+The separate [resource profile](deployment-envelope.md#recorded-37-case-preflight) passed 22 baseline, twelve admission, and three envelope cases.
+Each HTTP baseline also passed nineteen separate metrics unit checks.
+Drivers, test tools, and runtime shared the constrained application cgroup; PostgreSQL remained separate.
+Deliberate refusals and transport failures remain visible in its raw request results.
+The in-flight SIGTERM request reset, so graceful drain remains unqualified.
+These records do not qualify private capacity or deployment.
+This documentation revision and future builds differ from the tested artifacts.
 Earlier receipts retain their original source, case counts, image identities, and limits.
 
 [Runtime run 41934599148](https://github.com/stubbi/asm/actions/runs/41934599148) and [image run 41934598837](https://github.com/stubbi/asm/actions/runs/41934598837) passed on 5 November 2026.

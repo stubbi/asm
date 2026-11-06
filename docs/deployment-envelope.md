@@ -1,6 +1,6 @@
 # Fixed deployment envelope
 
-Status: earlier native preflight failed; combined-source qualification remains pending, 5 November 2026.
+Status: fixed native AMD64 profile passed at the recorded source; documentation updated 6 November 2026.
 
 This profile tests the selected PostgreSQL 18 database with one fixed application resource envelope.
 It serves operators who need inspectable resource and failure evidence before deployment.
@@ -70,7 +70,8 @@ Replace both uppercase placeholders.
 An existing evidence directory is preserved.
 Successful evidence requires all three part reports, exact image bindings, resource closure, and successful owned cleanup.
 Retain the complete evidence directory after failure.
-No native result qualifies this combined 37-case source.
+The result below covers the recorded 37-case source and image bytes.
+Future source revisions and image builds require their own qualification.
 
 ## First native preflight
 
@@ -92,7 +93,7 @@ The twelve admission and three envelope cases did not run.
 The nine-cancellation admission assertion did not run.
 The partial baseline does not qualify the resource envelope, capacity, draining, or deployment.
 Both gates reported successful owned cleanup.
-The parser correction has no native result.
+That first run supplied no native result for the parser correction.
 
 The original artifact ZIP is retained privately outside this repository.
 It contains 183132 bytes.
@@ -100,10 +101,72 @@ Its SHA-256 is `d89f3b633f6a2fbf2673bf25d216dcda05832d12b41de2faacea6c5d6ee83311
 This digest matches the [GitHub artifact metadata](deployment-envelope-evidence/42111348191/artifacts.json).
 The [independent inspection](deployment-envelope-evidence/42111348191/independent-review.json) records the exact image identities and observed coverage.
 
+## Combined preflight failure
+
+[Run 42116208295](https://github.com/stubbi/asm/actions/runs/42116208295) tested source `c7dbecc236dcf71b0c24e3416be8b7506ad8d28c` once.
+Its ordinary gate passed 43 applicable cases and failed the exact metrics startup-error assertion.
+The actual error representation included an abbreviated password-file warning.
+The existing macOS exclusion remained explicit; all nineteen metrics unit checks passed separately.
+The planned 37-case profile did not run.
+Its [original failure and raw HTTP logs](deployment-envelope-evidence/42116208295/independent-review.json) remain unchanged.
+That result supplies no resource-envelope qualification.
+
+## Recorded 37-case preflight
+
+[Run 42118769226](https://github.com/stubbi/asm/actions/runs/42118769226) passed on 5 November 2026, attempt one.
+It tested source `2d9e80ad1bec850eaa576dc3a4980f8783d0893f` on native Linux AMD64.
+Only the reviewed manual workflow differs from parent `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b`.
+Its workflow blob is `1cecf11010d4b2cd6e6803afb945bbbfd648a52c`.
+The [manifest](deployment-envelope-evidence/42118769226/manifest.json) binds the exact [profile report](deployment-envelope-evidence/42118769226/profile-qualification.json) and [ordinary report](deployment-envelope-evidence/42118769226/ordinary-qualification.json).
+
+The ordinary gate retained its two-CPU, 512 MiB application limits.
+It passed 44 applicable cases plus the existing macOS ACL exclusion.
+The profile passed 37 cases without skips; its nineteen named metrics unit checks remain separate.
+The hostile `HOME` and `PGPASSFILE` exact-error assertion passed in both HTTP baselines.
+Metrics-tool and NULL-connection-fixture hashes matched the original and derived qualification images.
+
+| Profile module | Cases | Boundary samples | Peak memory, bytes | Final current memory, bytes |
+| --- | --- | --- | --- | --- |
+| Baseline | 22 | 46 | 47058944 | 29175808 |
+| Admission | 12 | 26 | 58105856 | 30171136 |
+| Envelope | 3 | 8 | 136638464 | 58494976 |
+
+All 80 samples reported the fixed CPU quota, 268435456-byte memory limit, and zero swap.
+OOM counters remained zero, and all three application containers exited with code zero.
+The envelope module recorded one CPU throttle event and 95476 microseconds of throttling.
+The baseline and admission modules recorded no throttle increase during their sampled intervals.
+Raw CPU counters and memory events remain in the profile report.
+These measurements include qualification drivers and test tools with the runtime; they do not isolate application cost.
+
+Eight 4 MiB JSON and eight 1 MiB TSV slow responses completed with exact bytes.
+All eight incomplete-header connections closed after inactivity.
+The owned admission log contained exactly nine SQL cancellation messages.
+Their HTTP refusals took 1.0495–1.0503 seconds, within the unchanged 0.7–1.8 second assertions.
+The observed in-flight SIGTERM request ended with `RemoteDisconnected`.
+The process met the three-second exit assertion, but this does not establish graceful drain.
+
+Raw valid-request availability failures remain 104 of 261 baseline requests, 248 of 566 admission requests, and nine of 39 envelope requests.
+They include deliberate fault responses, startup refusals, and the in-flight reset.
+The report also retains eight malformed incomplete-header closures separately.
+These fixed fault workloads do not estimate production availability.
+They do not require health to remain available when all sixteen HTTP connections are occupied.
+
+The profile used three fresh PostgreSQL system identifiers and a fresh preparation nonce.
+All 71 profile containers and its private preparation were removed.
+The ordinary gate separately removed 41 containers and its preparation.
+No state, database-log, or cleanup failure was reported.
+
+The original ZIP remains private; duplicate ZIP and build logs are omitted here.
+Artifact `13458375291` contains 238463 bytes.
+Its SHA-256 is `c4777772d0d3464504bde6268c0d3b49709b248ba1efbb49c15035dae7794229`.
+The manifest retains the collection-query failure and correction; the native result and original bytes were unchanged.
+This documentation revision and future builds differ from the tested source and recorded images.
+
 ## Limits and sources
 
 This profile does not qualify Kubernetes scheduling, ephemeral-storage accounting, multiple replicas, failover, backup, restore, or public traffic.
-Metrics are included in this candidate's baseline; their combined qualification remains pending.
+The recorded baseline includes the six metrics cases and nineteen separate unit checks.
+Observed alert delivery remains a separate gate.
 Startup integration retains its separate gate.
 Bounded SIGTERM exit does not establish graceful response draining.
 Resource observations apply only to the recorded images, host, and fixed workloads.

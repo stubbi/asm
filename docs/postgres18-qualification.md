@@ -1,12 +1,12 @@
 # Selected PostgreSQL 18 compatibility
 
-Status: native AMD64 preflight passed at the recorded source, 5 November 2026.
+Status: native AMD64 preflights passed at the recorded sources; documentation updated 6 November 2026.
 
 This gate checks canonical catalog compatibility with the database image selected by the private deployment manifest.
 The user outcome is inspectable SQL, TLS, role, operator, and HTTP evidence for that exact image.
 The governing principles are dependable reuse, evidence tied to exact bytes, and bounded resource use.
 
-The measured result below covers its exact preflight source and image identities.
+Each measured result below covers its exact preflight source and image identities.
 Local contract tests alone do not establish database or container behavior.
 The current PostgreSQL 16.15 qualification remains separate.
 
@@ -50,6 +50,35 @@ Source-bundle HEAD, `SOURCE.json`, image labels, compiled HTTP identity, fixture
 A different permanent revision changes revision metadata and source-bundle bytes.
 This result covers the recorded preflight artifacts; it does not qualify future image builds.
 
+## Combined source preflight
+
+[Run 42118769226](https://github.com/stubbi/asm/actions/runs/42118769226) passed on 5 November 2026, attempt one.
+It tested source `2d9e80ad1bec850eaa576dc3a4980f8783d0893f` through one native Linux AMD64 job.
+Only the registered manual workflow differs from parent `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b`.
+Its workflow blob is `1cecf11010d4b2cd6e6803afb945bbbfd648a52c`.
+The [manifest](deployment-envelope-evidence/42118769226/manifest.json) binds the original reports, image identities, fixtures, and artifact ZIP.
+
+The [ordinary qualification](deployment-envelope-evidence/42118769226/ordinary-qualification.json) passed 44 applicable cases: 22 operator and catalog cases, plus 22 HTTP cases.
+The existing macOS ACL case remained the only platform exclusion.
+All nineteen named metrics unit checks passed separately from those case counts.
+The HTTP cases include the exact startup-error assertion with hostile `HOME` and `PGPASSFILE` inputs.
+Both fresh database fixtures reported PostgreSQL 18.6, libpq 16.15, and TLS 1.3, with different system identifiers.
+The ordinary application limits remained two CPUs and 512 MiB.
+All 41 owned containers and the private preparation were removed.
+No database-log or cleanup failure was reported.
+
+The [separate fixed profile](deployment-envelope.md#recorded-37-case-preflight) passed 37 cases and nineteen separate metrics unit checks.
+Drivers, test tools, and runtime shared one CPU, 256 MiB, no swap, and a 64 MiB temporary filesystem.
+Three fresh PostgreSQL fixtures remained outside that application cgroup.
+All 80 cgroup samples closed their required boundaries without OOM events.
+The record retains deliberate availability failures and the in-flight SIGTERM reset.
+It does not establish graceful drain, private capacity, or deployment compatibility.
+
+The [native runtime record](server-metrics-evidence/42118754579/manifest.json) separately covers AMD64 and ARM64 at parent source `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b`.
+It does not qualify another PostgreSQL 18 database architecture.
+This documentation revision and future builds change source metadata and artifact bytes.
+Neither record extends to those later artifacts.
+
 ## Isolation and scope
 
 The database runs as UID/GID 26.
@@ -88,8 +117,8 @@ Each suite uses a new owned PostgreSQL cluster.
 The combined candidate requires the metrics descriptor only from the HTTP baseline.
 Capacity and envelope cases cannot substitute for its six HTTP metrics cases or 19 named unit checks.
 Original and derived qualification images must have matching fixed test-tool inventories.
-The measured preflight above remains 38 applicable cases at its recorded earlier source.
-It does not qualify this candidate's expanded coverage.
+The earlier measured preflight remains 38 applicable cases at its recorded source.
+The combined preflight records the expanded 44-case ordinary result separately.
 The gate requires different database system identifiers.
 The gate retains failed checks and cleanup errors.
 It bounds standard output to 4 MiB and standard error to 1 MiB while reading each child process.
@@ -155,10 +184,10 @@ This gate does not connect to the private cluster or qualify CloudNativePG recon
 Forced process or host termination can prevent cleanup and evidence retention.
 It does not test two-instance synchronous replication, failover, persistent volumes, backup, restore, capacity, or public deployment.
 Fresh fixture startup does not establish production startup behavior or recovery.
-Private application limits of one CPU and 256 MiB require separate qualification.
-Database connection admission remains a separate gate.
-The [fixed deployment envelope candidate](deployment-envelope.md) adds a separate resource check for qualification drivers, test tools, and the runtime.
-Its first native preflight failed in fixture evidence parsing; full profile qualification remains incomplete.
+Private deployment capacity remains unqualified by these owned fixture results.
+The [fixed deployment envelope](deployment-envelope.md) records a separate AMD64 check for qualification drivers, test tools, and the runtime.
+Its original parser failure remains retained beside the later complete 37-case result.
+The ordinary PostgreSQL 16.15 admission image gate remains separate from that profile.
 It does not qualify ARM64 or RISC-V database images.
 The ordinary PostgreSQL 16.15 operator and server image gates remain required independently.
 Older `psql` compatibility is limited to the command paths exercised here.

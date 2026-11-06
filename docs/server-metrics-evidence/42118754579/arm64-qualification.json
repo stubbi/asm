@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "scope": "linux-server-ports",
+  "source_revision": "9c53f28a08b2ce13bc5f3b67749577c7014c5b6b",
+  "target": "aarch64-linux",
+  "isa": "AArch64",
+  "os": "Linux",
+  "server_abi": "AAPCS64 LP64",
+  "cpu_baseline": "ARMv8-A",
+  "cpu_features": [],
+  "execution": "native",
+  "host": {
+    "system": "Linux",
+    "node": "runnervmkb2gk",
+    "release": "7.0.0-1017-azure",
+    "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026",
+    "machine": "aarch64",
+    "processor": "aarch64"
+  },
+  "job_status": "success",
+  "status": "pass",
+  "artifacts": {
+    "cli": {
+      "bytes": 198040,
+      "sha256": "36ddb71196e32cefa7f1a21a6f45b5367cf78c51e31aef67e4eabe01bd922924",
+      "elf_flags": 0,
+      "status": "pass"
+    },
+    "reference": {
+      "bytes": 74864,
+      "sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9",
+      "elf_flags": 0,
+      "hardening": [
+        "PIE",
+        "RELRO",
+        "immediate binding",
+        "non-executable stack"
+      ],
+      "status": "pass"
+    },
+    "hosted": {
+      "bytes": 82736,
+      "sha256": "3e6e7523153e8be47ce76734f0aebfadc8444351acd3ecac8359a0d739ddab2b",
+      "elf_flags": 0,
+      "hardening": [
+        "PIE",
+        "RELRO",
+        "immediate binding",
+        "non-executable stack"
+      ],
+      "status": "pass"
+    },
+    "source_archive": {
+      "status": "pass",
+      "bytes": 69424,
+      "sha256": "4185e9d4687de5e970d1f45ca2ac23ec76a4d397182d06811d57356f29818d4f"
+    }
+  },
+  "tests": {
+    "native-link": {
+      "status": "pass",
+      "tests": 11,
+      "seconds": 0.378,
+      "log_sha256": "18aef303f424217916e81b72bbb4466bfee454c9fbda629363a068c695869c7e"
+    },
+    "reference": {
+      "status": "pass",
+      "tests": 19,
+      "seconds": 6.584,
+      "log_sha256": "b1e7885ef4535b97f01f71bdc4da30c90bfad0ca33b0eef9daffa5a88117b319"
+    },
+    "hosted": {
+      "status": "pass",
+      "tests": 34,
+      "seconds": 87.058,
+      "log_sha256": "b711d88fc9af5ab7fe418b726a9a9db2ad6c457cdf540e706ab7c0cbbc374881"
+    },
+    "failure_preservation": {
+      "status": "pass",
+      "tests": 4,
+      "reference": {
+        "exit_code": 2,
+        "preserved_sha256": "53d028effe34d8bc215e7eef0374dddfe2a9648c33a258a6ac71435d8528dfa9"
+      },
+      "hosted": {
+        "exit_code": 2,
+        "preserved_sha256": "3e6e7523153e8be47ce76734f0aebfadc8444351acd3ecac8359a0d739ddab2b"
+      },
+      "symbolic_destinations": {
+        "file": {
+          "exit_code": 2,
+          "outside_unchanged": true
+        },
+        "directory": {
+          "exit_code": 2,
+          "outside_unchanged": true
+        }
+      }
+    }
+  },
+  "host_match": {
+    "status": "pass"
+  },
+  "source_match": {
+    "status": "pass",
+    "head": "9c53f28a08b2ce13bc5f3b67749577c7014c5b6b",
+    "dirty": false
+  },
+  "metrics": {
+    "schema": 1,
+    "timing": "handler-entry-to-accepted-queue",
+    "samples": 79,
+    "max_response_bytes": 16384,
+    "http_tests": [
+      "RuntimeTests.test_metrics_aborts_preserve_queue_semantics",
+      "RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots",
+      "RuntimeTests.test_metrics_database_delay_and_failed_request_timing",
+      "RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting",
+      "RuntimeTests.test_metrics_fixed_exposition_and_route_labels",
+      "RuntimeTests.test_metrics_queue_failures_preserve_ownership"
+    ],
+    "unit": {
+      "schema": 1,
+      "status": "pass",
+      "scope": "assembly-metrics-unit",
+      "checks": [
+        "zero_exposition",
+        "route_classification",
+        "bucket_boundaries",
+        "decimal_sum_and_capacity",
+        "queue_failure",
+        "parallel_snapshot",
+        "clock_failure_begin",
+        "clock_failure_finish",
+        "clock_invalid_timespec",
+        "clock_conversion_overflow",
+        "clock_backwards",
+        "overflow_count",
+        "overflow_request_counter",
+        "overflow_bucket",
+        "overflow_sum",
+        "overflow_queue_failure",
+        "mutex_init_failure",
+        "mutex_lock_failure",
+        "mutex_unlock_failure"
+      ]
+    },
+    "test_tools": {
+      "test-metrics": {
+        "sha256": "2cd9266e7347f006480f23f18594bdb48fea62d13dfc4f08b76d2096ce84b225",
+        "bytes": 77712
+      },
+      "metrics-faults.so": {
+        "sha256": "a2da392ba992be9e23404407fb201f5acadfd3248b65c5168d776e32bb09b5c6",
+        "bytes": 71440
+      }
+    }
+  },
+  "admission_fixture": {
+    "status": "pass",
+    "sha256": "235b534144ac08e28b28b7a6c29ab29a0a1d9de0e49a36580933b9df624a6697",
+    "bytes": 69760,
+    "mode": "0444"
+  },
+  "tools": [
+    {
+      "command": [
+        "/usr/bin/cc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+      "error": ""
+    },
+    {
+      "command": [
+        "/usr/bin/as",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "GNU assembler (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `aarch64-linux-gnu'.\n",
+      "error": ""
+    },
+    {
+      "command": [
+        "/usr/bin/ld",
+        "--version"
+      ],
+      "exit_code": 0,
+      "output": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+      "error": ""
+    }
+  ],
+  "limits": [
+    "No deployment, recovery, throughput, or physical-target performance qualification follows from these tests.",
+    "The source archive contains the reference experiment; source_revision identifies the hosted runtime source.",
+    "The execution mode is supplied by the CI job; it is not a hardware attestation."
+  ]
+}

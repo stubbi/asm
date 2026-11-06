@@ -1,0 +1,313 @@
+{
+  "attempt": 1,
+  "cancellation_log_entry": {
+    "bytes": 5596,
+    "name": "envelope/result/asm-postgres18-075dc10f6e004ecc9663e324122297b1.database.file.log",
+    "sha256": "2f84d3afd807cf7f06bfffc94d9c99b77d6262041cb3f215a9b4570cc92cacc9"
+  },
+  "cleanup": {
+    "both_preparations": "removed",
+    "log_failures": [],
+    "ordinary_containers_reported_removed": 41,
+    "profile_containers_reported_removed": 71,
+    "state_failures": []
+  },
+  "collection_note": "The first local validation query also selected successful recovery exports and failed its expected-nine count. The corrected query selects the nine actual HTTP 503 timeouts. The native run and original evidence were unchanged.",
+  "database_images": {
+    "ordinary": {
+      "config_digest": "sha256:e81943bf2a7f93b868b0ce332642e9005ab3bc02d23f7effb505e5a19b7daa42",
+      "index_digest": "sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+      "platform_digest": "sha256:9d1808e9b9c82fb1175ecc7aba615e88b16013e8f118c536a8b5a9aca017ec03",
+      "qualification_image_id": "sha256:30f43eafeb2d0ec5a1437fad977406caa834c72c6b979bd199d44f686f8a205f",
+      "reference": "ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390"
+    },
+    "profile": {
+      "config_digest": "sha256:e81943bf2a7f93b868b0ce332642e9005ab3bc02d23f7effb505e5a19b7daa42",
+      "index_digest": "sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+      "platform_digest": "sha256:9d1808e9b9c82fb1175ecc7aba615e88b16013e8f118c536a8b5a9aca017ec03",
+      "qualification_image_id": "sha256:3e0d4fc696fefc766a2cb83906affefa39c4b507c9a67bef4fc233266124483b",
+      "reference": "ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390"
+    }
+  },
+  "files": {
+    "ordinary-qualification.json": {
+      "bytes": 19720,
+      "sha256": "abcedfaf828ad0237824e3765beb047409dd1e8f9663073647003eb3f93123c1"
+    },
+    "profile-qualification.json": {
+      "bytes": 298617,
+      "sha256": "ae9ee1b2ef67deaa116fc224b9635ef4712e7646a7159ae8d2dbd0a2189a4998"
+    }
+  },
+  "fresh_database_system_identifiers": [
+    "7704814115308822553",
+    "7704814194112581657",
+    "7704814285907464217",
+    "7704814340134027289",
+    "7704814684149202969"
+  ],
+  "images": {
+    "http_qualification": "sha256:4e2bf6b876fcfa9adee2e3ef5f9e8610fac90c8be0b9070639e9a102329c6639",
+    "http_runtime": "sha256:3e00c57fb1ff8fd8b69c1a7bace51435ca14eb24e09589a7505f56e25b16dd66",
+    "operator_qualification": "sha256:e270467da53de91166e8590627bff205fd4cea5f8c8ff73911705c24ff147762",
+    "operator_runtime": "sha256:11443d839ec67a59146effee19199c04903026d2b7c07080b8073f5637222b71",
+    "ordinary_derived_http": "sha256:b11eefa95305ce141f36617d17457431384c30364b41c7ce5b09b7a6d6c1ab1f",
+    "ordinary_derived_operator": "sha256:b66b2ee3df0195b908bb247874e41fb9ab4fefe55d62269019c4fb702afdb6c8",
+    "profile_derived_http": "sha256:84ab1987ab3a0afc97d9c6e9d73e6435a074ce2972f89a88a25824da310df441"
+  },
+  "limits": [
+    "One native AMD64 run on the exact source and recorded images; CI execution mode and host reports are not hardware attestation.",
+    "Qualification drivers and test tools share the constrained application cgroup with the assembly runtime. PostgreSQL has a separate 2 CPU, 2 GiB allocation.",
+    "The 64 MiB tmpfs limit is distinct from Kubernetes ephemeral-storage accounting.",
+    "Raw request failures include deliberate fault responses and startup probes. They remain availability failures; this is not a production availability estimate.",
+    "In-flight SIGTERM produced a RemoteDisconnected reset with bounded process exit. This does not establish graceful drain.",
+    "No private capacity, deployment, throughput, recovery or cross-architecture qualification follows. Earlier failed runs remain retained separately.",
+    "The documentation revision and future source or image builds are distinct from the tested source and recorded artifact hashes."
+  ],
+  "metrics_test_tools": {
+    "metrics-faults.so": {
+      "bytes": 16632,
+      "sha256": "1c16e25e27cbfdd73f18a9c05087e8b414004c1c17f81343ebf0c8c8f3134d0d"
+    },
+    "test-metrics": {
+      "bytes": 46672,
+      "sha256": "c8ba9bbd2ad6fa649f5069baff810f844cf8af4dbbe723b397dc523523a9bb8f"
+    }
+  },
+  "null_connection_fixture": {
+    "bytes": 15448,
+    "gid": 0,
+    "mode": "0444",
+    "path": "/qualification/fixtures/connect-null.so",
+    "sha256": "eef753c134d09af360601745eb18338e7d9344b31d2edcf19f9ac8e1c9997b21",
+    "uid": 0
+  },
+  "ordinary": {
+    "applicable_passed": 44,
+    "hostile_home_passfile_exact_error_assertion": "passed in HTTP metrics ownership case",
+    "http_tests_run": 22,
+    "macos_exclusions": 1,
+    "metrics_unit_checks_separate": 19,
+    "operator_tests_run": 23
+  },
+  "original_artifact": {
+    "bytes": 238463,
+    "id": 13458375291,
+    "retained": "Original ZIP and raw logs remain private; duplicate ZIP and build logs are omitted.",
+    "sha256": "c4777772d0d3464504bde6268c0d3b49709b248ba1efbb49c15035dae7794229"
+  },
+  "profile": {
+    "cases": 37,
+    "cgroup_boundaries": 80,
+    "incomplete_headers_closed": 8,
+    "inflight_request": {
+      "body_bytes": 0,
+      "elapsed_ns": 696462,
+      "error": "RemoteDisconnected",
+      "outcome": "reset",
+      "path": "/health/ready",
+      "status": null,
+      "valid_request": true
+    },
+    "maximum_slow_responses": {
+      "json_bytes_each": 4194304,
+      "json_count": 8,
+      "tsv_bytes_each": 1048576,
+      "tsv_count": 8
+    },
+    "measurement_scope": "Qualification drivers and test tools share one constrained cgroup with the assembly runtime; PostgreSQL is separate.",
+    "metrics_unit_checks_separate": 19,
+    "resources": {
+      "application_cpus": 1,
+      "application_memory_bytes": 268435456,
+      "application_swap_bytes": 0,
+      "application_tmpfs_bytes": 67108864,
+      "database_cpus": 2,
+      "database_memory_bytes": 2147483648,
+      "database_tmpfs_bytes": 536870912,
+      "pids_per_container": 128
+    },
+    "sql_cancellation_messages": 9,
+    "statement_timeout_request_elapsed_ns": [
+      1049486129,
+      1050304021,
+      1049814314,
+      1049971965,
+      1050057020,
+      1049725917,
+      1049766526,
+      1049816577,
+      1050037055
+    ],
+    "suite_summary": {
+      "baseline": {
+        "availability": {
+          "availability_failures": 104,
+          "valid_requests": 261
+        },
+        "cpu_delta": {
+          "burst_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nice_usec": 0,
+          "nr_bursts": 0,
+          "nr_periods": 49,
+          "nr_throttled": 0,
+          "system_usec": 310950,
+          "throttled_usec": 0,
+          "usage_usec": 1275993,
+          "user_usec": 965044
+        },
+        "database_system_identifier": "7704814285907464217",
+        "memory_before_bytes": 25620480,
+        "memory_events_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_events_local_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_final_bytes": 29175808,
+        "memory_peak_bytes": 47058944,
+        "raw_outcomes": {
+          "complete": 157,
+          "refused": 101,
+          "reset": 41
+        },
+        "samples": 46,
+        "state_exit_code": 0,
+        "state_oom_killed": false,
+        "tests_run": 22,
+        "valid_outcomes": {
+          "complete": 157,
+          "refused": 63,
+          "reset": 41
+        }
+      },
+      "capacity": {
+        "availability": {
+          "availability_failures": 248,
+          "valid_requests": 566
+        },
+        "cpu_delta": {
+          "burst_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nice_usec": 0,
+          "nr_bursts": 0,
+          "nr_periods": 562,
+          "nr_throttled": 0,
+          "system_usec": 854645,
+          "throttled_usec": 0,
+          "usage_usec": 2771734,
+          "user_usec": 1917090
+        },
+        "database_system_identifier": "7704814340134027289",
+        "memory_before_bytes": 25165824,
+        "memory_events_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_events_local_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_final_bytes": 30171136,
+        "memory_peak_bytes": 58105856,
+        "raw_outcomes": {
+          "complete": 318,
+          "refused": 240,
+          "reset": 8
+        },
+        "samples": 26,
+        "state_exit_code": 0,
+        "state_oom_killed": false,
+        "tests_run": 12,
+        "valid_outcomes": {
+          "complete": 318,
+          "refused": 240,
+          "reset": 8
+        }
+      },
+      "envelope": {
+        "availability": {
+          "availability_failures": 9,
+          "valid_requests": 39
+        },
+        "cpu_delta": {
+          "burst_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nice_usec": 0,
+          "nr_bursts": 0,
+          "nr_periods": 38,
+          "nr_throttled": 1,
+          "system_usec": 341228,
+          "throttled_usec": 95476,
+          "usage_usec": 829130,
+          "user_usec": 487903
+        },
+        "database_system_identifier": "7704814684149202969",
+        "memory_before_bytes": 24977408,
+        "memory_events_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_events_local_final": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0,
+          "sock_throttled": 0
+        },
+        "memory_final_bytes": 58494976,
+        "memory_peak_bytes": 136638464,
+        "raw_outcomes": {
+          "closed": 8,
+          "complete": 30,
+          "reset": 9
+        },
+        "samples": 8,
+        "state_exit_code": 0,
+        "state_oom_killed": false,
+        "tests_run": 3,
+        "valid_outcomes": {
+          "complete": 30,
+          "reset": 9
+        }
+      }
+    }
+  },
+  "run": "https://github.com/stubbi/asm/actions/runs/42118769226",
+  "schema": 1,
+  "source_difference": "Only the reviewed manual assembly-server.yml workflow differs from the parent.",
+  "source_parent": "9c53f28a08b2ce13bc5f3b67749577c7014c5b6b",
+  "source_revision": "2d9e80ad1bec850eaa576dc3a4980f8783d0893f",
+  "status": "pass",
+  "workflow_blob": "1cecf11010d4b2cd6e6803afb945bbbfd648a52c"
+}

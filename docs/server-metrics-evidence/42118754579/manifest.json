@@ -1,0 +1,121 @@
+{
+  "attempt": 1,
+  "files": {
+    "amd64-qualification.json": {
+      "bytes": 6287,
+      "sha256": "6b7a412c580a232c1c1e578446c74a891b60a6a51dfb70ab16141aee4a824686"
+    },
+    "arm64-qualification.json": {
+      "bytes": 6286,
+      "sha256": "e3604373ee763e65cb0bc9ee4bf710bdbed422a4cdffbaa165fad63cc5160ae4"
+    }
+  },
+  "jobs": {
+    "amd64": {
+      "admission_fixture": {
+        "bytes": 15672,
+        "mode": "0444",
+        "sha256": "50040fdc31fe3a720e74c48f7df81a065454c74a2c6d3023123975a253ada2bb",
+        "status": "pass"
+      },
+      "catalog_publication": "pass",
+      "execution": "native",
+      "failure_preservation_cases": 4,
+      "host": {
+        "machine": "x86_64",
+        "node": "runnervm7aw5e",
+        "processor": "x86_64",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux",
+        "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026"
+      },
+      "hosted_binary": {
+        "bytes": 44152,
+        "elf_flags": 0,
+        "hardening": [
+          "PIE",
+          "RELRO",
+          "immediate binding",
+          "non-executable stack"
+        ],
+        "sha256": "60947afb357708e88e6128544c81932c720f73ee5c0f6abc4db291eaf62c0c59",
+        "status": "pass"
+      },
+      "hosted_cases": 34,
+      "hosted_skips": 0,
+      "job_id": 127565254668,
+      "metrics_test_tools": {
+        "metrics-faults.so": {
+          "bytes": 16856,
+          "sha256": "aba1ed4fd22063002fc92b75f743f03082166c893c0db0ab0eff8ba9a84f8893"
+        },
+        "test-metrics": {
+          "bytes": 46744,
+          "sha256": "d45b75b2167383544d277ea617d56e5f75a7f3d6c96f223b99b602fa14245e7d"
+        }
+      },
+      "metrics_unit_checks_separate": 19,
+      "native_link_cases": 11,
+      "reference_cases": 19,
+      "target": "x86_64-linux"
+    },
+    "arm64": {
+      "admission_fixture": {
+        "bytes": 69760,
+        "mode": "0444",
+        "sha256": "235b534144ac08e28b28b7a6c29ab29a0a1d9de0e49a36580933b9df624a6697",
+        "status": "pass"
+      },
+      "catalog_publication": "pass",
+      "execution": "native",
+      "failure_preservation_cases": 4,
+      "host": {
+        "machine": "aarch64",
+        "node": "runnervmkb2gk",
+        "processor": "aarch64",
+        "release": "7.0.0-1017-azure",
+        "system": "Linux",
+        "version": "#17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 19:06:39 UTC 2026"
+      },
+      "hosted_binary": {
+        "bytes": 82736,
+        "elf_flags": 0,
+        "hardening": [
+          "PIE",
+          "RELRO",
+          "immediate binding",
+          "non-executable stack"
+        ],
+        "sha256": "3e6e7523153e8be47ce76734f0aebfadc8444351acd3ecac8359a0d739ddab2b",
+        "status": "pass"
+      },
+      "hosted_cases": 34,
+      "hosted_skips": 0,
+      "job_id": 127565255120,
+      "metrics_test_tools": {
+        "metrics-faults.so": {
+          "bytes": 71440,
+          "sha256": "a2da392ba992be9e23404407fb201f5acadfd3248b65c5168d776e32bb09b5c6"
+        },
+        "test-metrics": {
+          "bytes": 77712,
+          "sha256": "2cd9266e7347f006480f23f18594bdb48fea62d13dfc4f08b76d2096ce84b225"
+        }
+      },
+      "metrics_unit_checks_separate": 19,
+      "native_link_cases": 11,
+      "reference_cases": 19,
+      "target": "aarch64-linux"
+    }
+  },
+  "limits": [
+    "The nineteen metrics unit checks are separate from the thirty-four hosted cases on each target.",
+    "These native reports cover exact source and artifact hashes; documentation changes and future image builds are different revisions.",
+    "CI execution mode and host reports are not hardware attestation.",
+    "No RISC-V, image resource envelope, deployment, recovery, throughput, private capacity, or general performance claim follows."
+  ],
+  "run": "https://github.com/stubbi/asm/actions/runs/42118754579",
+  "schema": 1,
+  "source_revision": "9c53f28a08b2ce13bc5f3b67749577c7014c5b6b",
+  "status": "pass"
+}

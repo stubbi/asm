@@ -1,6 +1,6 @@
 # Assembly canonical registry runtime
 
-Status: incomplete implementation, 5 November 2026.
+Status: incomplete service; scoped qualification recorded, 6 November 2026.
 
 This directory contains the assembly runtime path for hosted Asm work.
 It is not a production registry or a deployable replacement for the static catalog.
@@ -22,7 +22,7 @@ The process accepts no migration, grant, or import command.
 | `GET /health/live` | Return process liveness without a database connection |
 | `GET /health/ready` | Check the canonical migration, actual catalog reads, and reader privileges |
 | `GET /api/v2/status` | Return the build's exact source revision and source URL |
-| `GET /metrics` | Return bounded internal request metrics; qualification remains pending |
+| `GET /metrics` | Return bounded internal request metrics |
 | `GET /registry/v1/index.tsv` | Return the exact Linux compatibility feed, at most 1048576 bytes |
 | `GET /registry/v1/index-macos.tsv` | Return the exact four-target macOS compatibility feed, at most 1048576 bytes |
 | `GET /registry/v1/index-all.tsv` | Return the exact full six-target feed, at most 1048576 bytes |
@@ -83,20 +83,22 @@ Each active metrics response uses a separate 16 KiB stack buffer.
 JSON body storage can include the 4 MiB database result and its 4 MiB HTTP copy.
 That is up to 8 MiB of body bytes per active JSON response, excluding library overhead and other allocations.
 The limit of sixteen connections does not establish that the private 256 MiB memory proposal is sufficient.
-Capacity and slow-reader behavior need separate measurements.
+The [fixed-envelope record](../docs/deployment-envelope.md#recorded-37-case-preflight) covers constrained slow readers for exact AMD64 images.
+It does not establish private deployment capacity.
 An HTTP allocation, header, or queue failure closes the connection after releasing response ownership.
 
 SIGTERM and SIGINT stop admission and stop the HTTP daemon.
 The integration suite checks a three-second idle shutdown bound.
 Completion of every accepted response during shutdown remains unqualified.
 
-## Candidate internal request metrics
+## Internal request metrics
 
 `GET /metrics` uses the existing listener and HTTP request policy.
 Keep this route behind the reviewed internal network and ingress policy.
 The path itself supplies no authentication.
 Application logic remains assembly on all three Linux ports.
-Native qualification of this implementation remains pending.
+Native AMD64 and ARM64 checks passed at the [recorded combined source](../docs/server-metrics-evidence/42118754579/manifest.json).
+RISC-V and future builds retain separate gates.
 
 The response uses Prometheus text format 0.0.4 with a final LF.
 Its content type is `text/plain; version=0.0.4; charset=utf-8`.
@@ -338,7 +340,7 @@ The [isolated diagnostic run 42035969713](https://github.com/stubbi/asm/actions/
 Both observed eight-response waves passed the unchanged assertions, including their exact response bytes.
 Instrumentation, a rebuild, and selected method execution make this diagnostic evidence; it does not qualify the original or current image.
 CPU throttling occurred in the successful diagnostic waves and does not establish the cause of the original failures.
-Fresh complete runtime and image checks remain required for the integrated source.
+The original RISC-V image remains unqualified; later checks apply only to their stated artifacts.
 
 The metrics [test-first run 42079228127](https://github.com/stubbi/asm/actions/runs/42079228127) tested source `51b74f880703dff8bacc9cd9a329974c40ac920a`.
 Native AMD64 and ARM64 each ran 17 HTTP tests.
@@ -355,7 +357,7 @@ Catalog publication and build-failure-preservation checks did not run.
 The [original reports and shared failure log](../docs/server-metrics-evidence/42111761655/manifest.json) retain that result and its missing tool-hash evidence.
 A local helper fixture reproduced the lookup's collision with a `# HELP` line.
 Test-driver correction `240c371342c7e06a9a561dded7381d734802fb0a` changes no assembly or runtime behavior.
-It has no complete native qualification result.
+That failed receipt does not qualify the correction.
 
 The [joined native run 42116194065](../docs/server-metrics-evidence/42116194065/manifest.json) tested source `68d9f54017bff6984616378feb16c215a69ff597`.
 Native AMD64 and ARM64 each passed all nineteen metrics unit checks and 33 of 34 hosted cases.
@@ -369,23 +371,45 @@ One macOS ACL exclusion remained explicit.
 The planned 37-case resource profile did not run.
 Neither failed run qualifies the corrected passfile path or a resource envelope.
 
+The [successful native record](../docs/server-metrics-evidence/42118754579/manifest.json) tested source `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b` on 5 November 2026.
+Native AMD64 and ARM64 each passed 34 hosted cases without skips: 22 runtime and twelve admission cases.
+All nineteen named metrics unit checks passed separately from those case counts.
+Each target also passed nineteen reference, eleven native-link, and four build-failure-preservation cases.
+Both catalog-publication steps passed.
+The retained reports bind executable, metrics-tool, and NULL-connection-fixture hashes.
+
+The [successful PostgreSQL 18 image record](../docs/deployment-envelope-evidence/42118769226/manifest.json) tested source `2d9e80ad1bec850eaa576dc3a4980f8783d0893f` on native AMD64.
+Only the reviewed manual workflow differs from parent `9c53f28a08b2ce13bc5f3b67749577c7014c5b6b`.
+The ordinary gate passed 44 applicable cases, with one macOS ACL exclusion and nineteen separate metrics unit checks.
+The fixed resource profile passed 37 cases: 22 baseline, twelve admission, and three envelope cases.
+Its nineteen metrics unit checks remain separate.
+The exact startup-error assertion passed with hostile `HOME` and `PGPASSFILE` inputs.
+
+Qualification drivers, test tools, and the runtime shared one CPU, 256 MiB, no swap, and a 64 MiB temporary filesystem.
+PostgreSQL used a separate two-CPU, 2 GiB fixture.
+Raw availability failures remain recorded, including deliberate refusals and startup probes.
+The in-flight SIGTERM request reset; bounded exit does not establish graceful drain.
+These results do not qualify private capacity or deployment.
+This documentation revision and future builds differ from the tested source and recorded artifact bytes.
+
 The isolated metrics source `dc37fb2292614f07c81580b7723cac3fd3b4497b` retains the earlier inline child-publication check.
 Its result cannot establish the integrated publication gate.
 The combined source must retain admission's shared child validator and the metrics descriptor checks.
 That descriptor belongs to the baseline report; capacity cases cannot substitute for its six HTTP cases or 19 unit checks.
-Combined runtime, image, and PostgreSQL 18 qualification remain pending.
+The recorded native and AMD64 PostgreSQL 18 checks cover their exact combined artifacts.
+Other image architectures and future revisions retain separate gates.
 Earlier receipts retain their original source and image bindings.
 
 These requirements remain open:
 
 - RISC-V64 image qualification of the combined source, with the earlier concurrent-response failures retained.
-- Runtime and image qualification of the combined export, admission, and metrics contracts.
+- Image qualification of later revisions and the remaining target configurations.
 - Deployment qualification of the separate migration, grant, namespace assertion, and import procedures.
 - Bounded hostname resolution compatible with private service discovery.
-- Qualification of eight-slot admission and complete capacity recovery with the combined source.
+- Private deployment capacity and recovery qualification beyond the recorded owned fixtures.
 - Persistent database connection reuse, if measurements justify it.
 - Absolute HTTP header deadlines and qualified shutdown draining.
-- Qualification of the combined fixed-label metrics and observed alert delivery.
+- Observed alert delivery through the actual monitoring deployment.
 - Public TLS, projected certificate rotation, network-denial tests, capacity, backups, WAL delivery, and isolated restore.
 - Exact immutable images, artifact digests, provenance, and external HTTPS client checks.
 
@@ -404,8 +428,8 @@ Before publishing an admission-bearing image, run both runtime modules against t
 The earlier sixteen-test image receipt cannot establish that the new admission code passed.
 Its qualification stage must supply the new capacity suite and fixed read-only interposer.
 Build that library before qualification starts; the qualifier needs no compiler or writable executable directory.
-That image-gate integration remains required outside this source checkpoint.
-Both image publication jobs have an explicit temporary hold until that gate is complete.
+The expanded image gate is integrated; each selected source and target still requires complete image qualification.
+Only a trusted main push can publish after the required image qualification jobs pass.
 
 ## Sources
 

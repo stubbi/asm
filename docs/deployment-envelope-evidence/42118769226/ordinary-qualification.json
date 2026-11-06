@@ -1,0 +1,405 @@
+{
+  "architecture": "amd64",
+  "cleanup": [
+    {
+      "identity": "asm-postgres18-6058c94f86c34c22a2a241b3325674fb",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-f7efe7c7aa9e4947b0cb8b14dda3a676",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-3c56a529587b4d8d9588f0d0b28a09c7",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-33338987a62949e7aba9d664ad87af8d",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-7fd202039cf144b39eb4f63f079b1b53",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-fb2db8747e814a149d81b81cc7dd29cb",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-3ccac18d766e4e9781bab08b21bb8902",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-ee375954599e49e3affcbf4440daa4fe",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-050a5c32b888461f90532f459119b00c",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-ff9e97c47094467baa5534d864221a5d",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-bb01831326b347ebaa1c3c75bccb7dc7",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-ebeebb413ec24e11b1a80b76d6dacb34",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-5912e32247fa477899192873bd782406",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-61fa64a31f854efd98d669c17b9ca037",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-75047e079bbb47ff87a9573b67069d90",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-a2a7514c5a4f4d02b27c0db59bce9756",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-1fa00d189b194036a6ccb519db44a477",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-9a18107d2e094ea78b34728d68f813fe",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-503edd49ba064b48aad38661172c0495",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-534b467b27f64da39bea8d77119a1af7",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-574454a1be5f447a8b9059e622d92c8e",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-8508f2b89eab4f5a9b28ed1291cc34b6",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-c31d1827199043f39ca04448ac905cc4",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-d5885a4ec2354e719ae59f0914cfffb2",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-85c29de7b4884dfb8a1f93ddf74e29bd",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-cdf234bc1dd24f9185794c9f548648ae",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-0f23da8c14c545888cc6f62628d6a8d3",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-0555553af53745e890b8166cd8ecd7e0",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-f1a06ec416914ba3a2074572124a4bfa",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-a7f359c05ec6434aa36013bdf3a4cb0e",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-c0e8f79e50024814ba3f281f56a114ba",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-ec04e2ea8b6f48ebb47c4db2e71726b6",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-f15988b53793422fb146d7a17a64492a",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-bcca27658a304cc9b66432e7926a60cb",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-76a0df85bf55402b8bb9ac453e3f2240",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-de8d2caf0cdc437b89759f6103161217",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-8fc09617f03d4f2db6e307084f30e7d6",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-613355f4bae8482b8a0816266d1def55",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-4dcdd66a71834041886ea92a6b07f96a",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-8a413106e99f4e218c2a4a57327dce41",
+      "status": "removed"
+    },
+    {
+      "identity": "asm-postgres18-e3b09efbf00a4cdc91c5ac8e3254b0ad",
+      "status": "removed"
+    }
+  ],
+  "database_image": {
+    "config_digest": "sha256:e81943bf2a7f93b868b0ce332642e9005ab3bc02d23f7effb505e5a19b7daa42",
+    "index_digest": "sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+    "platform_digest": "sha256:9d1808e9b9c82fb1175ecc7aba615e88b16013e8f118c536a8b5a9aca017ec03",
+    "qualification_image_id": "sha256:30f43eafeb2d0ec5a1437fad977406caa834c72c6b979bd199d44f686f8a205f",
+    "reference": "ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:39add80f5b1e573e2f6b641c66fd1a2f8dede67ca0330e870285bc1078551390",
+    "runtime_files": {
+      "/lib/x86_64-linux-gnu/libaudit.so.1": "8632b443369cb51570b78e0bf5b0fa5b1a7b343439b65c21200a27e015aed507",
+      "/lib/x86_64-linux-gnu/libc.so.6": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+      "/lib/x86_64-linux-gnu/libcap-ng.so.0": "6b5be42df1bed00b8ea1f52e9412dce5ed500c29a6dd22b31e72f5dab5a3a575",
+      "/lib/x86_64-linux-gnu/libcap.so.2": "41217b0af128444f66dee8adda52b2ceaf19da00e5b0b155e2b87b857671286b",
+      "/lib/x86_64-linux-gnu/libcom_err.so.2": "dc4828400674492839b630c001db424cd38e5cecfcf46dbf705a637647e04bea",
+      "/lib/x86_64-linux-gnu/libcrypto.so.3": "8ae56f0a9481280a68c19f59809cd242a07a91ad7142944d21a878221992244b",
+      "/lib/x86_64-linux-gnu/libgcc_s.so.1": "30c61ab012a4241bed033725a09b61f5fdd3bb7df95ee852d0b096520524c7af",
+      "/lib/x86_64-linux-gnu/libgssapi_krb5.so.2": "c290f761873ebeac539911010526e1c5db86218bfcb29672760da46841741de0",
+      "/lib/x86_64-linux-gnu/libicudata.so.76": "a04b2b906193fa1e40f968a3d16d7d6c844a1fafbdd5bce6e9f67b01c124ff24",
+      "/lib/x86_64-linux-gnu/libicui18n.so.76": "596132c352dc25d1e8a1f91e2c5790262ed02376d27afc14b545a1952341b3fc",
+      "/lib/x86_64-linux-gnu/libicuuc.so.76": "a8e433e81075732faf255b17d4a25ce28632e41fef1a75e727ee7f4ed73ab151",
+      "/lib/x86_64-linux-gnu/libk5crypto.so.3": "c4c3221d0350f882cee0430b58d5fb289a5776c684d3156964864c8a9719dff1",
+      "/lib/x86_64-linux-gnu/libkeyutils.so.1": "e5d5a7450d08eff7d4bbcaac75ef2b94d3447c81a1b2ddf3ab85d2de4709a9a8",
+      "/lib/x86_64-linux-gnu/libkrb5.so.3": "c4ab64e6bc2874a83e649e4439be752465da027a0041e2bb5343f81c80f0882d",
+      "/lib/x86_64-linux-gnu/libkrb5support.so.0": "f559f051ee5d39f151a57d79f2cde475c484030098b0c73f9f7035b421b187c4",
+      "/lib/x86_64-linux-gnu/liblber.so.2": "ca319704dd4f58b5b3fc8510738850f03f18940544ba04bebf2fa8a23a798346",
+      "/lib/x86_64-linux-gnu/libldap.so.2": "e8f34e65087f24f296fa7a65a8c65383f4a7e2b532c46e40463d4e59a206c20a",
+      "/lib/x86_64-linux-gnu/liblz4.so.1": "67bf8b84af77e962e09be661944f7c61393c4806746734e36db9fbdaebc1de36",
+      "/lib/x86_64-linux-gnu/liblzma.so.5": "7ca392e92ebb94b6f8ee094cbd5243185e4452377b94acc657f7ba8c8f9dda2c",
+      "/lib/x86_64-linux-gnu/libm.so.6": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3",
+      "/lib/x86_64-linux-gnu/libnuma.so.1": "c3c046679e00b24819cc9410f9efb63a402a96ebd7cabf7f787234fc933ced0e",
+      "/lib/x86_64-linux-gnu/libpam.so.0": "7e61037c89b06382c9d22518174914fef77b9e473962f49ab1c90c55c9b5bca2",
+      "/lib/x86_64-linux-gnu/libpq.so.5": "9cce9bfae9405a71e0d642457d9d8748093cea9fdc0f785b5d2ed9575aec168d",
+      "/lib/x86_64-linux-gnu/libresolv.so.2": "d41dd4adacf5a35df426461dd8a92d7bdd5ba29bb61a1c3531bec0ada386f8dd",
+      "/lib/x86_64-linux-gnu/libsasl2.so.2": "3f93968591811eb3972c3467c69c2968dd9cb2b51f7b7bb48de22ba8e17d13fd",
+      "/lib/x86_64-linux-gnu/libssl.so.3": "9592038e92d1f41affcbb625334d0b6e788714c889104fa6d5b107cf9fd657f2",
+      "/lib/x86_64-linux-gnu/libstdc++.so.6": "972bb2a18b71140dab0240f8a1f68ab3fb1d56bcd4c4f824a91b70888faf5a00",
+      "/lib/x86_64-linux-gnu/libsystemd.so.0": "c59f9015342de9c2dcb2decccb3d83218849fe3e4388c723a6528254fd7606f0",
+      "/lib/x86_64-linux-gnu/liburing.so.2": "27e394244c998e6deeff5f49d2cac4ee5c399d35f8d502e8adb86d12e6fa554f",
+      "/lib/x86_64-linux-gnu/libxml2.so.2": "8f2643af68a9eba917929046806dabd1848867068d0eee0f6799288a8e886963",
+      "/lib/x86_64-linux-gnu/libxxhash.so.0": "7dd49b353facbee50c371d0559ce29db5afee5ac33249ca5c7068420fb642762",
+      "/lib/x86_64-linux-gnu/libz.so.1": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e",
+      "/lib/x86_64-linux-gnu/libzstd.so.1": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21",
+      "/lib64/ld-linux-x86-64.so.2": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+      "/usr/lib/postgresql/18/bin/initdb": "e625647c2750ff98d37f812e9fba60e9f6418e7d5a7488dfe7b6996312dbf206",
+      "/usr/lib/postgresql/18/bin/postgres": "4944085dba4adcf0f65b8fb4e698c5ac353ecff890fdc89afe8007c2547b1469",
+      "/usr/lib/postgresql/18/lib/plpgsql.so": "5a9e41b9e2a182fec34fdae13fe2021133734c0eef5907a4260b39bccc66b44e"
+    }
+  },
+  "execution": "native",
+  "finished_at": "2026-11-05T22:14:19.006224+00:00",
+  "os": "linux",
+  "preparation_cleanup": "removed",
+  "resources": {
+    "application_memory_bytes": 536870912,
+    "cpus_per_container": 2,
+    "database_memory_bytes": 2147483648,
+    "pids_per_container": 128,
+    "tmpfs_bytes_per_container": 536870912
+  },
+  "schema": 1,
+  "scope": "selected-cnpg18-compatibility",
+  "source_revision": "2d9e80ad1bec850eaa576dc3a4980f8783d0893f",
+  "started_at": "2026-11-05T22:13:45.167216+00:00",
+  "status": "pass",
+  "suites": [
+    {
+      "applicable_tests_skipped": 0,
+      "client_libpq_version": 160015,
+      "database": {
+        "data_directory": "/run/asm-postgres18/data",
+        "nonce": "a3760db53d9711f032dfb2cc128a807b0ec0df41e7b023f175bd6ae62f8bc593",
+        "server_version_num": 180006,
+        "session_user": "asm_fixture_admin",
+        "system_identifier": "7704814115308822553",
+        "tls_protocol": "TLSv1.3"
+      },
+      "database_container_id": "5682c2e3881c3decd7b774a460429b792b3616d600d08d9603df9bdb0ec9a18a",
+      "migration_sha384": "7626f1fbee350bc04442bf5a53b78ae146c566da21cde76b56e88afe19d473787bd92cb324c9c4865623c80e6bf0a860",
+      "not_applicable": [
+        {
+          "id": "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation",
+          "reason": "macOS extended ACL interface"
+        }
+      ],
+      "qualification_image_id": "sha256:b66b2ee3df0195b908bb247874e41fb9ab4fefe55d62269019c4fb702afdb6c8",
+      "runtime_files": {
+        "/app/LICENSE": "d8a6cc31abc16b6748c7a21f21611f5a1ec33f67d22ca23d7da1c19b95496bee",
+        "/app/LICENSING.md": "a345918d992c5337132ed842d76fc397f44266e6038e8913f144dcb4401085aa",
+        "/app/SOURCE.json": "fa9b4969757573d9fc1c7a560dc37d792dfdf799a84d309766860220ca6a24c9",
+        "/app/server/catalog/read-exports.sql": "37ea0264466ba9f3bec67a0504d5e2fc6de72b43327d4d6434d4ebf9606e6578",
+        "/app/server/catalog/reader-guard.sql": "7f77767c3fa231e453b415369b5c12445afc9e6b468fb63ef4776ccc13a8cb6a",
+        "/app/server/catalog/schema.sql": "bffad80b82d51e74819b65611b482915a572dcda0e551c40bc47f0175725ce5b",
+        "/app/tools/operator_entrypoint.py": "2a174e71eecefe4be155aebde152edbcc2772e3dbef0336f246ba4e38c420cf4",
+        "/app/tools/prepare_operator.py": "d12098dd38fab9ac918ddfb01d85bf1be78e2d05d2a3c0a5213293398d5d322b",
+        "/app/tools/registry.py": "c6d184ae060745cd9f40e8b559ef9b4a59fc6a4a6c13f5c71a46706b7ea16be2",
+        "/app/tools/registry_admin.py": "e157667c4f07ec51f7ac0177b738cf5e327ebf28e916e62d65913326df1eeb3d",
+        "/lib/x86_64-linux-gnu/libc.so.6": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+        "/lib/x86_64-linux-gnu/libcrypto.so.3": "8ae56f0a9481280a68c19f59809cd242a07a91ad7142944d21a878221992244b",
+        "/lib/x86_64-linux-gnu/libexpat.so.1": "36e7e50d21edcabed383bfddc594bb261c1c7cce456afdf23c5f53e849cda67c",
+        "/lib/x86_64-linux-gnu/libm.so.6": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3",
+        "/lib/x86_64-linux-gnu/libpcre2-8.so.0": "92e9b4167f9bbc237ca8f5526d82ee99ec9f8dbd0270ef1dd0ab24e2217f48e3",
+        "/lib/x86_64-linux-gnu/libssl.so.3": "9592038e92d1f41affcbb625334d0b6e788714c889104fa6d5b107cf9fd657f2",
+        "/lib/x86_64-linux-gnu/libz.so.1": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e",
+        "/lib/x86_64-linux-gnu/libzstd.so.1": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21",
+        "/lib64/ld-linux-x86-64.so.2": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+        "/opt/asm/postgres/bin/psql": "05d150348b4fc2265c29d76f308e4f1d1004f95fe8091302f64aff1a43207ad4",
+        "/opt/asm/postgres/lib/libpq.so.5": "93b6ae27409bde7bad7544b07a7726ef50ca699ab352fec2107b0541f2b24e60",
+        "/usr/bin/git": "356db14e102d68a1a37d8a1ac577dfd678d45d46e92f468bef8b7154e7bfdc60",
+        "/usr/bin/python3": "889c603f0d17cb54060951bcf4c4f9b8c9ebd9e52b392c70209bbb9755d797d9"
+      },
+      "runtime_image_id": "sha256:11443d839ec67a59146effee19199c04903026d2b7c07080b8073f5637222b71",
+      "schema": 1,
+      "scope": "selected-cnpg18-compatibility",
+      "source_revision": "2d9e80ad1bec850eaa576dc3a4980f8783d0893f",
+      "status": "pass",
+      "suite": "operator",
+      "tests_run": 23
+    },
+    {
+      "applicable_tests_skipped": 0,
+      "cases": [
+        "RuntimeTests.test_canonical_exports_preserve_exact_current_bytes_and_media_types",
+        "RuntimeTests.test_cli_and_bind_configuration_fail_closed",
+        "RuntimeTests.test_concurrent_exports_keep_independent_response_ownership",
+        "RuntimeTests.test_encrypted_client_key_never_prompts_on_an_open_terminal",
+        "RuntimeTests.test_export_body_byte_limits_preserve_boundary_bytes",
+        "RuntimeTests.test_export_database_work_obeys_the_request_deadline",
+        "RuntimeTests.test_exports_reject_missing_null_duplicate_and_unready_results",
+        "RuntimeTests.test_health_and_exact_source_identity",
+        "RuntimeTests.test_metrics_aborts_preserve_queue_semantics",
+        "RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots",
+        "RuntimeTests.test_metrics_database_delay_and_failed_request_timing",
+        "RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting",
+        "RuntimeTests.test_metrics_fixed_exposition_and_route_labels",
+        "RuntimeTests.test_metrics_queue_failures_preserve_ownership",
+        "RuntimeTests.test_new_connections_load_replaced_certificate_files",
+        "RuntimeTests.test_private_configuration_file_is_required",
+        "RuntimeTests.test_reader_rejects_migrator_operator_and_wrong_tls_identities",
+        "RuntimeTests.test_readiness_checks_actual_permissions_after_start",
+        "RuntimeTests.test_stalled_database_handshake_has_a_deadline",
+        "RuntimeTests.test_tls_policy_rejects_ambient_options_and_ambiguous_connections",
+        "RuntimeTests.test_unimplemented_write_routes_do_not_claim_success",
+        "RuntimeTests.test_z_sigterm_closes_the_listener_within_three_seconds"
+      ],
+      "client_libpq_version": 160015,
+      "database": {
+        "data_directory": "/run/asm-postgres18/data",
+        "nonce": "a3760db53d9711f032dfb2cc128a807b0ec0df41e7b023f175bd6ae62f8bc593",
+        "server_version_num": 180006,
+        "session_user": "asm_fixture_admin",
+        "system_identifier": "7704814194112581657",
+        "tls_protocol": "TLSv1.3"
+      },
+      "database_container_id": "b095416c4a396eb5d1ffc30bd3a8b044d71cc7228069897aaccecd4f7c4827ae",
+      "metrics": {
+        "http_tests": [
+          "RuntimeTests.test_metrics_aborts_preserve_queue_semantics",
+          "RuntimeTests.test_metrics_concurrent_scrapes_preserve_snapshots",
+          "RuntimeTests.test_metrics_database_delay_and_failed_request_timing",
+          "RuntimeTests.test_metrics_errors_and_exactly_once_queue_accounting",
+          "RuntimeTests.test_metrics_fixed_exposition_and_route_labels",
+          "RuntimeTests.test_metrics_queue_failures_preserve_ownership"
+        ],
+        "max_response_bytes": 16384,
+        "samples": 79,
+        "schema": 1,
+        "test_tools": {
+          "metrics-faults.so": {
+            "bytes": 16632,
+            "sha256": "1c16e25e27cbfdd73f18a9c05087e8b414004c1c17f81343ebf0c8c8f3134d0d"
+          },
+          "test-metrics": {
+            "bytes": 46672,
+            "sha256": "c8ba9bbd2ad6fa649f5069baff810f844cf8af4dbbe723b397dc523523a9bb8f"
+          }
+        },
+        "timing": "handler-entry-to-accepted-queue",
+        "unit": {
+          "checks": [
+            "zero_exposition",
+            "route_classification",
+            "bucket_boundaries",
+            "decimal_sum_and_capacity",
+            "queue_failure",
+            "parallel_snapshot",
+            "clock_failure_begin",
+            "clock_failure_finish",
+            "clock_invalid_timespec",
+            "clock_conversion_overflow",
+            "clock_backwards",
+            "overflow_count",
+            "overflow_request_counter",
+            "overflow_bucket",
+            "overflow_sum",
+            "overflow_queue_failure",
+            "mutex_init_failure",
+            "mutex_lock_failure",
+            "mutex_unlock_failure"
+          ],
+          "schema": 1,
+          "scope": "assembly-metrics-unit",
+          "status": "pass"
+        }
+      },
+      "metrics_test_tools": {
+        "metrics-faults.so": {
+          "bytes": 16632,
+          "sha256": "1c16e25e27cbfdd73f18a9c05087e8b414004c1c17f81343ebf0c8c8f3134d0d"
+        },
+        "test-metrics": {
+          "bytes": 46672,
+          "sha256": "c8ba9bbd2ad6fa649f5069baff810f844cf8af4dbbe723b397dc523523a9bb8f"
+        }
+      },
+      "migration_sha384": "7626f1fbee350bc04442bf5a53b78ae146c566da21cde76b56e88afe19d473787bd92cb324c9c4865623c80e6bf0a860",
+      "not_applicable": [],
+      "qualification_image_id": "sha256:b11eefa95305ce141f36617d17457431384c30364b41c7ce5b09b7a6d6c1ab1f",
+      "runtime_files": {
+        "/lib/x86_64-linux-gnu/libc.so.6": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+        "/lib/x86_64-linux-gnu/libcrypto.so.3": "8ae56f0a9481280a68c19f59809cd242a07a91ad7142944d21a878221992244b",
+        "/lib/x86_64-linux-gnu/libm.so.6": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3",
+        "/lib/x86_64-linux-gnu/libssl.so.3": "9592038e92d1f41affcbb625334d0b6e788714c889104fa6d5b107cf9fd657f2",
+        "/lib/x86_64-linux-gnu/libz.so.1": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e",
+        "/lib/x86_64-linux-gnu/libzstd.so.1": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21",
+        "/lib64/ld-linux-x86-64.so.2": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+        "/opt/asm/mhd/lib/libmicrohttpd.so.12": "6f29299490c54b548aa42fcdeb6c22c68f03398f760b09800eecba7e6ae7ca53",
+        "/opt/asm/postgres/lib/libpq.so.5": "93b6ae27409bde7bad7544b07a7726ef50ca699ab352fec2107b0541f2b24e60",
+        "/usr/local/bin/asm-hub": "7e605caa0448aa8371555e0ddf95fd3bd27f41a30d3545bac2324cc42cf20a93"
+      },
+      "runtime_image_id": "sha256:3e00c57fb1ff8fd8b69c1a7bace51435ca14eb24e09589a7505f56e25b16dd66",
+      "schema": 1,
+      "scope": "selected-cnpg18-compatibility",
+      "source_revision": "2d9e80ad1bec850eaa576dc3a4980f8783d0893f",
+      "status": "pass",
+      "suite": "http",
+      "tests_run": 22
+    }
+  ]
+}
