@@ -136,3 +136,71 @@ These sources were checked on 2026-11-06. Actual local-tag resolution remains a 
 
 The repair passed 18 focused tests, 115 reference tests, 32 observation tests, workflow lint, and diff checks.
 Independent review found no blocking defect. These results do not establish that the actual overlay build succeeds.
+
+## Follow-up result: usable comparison, one original HTTP failure
+
+[Run 42213809076](https://github.com/stubbi/asm/actions/runs/42213809076), job `127878706259`, tested commit `31acfb50d4e6176e1a14287871cf391e9c910643`.
+The collection gate passed. The original HTTP assertions did not all pass.
+The host used 52.286 seconds. The comparison helper used 35.039 seconds within its unchanged 180-second limit.
+CI passed 115 reference harness tests and 32 observation harness tests.
+
+The owned local tag resolved to the retained image before and after the build.
+The overlay preserved the base layer prefix and complete configuration.
+The actual native loader, core versions, PL/pgSQL dependencies, bootstrap data, and owned PostgreSQL startup checks passed.
+All four clusters reported PostgreSQL 16.15. Fixture administration used retained RISC-V libpq version 160015.
+Both native PostgreSQL processes matched their private payload executable.
+Its 10,809,024 bytes have SHA-256 `3ae7c3a69fc5975111ca05196e250edb8d331e798fc6dd2f0a13935492f7455f`.
+The original backend's process executable matched QEMU; its declared PostgreSQL executable remained RISC-V.
+
+The original SQL, SCRAM fixture settings, 16 requests, eight workers, and resource limits remained unchanged.
+The original 15 RISC-V file identities, source files, and parent environment remained stable.
+Only the selected PostgreSQL bindir differed between backend arms.
+All 64 HTTP body digests matched their retained bytes.
+All 63 successful responses matched the complete expected fixture JSON.
+All 64 selected terminal traces had unique request indices and stayed within their HTTP windows.
+All 24 cleanup postconditions passed.
+
+| Arm | Backend package | HTTP 200 / 503 | Median HTTP time, ms | Whole-container CPU interval, seconds |
+| --- | --- | ---: | ---: | ---: |
+| A1 | Original RISC-V | 15 / 1 | 1,728.818 | 7.336074 |
+| B1 | Native AMD64 | 16 / 0 | 619.164 | 2.620365 |
+| B2 | Native AMD64 | 16 / 0 | 626.722 | 2.668759 |
+| A2 | Original RISC-V | 16 / 0 | 1,740.242 | 7.396122 |
+
+These medians include every attempted request in each arm.
+Fifteen request indices succeeded in all four arms.
+The native backend's averaged HTTP time was lower for each of these indices.
+The median paired difference was -1,086.531 ms, calculated as native minus original.
+The host reported an AMD EPYC 7763 CPU. The container retained its two-CPU and 2 GiB limits.
+
+A1 request 8 retained HTTP 503 and the original method's `KeyError`.
+Its terminal trace reported status 7 and SQLSTATE `57014` after successful connect and send operations.
+The exact cancellation origin is not established.
+The trace contained no poll timeout, poll error, or interrupted poll.
+
+This single ABBA run demonstrates native package feasibility for this fixture and lower observed HTTP times.
+It does not isolate emulation from architecture, libc, PostgreSQL build, or dependency differences.
+One failure against 32 native successes does not establish a general reliability difference.
+Whole-container CPU intervals include observation work and different amounts of successful work.
+The CPU quota throttled most measured periods.
+The memory peak counter covers the container lifetime and was not reset between arms.
+Four noncohort terminal records have only counts and aggregate hashes in the artifact; their contents cannot be independently rechecked.
+Unused native PostgreSQL modules remain untested.
+
+The complete 19-test acceptance suite remains `not-run` for this diagnostic.
+The historical original gate remains failed. All qualification flags remain false.
+No permanent environment change or additional run is selected.
+
+The verified artifact contains 35 files with 495,506 expanded bytes.
+
+| Evidence | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Artifact `13500631273` ZIP | 105,191 | `a455e210b5bf09b53258a900669406aa00c14e0c01b1ffba947df2c8959c3641` |
+| Master observation | 259,604 | `f3e806f55717de0dcc681634ac5bab5a20befe2ec956b72f5608323937d903ce` |
+| Host report | 45,484 | `7f5fd8ad3bd32c8f87b343a4c2792a64e37ea9167b8655f9e599dcd184f3ecab` |
+| Input manifest | 1,374 | `7f1de29b3dbd7935a5b8f96b650c5afc677fb5d32b148e11b94e1b9ae729a797` |
+| Derived local analysis | 8,178 | `ea709967d55b63d0ae62c384da8eb577507d07b0b41e501bcf21b8e3f5bd6f9a` |
+
+The input manifest matches the frozen local context exactly.
+Its runner tree is `32c7153bccfb73fdbbfa1c3e31e7214070711dcbee92d763e2605305825c6e29`.
+Its source tree remains `cdbd88a6af03b7cf6c4bb8d85f52fcf8083cf2df02dbe2a174954b6b69853506`.
