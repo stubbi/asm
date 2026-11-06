@@ -1,234 +1,171 @@
-name: Assembly server images
+name: Canonical RISC-V phase diagnostic
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: server-images-${{ github.ref }}
-  cancel-in-progress: true
+  group: canonical-riscv-phases-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  qualify:
-    name: Qualify ${{ matrix.arch }} (${{ matrix.execution }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, arch: amd64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04-arm, arch: arm64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04, arch: riscv64, execution: emulated, minutes: 90 }
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.minutes }}
+  observe:
+    name: Observe the unqualified canonical RISC-V candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Check the qualification harness
+      - name: Install diagnostic prerequisites
+        timeout-minutes: 4
         run: |
-          python3 tools/test_server_image.py --self-test
-          python3 -m unittest discover -s tests -p test_server_image_admission.py -v
-      - name: Install the pinned Ubuntu RISC-V user emulator
-        if: matrix.arch == 'riscv64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ASM_QEMU_DEB="$RUNNER_TEMP/asm-qemu-user-static.deb"
-          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
-            --output "$ASM_QEMU_DEB" \
-            https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_8.2.2+ds-0ubuntu1.18_amd64.deb
-          printf '%s  %s\n' 5bb397f66063efa349f6fd5cb3b68cd96f29edd0994e4ba5115cf0859a716bf0 "$ASM_QEMU_DEB" | sha256sum --check --strict
-          test "$(dpkg-deb --field "$ASM_QEMU_DEB" Version)" = '1:8.2.2+ds-0ubuntu1.18'
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes "$ASM_QEMU_DEB"
-          printf '%s  %s\n' be89e201dc6112ef101617ab575c95119ad123f80ca2b51b6c36ef218ac9df65 /usr/bin/qemu-riscv64-static | sha256sum --check --strict
-          if ! test -e /proc/sys/fs/binfmt_misc/register; then
-            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
-          fi
-          sudo /usr/lib/systemd/systemd-binfmt /usr/lib/binfmt.d/qemu-riscv64.conf
-          grep -Fx 'interpreter /usr/libexec/qemu-binfmt/riscv64-binfmt-P' /proc/sys/fs/binfmt_misc/qemu-riscv64
-          test "$(readlink -f /usr/libexec/qemu-binfmt/riscv64-binfmt-P)" = /usr/bin/qemu-riscv64-static
-          grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
-      - name: Record the runner and emulator boundary
-        shell: bash
+          sudo apt-get install --no-install-recommends --yes \
+            gcc-riscv64-linux-gnu libc6-dev-riscv64-cross binutils-riscv64-linux-gnu \
+            qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-riscv64
+      - name: Prepare and observe within one 600-second host budget
+        timeout-minutes: 11
         env:
-          ASM_ARCH: ${{ matrix.arch }}
-          ASM_EXECUTION: ${{ matrix.execution }}
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_NO_UPDATE_NOTIFIER: "1"
         run: |
-          set -euo pipefail
-          mkdir -p server-image-evidence
-          {
-            uname -a
-            docker version
-            docker buildx version
-            printf 'target=linux/%s execution=%s\n' "$ASM_ARCH" "$ASM_EXECUTION"
-            if test "$ASM_ARCH" = riscv64; then
-              cat /proc/sys/fs/binfmt_misc/qemu-riscv64
-              grep -Eq '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-riscv64
-              /usr/bin/qemu-riscv64-static --version
-              dpkg-query --show qemu-user-static systemd
-              sha256sum /usr/bin/qemu-riscv64-static
-            fi
-          } | tee server-image-evidence/environment.txt
-      - name: Build the target runtime and its derived qualification image
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
-            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
-            --tag "asm-server:runtime-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-runtime.log
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
-            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
-            --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
-      - name: Run both actual-image runtime and admission parts
-        # Each part keeps its 180-second watchdog and original container bounds.
-        timeout-minutes: 10
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-          ASM_EXECUTION: ${{ matrix.execution }}
-        run: |
-          set -euo pipefail
-          python3 tools/test_server_image.py --arch "$ASM_ARCH" --execution "$ASM_EXECUTION" \
-            --revision "$GITHUB_SHA" --image "asm-server:runtime-$ASM_ARCH" \
-            --qualification-image "asm-server:qualification-$ASM_ARCH" \
-            --output server-image-evidence/qualification.json \
-            2>&1 | tee server-image-evidence/runtime-tests.log
-      - name: Retain the exact qualified runtime image
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{json .}}' > server-image-evidence/image.json
-          docker save --output server-image-evidence/runtime.tar "asm-server:runtime-$ASM_ARCH"
-          (cd server-image-evidence && sha256sum runtime.tar > runtime.sha256)
-      - name: Retain successful and failed qualification evidence
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import time
+
+          # Prerequisite installation and artifact upload are outside this timer.
+          # Collection and container removal share its reserved final 90 seconds.
+          started = time.monotonic_ns()
+          deadline = started + 600_000_000_000
+          temporary = Path(os.environ["RUNNER_TEMP"])
+          receipt_directory = temporary / "asm-canonical-workflow-evidence"
+          receipt_directory.mkdir(mode=0o700)
+          receipt = {"schema": 1, "scope": "canonical-riscv-workflow",
+                     "qualification": "UNQUALIFIED", "status": "fail",
+                     "started_ns": started, "deadline_ns": deadline, "commands": []}
+          phase = "sdk"
+          sdk = temporary / "asm-canonical-sdk"
+          inputs = temporary / "asm-canonical-inputs"
+          context = temporary / "asm-canonical-context"
+          output = temporary / "asm-canonical-evidence"
+          inputs.mkdir(mode=0o700)
+
+          def remaining(maximum=120, reserve=90):
+              value = (deadline - time.monotonic_ns()) / 1e9 - reserve
+              if value <= 0:
+                  raise TimeoutError("The shared diagnostic budget expired.")
+              return min(maximum, value)
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as source:
+                  while data := source.read(131072):
+                      digest.update(data)
+              return digest.hexdigest()
+
+          def verify(path, size, expected):
+              if path.stat().st_size != size:
+                  raise ValueError("A diagnostic input has the wrong size.")
+              if sha256(path) != expected:
+                  raise ValueError("A diagnostic input has the wrong digest.")
+              remaining()
+
+          try:
+              # Reuse exactly three reviewed helper blobs without importing a
+              # second mutable checkout or copying the SDK into this branch.
+              worker = (
+                  "from pathlib import Path; import sys; sys.path.insert(0,'tools'); "
+                  "import registry,release; "
+                  "names=['tools/riscv64_combined.py','tools/riscv64_server_observations.py',"
+                  "'tools/riscv64_reference_build.py']; "
+                  "files=registry.git_files(Path.cwd(),"
+                  "'881208fcec32ec8fe4609747ca2c4d8b9065c49f','.',names); "
+                  "registry.require(set(files)==set(names),'The pinned SDK is incomplete.'); "
+                  "release.materialize(files,Path(sys.argv[1]))")
+              result = subprocess.run([sys.executable, "-c", worker, str(sdk)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      timeout=remaining(30))
+              receipt["commands"].append({"label": "materialize-sdk", "exit_code": result.returncode,
+                                          "stdout_bytes": len(result.stdout), "stderr_bytes": len(result.stderr)})
+              if result.returncode:
+                  raise ValueError("The pinned SDK could not be materialized.")
+              sys.path.insert(0, str(sdk / "tools"))
+              from riscv64_combined import bounded_process
+
+              def run(label, arguments, log, maximum, *, seconds=120, reserve=90):
+                  value = bounded_process(arguments, log, timeout=remaining(seconds, reserve),
+                                          max_bytes=maximum)
+                  receipt["commands"].append({"label": label, **value,
+                                              "log_sha256": sha256(log)})
+                  if value["outcome"] != "pass":
+                      raise ValueError("A bounded diagnostic command failed.")
+                  remaining(600, reserve)
+
+              configuration = inputs / "gh-config"
+              configuration.mkdir(mode=0o700)
+              os.environ["GH_CONFIG_DIR"] = str(configuration)
+              phase = "image-download"
+              image = inputs / "image.zip"
+              run("download-image", ["gh", "api",
+                  "repos/stubbi/asm/actions/artifacts/13423240467/zip"],
+                  image, 84_388_799)
+              verify(image, 84_388_798,
+                     "e3e47e75585b85ab148ae8b596d73b6eca9dbedc0f1f7e6a2f0493e845b55817")
+              phase = "mhd-download"
+              mhd = inputs / "mhd-source.tar.gz"
+              run("download-mhd", ["curl", "--disable", "--fail", "--silent", "--show-error",
+                  "--location", "--proto", "=https", "--proto-redir", "=https",
+                  "https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.3.tar.gz"],
+                  mhd, 2_102_294, seconds=60)
+              verify(mhd, 2_102_293,
+                     "7816b57aae199cf5c3645e8770e1be5f0a4dfafbcb24b3772173dc4ee634126a")
+              os.environ.pop("GH_TOKEN", None)
+              common = ["--revision", os.environ["GITHUB_SHA"], "--sdk", str(sdk),
+                        "--started-ns", str(started), "--deadline-ns", str(deadline)]
+              phase = "context"
+              run("prepare-context", [sys.executable, "tools/canonical_riscv_phases.py",
+                  "--prepare-context", str(context), *common],
+                  inputs / "prepare.log", 1_048_576)
+              phase = "observation"
+              run("run-image", [sys.executable, "tools/canonical_riscv_phases.py",
+                  "--run-image", "--context", str(context), "--image-zip", str(image),
+                  "--mhd-source", str(mhd), "--output", str(output), *common],
+                  inputs / "run.log", 1_048_576, seconds=600, reserve=0)
+              receipt["status"] = "complete"
+          except BaseException as error:
+              receipt.update(phase=phase, exception_type=type(error).__name__)
+              raise
+          finally:
+              receipt["elapsed_ns"] = time.monotonic_ns() - started
+              (receipt_directory / "workflow.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          PY
+      - name: Retain bounded successful and failed diagnostic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: server-image-${{ matrix.arch }}-${{ github.sha }}
-          path: server-image-evidence/
-          if-no-files-found: error
-          retention-days: 3
-
-  publish:
-    needs: qualify
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64, riscv64]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: server-image-${{ matrix.arch }}-${{ github.sha }}
-      - name: Load only this run's exact qualified runtime image
-        shell: bash
-        env:
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          sha256sum --check runtime.sha256
-          python3 tools/test_server_image.py --check-evidence qualification.json \
-            --revision "$GITHUB_SHA" --arch "$ASM_ARCH"
-          docker load --input runtime.tar
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Id}}')" = "$(jq -r .runtime_image_id qualification.json)"
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{.Architecture}}')" = "$ASM_ARCH"
-          test "$(docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
-          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
-          docker tag "asm-server:runtime-$ASM_ARCH" "ghcr.io/stubbi/asm-hub:$ASM_TAG"
-      - name: Publish the qualified image and record its registry digest
-        id: image
-        shell: bash
-        env:
-          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASM_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASM_ARCH"
-          docker push "ghcr.io/stubbi/asm-hub:$ASM_TAG"
-          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-hub:$ASM_TAG" --format '{{index .RepoDigests 0}}')"
-          case "$ASM_REF" in ghcr.io/stubbi/asm-hub@sha256:*) ;; *) exit 1 ;; esac
-          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$ASM_REF" | tee registry-digest.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Attest the exact public source and qualified image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ghcr.io/stubbi/asm-hub
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: server-image-digest-${{ matrix.arch }}-${{ github.sha }}
+          name: canonical-riscv-phases-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            registry-digest.txt
-            qualification.json
+            ${{ runner.temp }}/asm-canonical-workflow-evidence/
+            ${{ runner.temp }}/asm-canonical-evidence/
+            ${{ runner.temp }}/asm-canonical-context/canonical-build-failure.json
+            ${{ runner.temp }}/asm-canonical-context/canonical-build-failure.log
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/manifest.json
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/asm-hub
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/abi-check
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/canonical_libpq_trace.so
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/libcanonical_provider.so
+            ${{ runner.temp }}/asm-canonical-context/canonical-build/canonical_trace_check
           if-no-files-found: error
-          retention-days: 30
-
-  publish-index:
-    needs: publish
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: server-image-digest-*-${{ github.sha }}
-          path: child-images
-      - name: Authenticate only for the trusted main publication
-        env:
-          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Verify all published children and create the combined index
-        id: index
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/test_server_image.py --publish-index --revision "$GITHUB_SHA" \
-            --children-directory child-images --index-tag "sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-            --output index-report.json | tee index-digest.txt
-          printf 'digest=%s\n' "$(jq -r .index_digest index-report.json)" >> "$GITHUB_OUTPUT"
-          cat index-digest.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Attest the verified combined index
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ghcr.io/stubbi/asm-hub
-          subject-digest: ${{ steps.index.outputs.digest }}
-          push-to-registry: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: server-image-index-${{ github.sha }}
-          path: |
-            index-report.json
-            index-digest.txt
-          if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
