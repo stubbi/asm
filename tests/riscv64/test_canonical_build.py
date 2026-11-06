@@ -165,6 +165,43 @@ class CanonicalBuildTests(unittest.TestCase):
                          [hashlib.sha256(library(b"pq")).hexdigest(), hashlib.sha256(newer).hexdigest()])
         self.assertNotEqual(history[0]["layer"], history[1]["layer"])
 
+    def test_runtime_regular_soname_can_link_to_identical_already_retained_payload(self):
+        soname = "opt/asm/postgres/lib/libpq.so.5"
+        target = soname + ".16"
+        data = library(b"pq")
+        for case in ("identical", "unequal", "missing"):
+            with self.subTest(case=case):
+                def runtime(entries):
+                    result = []
+                    for name, contents, kind, link in entries:
+                        if name == soname:
+                            result.append((name, data, tarfile.REGTYPE, ""))
+                        elif name == soname + ".1":
+                            if case != "missing":
+                                result.append((target, data if case == "identical" else library(b"unequal"), tarfile.REGTYPE, ""))
+                        else:
+                            result.append((name, contents, kind, link))
+                    return result
+                later = [(soname, b"", tarfile.SYMTYPE, "libpq.so.5.16")]
+                if case != "identical":
+                    # A deferred check would accept the final expected bytes.
+                    # The transition itself requires an identical existing file.
+                    later.append((target, data, tarfile.REGTYPE, ""))
+                archive, patches, _ = self.image(replacement=runtime, later_entries=later)
+                destination = self.base / ("deps-" + case)
+                with patches:
+                    if case != "identical":
+                        with self.assertRaises(ValueError):
+                            self.build.extract_dependencies(archive, destination, self.sdk, deadline=time.monotonic() + 5)
+                        self.assertFalse(destination.exists())
+                        continue
+                    receipt = self.build.extract_dependencies(archive, destination, self.sdk, deadline=time.monotonic() + 5)
+                self.assertEqual((destination / "libpq.so.5").read_bytes(), data)
+                self.assertEqual(receipt["libpq"]["sha256"], hashlib.sha256(data).hexdigest())
+                self.assertEqual(receipt["libpq"]["payload_path"], target)
+                self.assertEqual([value["type"] for value in receipt["libpq"]["selected_history"][soname]],
+                                 ["regular", "symlink"])
+
     def test_later_selected_whiteout_still_refuses_after_a_regular_replacement(self):
         archive, patches, _ = self.image(later_entries=[
             ("opt/asm/postgres/lib/libpq.so.5.1", library(b"newer"), tarfile.REGTYPE, ""),

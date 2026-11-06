@@ -228,8 +228,13 @@ def extract_dependencies(archive, destination, sdk, *, deadline):
                             target = str(PurePosixPath(name).parent / entry.linkname)
                             if target == name or family(target) != name:
                                 raise ValueError("A selected soname does not name one fixed regular payload.")
-                            if name in seen and seen[name].get("target") != target:
-                                raise ValueError("A later selected soname changes its link semantics.")
+                            previous = seen.get(name, {})
+                            if previous and previous.get("target") != target:
+                                # Runtime COPY can dereference a soname before
+                                # qualification restores its identical link.
+                                old = previous.get("data")
+                                if old is None or seen.get(target, {}).get("data") != old:
+                                    raise ValueError("A later selected soname changes its link semantics.")
                             seen[name] = {"target": target, "layer": layer_name}
                             history.setdefault(name, []).append({"type": "symlink", "target": target, "layer": layer_name})
                         elif entry.isfile() and 0 < entry.size <= LIBRARY_BYTES:
