@@ -898,6 +898,40 @@ Unpublished body sentinel.
             self.assertEqual([item.get("content") for item in page.metadata
                               if item.get("property") == "og:site_name"], ["Asm"])
 
+    def test_every_built_head_describes_the_shared_image_and_discovers_the_native_blog_feed(self):
+        image = (self.output / "social-preview.png").read_bytes()
+        self.assertEqual(image[:8], b"\x89PNG\r\n\x1a\n")
+        dimensions = (int.from_bytes(image[16:20], "big"), int.from_bytes(image[20:24], "big"))
+        self.assertEqual(dimensions, (1280, 640))
+        feed_path = self.output / "blog/atom.xml"
+        feed = ElementTree.parse(feed_path).getroot()
+        self.assertEqual(feed.tag, "{http://www.w3.org/2005/Atom}feed")
+        self.assertEqual(feed.findtext("{http://www.w3.org/2005/Atom}title"), "Asm blog")
+        for name, page in self.pages.items():
+            with self.subTest(page=name):
+                head = SiteParser()
+                head.feed((self.output / name).read_text(encoding="utf-8").split("</head>", 1)[0])
+
+                def values(attribute, key):
+                    return [item.get("content") for item in head.metadata if item.get(attribute) == key]
+
+                self.assertEqual(values("property", "og:image"), ["https://asm.build/social-preview.png"])
+                self.assertEqual(values("property", "og:image:type"), ["image/png"])
+                self.assertEqual(values("property", "og:image:width"), [str(dimensions[0])])
+                self.assertEqual(values("property", "og:image:height"), [str(dimensions[1])])
+                self.assertEqual(values("name", "twitter:image"), ["https://asm.build/social-preview.png"])
+                image_alts = values("property", "og:image:alt")
+                self.assertEqual(len(image_alts), 1)
+                self.assertTrue(image_alts[0].strip())
+                self.assertEqual(values("name", "twitter:image:alt"), image_alts)
+                feeds = [element["attrs"] for element in head.elements if element["tag"] == "link"
+                         and element["attrs"].get("rel") == "alternate"
+                         and element["attrs"].get("type") == "application/atom+xml"]
+                self.assertEqual(len(feeds), 1)
+                self.assertEqual(feeds[0].get("title"), "Asm blog")
+                self.assertEqual(urljoin(page.canonicals[0], feeds[0]["href"]),
+                                 "https://asm.build/blog/atom.xml")
+
     def test_security_contact_is_published_unchanged_with_a_current_expiry(self):
         path = ".well-known/security.txt"
         content = (self.output / path).read_bytes()

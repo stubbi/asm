@@ -49,6 +49,7 @@ class Page(HTMLParser):
         super().__init__()
         self.links, self.assets, self.scripts, self.ids, self.headings, self.mains, self.canonicals, self.event_attrs = [], [], [], [], [], [], [], []
         self.post_links, self.robots, self.current_links, self.in_h2 = [], [], [], False
+        self.structured, self.json_text = [], None
         self.feed(content)
 
     def handle_starttag(self, tag, attrs):
@@ -60,7 +61,9 @@ class Page(HTMLParser):
         if tag == "a" and attrs.get("aria-current") == "page": self.current_links.append(attrs.get("href", ""))
         if tag == "h2": self.in_h2 = True
         if tag == "meta" and attrs.get("name") == "robots": self.robots.append(attrs.get("content"))
-        if tag == "script": self.scripts.append(attrs)
+        if tag == "script":
+            self.scripts.append(attrs)
+            if attrs.get("type") == "application/ld+json": self.json_text = ""
         if tag == "h1": self.headings.append(attrs)
         if tag == "main": self.mains.append(attrs.get("id"))
         if tag == "link" and attrs.get("rel") == "canonical": self.canonicals.append(attrs.get("href"))
@@ -69,6 +72,12 @@ class Page(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "h2": self.in_h2 = False
+        if tag == "script" and self.json_text is not None:
+            self.structured.append(json.loads(self.json_text))
+            self.json_text = None
+
+    def handle_data(self, data):
+        if self.json_text is not None: self.json_text += data
 
 
 class ReleaseBlogTests(unittest.TestCase):
@@ -332,6 +341,48 @@ class ReleaseBlogTests(unittest.TestCase):
         self.assertEqual(release.findtext("a:updated", namespaces=ATOM), self.dates["0.2.0"])
         self.assertIn("GitHub release availability", release.findtext("a:summary", namespaces=ATOM))
 
+    def test_published_article_metadata_uses_declared_dates_source_and_literal_credit(self):
+        self.article("measured-change", title="A measured result", author="Jannes & contributors",
+                     summary="Measured scope and limits.", updated="2026-04-01")
+        self.article("original", date="2026-01-01")
+        self.build(dates=self.dates)
+        content = (self.stage / "blog/articles/measured-change/index.html").read_text()
+        self.assertEqual(Page(content).structured, [{
+            "@context": "https://schema.org", "@type": "BlogPosting",
+            "@id": "https://asm.build/blog/articles/measured-change#article",
+            "url": "https://asm.build/blog/articles/measured-change",
+            "headline": "A measured result", "description": "Measured scope and limits.",
+            "creditText": "Jannes & contributors", "datePublished": "2026-02-01",
+            "dateModified": "2026-04-01", "inLanguage": "en",
+            "isBasedOn": "https://github.com/stubbi/asm/blob/main/blog/posts/measured-change.md",
+        }])
+        self.assertIn('property="og:type" content="article"', content)
+        original = Page((self.stage / "blog/articles/original/index.html").read_text()).structured
+        self.assertEqual(len(original), 1)
+        self.assertNotIn("dateModified", original[0])
+        for route in ("blog/", "blog/articles/", "blog/releases/", "blog/releases/0.1.0/", "blog/releases/0.2.0/"):
+            content = (self.stage / route / "index.html").read_text()
+            self.assertEqual(Page(content).structured, [])
+            self.assertIn('property="og:type" content="website"', content)
+
+    def test_hostile_article_metadata_cannot_terminate_json_script_or_add_executable_markup(self):
+        title = '</script><script>globalThis.evil=1</script> <&"title"'
+        author = '</script><img src=x onerror=bad> & Writer'
+        summary = '<!-- </ScRiPt><script>bad</script> & "Summary"'
+        self.article("hostile", title=title, author=author, summary=summary)
+        self.build()
+        content = (self.stage / "blog/articles/hostile/index.html").read_text()
+        page = Page(content)
+        self.assertEqual(len(page.structured), 1)
+        self.assertEqual(page.structured[0]["headline"], title)
+        self.assertEqual(page.structured[0]["creditText"], author)
+        self.assertEqual(page.structured[0]["description"], summary)
+        self.assertEqual([script for script in page.scripts if script.get("type") != "application/ld+json"],
+                         [{"src": "../../../navigation.js"}, {"src": "../../../repository-stars.js", "defer": None}])
+        self.assertEqual(len(page.scripts), 3)
+        self.assertEqual(page.event_attrs, [])
+        self.assertNotIn("x", page.assets)
+
     def test_article_page_escapes_plain_metadata_and_keeps_native_source_and_back_links(self):
         path = self.article("safe-source", title='<img src=x onerror=bad> & "title"',
                             author="Writer <script>bad</script>", summary='Summary <b>plain</b> & "quoted".',
@@ -343,7 +394,9 @@ class ReleaseBlogTests(unittest.TestCase):
         self.assertEqual(page.canonicals, ["https://asm.build/blog/articles/safe-source/"])
         self.assertEqual(page.mains, ["main"])
         self.assertEqual(len(page.headings), 1)
-        self.assertEqual(page.scripts, [{"src": "../../../navigation.js"}, {"src": "../../../repository-stars.js", "defer": None}])
+        self.assertEqual([script for script in page.scripts if script.get("type") != "application/ld+json"],
+                         [{"src": "../../../navigation.js"}, {"src": "../../../repository-stars.js", "defer": None}])
+        self.assertEqual(len(page.structured), 1)
         self.assertEqual(page.event_attrs, [])
         self.assertIn("&lt;img src=x onerror=bad&gt;", content)
         self.assertIn("Writer &lt;script&gt;bad&lt;/script&gt;", content)
@@ -361,17 +414,20 @@ class ReleaseBlogTests(unittest.TestCase):
     def test_drafts_are_local_noindex_previews_and_never_feed_or_sitemap_entries(self):
         self.article("unpublished", title="Draft architecture", date=None, draft=True)
         self.article("future-draft", title="Future draft", date="2999-01-01", draft=True)
+        self.article("already-published")
         routes = self.build(dates=self.dates)
         self.assertFalse((self.stage / "blog/articles/unpublished").exists())
         self.assertFalse((self.stage / "blog/articles/future-draft").exists())
         self.assertNotIn("Draft architecture", (self.stage / "blog/index.html").read_text())
-        self.assertEqual(len(self.feed().findall("a:entry", ATOM)), 2)
+        self.assertEqual(len(self.feed().findall("a:entry", ATOM)), 3)
         routes = self.build(dates=self.dates, include_drafts=True)
         self.assertNotIn("blog/articles/unpublished/", routes)
         self.assertNotIn("blog/articles/future-draft/", routes)
         for route in routes + ["blog/articles/unpublished/", "blog/articles/future-draft/"]:
             content = (self.stage / route / "index.html").read_text(encoding="utf-8")
             self.assertIn("noindex", Page(content).robots)
+            self.assertEqual(Page(content).structured, [])
+            self.assertIn('property="og:type" content="website"', content)
         archive_head = (self.stage / "blog/articles/index.html").read_text().split("</head>", 1)[0]
         self.assertIn("unpublished drafts", archive_head)
         draft = (self.stage / "blog/articles/unpublished/index.html").read_text()
@@ -379,8 +435,9 @@ class ReleaseBlogTests(unittest.TestCase):
         self.assertIn("Unpublished", draft)
         self.assertNotIn("Publication date unavailable", draft)
         entries = self.feed().findall("a:entry", ATOM)
-        self.assertEqual(len(entries), 2)
-        self.assertFalse(any("/articles/" in entry.findtext("a:id", namespaces=ATOM) for entry in entries))
+        self.assertEqual(len(entries), 3)
+        self.assertEqual([entry.findtext("a:id", namespaces=ATOM) for entry in entries if "/articles/" in entry.findtext("a:id", namespaces=ATOM)],
+                         ["https://asm.build/blog/articles/already-published/"])
 
     def test_invalid_articles_fail_before_any_release_or_archive_output(self):
         path = self.article("invalid", date="2999-01-01")

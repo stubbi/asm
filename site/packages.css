@@ -50,6 +50,8 @@
 .package-source-facts { margin: 0; }
 .package-source-facts > div + div { margin-top: var(--space-4); }
 .package-source-facts dd { margin-top: var(--space-1); }
+.package-topics dd { font-family: inherit; }
+.package-topics ul { margin: 0; padding: 0; list-style: none; }
 .package-source-facts a:not(.button), .package-section#source > p > a:not(.button) { display: inline-flex; align-items: center; min-height: var(--control-height); max-width: 100%; color: var(--accent); text-decoration: underline; overflow-wrap: anywhere; }
 
 /* Link treatments stay inside content components, away from the shared chrome. */

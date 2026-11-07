@@ -70,6 +70,56 @@ These primary Google documents were reviewed on 7 November 2026.
 This audit covers page intent, metadata, and crawlable links.
 It does not establish indexing, impressions, clicks, or improved rankings.
 
+## Package and publication metadata
+
+| Information | Representation and scope |
+| --- | --- |
+| Package source | `SoftwareSourceCode` identifies the selected exact version, summary, repository, commit-specific source URL, and license document. |
+| Version identity | Overview and exact-version pages refer to the same clean version entity. An overview without an active release omits that entity. |
+| License | Use the selected record's approved SPDX identifier. A package license does not license the surrounding website. |
+| Complete release metadata | A typed `describedby` link points to the exact raw JSON record. Published record bytes remain unchanged. |
+| Targets and files | Keep target, architecture, format, size, digest, and checked download availability together for each artifact. |
+| Dependencies and features | Keep declarations bound to the checked source archive, digest, version, and target. Missing declarations remain unavailable. |
+| Categories and keywords | Link the active overview to its current native discovery pages. Current classification does not relabel historical releases. |
+| Authored articles | `BlogPosting` uses the visible headline, summary, literal credits, and declared calendar dates. Drafts and previews omit this markup. |
+| Release notes | Keep GitHub availability dates distinct from article publication dates. Do not invent an author, publisher, or date. |
+| Shared previews and feeds | Declare the actual PNG type, dimensions, and alternative text. Expose the existing Atom feed through a typed alternate link. |
+
+The source schema describes recorded code; it does not establish publisher identity, compatibility, safety, or Google rich-result eligibility.
+Omit programming-language, ABI, CPU-feature, rating, and offer claims when the record does not establish them.
+Do not turn source archives or libraries into applications to satisfy a scanner.
+See [SoftwareSourceCode](https://schema.org/SoftwareSourceCode), [license](https://schema.org/license), and [Google's supported structured-data features](https://developers.google.com/search/docs/appearance/structured-data/search-gallery).
+
+Use a bounded JSON serializer for structured data.
+Escape script delimiters inside JSON strings before embedding them in HTML.
+Test hostile metadata as well as exact historical licenses and missing data.
+See [HTML script-content restrictions](https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements).
+
+## Search, filters, and indexing
+
+Typed queries and filter combinations use local URL fragments.
+They are not separate pages in the sitemap or separate indexing targets.
+Search terms stay outside request paths, canonical URLs, and social-preview metadata.
+The client changes its bounded tab title to describe search, filter, and return states.
+That title helps navigation; it does not make a query a new indexed page.
+
+Local search matches package identity, summary, declared targets, architecture aliases, and the latest active release's license.
+Reviewed current keywords and category names extend those matches after the base catalog loads.
+These optional sources use fixed addresses, bounded reads, and timeouts.
+A missing or invalid source leaves base search available and identifies incomplete topic coverage.
+Historical licenses and stale classifications do not describe the current release.
+
+The catalog, package versions, categories, keywords, and architecture directories supply native crawlable links and static content.
+Keep these useful entry points available without scripts.
+Keep legacy HTML aliases crawlable so search engines can read their clean canonical links.
+Do not put transient searches in the sitemap or add `noindex` to the canonical homepage when someone searches.
+
+Google supports fragment filters when separate facet indexing is unnecessary.
+Its sitelinks search box was retired in November 2024.
+Do not invent a public query endpoint or `SearchAction` for that retired feature.
+See [faceted navigation](https://developers.google.com/crawling/docs/faceted-navigation), [canonical consolidation](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls), and the [search-box announcement](https://developers.google.com/search/blog/2024/10/sitelinks-search-box).
+These sources and Schema.org 30.1 were reviewed on 7 November 2026.
+
 ## Before submission
 
 1. Confirm that the intended Pages deployment succeeded.

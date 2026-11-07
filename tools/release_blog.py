@@ -120,8 +120,10 @@ def _summary(notes: str) -> str:
     return first if len(first) <= 220 else first[:217].rsplit(" ", 1)[0] + "…"
 
 
-def _blog_page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], preview: bool) -> str:
-    html = package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False)
+def _blog_page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], preview: bool,
+               *, structured_data: dict | None = None) -> str:
+    html = package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False,
+                               structured_data=structured_data)
     # Preview is a build-wide choice. Archives and released posts must also
     # remain unindexed when they link to unpublished articles.
     if preview: html = html.replace("</head>", '<meta name="robots" content="noindex">\n</head>', 1)
@@ -254,7 +256,16 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                 package_pages._anchor("Read the maintained source", post["source"]) + '</p><p>' +
                 package_pages._anchor("Back to articles", prefix + "blog/articles/") + ' · ' +
                 package_pages._anchor("Back to blog", prefix + "blog/") + '</p></section></article>')
-        html = _blog_page(route, post["title"], post["summary"], body, chrome, include_drafts)
+        structured = None
+        if not include_drafts and not post["draft"]:
+            url = package_pages.SITE + route.rstrip("/")
+            structured = {"@context": "https://schema.org", "@type": "BlogPosting", "@id": url + "#article",
+                          "url": url, "headline": post["title"], "description": post["summary"],
+                          "creditText": post["author"], "datePublished": post["date"][:10],
+                          "inLanguage": "en", "isBasedOn": post["source"]}
+            if post["updated"]: structured["dateModified"] = post["updated"][:10]
+        html = _blog_page(route, post["title"], post["summary"], body, chrome, include_drafts,
+                          structured_data=structured)
         outputs.append((route + "index.html", html.encode("utf-8")))
     posts += articles
     # Published timestamps define chronological order. Stable route ordering
