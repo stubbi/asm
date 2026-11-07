@@ -145,6 +145,8 @@ body > main { position: relative; z-index: 1; }
 .search-box button:not(:disabled):active { border-color: var(--muted); background: var(--muted); }
 .search-box button:disabled { opacity: .55; }
 .package-search-form .search-box, .header-search .search-box { view-transition-name: package-search; }
+.package-search-form { view-transition-name: search-introduction; }
+.hero-browse { view-transition-name: search-browse; }
 .header-search .search-box { gap: var(--space-2); min-height: var(--control-height); padding: 0 0 0 var(--space-3); border-radius: var(--radius-control); }
 .header-search label { display: inline-flex; align-items: center; min-height: var(--control-height); font-size: var(--text-sm); font-weight: 500; }
 .header-search input { height: var(--control-height); font-size: var(--text-sm); }
@@ -550,8 +552,20 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
 /* Native navigation keeps links, history, and scroll restoration in the browser. */
 @view-transition { navigation: auto; }
 ::view-transition-group(*) { animation-duration: 220ms; animation-timing-function: cubic-bezier(.2,.7,.2,1); }
-::view-transition-old(root) { animation: 100ms ease-out both page-out; }
-::view-transition-new(root) { animation: 160ms ease-out 60ms both page-in; }
+::view-transition-group(masthead-surface),
+::view-transition-group(package-search) { animation-duration: 480ms; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+::view-transition-old(masthead-surface),
+::view-transition-new(masthead-surface),
+::view-transition-old(package-search),
+::view-transition-new(package-search) { block-size: 100%; }
+::view-transition-old(package-search),
+::view-transition-new(package-search) { animation-duration: 160ms; }
+::view-transition-old(search-introduction):only-child,
+::view-transition-old(search-browse):only-child { animation: 120ms ease-out both page-out; }
+::view-transition-new(search-introduction):only-child,
+::view-transition-new(search-browse):only-child { animation: 160ms ease-out 320ms both page-in; }
+::view-transition-old(root) { animation: 120ms ease-out both page-out; }
+::view-transition-new(root) { animation: 200ms ease-out 80ms both page-in; }
 @keyframes page-out { to { opacity: 0; } }
 @keyframes page-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
