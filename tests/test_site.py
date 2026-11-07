@@ -912,6 +912,25 @@ Unpublished body sentinel.
         expires = datetime.fromisoformat(fields["Expires"].replace("Z", "+00:00"))
         self.assertGreater(expires, datetime.now(timezone.utc), "Review the security contact before renewing its expiry")
 
+    def test_unreviewed_hidden_assets_cannot_reach_site_publication(self):
+        repo = self.output.parent / "repo"
+        for name in (".internal.txt", ".well-known/unreviewed.txt", "public/.private/data.txt"):
+            with self.subTest(path=name):
+                source = repo / "site" / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("Synthetic private fixture.\n")
+                try:
+                    destination = self.output.parent / "hidden-asset-output"
+                    with patch.object(build_site, "publish_directory", side_effect=AssertionError("Unreviewed hidden asset reached publication")):
+                        with self.assertRaisesRegex(registry.RegistryError, "unreviewed hidden site path"):
+                            build_site.build_site(repo, ROOT / "registry", destination)
+                    self.assertFalse(destination.exists())
+                finally:
+                    source.unlink()
+                    while source.parent != repo / "site" and not any(source.parent.iterdir()):
+                        source.parent.rmdir()
+                        source = source.parent
+
     def test_indexnow_ownership_file_is_published_with_exact_utf8_content(self):
         keys = [path for path in SITE.iterdir() if re.fullmatch(r"[0-9a-f]{32}\.txt", path.name)]
         self.assertEqual(len(keys), 1)

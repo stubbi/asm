@@ -369,6 +369,14 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
             # Cached HTML must not keep an expired numeric observation visible.
             registry.write_atomic(page, repository_stars.render_header(content, repository_stars.unknown_snapshot()).encode("utf-8"))
         site_routes.PageRoutes.from_directory(stage).export(stage)
+        # Pages must include .well-known without publishing arbitrary hidden
+        # source files. Keep this allowlist narrower than the upload action.
+        public_hidden = {".nojekyll", ".well-known", ".well-known/security.txt"}
+        for path in stage.rglob("*"):
+            relative = path.relative_to(stage)
+            if any(part.startswith(".") for part in relative.parts):
+                registry.require(relative.as_posix() in public_hidden,
+                                 "unreviewed hidden site path: " + relative.as_posix())
         publish_directory(stage, output)
     return build
 
