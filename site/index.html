@@ -58,10 +58,13 @@
           <form class="package-search-form" id="registry-controls" role="search">
             <h1 id="hero-heading"><label for="package-search">Find assembly packages</label></h1>
             <p class="registry-description">The package registry and command-line tool for assembly projects.</p>
-            <div class="search-box">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              <input id="package-search" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Name or description" aria-controls="package-list" disabled>
-              <button type="submit" id="search-submit" disabled>Search</button>
+            <div class="hero-search-slot">
+              <div class="search-box">
+                <span class="compact-search-label" id="compact-search-label">Search</span>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <input id="package-search" form="registry-controls" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Name or description" aria-controls="package-list" disabled>
+                <button type="submit" id="search-submit" form="registry-controls" aria-label="Search" disabled><span class="search-submit-label">Search</span><svg class="compact-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></button>
+              </div>
             </div>
           </form>
           <p class="hero-browse">Or <a href="packages/">browse all packages</a></p>

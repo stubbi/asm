@@ -181,8 +181,9 @@ Do not retain raw search terms in request logs.
 
 ### Search across pages and navigation motion
 
-Keep one search field on each page.
-The homepage uses the hero field; inner pages use a compact field in the shared header.
+Keep one active search field on each page.
+The homepage field starts in the hero and moves into the shared header during scrolling.
+Inner pages use a compact field in the shared header.
 Give the compact field a visible Search label and an accessible submit button.
 Let the field occupy a full row when the navigation needs more space.
 Start a fresh global search from the header, without carrying hidden filters from another package.
@@ -212,6 +213,45 @@ The [CSS View Transitions specification](https://drafts.csswg.org/css-view-trans
 These sources were checked on 7 November 2026.
 URL, fallback, keyboard, responsive, motion-preference, and browser-navigation checks establish the implementation evidence.
 They do not establish a measured preference for motion or comparative search usability.
+
+### Sticky navigation and search
+
+Keep the shared navigation pinned to the viewport while the page scrolls.
+Use the existing neutral surface and a quiet bottom rule above page content.
+Keep the page-top masthead canvas outside the sticky header, so its background cannot travel over the content.
+Measure the actual header content height for section, focus, and skip-link offsets.
+Keep navigation in normal flow when scripts are unavailable.
+
+As the homepage field approaches the header, move the same search control into the compact header layout.
+Reverse the movement when its reserved hero position becomes visible below the header.
+Use separate entry and return boundaries to prevent oscillation near the threshold.
+Reserve both the hero field space and the header's original document height.
+The movement must not move the content below them.
+Keep the query, selection, input identity, and native form owner unchanged.
+Restore an existing focus with `preventScroll`; do not focus an inactive control.
+Defer movement until an active text composition ends.
+Keep one connected query control; the unused header placeholder has no query name.
+Scrolling must not change the URL, history, or search results, or start a network request.
+
+Reuse the existing 480-millisecond search movement and easing.
+Exclude the page content, hero introduction, and page-top canvas from this local snapshot.
+Keep that content live and scrollable while the search field moves.
+Cancel obsolete snapshots when the scroll direction changes; apply the latest requested state.
+Handle rejected snapshot promises when optional animation is skipped.
+Use immediate movement for reduced motion, restored scroll, and browsers without the transition API.
+On narrow screens shorter than 24 rem, keep navigation in normal document flow to preserve reading space.
+Also use normal flow when the measured header exceeds half the viewport height, including with enlarged text.
+Retain that decision until the viewport changes, so expansion cannot make the state oscillate.
+
+This serves continued package search while reading and follows serving the person and preserving control.
+The trade-off is a small scroll enhancement and a reserved placeholder, with normal-flow navigation on short narrow viewports.
+[W3C focus guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html) explains the sticky-header obstruction risk.
+[Native form ownership](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/form) preserves submission after the control moves.
+The [transition specification](https://drafts.csswg.org/css-view-transitions-1/#dom-viewtransition-ready) defines skipped snapshot promise behavior.
+[Chrome's element-transition guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/ui-behaviors/group-element-transitions) explains how to exclude the full-page snapshot.
+These references were checked on 7 November 2026.
+Verify scrolling, reversal, composition, keyboard use, section links, saved results, text enlargement, and reduced-motion behavior.
+These checks establish implementation behavior, not comparative usability or an optimal timing.
 
 ### Intended discovery
 
@@ -800,7 +840,7 @@ Use relative units so spacing and controls grow with the text size.
 Use the same container, header, navigation, control borders, and focus treatment on every page.
 This includes the homepage, package browser, guide, sponsorship page, and generated CLI source reference.
 Keep Explore, Stats, Blog, and Docs in the same navigation order.
-The wordmark returns to search; installation remains in the onboarding row and footer.
+The wordmark returns to search; installation remains in the footer and documentation.
 Mark the current page with a selected surface, stronger text, and `aria-current`.
 Keep the same Learn, Registry, Project, and Help link groups and support row in every footer.
 The Source code footer link retains the GitHub route while Packages provides explicit return navigation.
