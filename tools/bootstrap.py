@@ -29,6 +29,18 @@ START = "<!-- ASM_BOOTSTRAP_START -->"
 END = "<!-- ASM_BOOTSTRAP_END -->"
 
 
+def insertion_point(content: str) -> tuple[str, str, str] | None:
+    """Accept no installer UI, or one ordered pair of optional markers."""
+    counts = (content.count(START), content.count(END))
+    if counts == (0, 0):
+        return None
+    registry.require(counts == (1, 1) and content.index(START) < content.index(END),
+                     "site needs no bootstrap markers or one ordered insertion point")
+    before, rest = content.split(START, 1)
+    original, after = rest.split(END, 1)
+    return before, original, after
+
+
 def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dict | None:
     """Select the latest POSIX-installer release; require its artifact checks.
 
@@ -148,7 +160,7 @@ cat "$asm_installer"'''
 <p class="section-footnote">The installer supports {hosts}. It selects the matching build on your machine. {tools} Use <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> before you start.</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">INSTALL Asm {version}</div><button class="copy-button" type="button" data-copy="bootstrap-commands" aria-label="Copy Asm installation command">Copy</button></div>
-<pre><code id="bootstrap-commands">{escape(commands)}</code></pre>
+<pre tabindex="0"><code id="bootstrap-commands">{escape(commands)}</code></pre>
 <div class="terminal-footer"><span>{hosts}</span><a href="install.sh">Read the installer ↗</a></div>
 </div>
 <p class="section-footnote">The Asm installer does not use sudo or a GitHub login. It checks the exact file and its signed release attestation. It installs to $HOME/.local/bin/asm and preserves a different existing asm file.</p>
@@ -156,7 +168,7 @@ cat "$asm_installer"'''
 <details class="source-fallback">
 <summary>Set PATH for this terminal</summary>
 <p>Put the installation directory first in PATH for this terminal:</p>
-<div class="terminal"><pre><code>export PATH="$HOME/.local/bin:$PATH"</code></pre></div>
+<div class="terminal"><pre tabindex="0"><code>export PATH="$HOME/.local/bin:$PATH"</code></pre></div>
 <p>Add the same command to your shell configuration to keep this setting. Run <code>asm version</code> again.</p>
 </details>
 <details class="source-fallback">
@@ -164,12 +176,12 @@ cat "$asm_installer"'''
 <p>Download the script to a temporary file:</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">DOWNLOAD FOR REVIEW</div><button class="copy-button" type="button" data-copy="bootstrap-download-commands" aria-label="Copy installer download commands">Copy</button></div>
-<pre><code id="bootstrap-download-commands">{escape(download_commands)}</code></pre>
+<pre tabindex="0"><code id="bootstrap-download-commands">{escape(download_commands)}</code></pre>
 </div>
 <p>If the download succeeds, review the displayed script. After your review, run this separate command in the same terminal:</p>
-<div class="terminal"><pre><code>sh "$asm_installer"</code></pre></div>
+<div class="terminal"><pre tabindex="0"><code>sh "$asm_installer"</code></pre></div>
 <p>Remove the temporary file after installation:</p>
-<div class="terminal"><pre><code>rm -f "$asm_installer"
+<div class="terminal"><pre tabindex="0"><code>rm -f "$asm_installer"
 unset asm_installer</code></pre></div>
 </details>
 <details class="source-fallback">
@@ -177,7 +189,7 @@ unset asm_installer</code></pre></div>
 <p>For scripts and CI, use the complete-download commands below. The script runs only if the download succeeds.</p>
 <div class="terminal">
 <div class="terminal-header"><div class="terminal-label">INSTALL FROM FILE</div><button class="copy-button" type="button" data-copy="bootstrap-ci-commands" aria-label="Copy installation commands for scripts and CI">Copy</button></div>
-<pre><code id="bootstrap-ci-commands">{escape(ci_commands)}</code></pre>
+<pre tabindex="0"><code id="bootstrap-ci-commands">{escape(ci_commands)}</code></pre>
 </div>
 <p>Running it again accepts only the same release bytes with the required ownership and permissions. The installer does not change PATH or run the downloaded command.</p>
 </details>
@@ -192,10 +204,7 @@ def write_bootstrap(stage: Path, records: list[dict], checked: set[tuple[str, st
     release = installer_release(records, checked)
     page = stage / "index.html"
     content = page.read_text(encoding="utf-8")
-    registry.require(content.count(START) == 1 and content.count(END) == 1,
-                     "site needs exactly one bootstrap insertion point")
-    before, rest = content.split(START, 1)
-    original, after = rest.split(END, 1)
+    region = insertion_point(content)
     if release is not None:
         registry.require(bundle_reader is not None, "installer needs a checked release bundle")
         bundle = bundle_reader(release["bundle_url"], MAX_BUNDLE_BYTES)
@@ -207,9 +216,10 @@ def write_bootstrap(stage: Path, records: list[dict], checked: set[tuple[str, st
         # This is an availability and format check. The installer verifies the
         # signature, exact artifact, and identity with the independent verifier.
         registry.write_atomic(stage / "install.sh", render_installer(release))
-        body = installer_markup(release)
-        after = after.replace('<details class="source-fallback" open>', '<details class="source-fallback">', 1)
-    else:
-        body = original
-    page.write_text(before + START + "\n" + body.strip() + "\n" + END + after, encoding="utf-8")
+    if region is not None:
+        before, original, after = region
+        body = installer_markup(release) if release is not None else original
+        if release is not None:
+            after = after.replace('<details class="source-fallback" open>', '<details class="source-fallback">', 1)
+        page.write_text(before + START + "\n" + body.strip() + "\n" + END + after, encoding="utf-8")
     return release

@@ -1,0 +1,216 @@
+{
+  "valid": [
+    {
+      "value": 0,
+      "compact": "0",
+      "exact": "0"
+    },
+    {
+      "value": 5,
+      "compact": "5",
+      "exact": "5"
+    },
+    {
+      "value": 100,
+      "compact": "100",
+      "exact": "100"
+    },
+    {
+      "value": 999,
+      "compact": "999",
+      "exact": "999"
+    },
+    {
+      "value": 1000,
+      "compact": "1k",
+      "exact": "1,000"
+    },
+    {
+      "value": 1049,
+      "compact": "1k",
+      "exact": "1,049"
+    },
+    {
+      "value": 1050,
+      "compact": "1.1k",
+      "exact": "1,050"
+    },
+    {
+      "value": 1200,
+      "compact": "1.2k",
+      "exact": "1,200"
+    },
+    {
+      "value": 1250,
+      "compact": "1.3k",
+      "exact": "1,250"
+    },
+    {
+      "value": 9999,
+      "compact": "10k",
+      "exact": "9,999"
+    },
+    {
+      "value": 99949,
+      "compact": "99.9k",
+      "exact": "99,949"
+    },
+    {
+      "value": 99950,
+      "compact": "100k",
+      "exact": "99,950"
+    },
+    {
+      "value": 100000,
+      "compact": "100k",
+      "exact": "100,000"
+    },
+    {
+      "value": 121580,
+      "compact": "122k",
+      "exact": "121,580"
+    },
+    {
+      "value": 252350,
+      "compact": "252k",
+      "exact": "252,350"
+    },
+    {
+      "value": 999499,
+      "compact": "999k",
+      "exact": "999,499"
+    },
+    {
+      "value": 999949,
+      "compact": "1000k",
+      "exact": "999,949"
+    },
+    {
+      "value": 999950,
+      "compact": "1000k",
+      "exact": "999,950"
+    },
+    {
+      "value": 1000000,
+      "compact": "1M",
+      "exact": "1,000,000"
+    },
+    {
+      "value": 1200000,
+      "compact": "1.2M",
+      "exact": "1,200,000"
+    },
+    {
+      "value": 999950000,
+      "compact": "1000M",
+      "exact": "999,950,000"
+    },
+    {
+      "value": 1000000000,
+      "compact": "1B",
+      "exact": "1,000,000,000"
+    },
+    {
+      "value": 1200000000,
+      "compact": "1.2B",
+      "exact": "1,200,000,000"
+    },
+    {
+      "value": 1000000000000,
+      "compact": "1T",
+      "exact": "1,000,000,000,000"
+    },
+    {
+      "value": 1200000000000,
+      "compact": "1.2T",
+      "exact": "1,200,000,000,000"
+    },
+    {
+      "value": 1000000000000000,
+      "compact": "1Q",
+      "exact": "1,000,000,000,000,000"
+    },
+    {
+      "value": 1200000000000000,
+      "compact": "1.2Q",
+      "exact": "1,200,000,000,000,000"
+    },
+    {
+      "value": 9007199254740991,
+      "compact": "9Q",
+      "exact": "9,007,199,254,740,991"
+    },
+    {
+      "value": 1250,
+      "lower_bound": true,
+      "compact": "1.2k",
+      "exact": "1,250"
+    },
+    {
+      "value": 121580,
+      "lower_bound": true,
+      "compact": "121k",
+      "exact": "121,580"
+    },
+    {
+      "value": 999950,
+      "lower_bound": true,
+      "compact": "999k",
+      "exact": "999,950"
+    },
+    {
+      "value": 9007199254740991,
+      "lower_bound": true,
+      "compact": "9Q",
+      "exact": "9,007,199,254,740,991"
+    },
+    {
+      "value": 100500,
+      "compact": "101k",
+      "exact": "100,500"
+    },
+    {
+      "value": 1250000,
+      "compact": "1.3M",
+      "exact": "1,250,000"
+    },
+    {
+      "value": 100000000,
+      "compact": "100M",
+      "exact": "100,000,000"
+    },
+    {
+      "value": 121580000,
+      "compact": "122M",
+      "exact": "121,580,000"
+    },
+    {
+      "value": 1250000,
+      "lower_bound": true,
+      "compact": "1.2M",
+      "exact": "1,250,000"
+    },
+    {
+      "value": 8999999999999999,
+      "compact": "9Q",
+      "exact": "8,999,999,999,999,999"
+    },
+    {
+      "value": 8999999999999999,
+      "lower_bound": true,
+      "compact": "8.9Q",
+      "exact": "8,999,999,999,999,999"
+    }
+  ],
+  "invalid": [
+    null,
+    true,
+    false,
+    -1,
+    1.5,
+    "1200",
+    {},
+    [],
+    9007199254740992
+  ]
+}

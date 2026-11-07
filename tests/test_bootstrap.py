@@ -39,6 +39,16 @@ COMMIT = "a" * 40
 BUNDLE = b'{"dsseEnvelope": {"payload": "fixture"}}'
 
 
+def installer_page_fixture():
+    """Keep optional installer markup checks independent of the live homepage."""
+    return ('<!doctype html><html lang="en"><head><title>Installer fixture</title></head><body>'
+            '<header class="site-header"><a href="index.html">Asm</a></header><main id="main"><h1>Install Asm</h1>' +
+            bootstrap.START + '<p>Build the CLI from source.</p>' + bootstrap.END +
+            '<details class="source-fallback" open><summary>Build from source</summary><p>Source instructions.</p></details>'
+            '</main><footer><a href="index.html">Packages</a></footer>'
+            '<p id="copy-status" role="status" aria-live="polite"></p></body></html>')
+
+
 def release_record(version="0.2.0"):
     return {
         "schema": 1, "name": "stubbi/asm", "version": version,
@@ -210,7 +220,7 @@ class BootstrapGenerationTests(unittest.TestCase):
     def test_checked_site_contains_exact_reviewable_installer_and_static_instructions(self):
         with tempfile.TemporaryDirectory() as temp:
             stage = Path(temp)
-            shutil.copyfile(ROOT / "site/index.html", stage / "index.html")
+            (stage / "index.html").write_text(installer_page_fixture(), encoding="utf-8")
             requests = []
             def read_bundle(url, limit):
                 requests.append((url, limit))
@@ -228,6 +238,57 @@ class BootstrapGenerationTests(unittest.TestCase):
             self.assertIn('class="source-fallback">', page)
             self.assertNotIn('class="source-fallback" open', page)
             self.assertEqual(requests, [(selected["bundle_url"], 1024 * 1024)])
+
+    def test_checked_installer_is_generated_without_a_homepage_installation_section(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp)
+            homepage = b'<!doctype html><main><h1>Find assembly packages</h1></main>\n'
+            (stage / "index.html").write_bytes(homepage)
+            requests = []
+            def read_bundle(url, limit):
+                requests.append((url, limit))
+                return BUNDLE
+            selected = bootstrap.write_bootstrap(stage, [release_record()], {("stubbi/asm", "0.2.0")}, bundle_reader=read_bundle)
+            self.assertEqual((stage / "install.sh").read_bytes(), bootstrap.render_installer(selected))
+            self.assertEqual((stage / "index.html").read_bytes(), homepage)
+            self.assertEqual(requests, [(selected["bundle_url"], 1024 * 1024)])
+
+    def test_unchecked_homepage_without_installation_section_removes_a_stale_installer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp)
+            homepage = b'<main><h1>Find assembly packages</h1></main>\n'
+            (stage / "index.html").write_bytes(homepage)
+            (stage / "install.sh").write_bytes(b"stale checked build")
+            self.assertIsNone(bootstrap.write_bootstrap(stage, [release_record()], set()))
+            self.assertFalse((stage / "install.sh").exists())
+            self.assertEqual((stage / "index.html").read_bytes(), homepage)
+
+    def test_no_homepage_installation_section_does_not_bypass_bundle_checks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp)
+            homepage = b'<main><h1>Find assembly packages</h1></main>\n'
+            (stage / "index.html").write_bytes(homepage)
+            for bundle in (None, b"{}", BUNDLE + b"\n" + BUNDLE):
+                requests = []
+                def reader(url, limit):
+                    requests.append(url)
+                    return bundle
+                with self.subTest(bundle=bundle), self.assertRaises(registry.RegistryError):
+                    bootstrap.write_bootstrap(stage, [release_record()], {("stubbi/asm", "0.2.0")},
+                                              bundle_reader=None if bundle is None else reader)
+                self.assertEqual(len(requests), 0 if bundle is None else 1)
+                self.assertFalse((stage / "install.sh").exists())
+                self.assertEqual((stage / "index.html").read_bytes(), homepage)
+
+    def test_partial_duplicate_and_reversed_optional_markers_are_rejected(self):
+        for content in (bootstrap.START, bootstrap.END, bootstrap.START * 2 + bootstrap.END,
+                        bootstrap.START + bootstrap.END * 2, bootstrap.END + bootstrap.START):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as temp:
+                stage = Path(temp)
+                (stage / "index.html").write_text(content, encoding="utf-8")
+                with self.assertRaises(registry.RegistryError):
+                    bootstrap.write_bootstrap(stage, [release_record()], set())
+                self.assertEqual((stage / "index.html").read_text(), content)
 
     def test_missing_or_invalid_bundle_cannot_publish_an_installer(self):
         for bundle in (None, b"", b"{}", b"[]", BUNDLE + b"\n" + BUNDLE, b"x" * (1024 * 1024 + 1)):

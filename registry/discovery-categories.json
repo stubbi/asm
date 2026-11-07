@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "categories": [
+    {"id": "developer-tools", "name": "Developer tools", "packages": ["stubbi/asm"]},
+    {"id": "examples", "name": "Examples", "packages": ["stubbi/hello"]},
+    {"id": "math", "name": "Math", "packages": ["stubbi/math"]}
+  ]
+}

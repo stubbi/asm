@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5f5f0">
+    <meta name="theme-color" content="#f5f5f4">
     <meta name="description" content="Sponsor Asm. Fund assembly tooling, package distribution, and public release evidence. Compare company sponsorships and individual support.">
     <meta property="og:type" content="website">
     <meta property="og:title" content="Sponsor Asm — asm">
     <meta property="og:description" content="Fund the people, infrastructure, and checks behind Asm. Compare sponsorship tiers and arrange your support.">
     <meta property="og:url" content="https://asm.build/sponsors.html">
     <meta property="og:image" content="https://asm.build/social-preview.png">
-    <meta property="og:image:alt" content="asm — Packages for assembly. asm.build.">
+    <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Sponsor Asm — asm">
     <meta name="twitter:description" content="Fund the people, infrastructure, and checks behind Asm. Compare sponsorship tiers and arrange your support.">
@@ -19,19 +19,31 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="sponsors.css">
+    <script src="navigation.js"></script>
+    <script src="repository-stars.js" defer></script>
     <title>Sponsor Asm — asm</title>
   </head>
   <body class="sponsorship-page">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
+      <div class="masthead-surface" aria-hidden="true"></div>
       <div class="container header-inner">
-        <a class="wordmark" href="index.html" aria-label="Asm home">asm<span aria-hidden="true">.</span></a>
+        <a class="wordmark" href="index.html" aria-label="Asm home"><img src="wordmark.svg" width="232" height="72" alt="asm"></a>
+        <form class="header-search" data-header-search action="index.html" method="get" role="search" aria-label="Package search" hidden>
+          <div class="search-box header-search-box">
+            <label for="header-package-search">Search</label>
+            <input id="header-package-search" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Packages" enterkeyhint="search">
+            <button type="submit" aria-label="Search packages" title="Search packages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></button>
+          </div>
+        </form>
+        <a class="header-search-fallback" data-header-search-fallback href="packages/">Browse packages</a>
         <nav aria-label="Main navigation">
-          <a href="index.html#start">Get started</a>
-          <a href="sponsors.html" aria-current="page">Sponsor</a>
-          <a href="https://github.com/stubbi/asm">GitHub</a>
-          <a class="nav-install" href="index.html#start">Install Asm</a>
+          <a href="explore/">Explore</a>
+          <a href="stats/">Stats</a>
+          <a href="blog/">Blog</a>
+          <a href="docs/">Docs</a>
         </nav>
+        <!-- github-stars:start --><a class="github-stars" href="https://github.com/stubbi/asm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/></svg><span>Star on GitHub</span></a><!-- github-stars:end -->
       </div>
     </header>
 
@@ -161,10 +173,24 @@
       </section>
     </main>
 
-    <footer class="registry-footer">
-      <div class="container footer-inner">
-        <a class="wordmark" href="index.html" aria-label="Asm home">asm<span aria-hidden="true">.</span></a>
-        <nav class="footer-links" aria-label="Footer navigation"><a href="index.html#start">Get started</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm#status">Project status</a><a href="https://github.com/stubbi/asm#license">License scope</a></nav>
+    <footer class="site-footer">
+      <div class="container registry-footer-grid">
+        <div class="footer-brand">
+          <a class="wordmark" href="index.html" aria-label="Asm home"><img src="wordmark.svg" width="232" height="72" alt="asm"></a>
+          <p>A home for assembly.</p>
+        </div>
+        <div class="footer-navs">
+          <nav aria-label="Learn"><h2>Learn</h2><a href="docs/">Docs</a><a href="guide.html">Guide</a><a href="https://github.com/stubbi/asm#install-the-command">Install Asm</a><a href="reference/">CLI source</a><a href="agents.md">For AI agents</a></nav>
+          <nav aria-label="Registry"><h2>Registry</h2><a href="explore/">Explore</a><a href="packages/">All packages</a><a href="browse/new/">New packages</a><a href="browse/popular/">Most downloaded</a><a href="stats/">Statistics</a></nav>
+          <nav aria-label="Project"><h2>Project</h2><a href="guide.html#why">Why Asm</a><a href="blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="sponsors.html">Sponsorship</a></nav>
+          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/stubbi/asm#status">Supported hosts</a></nav>
+        </div>
+      </div>
+      <div class="footer-support">
+        <div class="container footer-support-inner">
+          <div><h2>Help build Asm</h2><p>Contribute code, improve the guide, or support the project.</p></div>
+          <div class="footer-support-actions"><a class="button button-secondary" href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a class="button button-primary" href="sponsors.html">Sponsor Asm</a></div>
+        </div>
       </div>
     </footer>
   </body>

@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-03",
+  "commands": [
+    {
+      "argv": [
+        "cat",
+        "/etc/alpine-release"
+      ],
+      "exit": 0,
+      "stdout": "3.24.3\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "uname",
+        "-a"
+      ],
+      "exit": 0,
+      "stdout": "Linux localhost 6.18.58-0-virt #1-Alpine SMP PREEMPT_DYNAMIC 2026-10-21 10:53:34 x86_64 GNU/Linux\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "as",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "GNU assembler (GNU Binutils) 2.45.1\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `x86_64-alpine-linux-musl'.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ld",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "GNU ld (GNU Binutils) 2.45.1\nCopyright (C) 2025 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "curl",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "curl 8.23.0 (x86_64-alpine-linux-musl) libcurl/8.23.0 OpenSSL/3.5.9 zlib/1.3.2 brotli/1.2.1 zstd/1.5.7 c-ares/1.34.9 libidn2/2.3.8 libpsl/0.21.5 nghttp2/1.70.0\nRelease-Date: 2026-10-14\nProtocols: dict file ftp ftps gopher gophers http https imap imaps ipfs ipns mqtt mqtts pop3 pop3s rtsp smtp smtps telnet tftp ws wss\nFeatures: alt-svc AsynchDNS brotli HSTS HTTP2 HTTPS-proxy IDN IPv6 Largefile libz PSL SSL threadsafe UnixSockets zstd\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "gzip",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "gzip 1.14\nCopyright (C) 2025 Free Software Foundation, Inc.\nCopyright (C) 1993 Jean-loup Gailly.\nThis is free software.  You may redistribute copies of it under the terms of\nthe GNU General Public License <https://www.gnu.org/licenses/gpl.html>.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Jean-loup Gailly.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "asm",
+        "test"
+      ],
+      "cwd": "/tmp/asm-published-math-tests",
+      "exit": 0,
+      "stdout": "Passed tests/main.s\n",
+      "stderr": ""
+    }
+  ],
+  "archive_sha256": "5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08",
+  "archive_members": [
+    "LICENSE",
+    "README.md",
+    "asm.toml",
+    "src/main.s",
+    "src/min.s",
+    "tests/main.s"
+  ],
+  "asm.toml": {
+    "sha256": "369e0f406544b922fb733fcf1da18841ee75b1996c6ef1525eb6959304ceb9ce",
+    "text": "[package]\nname = \"math\"\nversion = \"0.4.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
+  },
+  "tests/main.s": {
+    "sha256": "4c0196525ccef062727732af606c240208f71c234703e2478036179cc4189530",
+    "text": ".intel_syntax noprefix\n.include \"src/min.s\"\n\n.section .text\n.global _start\n_start:\n    lea r12, [rip + cases]\n    mov r13d, 8\n.Lcase:\n    mov rdi, [r12]\n    mov rsi, [r12 + 8]\n    call asm_u64_min\n    cmp rax, [r12 + 16]\n    jne .Lfailure\n    add r12, 24\n    dec r13d\n    jnz .Lcase\n    mov eax, 60\n    xor edi, edi\n    syscall\n.Lfailure:\n    mov eax, 60\n    mov edi, 1\n    syscall\n\n.section .rodata\n.balign 8\ncases:\n    .quad 0, 0, 0\n    .quad 0, 0xffffffffffffffff, 0\n    .quad 0xffffffffffffffff, 0, 0\n    .quad 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff\n    .quad 0x8000000000000000, 0x7fffffffffffffff, 0x7fffffffffffffff\n    .quad 0x7fffffffffffffff, 0x8000000000000000, 0x7fffffffffffffff\n    .quad 12, 37, 12\n    .quad 37, 12, 12\n.section .note.GNU-stack,\"\",@progbits\n"
+  },
+  "LICENSE": {
+    "sha256": "91d5d85f1cee47d47ce45ca577d1dda31123c4200713f622794370744a8e4e0d",
+    "text": "MIT License\n\nCopyright (c) 2026 ASM contributors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+  },
+  "status": "pass"
+}

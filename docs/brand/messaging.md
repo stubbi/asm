@@ -46,6 +46,23 @@ Our ambition is software that serves people well and uses resources with care.
 Adapt the depth and examples to the audience.
 Keep the underlying belief and factual boundary consistent.
 
+## Brand in use
+
+Make the purpose visible through the work people can complete.
+Search leads to package identity, an exact version, an explicit target, and the available evidence.
+Clear prerequisites and useful failures express care for the person using the tool.
+Minimalism reduces unnecessary effort while retaining information needed for an informed decision.
+
+Keep the task, product description, and deeper story at their appropriate depths.
+The homepage leads with finding assembly packages.
+The guide connects the current workflow with our expectations about AI, dependable reuse, and human judgment.
+Assembly must earn its place through useful results and measured evidence.
+
+The `>asm` wordmark suggests a command-line tool.
+It is not an assembly instruction or an assurance mark.
+Use the complete name and asm.build where a new audience needs context.
+The [design guide](../../design.md#brand-fit-and-story) records the visual choices, research, and remaining validation limits.
+
 ## Message priorities
 
 1. Software should serve people through reliable behavior, responsiveness, security, accessibility, and responsible resource use.

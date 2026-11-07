@@ -11,6 +11,7 @@ def reference_repo(source: Path, destination: Path) -> Path:
     destination.mkdir()
     for relative in ('site', 'skills/asm-build', 'cli'):
         shutil.copytree(source / relative, destination / relative)
+    shutil.copyfile(source / "CHANGELOG.md", destination / "CHANGELOG.md")
     # The site's reference path reads committed CLI bytes. Never depend on an
     # enclosing checkout, or change its Git configuration, from a test fixture.
     for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),

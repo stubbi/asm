@@ -12,6 +12,8 @@ import registry
 
 def attach(stage: Path, source: Path, publication: Path, release: dict, reader, verifier: Path, inspector: Path):
     registry.require(release is not None, "trusted distribution requires checked release artifacts")
+    page = stage / "index.html"
+    region = bootstrap.insertion_point(page.read_text(encoding="utf-8"))
     base = release["bundle_url"].rsplit("/", 1)[0]
     manifest_bytes = reader(base + "/release.json", 1 << 20)
     manifest = registry.strict_json(manifest_bytes)
@@ -54,11 +56,11 @@ def attach(stage: Path, source: Path, publication: Path, release: dict, reader, 
     for name, (data, mode) in registry.collect_files(publication).items():
         registry.write_atomic(stage / "trust/v1" / name, data)
     registry.write_atomic(stage / "install.sh", installer)
-    page = stage / "index.html"
-    content = page.read_text()
-    # Keep the current tested layout; alter only requirements for this profile.
-    content = content.replace("Install GitHub CLI at /usr/bin/gh.", "")
-    content = content.replace("Install GitHub CLI at /opt/homebrew/bin/gh. ", "")
-    content = content.replace('Use <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> before you start.',
-                              "The installer downloads and checks its verifier.")
-    page.write_text(content)
+    if region is not None:
+        before, content, after = region
+        # Alter only optional installer requirements for this profile.
+        content = content.replace("Install GitHub CLI at /usr/bin/gh.", "")
+        content = content.replace("Install GitHub CLI at /opt/homebrew/bin/gh. ", "")
+        content = content.replace('Use <a href="https://cli.github.com/">GitHub CLI 2.93.0 or later</a> before you start.',
+                                  "The installer downloads and checks its verifier.")
+        page.write_text(before + bootstrap.START + content + bootstrap.END + after, encoding="utf-8")

@@ -1,0 +1,6 @@
+JetBrains Mono Regular, version 2.304.
+Source: https://github.com/JetBrains/JetBrainsMono/tree/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9
+Retrieved: 2026-11-02.
+License: SIL Open Font License 1.1; see OFL.txt.
+The WOFF2 file is unmodified.
+SHA-256: a9cb1cd82332b23a47e3a1239d25d13c86d16c4220695e34b243effa999f45f2

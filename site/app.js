@@ -3,14 +3,99 @@
 // The index is generated from accepted records. The UI does not invent records,
 // infer verification from a checksum, or send searches to another service.
 (function () {
-  const evidenceLabels = {
-    metadata: "Metadata",
-    artifacts: "Artifacts",
-    provenance: "Provenance",
-    formal: "Formal proof",
-    agent_review: "Agent review"
-  };
   const evidenceStates = new Set(["validated", "pass", "fail", "not-run", "unsupported", "error"]);
+  const architectures = Object.freeze({ aarch64: "ARM64", x86_64: "x86-64", riscv64: "RISC-V64" });
+  const targetArchitectures = new Map([["aarch64-linux", "aarch64"], ["aarch64-macos", "aarch64"],
+    ["x86_64-linux", "x86_64"], ["riscv64-linux", "riscv64"],
+    ["aarch64-windows", "aarch64"], ["x86_64-windows", "x86_64"]]);
+  const maxReleaseArtifacts = 14; // The accepted registry release bound.
+
+  function architectureForTarget(target) {
+    return typeof target === "string" ? targetArchitectures.get(target) || null : null;
+  }
+
+  function architectureLabel(architecture) {
+    return typeof architecture === "string" && Object.hasOwn(architectures, architecture) ? architectures[architecture] : null;
+  }
+
+  function exactCount(value) {
+    if (!Number.isSafeInteger(value) || value < 0) return null;
+    return value === 0 ? "0" : value.toLocaleString("en-US");
+  }
+
+  function compactCount(value, options = {}) {
+    if (exactCount(value) === null || !options || typeof options !== "object" || Array.isArray(options)) return null;
+    const lowerBound = options.lowerBound === undefined ? false : options.lowerBound;
+    if (typeof lowerBound !== "boolean") return null;
+    if (value < 1000) return String(value);
+    const units = [1000n, 1000000n, 1000000000n, 1000000000000n, 1000000000000000n];
+    const suffixes = ["k", "M", "B", "T", "Q"];
+    const number = BigInt(value);
+    let index = 0;
+    while (index + 1 < units.length && number >= units[index + 1]) index += 1;
+    const precision = ((value >= 100000 && value < 1000000) ||
+      (value >= 100000000 && value < 1000000000)) ? 0 : 1;
+    const scale = precision === 0 ? 1n : 10n;
+    // Integer arithmetic keeps rounding stable through MAX_SAFE_INTEGER.
+    const rounded = (number * scale + (lowerBound ? 0n : units[index] / 2n)) / units[index];
+    const fraction = rounded % scale;
+    return `${rounded / scale}${fraction ? "." + fraction : ""}${suffixes[index]}`;
+  }
+
+  function packagePath(name, version) {
+    if (typeof name !== "string" || !/^[a-z][a-z0-9-]{0,38}\/[a-z][a-z0-9-]{0,63}$/.test(name) ||
+        name.split("/").some((part) => part.endsWith("-") || part.includes("--"))) return null;
+    if (version !== undefined && version !== null) {
+      if (typeof version !== "string" || !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) ||
+          version.split(".").some((part) => Number(part) > 2147483647)) return null;
+    }
+    return `packages/${name}/${version === undefined || version === null ? "" : version + "/"}`;
+  }
+
+  function parseSearchState(hash) {
+    if (typeof hash !== "string" || !hash.startsWith("#search?")) return null;
+    const invalid = () => { throw new RangeError("This search link contains unsupported filters. Clear the search to browse packages."); };
+    // Percent encoding can use nine bytes per accepted UTF-16 character.
+    if (hash.length > 8192) return invalid();
+    const parameters = new URLSearchParams(hash.slice(8));
+    for (const key of parameters.keys()) {
+      if (!["q", "kind", "architecture", "target", "all"].includes(key) || parameters.getAll(key).length !== 1) return invalid();
+    }
+    const query = parameters.get("q") || "";
+    const kind = parameters.get("kind") || "";
+    const architecture = parameters.get("architecture") || "";
+    const target = parameters.get("target") || "";
+    const all = parameters.get("all") || "";
+    if (query.length > 512 || target.length > 128 || !["", "source", "executable"].includes(kind) ||
+        (architecture && architectureLabel(architecture) === null) || !["", "1"].includes(all)) return invalid();
+    return { query, kind, architecture, target, all: all === "1" };
+  }
+
+  function searchStateHash(state) {
+    const parameters = new URLSearchParams();
+    if (state.query) parameters.set("q", state.query);
+    if (state.kind) parameters.set("kind", state.kind);
+    if (state.architecture) parameters.set("architecture", state.architecture);
+    if (state.target) parameters.set("target", state.target);
+    if (state.all) parameters.set("all", "1");
+    const hash = parameters.size ? `#search?${parameters}` : "";
+    if (hash) parseSearchState(hash);
+    return hash;
+  }
+
+  function readReturnState(hash) {
+    if (typeof hash !== "string" || hash.length > 16384) return null;
+    const parameters = new URLSearchParams(hash.slice(1));
+    if (parameters.getAll("from").length !== 1) return null;
+    try { return parseSearchState(parameters.get("from")); }
+    catch { return null; }
+  }
+
+  function matchesArtifact(kind, target, artifact, architecture = "") {
+    return Boolean(artifact && (!kind || ["source", "executable"].includes(kind)) &&
+      (!kind || artifact.kind === kind) && (!target || artifact.target === target) &&
+      (!architecture || (architectureLabel(architecture) !== null && architectureForTarget(artifact.target) === architecture)));
+  }
 
   function githubURL(value, releaseAsset = false) {
     if (typeof value !== "string") return null;
@@ -32,9 +117,9 @@
       throw new Error("Unsupported package index");
     }
     return data.packages.filter((pkg) => {
-      return pkg && typeof pkg.name === "string" && pkg.name.length <= 128 &&
+      return pkg && packagePath(pkg.name) !== null &&
         typeof pkg.summary === "string" && pkg.summary.length <= 2000 &&
-        (typeof pkg.latest === "string" || pkg.latest === null) && Array.isArray(pkg.targets) &&
+        (pkg.latest === null || (typeof pkg.latest === "string" && packagePath(pkg.name, pkg.latest) !== null)) && Array.isArray(pkg.targets) &&
         pkg.targets.every((target) => typeof target === "string" && target.length <= 128) &&
         Array.isArray(pkg.versions);
     }).map((pkg) => ({
@@ -44,19 +129,85 @@
     })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  function findPackages(packages, query, target) {
-    const terms = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
-    return packages.filter((pkg) => {
-      const text = [pkg.name, pkg.summary, ...pkg.targets].join(" ").toLowerCase();
-      return (!target || pkg.targets.includes(target)) && terms.every((term) => text.includes(term));
-    });
+  function latestActiveRelease(pkg) {
+    if (!pkg || typeof pkg.latest !== "string" || packagePath(pkg.name, pkg.latest) === null || !Array.isArray(pkg.versions)) return null;
+    return pkg.versions.find((version) => version && version.version === pkg.latest && !version.yanked) || null;
   }
 
-  function packageStatus(total, shown) {
-    if (total === 0) return "The registry has no published packages yet. You can inspect the source examples below.";
-    if (shown === 0) return "No packages match. Try another name or select All targets.";
+  function activeArtifacts(pkg) {
+    const release = latestActiveRelease(pkg);
+    return Array.isArray(release?.artifacts) ? release.artifacts.filter((artifact) =>
+      validArtifact(artifact) && artifact.target.length > 0 && artifact.target.length <= 128) : [];
+  }
+
+  function architectureGroups(packages) {
+    const members = new Map(Object.keys(architectures).map((key) => [key, new Set()]));
+    for (const pkg of packages) {
+      if (!pkg || packagePath(pkg.name) === null) continue;
+      for (const artifact of activeArtifacts(pkg)) {
+        const architecture = architectureForTarget(artifact.target);
+        if (architecture !== null) members.get(architecture).add(pkg.name);
+      }
+    }
+    return Object.keys(architectures).sort((first, second) => architectures[first].toLowerCase().localeCompare(architectures[second].toLowerCase()))
+      .filter((key) => members.get(key).size > 0)
+      .map((key) => ({ id: key, name: architectures[key], packages: [...members.get(key)].sort() }));
+  }
+
+  function searchResultMetadata(pkg, { kind = "", target = "", architecture = "" } = {}) {
+    const release = latestActiveRelease(pkg);
+    if (!release) return { version: null, license: null, formats: [] };
+    const artifacts = activeArtifacts(pkg).filter((artifact) => matchesArtifact(kind, target, artifact, architecture));
+    const formats = ["source", "executable"].map((kind) => ({ kind,
+      targets: [...new Set(artifacts.filter((artifact) => artifact.kind === kind).map((artifact) => artifact.target))].sort()
+    })).filter((format) => format.targets.length > 0);
+    return { version: release.version, license: licenseIdentifier(release.license), formats };
+  }
+
+  function catalogStats(packages) {
+    const names = new Set(), releases = new Set(), files = new Set(), targets = new Set();
+    for (const pkg of packages) {
+      if (!pkg || packagePath(pkg.name) === null) continue;
+      names.add(pkg.name);
+      if (!Array.isArray(pkg.versions)) continue;
+      for (const release of pkg.versions) {
+        if (!release || typeof release.version !== "string" || packagePath(pkg.name, release.version) === null) continue;
+        releases.add(`${pkg.name}@${release.version}`);
+        if (!Array.isArray(release.artifacts)) continue;
+        for (const artifact of release.artifacts) {
+          if (!validArtifact(artifact) || artifact.target.length === 0 || artifact.target.length > 128) continue;
+          files.add(JSON.stringify([pkg.name, release.version, artifact.kind, artifact.target]));
+          targets.add(artifact.target);
+        }
+      }
+    }
+    return { packages: names.size, releases: releases.size, files: files.size, targets: targets.size };
+  }
+
+  function findPackages(packages, query, target, kind = "", architecture = "") {
+    if ((kind && !["source", "executable"].includes(kind)) || (architecture && architectureLabel(architecture) === null)) return [];
+    const terms = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = packages.filter((pkg) => {
+      const artifacts = activeArtifacts(pkg).filter((artifact) => matchesArtifact(kind, target, artifact, architecture));
+      const aliases = artifacts.flatMap((artifact) => {
+        const key = architectureForTarget(artifact.target);
+        return key === null ? [] : [key, architectureLabel(key)];
+      });
+      const text = [pkg.name, pkg.summary, ...artifacts.map((artifact) => artifact.target), ...aliases].join(" ").toLowerCase();
+      const matchesSelection = (!kind && !target && !architecture) || artifacts.length > 0;
+      return matchesSelection && terms.every((term) => text.includes(term));
+    });
+    if (terms.length !== 1) return matches;
+    const rank = (pkg) => pkg.name.toLowerCase() === terms[0] ? 0
+      : pkg.name.split("/")[1]?.toLowerCase() === terms[0] ? 1 : 2;
+    return matches.sort((first, second) => rank(first) - rank(second));
+  }
+
+  function packageStatus(total, shown, { exact = false } = {}) {
+    if (total === 0) return "The registry has no published packages yet. Browse the source examples.";
+    if (shown === 0) return "No packages match. Try another name or clear the format, architecture, and target filters.";
     const noun = shown === 1 ? "package" : "packages";
-    return `${shown} ${noun} shown. Open a record to inspect its releases.`;
+    return `${exact ? exactCount(shown) : compactCount(shown)} ${noun} shown. Open a package to inspect its releases.`;
   }
 
   function formatBytes(bytes) {
@@ -164,10 +315,13 @@
     return value === "not-run" ? "Not run" : value.charAt(0).toUpperCase() + value.slice(1);
   }
 
+  function licenseIdentifier(value) {
+    return typeof value === "string" && /^[A-Za-z0-9+.-]{1,100}$/.test(value) ? value : null;
+  }
+
   function versionLicenseText(version) {
-    const value = version?.license;
-    return typeof value === "string" && /^[A-Za-z0-9+.-]{1,100}$/.test(value)
-      ? `License: ${value}` : "License: unavailable";
+    const value = licenseIdentifier(version?.license);
+    return value ? `License: ${value}` : "License: unavailable";
   }
 
   function formatDownloadCount(records, name) {
@@ -177,20 +331,200 @@
     const observed = date && !Number.isNaN(date.getTime())
       ? ` · observed ${date.toISOString().slice(0, 10)}`
       : " · observation time unavailable";
-    return `GitHub asset downloads: ${record.total.toLocaleString("en-US")}${observed}`;
+    return `GitHub asset downloads: ${compactCount(record.total)}${observed}`;
+  }
+
+  function discoveryDate(value) {
+    if (typeof value !== "string" || value.length > 40) return null;
+    const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|\+00:00)$/.exec(value);
+    if (!parts) return null;
+    const date = new Date(value);
+    const actual = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(),
+      date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()];
+    return Number.isFinite(date.getTime()) && actual.every((part, index) => part === Number(parts[index + 1])) ? date : null;
+  }
+
+  function formatDiscoveryDate(value, includeTime = false) {
+    const date = discoveryDate(value);
+    if (!date) return "Publication date unavailable";
+    const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+    if (!includeTime) return day;
+    const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" }).format(date);
+    return `${day} at ${time} UTC`;
+  }
+
+  function formatDiscoveryCount(row, { exact = false } = {}) {
+    if (!row || !Number.isSafeInteger(row.downloads_30d) || row.downloads_30d < 0 || typeof row.downloads_30d_exact !== "boolean") return "Downloads unavailable";
+    const count = exact ? exactCount(row.downloads_30d)
+      : compactCount(row.downloads_30d, { lowerBound: !row.downloads_30d_exact });
+    return `${row.downloads_30d_exact === false ? "≥ " : ""}${count} ${row.downloads_30d === 1 ? "download" : "downloads"}`;
+  }
+
+  function discoveryFeedDate(row, key) {
+    return key === "new" ? row?.first_published_at ?? null
+      : key === "updated" ? row?.last_published_at ?? null : null;
+  }
+
+  function discoveryFreshness(snapshot) {
+    if (!discoveryDate(snapshot?.observed_at)) return `${snapshot?.stale ? "Stale snapshot. " : ""}Observation time unavailable.${snapshot?.refresh_error ? " Latest refresh failed." : ""}`;
+    const prefix = snapshot.stale ? "Stale snapshot from" : "Observed";
+    return `${prefix} ${formatDiscoveryDate(snapshot.observed_at, true)}.${snapshot.refresh_error ? " Latest refresh failed." : ""}`;
+  }
+
+  function discoveryCoverageMessage(snapshot) {
+    if (!snapshot?.collection_started_at) return "Download collection has not started. Counts are unavailable.";
+    if (!snapshot.coverage.complete) return `Collecting downloads since ${formatDiscoveryDate(snapshot.collection_started_at)}. Coverage is incomplete for this window.`;
+    return `Window ending ${formatDiscoveryDate(snapshot.window.end, true)}.`;
+  }
+
+  function discoveryEmptyMessage(snapshot, key) {
+    if (!snapshot) return "Discovery data is unavailable. Open the complete list.";
+    const active = snapshot.packages.filter((row) => row.targets.length > 0);
+    if (!active.length) return "No active packages are available.";
+    if (key === "popular") {
+      if (!snapshot.collection_started_at) return "Download counts are unavailable. Collection has not started.";
+      if (active.some((row) => row.downloads_30d === null)) return "Download observations are unavailable for this window.";
+      if (!snapshot.coverage.complete && active.every((row) => row.downloads_30d === 0)) {
+        return `Collecting downloads since ${formatDiscoveryDate(snapshot.collection_started_at)}. No downloads were recorded in the available part of this window.`;
+      }
+      if (active.some((row) => !row.downloads_30d_exact)) return "Download observations are incomplete for this window.";
+      if (active.every((row) => row.downloads_30d === 0)) return "No downloads were observed in this window.";
+      return "No ranked packages are listed in this snapshot.";
+    }
+    if (key === "updated") {
+      if (active.every((row) => row.last_published_at === null)) return "Latest GitHub release dates are unavailable.";
+      return "No updated packages are listed in this snapshot.";
+    }
+    if (active.every((row) => row.first_published_at === null)) return "First GitHub release dates are unavailable.";
+    return "No new packages are listed in this snapshot.";
+  }
+
+  function normalizeDiscovery(data, catalog, now = Date.now()) {
+    const require = (condition) => { if (!condition) throw new RangeError("The discovery snapshot is invalid or does not match the package catalog."); };
+    const maxRows = 10000;
+    const clockTolerance = 5 * 60 * 1000;
+    require(Number.isFinite(now));
+    require(data && data.schema === 1 && data.policy === "asm-deliveries-v1" && data.source === "asm-delivery-events");
+    require(typeof data.stale === "boolean" && (data.refresh_error === null || (typeof data.refresh_error === "string" && data.refresh_error.length <= 2048)));
+    require(Array.isArray(catalog) && catalog.length <= maxRows && Array.isArray(data.packages) && data.packages.length <= maxRows);
+    const date = (value) => {
+      if (value === null) return null;
+      const parsed = discoveryDate(value);
+      require(parsed && parsed.getTime() <= now + clockTolerance);
+      return parsed.toISOString();
+    };
+    const observed = date(data.observed_at);
+    const publicationObserved = data.publication_observed_at === undefined ? observed : date(data.publication_observed_at);
+    require(data.window && data.window.days === 30 && data.window.basis === "rolling-observation");
+    const start = date(data.window.start), end = date(data.window.end);
+    require((start === null) === (end === null));
+    if (start !== null) {
+      require(Date.parse(end) - Date.parse(start) === 30 * 24 * 60 * 60 * 1000);
+      require(observed !== null && end === observed);
+    }
+    const collectionStarted = date(data.collection_started_at);
+    require(data.coverage && typeof data.coverage.complete === "boolean");
+    const coverageStart = date(data.coverage.start), coverageEnd = date(data.coverage.end);
+    require((coverageStart === null) === (coverageEnd === null));
+    if (coverageStart !== null) {
+      require(collectionStarted !== null && observed !== null && Date.parse(collectionStarted) <= Date.parse(coverageStart));
+      require(Date.parse(coverageStart) <= Date.parse(coverageEnd) && Date.parse(coverageEnd) <= Date.parse(observed));
+    }
+    if (data.coverage.complete) {
+      require(start !== null && coverageStart !== null && Date.parse(coverageStart) <= Date.parse(start) && Date.parse(coverageEnd) >= Date.parse(end));
+    }
+    const packages = new Map();
+    for (const pkg of catalog) {
+      require(pkg && packagePath(pkg.name) !== null && !packages.has(pkg.name));
+      packages.set(pkg.name, pkg);
+    }
+    const rows = new Map();
+    for (const item of data.packages) {
+      require(item && packages.has(item.name) && !rows.has(item.name) && item.publication_source === "github-release");
+      const first = date(item.first_published_at), last = date(item.last_published_at);
+      require(first === null || last === null || Date.parse(first) <= Date.parse(last));
+      require(publicationObserved === null || [first, last].every((value) => value === null || Date.parse(value) <= Date.parse(publicationObserved) + clockTolerance));
+      const count = item.downloads_30d, exact = item.downloads_30d_exact, coverage = item.downloads_30d_coverage;
+      require(typeof exact === "boolean" && ["complete", "lower-bound", "unavailable"].includes(coverage));
+      require(count === null || (Number.isSafeInteger(count) && count >= 0));
+      require(count === null ? coverage === "unavailable" && !exact : start !== null && (exact ? coverage === "complete" : coverage === "lower-bound"));
+      require(count === null || (collectionStarted !== null && coverageStart !== null));
+      require(!exact || data.coverage.complete);
+      const pkg = packages.get(item.name);
+      const release = Array.isArray(pkg.versions) ? pkg.versions.find((version) => version && version.version === pkg.latest && !version.yanked) : null;
+      const artifacts = release && Array.isArray(release.artifacts) ? release.artifacts : [];
+      const active = artifacts.length > 0 && artifacts.length <= maxReleaseArtifacts && artifacts.every((artifact) => validArtifact(artifact) && artifact.target.length > 0 && artifact.target.length <= 128);
+      rows.set(item.name, { name: item.name, first_published_at: first, last_published_at: last,
+        publication_source: item.publication_source, downloads_30d: count, downloads_30d_exact: exact,
+        downloads_30d_coverage: coverage, package: pkg,
+        targets: active ? [...new Set(artifacts.map((artifact) => artifact.target))].sort() : [] });
+    }
+    require(data.feeds && typeof data.feeds === "object");
+    const feeds = {};
+    for (const key of ["popular", "new", "updated"]) {
+      const names = data.feeds[key];
+      require(Array.isArray(names) && names.length <= maxRows && new Set(names).size === names.length);
+      feeds[key] = names.map((name) => {
+        const row = rows.get(name);
+        require(row && row.targets.length > 0);
+        require(key !== "popular" || row.downloads_30d > 0);
+        require(key !== "new" || row.first_published_at !== null);
+        require(key !== "updated" || row.last_published_at !== null);
+        return row;
+      });
+    }
+    const categories = data.categories === undefined ? [] : data.categories;
+    require(Array.isArray(categories) && categories.length <= 64);
+    const categoryIDs = new Set();
+    const normalizedCategories = categories.map((category) => {
+      require(category && typeof category.id === "string" && category.id.length <= 40 && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(category.id) && !categoryIDs.has(category.id));
+      require(typeof category.name === "string" && category.name.trim().length > 0 && category.name.length <= 80);
+      require(Array.isArray(category.packages) && category.packages.length <= maxRows && new Set(category.packages).size === category.packages.length && category.packages.every((name) => rows.has(name)));
+      categoryIDs.add(category.id);
+      return { id: category.id, name: category.name, packages: category.packages.filter((name) => rows.get(name).targets.length > 0) };
+    });
+    const stale = data.stale || (observed !== null && now - Date.parse(observed) > 24 * 60 * 60 * 1000);
+    return { schema: 1, source: data.source, policy: data.policy, observed_at: observed, publication_observed_at: publicationObserved, stale,
+      refresh_error: data.refresh_error, window: { days: 30, start, end, basis: data.window.basis },
+      collection_started_at: collectionStarted, coverage: { start: coverageStart, end: coverageEnd, complete: data.coverage.complete },
+      packages: [...rows.values()], feeds, categories: normalizedCategories };
+  }
+
+  function rejoinDiscovery(snapshot, catalog, now = Date.now()) {
+    if (!snapshot) return null;
+    try {
+      const feeds = Object.fromEntries(["popular", "new", "updated"].map((key) => [key, snapshot.feeds[key].map((row) => row.name)]));
+      return normalizeDiscovery({ ...snapshot, feeds }, catalog, now);
+    } catch { return null; }
   }
 
   // These pure functions are also used by the repository's Node checks.
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = { githubURL, normalizeIndex, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, packageAnchor, dependencyMetadata, mergeDependencyMetadata, mathSourcePath };
-  }
+  const publicAPI = { compactCount, exactCount, architectureForTarget, architectureLabel, architectureGroups,
+    githubURL, normalizeIndex, catalogStats, searchResultMetadata, findPackages, packageStatus, formatBytes, validArtifact,
+    evidenceText, versionLicenseText, formatDownloadCount, packagePath, parseSearchState, searchStateHash, readReturnState, matchesArtifact,
+    normalizeDiscovery, rejoinDiscovery, formatDiscoveryCount, formatDiscoveryDate, discoveryFreshness, discoveryEmptyMessage, discoveryCoverageMessage, discoveryFeedDate,
+    packageAnchor, dependencyMetadata, mergeDependencyMetadata, mathSourcePath };
+  if (typeof module !== "undefined" && module.exports) module.exports = publicAPI;
+  if (typeof window !== "undefined") window.AsmSite = Object.freeze(publicAPI);
   if (typeof document === "undefined") return;
+  document.documentElement.classList.add("js-enabled");
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  function showCount(node, value, suffix = "") {
+    const compact = compactCount(value), exact = exactCount(value);
+    if (compact === null) return;
+    const full = exact + suffix;
+    const visible = element("span", "", compact + suffix);
+    visible.setAttribute("aria-hidden", "true");
+    node.title = full;
+    node.setAttribute("aria-label", full);
+    node.replaceChildren(visible, element("span", "sr-only", full));
   }
 
   function link(text, href, className) {
@@ -208,12 +542,16 @@
       button.setAttribute("aria-disabled", "true");
       try {
         if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-        await navigator.clipboard.writeText(code.textContent.trim());
+        await navigator.clipboard.writeText(button.hasAttribute("data-copy-verbatim") ? code.textContent : code.textContent.trim());
         const previousContent = Array.from(button.childNodes).map((node) => node.cloneNode(true));
+        const previousLabel = button.getAttribute("aria-label");
         button.textContent = "Copied";
-        status.textContent = "Commands copied to clipboard.";
+        button.setAttribute("aria-label", "Copied");
+        status.textContent = "Copied to clipboard.";
         window.setTimeout(() => {
           button.replaceChildren(...previousContent);
+          if (previousLabel === null) button.removeAttribute("aria-label");
+          else button.setAttribute("aria-label", previousLabel);
           button.removeAttribute("aria-disabled");
         }, 1800);
       } catch {
@@ -223,269 +561,349 @@
         range.selectNodeContents(code);
         selection?.removeAllRanges();
         selection?.addRange(range);
-        status.textContent = "Commands selected. Use your keyboard’s copy command to copy them.";
+        status.textContent = "Text selected. Use your keyboard’s copy command to copy it.";
       }
   });
 
-  function commandBlock(id, title, text) {
-    const block = element("div", "command-block");
-    const heading = element("div", "command-block-heading");
-    heading.append(element("span", "", title));
-    const copy = element("button", "copy-button", "Copy");
-    copy.type = "button";
-    copy.dataset.copy = id;
-    copy.setAttribute("aria-label", `Copy ${title.toLowerCase()}`);
-    heading.append(copy);
-    const code = element("code", "", text);
-    code.id = id;
-    const pre = element("pre");
-    pre.append(code);
-    block.append(heading, pre);
-    return block;
-  }
+  document.querySelectorAll("[data-copy][hidden]").forEach((button) => { button.hidden = false; });
 
   const list = document.getElementById("package-list");
   const status = document.getElementById("registry-status");
   const search = document.getElementById("package-search");
   const targetSelect = document.getElementById("package-target");
-  if (!list || !status || !search || !targetSelect) return;
+  const kindSelect = document.getElementById("package-kind");
+  const architectureSelect = document.getElementById("package-architecture");
+  if (!list || !status || !search || !targetSelect || !kindSelect || !architectureSelect) return;
+
+  // Restore the search geometry before a navigation snapshot, without waiting for the index.
+  // The existing restore path applies filters and reports invalid links after the catalog loads.
+  try {
+    const pending = parseSearchState(window.location.hash);
+    if (pending) {
+      search.value = pending.query;
+      document.body.classList.toggle("has-search-results", Boolean(
+        pending.all || pending.query.trim() || pending.kind || pending.architecture || pending.target));
+    }
+  } catch (_) { /* The normal recovery path retains the invalid-link explanation. */ }
+
+  function setRegistryStatus(visibleText, exactText = visibleText) {
+    if (visibleText === exactText) {
+      status.textContent = visibleText;
+      status.removeAttribute("title");
+      status.removeAttribute("aria-label");
+    } else {
+      const visible = element("span", "", visibleText);
+      visible.setAttribute("aria-hidden", "true");
+      status.title = exactText;
+      status.setAttribute("aria-label", exactText);
+      status.replaceChildren(visible, element("span", "sr-only", exactText));
+    }
+  }
+
+  const searchForm = document.getElementById("registry-controls");
+  const searchSubmit = document.getElementById("search-submit");
+  const resetSearch = document.getElementById("reset-search");
+  const catalogHeading = document.getElementById("catalog-heading");
+  const fallback = document.getElementById("registry-fallback");
+  const discovery = document.getElementById("package-discovery");
+  const toolbar = document.getElementById("results-toolbar");
+  const browseAll = document.getElementById("browse-all");
+  const catalogNote = document.getElementById("catalog-note");
+  let showAll = false;
+  let compactSearch = false;
+
+  searchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (search.disabled) return;
+    showAll = true;
+    compactSearch = true;
+    writeSearchHistory(true);
+    renderPackages();
+    catalogHeading.focus();
+  });
+  resetSearch?.addEventListener("click", () => {
+    search.value = "";
+    targetSelect.value = "";
+    kindSelect.value = "";
+    architectureSelect.value = "";
+    showAll = false;
+    compactSearch = false;
+    writeSearchHistory(true);
+    renderPackages();
+    search.focus();
+  });
+
+  browseAll.addEventListener("click", () => {
+    search.value = "";
+    targetSelect.value = "";
+    kindSelect.value = "";
+    architectureSelect.value = "";
+    showAll = true;
+    compactSearch = true;
+    writeSearchHistory(true);
+    renderPackages();
+    catalogHeading.focus();
+  });
 
   let packages = [];
-  let downloadRecords = null;
-
-  function downloadCount(pkg) {
-    return formatDownloadCount(downloadRecords, pkg.name);
+  let catalogReady = false;
+  let discoverySnapshot = null;
+  let discoveryObservedAt = null;
+  let discoveryLoading = true;
+  let discoveryRenderPending = false;
+  let pendingRefresh = null;
+  let refreshRunning = false;
+  let lastRefreshStarted = 0;
+  function currentSearchState() {
+    return { query: search.value, kind: kindSelect.value, architecture: architectureSelect.value, target: targetSelect.value, all: showAll };
   }
 
-  function dependencyLink(name) {
-    const destination = packageAnchor(name);
-    if (destination && packages.some((pkg) => pkg.name === name)) {
-      const anchor = link(name, `#${destination}`, "dependency-link");
-      anchor.dataset.package = name;
-      return anchor;
-    }
-    const label = element("span", "dependency-name");
-    label.append(element("code", "", name), element("span", "dependency-unavailable", "Not in this catalog"));
-    return label;
+  function writeSearchHistory(push = false) {
+    const hash = searchStateHash(currentSearchState());
+    const address = window.location.pathname + window.location.search + hash;
+    if (window.location.hash === hash) return;
+    try { window.history[push ? "pushState" : "replaceState"](null, "", address); }
+    catch { /* Search remains available when the browser refuses history changes. */ }
   }
 
-  function renderFeatureMember(member) {
-    const item = element("li");
-    if (member.startsWith("dep:")) {
-      item.append(document.createTextNode("Enable dependency "), dependencyLink(member.slice(4)));
-    } else if (member.includes("/")) {
-      const separator = member.lastIndexOf("/");
-      item.append(document.createTextNode("Request "), element("code", "", member.slice(separator + 1)),
-        document.createTextNode(" from "), dependencyLink(member.slice(0, separator)));
-    } else {
-      item.append(document.createTextNode("Enable feature "), element("code", "", member));
-    }
-    return item;
-  }
-
-  function renderDependencies(version) {
-    const section = element("section", "dependency-section");
-    section.append(element("h4", "", "Declared dependencies"));
-    const sources = version.artifacts.filter((artifact) => artifact?.kind === "source" && validArtifact(artifact));
-    if (!sources.length) {
-      section.append(element("p", "dependency-note", "Dependency information unavailable. This release has no checked source archive."));
-      return section;
-    }
-    sources.forEach((artifact) => {
-      const target = element("div", "dependency-target");
-      target.append(element("p", "dependency-target-name", artifact.target));
-      const metadata = dependencyMetadata(artifact, version.evidence?.artifacts);
-      if (!metadata) {
-        target.append(element("p", "dependency-note", "Dependency information unavailable for this source archive."));
-        section.append(target);
-        return;
-      }
-      if (!metadata.dependencies.length) {
-        target.append(element("p", "dependency-note", "No package dependencies declared."));
-      } else {
-        const dependencies = element("ul", "dependency-list");
-        metadata.dependencies.forEach((dependency) => {
-          const item = element("li", "dependency-item");
-          const heading = element("div", "dependency-heading");
-          heading.append(dependencyLink(dependency.name), element("code", "dependency-requirement", dependency.requirement));
-          item.append(heading);
-          const conditions = [dependency.optional ? "Optional" : "Required",
-            dependency.default_features ? "Default features requested" : "Default features disabled"];
-          if (dependency.optional) {
-            const activatedBy = Object.entries(metadata.features).filter(([, members]) =>
-              members.some((member) => member === `dep:${dependency.name}` || member.startsWith(`${dependency.name}/`))).map(([name]) => name);
-            if (activatedBy.length) conditions.push(`Enabled by: ${activatedBy.join(", ")}`);
-          }
-          item.append(element("p", "dependency-policy", conditions.join(" · ")));
-          if (dependency.features.length) {
-            item.append(element("p", "dependency-policy", `Requested features: ${dependency.features.join(", ")}`));
-          }
-          dependencies.append(item);
-        });
-        target.append(dependencies);
-      }
-      const features = Object.entries(metadata.features);
-      if (features.length) {
-        const disclosure = element("details", "dependency-features");
-        disclosure.append(element("summary", "", "Feature options"));
-        const definitions = element("dl");
-        features.forEach(([name, members]) => {
-          const term = element("dt");
-          term.append(element("code", "", name));
-          if (name === "default") term.append(element("span", "dependency-policy", "Enabled unless disabled"));
-          const description = element("dd");
-          if (members.length) {
-            const list = element("ul");
-            members.forEach((member) => list.append(renderFeatureMember(member)));
-            description.append(list);
-          } else {
-            description.append(element("p", "dependency-note", "No additional package requirements."));
-          }
-          definitions.append(term, description);
-        });
-        disclosure.append(definitions);
-        target.append(disclosure);
-      }
-      section.append(target);
-    });
-    section.append(element("p", "dependency-scope", "These are direct requirements from asm.toml. They do not identify a resolved dependency graph."));
-    return section;
-  }
-
-  function renderVersion(version, latest) {
-    const section = element("details", "version-record");
-    section.dataset.version = version.version;
-    section.open = version.version === latest;
-    const summary = element("summary", "", `Version ${version.version}`);
-    if (version.yanked) summary.append(element("span", "release-state", "Yanked"));
-    section.append(summary, element("p", "", versionLicenseText(version)));
-
-    const artifacts = version.artifacts.filter(validArtifact);
-    if (artifacts.length) {
-      const artifactList = element("ul", "artifact-list");
-      artifacts.forEach((artifact) => {
-        const item = element("li", "artifact");
-        const title = element("p", "artifact-title");
-        const label = artifact.kind === "executable" ? "Executable" : "Source archive";
-        if (version.evidence?.artifacts === "validated") {
-          title.append(link(label, githubURL(artifact.url, true)));
-        } else {
-          title.append(element("span", "", label));
-        }
-        title.append(element("span", "", `${artifact.target} · ${formatBytes(artifact.bytes)}`));
-        item.append(title, element("code", "artifact-digest", `SHA-256 ${artifact.sha256}`));
-        artifactList.append(item);
-      });
-      section.append(artifactList);
-      if (version.evidence?.artifacts !== "validated") {
-        section.append(element("p", "registry-fallback", "The site has not checked the published artifact bytes. Read the index for their declared URLs."));
-      }
-    } else {
-      section.append(element("p", "registry-fallback", "No supported artifact links are present in this record."));
-    }
-
-    section.append(renderDependencies(version));
-
-    const evidence = element("ul", "evidence-record");
-    Object.entries(evidenceLabels).forEach(([key, label]) => {
-      evidence.append(element("li", "", `${label}: ${evidenceText(version.evidence?.[key])}`));
-    });
-    section.append(evidence);
-    const commit = version.source?.commit;
-    if (typeof commit === "string" && /^[a-f0-9]{40}$/.test(commit)) {
-      section.append(element("p", "artifact-digest", `Source commit ${commit}`));
-    }
-    return section;
+  function packageLink(pkg, version) {
+    const path = packagePath(pkg.name, version);
+    const from = searchStateHash(currentSearchState());
+    return path + (from ? `#from=${encodeURIComponent(from)}` : "");
   }
 
   function renderPackage(pkg) {
-    const record = element("details", "package-record");
-    const destination = packageAnchor(pkg.name);
-    if (destination) record.id = destination;
-    const summary = element("summary");
-    summary.append(element("span", "package-name", pkg.name));
-    summary.append(element("span", "package-version", pkg.latest || "No active release"));
-    summary.append(element("span", "package-description", pkg.summary));
-    summary.append(element("span", "package-targets", pkg.targets.join(" · ")));
-    record.append(summary);
-
-    const details = element("div", "package-details");
-    const meta = element("div", "package-meta");
-    const source = githubURL(pkg.repository);
-    if (source) meta.append(link("Source repository ↗", source));
-    details.append(meta);
-    pkg.versions.forEach((version) => details.append(renderVersion(version, pkg.latest)));
-    details.append(element("p", "package-downloads", downloadCount(pkg)));
-    record.append(details);
+    const metadata = searchResultMetadata(pkg,
+      { kind: kindSelect.value, target: targetSelect.value, architecture: architectureSelect.value });
+    const record = element("article", "package-result");
+    const heading = element("div", "package-result-heading");
+    const title = element("h3");
+    title.append(link(pkg.name, packageLink(pkg), "package-name"));
+    heading.append(title);
+    if (metadata.version) heading.append(link(metadata.version, packageLink(pkg, metadata.version), "package-version"));
+    else heading.append(element("span", "package-version", "No active release"));
+    record.append(heading, element("p", "package-description", pkg.summary));
+    if (metadata.version) {
+      const facts = element("dl", "package-result-meta");
+      const formatLabel = (kind) => kind === "source" ? "Source" : "Executable";
+      for (const [label, value] of [["License", metadata.license || "Unavailable"],
+        ["Formats", metadata.formats.map((format) => formatLabel(format.kind)).join(" · ") || "Unavailable"]]) {
+        const fact = element("div");
+        fact.append(element("dt", "", label), element("dd", "", value));
+        facts.append(fact);
+      }
+      record.append(facts);
+      if (metadata.formats.length) {
+        const targets = element("dl", "package-result-targets");
+        metadata.formats.forEach((format) => {
+          const group = element("div", "package-result-target-group");
+          const values = element("dd");
+          const items = element("ul", "package-result-target-list");
+          format.targets.forEach((target) => {
+            const item = element("li", "package-result-target");
+            item.append(element("code", "", target));
+            items.append(item);
+          });
+          values.append(items);
+          group.append(element("dt", "package-result-target-label", `${formatLabel(format.kind)} targets`), values);
+          targets.append(group);
+        });
+        record.append(targets);
+      } else record.append(element("p", "package-result-note", "Artifact targets are unavailable for this release."));
+    }
     return record;
   }
 
-  function renderPackages() {
-    const filtered = findPackages(packages, search.value, targetSelect.value);
-    list.replaceChildren(...filtered.map(renderPackage));
-    status.textContent = packageStatus(packages.length, filtered.length);
+  function discoveryHasFocus() {
+    return discovery.contains(document.activeElement);
   }
 
-  function showPackageFromHash() {
-    const pkg = packages.find((entry) => packageAnchor(entry.name) && window.location.hash === `#${packageAnchor(entry.name)}`);
-    if (!pkg) return;
-    search.value = "";
-    targetSelect.value = "";
-    renderPackages();
-    const record = document.getElementById(packageAnchor(pkg.name));
-    if (!record) return;
-    record.open = true;
-    record.querySelector("summary").focus({ preventScroll: true });
-    record.scrollIntoView({ block: "start" });
-  }
-
-  list.addEventListener("click", (event) => {
-    const anchor = event.target.closest?.("a[data-package]");
-    if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const origin = anchor.closest(".package-record");
-    if (origin?.id && window.location.hash !== `#${origin.id}`) window.history.replaceState(null, "", `#${origin.id}`);
-    if (window.location.hash === anchor.hash) {
-      event.preventDefault();
-      showPackageFromHash();
+  function discoveryGroup(key, title, caption) {
+    const group = element("section", "discovery-group");
+    group.dataset.discoveryFeed = key;
+    const heading = element("div", "discovery-group-heading");
+    const label = element("h3", "", title);
+    label.id = `browse-${key}`;
+    group.setAttribute("aria-labelledby", label.id);
+    const more = link("View all", `browse/${key}/`, "discovery-more");
+    more.setAttribute("aria-label", `View all ${key === "updated" ? "recently updated" : key === "popular" ? "most downloaded" : "new"} packages`);
+    heading.append(label, more);
+    const header = element("div", "discovery-group-header");
+    header.append(heading, element("p", "discovery-group-caption", caption));
+    group.append(header);
+    const rows = discoverySnapshot?.feeds[key] || [];
+    if (rows.length) {
+      const items = element("ul", "discovery-items");
+      rows.slice(0, 5).forEach((row) => {
+        const item = element("li");
+        const anchor = link(undefined, packageLink(row.package), "discovery-item");
+        const signal = element("span", "discovery-signal");
+        if (key === "popular") {
+          const fullCount = formatDiscoveryCount(row, { exact: true });
+          const visible = element("span", "", formatDiscoveryCount(row).replace(/ downloads?$/, ""));
+          visible.setAttribute("aria-hidden", "true");
+          signal.title = fullCount;
+          signal.append(visible, element("span", "sr-only", fullCount));
+        }
+        else {
+          const date = discoveryFeedDate(row, key);
+          const time = element("time", "", formatDiscoveryDate(date));
+          time.dateTime = date;
+          signal.append(time);
+        }
+        const targets = element("span", "discovery-targets");
+        row.targets.forEach((target, index) => {
+          if (index) targets.append(" · ");
+          targets.append(element("span", "discovery-target", target));
+        });
+        anchor.append(element("span", "discovery-name", row.name), signal,
+          element("span", "discovery-summary", row.package.summary), targets);
+        item.append(anchor);
+        items.append(item);
+      });
+      group.append(items);
+    } else {
+      const message = discoveryLoading ? "Loading discovery data…" : discoveryEmptyMessage(discoverySnapshot, key);
+      group.append(element("p", "discovery-group-note", message));
     }
-  });
-  window.addEventListener("hashchange", showPackageFromHash);
-
-  function renderCliDownload() {
-    const pkg = packages.find((entry) => entry.name === "stubbi/asm");
-    const version = pkg?.versions.find((entry) => entry.version === pkg.latest && !entry.yanked && entry.evidence?.artifacts === "validated");
-    const artifacts = version?.artifacts.filter((artifact) => validArtifact(artifact) && artifact.kind === "executable") || [];
-    const panel = document.getElementById("cli-download");
-    if (!panel || !artifacts.length) return;
-    panel.append(element("h3", "", `Asm ${version.version} release files`));
-    panel.append(element("p", "", "Use the installer above to check the signed release and install Asm. These links provide the raw artifacts for inspection."));
-    panel.append(link("Install Asm ↑", "#start", "text-link"));
-    artifacts.forEach((artifact) => {
-      panel.append(link(`Raw executable for ${artifact.target} ↗`, githubURL(artifact.url, true), "text-link"));
-      panel.append(element("p", "checksum-label", `${formatBytes(artifact.bytes)} · SHA-256`));
-      panel.append(element("code", "", artifact.sha256));
-    });
-    panel.append(element("p", "", "Release records above list the checks performed on each artifact."));
-    panel.hidden = false;
+    if (key === "popular" && rows.length && discoverySnapshot) {
+      group.append(element("p", "discovery-group-note", discoveryCoverageMessage(discoverySnapshot)));
+    }
+    return group;
   }
 
-  function renderMathGuide() {
-    const pkg = packages.find((entry) => entry.name === "stubbi/math");
-    const version = pkg?.versions.find((entry) => entry.version === pkg.latest && !entry.yanked && entry.evidence?.artifacts === "validated");
-    if (!version || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version.version)) return;
-    if (!version.artifacts.some((item) => validArtifact(item) && item.target === "x86_64-linux" && item.kind === "source")) return;
-    const panel = document.getElementById("math-guide");
-    if (!panel) return;
-    panel.append(element("h3", "", "Use the x86-64 math package"));
-    panel.append(element("p", "", "This example requires Linux x86-64. From your project directory, add an exact version. Asm records it in asm.lock and checks the extracted source files."));
-    panel.append(commandBlock("math-add-commands", "Add the math package", `asm add stubbi/math@${version.version} --target x86_64-linux\nasm lock`));
-    panel.append(element("p", "", "Add this include at file scope. Call asm_u64_min from your function with the two unsigned values in rdi and rsi."));
-    panel.append(commandBlock("math-include-command", "Include the routine", `.include "${mathSourcePath(version.version)}"`));
-    panel.append(element("p", "", "The routine returns the smaller value in rax. Read its contract for register and memory requirements."));
-    panel.append(commandBlock("math-build-command", "Build with the lock file", "asm build --locked"));
-    panel.append(element("p", "", "Commit asm.lock with your project. Use asm sync to restore its exact packages on another machine with the same target."));
-    panel.append(link("Read the routine and tests ↗", "https://github.com/stubbi/asm/tree/main/examples/math", "text-link"));
-    panel.hidden = false;
+  function discoveryDirectory(key, title, destination, moreLabel) {
+    const navigation = element("nav", "discovery-directory");
+    const label = element("h3", "", title);
+    label.id = `browse-${key}-heading`;
+    navigation.setAttribute("aria-label", `Browse packages by ${key}`);
+    navigation.setAttribute("aria-labelledby", label.id);
+    const header = element("div", "discovery-directory-header");
+    const more = link("View all", destination, "discovery-more");
+    more.setAttribute("aria-label", moreLabel);
+    header.append(label, more);
+    navigation.append(header);
+    return navigation;
+  }
+
+  function discoveryDirectoryItem(name, destination, total, canonical = "") {
+    const item = element("li");
+    const anchor = link(undefined, destination, "discovery-directory-link");
+    const label = element("span", "discovery-directory-name", name);
+    if (canonical) label.append(" ", element("code", "", canonical));
+    const count = element("span", "discovery-directory-count");
+    showCount(count, total, total === 1 ? " package" : " packages");
+    const arrow = element("span", "discovery-directory-arrow", "→");
+    arrow.setAttribute("aria-hidden", "true");
+    anchor.append(label, count, arrow);
+    item.append(anchor);
+    return item;
+  }
+
+  function renderDiscovery() {
+    if (discoveryHasFocus()) { discoveryRenderPending = true; return; }
+    discoveryRenderPending = false;
+    const detailsOpen = Boolean(discovery.querySelector(".discovery-data")?.open);
+    const nodes = [];
+    if (!discoveryLoading && (!discoverySnapshot || !discoverySnapshot.observed_at || discoverySnapshot.stale || discoverySnapshot.refresh_error)) {
+      let state = !discoverySnapshot ? "Discovery snapshot unavailable."
+        : !discoverySnapshot.observed_at ? "Download observations are unavailable."
+        : discoverySnapshot.stale ? "Download observations are stale." : "";
+      if (discoverySnapshot?.refresh_error) state += (state ? " " : "") + "The latest download refresh failed.";
+      nodes.push(element("p", "discovery-state", state));
+    }
+    const categories = discoverySnapshot?.categories.filter((category) => category.packages.length > 0) || [];
+    const groups = element("div", "discovery-groups");
+    groups.append(discoveryGroup("new", "New packages", "First GitHub release"),
+      discoveryGroup("popular", "Most downloaded", "Last 30 days"),
+      discoveryGroup("updated", "Recently updated", "Latest GitHub release"));
+    nodes.push(groups);
+    const directories = element("div", "discovery-directories");
+    const purpose = discoveryDirectory("purpose", "Browse by purpose", "browse/categories/", "View all purpose categories");
+    if (categories.length) {
+      const items = element("ul", "discovery-directory-items");
+      categories.forEach((category) => items.append(discoveryDirectoryItem(category.name, `browse/categories/${category.id}/`, category.packages.length)));
+      purpose.append(items);
+    } else purpose.append(element("p", "discovery-directory-note", discoveryLoading ? "Loading purpose categories…" : "Purpose categories are unavailable in this snapshot."));
+    const architecture = discoveryDirectory("architecture", "Browse by architecture", "browse/architectures/", "View all architectures");
+    const architectures = architectureGroups(packages);
+    if (architectures.length) {
+      const items = element("ul", "discovery-directory-items");
+      architectures.forEach((group) => items.append(discoveryDirectoryItem(group.name, `browse/architectures/${group.id}/`, group.packages.length, group.id)));
+      architecture.append(items);
+    } else architecture.append(element("p", "discovery-directory-note", "Open all architectures to browse declared package targets."));
+    directories.append(purpose, architecture);
+    nodes.push(directories);
+    const footer = element("div", "discovery-footer");
+    const freshness = discoverySnapshot ? discoveryFreshness(discoverySnapshot)
+      : discoveryLoading ? "Loading discovery data…" : "Discovery snapshot unavailable.";
+    const data = element("details", "discovery-data");
+    data.open = detailsOpen;
+    data.append(element("summary", "", "Data and coverage"), element("p", "discovery-freshness", freshness),
+      link("How counts work", "discovery/", "discovery-methods"));
+    footer.append(data, link("More ways to explore", "explore/", "discovery-methods"));
+    nodes.push(footer);
+    discovery.replaceChildren(...nodes);
+  }
+
+  function renderPackages() {
+    const filtered = findPackages(packages, search.value, targetSelect.value, kindSelect.value, architectureSelect.value);
+    const hasFilters = Boolean(search.value.trim() || targetSelect.value || kindSelect.value || architectureSelect.value);
+    const showResults = showAll || hasFilters;
+    document.body.classList.toggle("has-search-results", showResults && compactSearch);
+    list.replaceChildren(...(showResults ? filtered.map(renderPackage) : []));
+    list.hidden = !showResults;
+    discovery.hidden = showResults;
+    toolbar.hidden = !showResults;
+    catalogNote.hidden = !showResults;
+    browseAll.hidden = !packages.length || (showResults && !hasFilters);
+    const registryStatus = (exact) => showResults || !packages.length
+      ? packageStatus(packages.length, filtered.length, { exact })
+      : `${exact ? exactCount(packages.length) : compactCount(packages.length)} ${packages.length === 1 ? "package" : "packages"} in the registry. Search or explore the discovery lists.`;
+    setRegistryStatus(registryStatus(false), registryStatus(true));
+    status.classList.toggle("sr-only", !showResults && packages.length > 0);
+    catalogHeading.textContent = hasFilters ? "Search results" : showResults ? "All packages" : "Browse packages";
+    if (resetSearch) resetSearch.hidden = !showResults;
+    if (fallback) fallback.hidden = packages.length > 0;
+  }
+
+  function updateSearch(event) {
+    if (event?.type === "change") compactSearch = true;
+    writeSearchHistory(event?.type === "change");
+    renderPackages();
+  }
+
+  function restoreSearch() {
+    let state;
+    try { state = parseSearchState(window.location.hash); }
+    catch (error) {
+      search.value = "";
+      kindSelect.value = "";
+      architectureSelect.value = "";
+      targetSelect.value = "";
+      showAll = false;
+      compactSearch = false;
+      renderPackages();
+      status.classList.remove("sr-only");
+      setRegistryStatus(error.message);
+      resetSearch.hidden = false;
+      return;
+    }
+    search.value = state?.query || "";
+    kindSelect.value = state?.kind || "";
+    updateArchitectureOptions(state?.architecture || "");
+    const target = state?.target || "";
+    targetSelect.querySelectorAll("[data-unavailable-target]").forEach((option) => option.remove());
+    if (target && !Array.from(targetSelect.options).some((option) => option.value === target)) {
+      const option = element("option", "", `Unavailable target: ${target}`);
+      option.value = target;
+      option.dataset.unavailableTarget = "true";
+      targetSelect.append(option);
+    }
+    targetSelect.value = target;
+    showAll = Boolean(state?.all);
+    compactSearch = Boolean(state);
+    renderPackages();
   }
 
   async function getJSON(path, limit = 0) {
@@ -505,53 +923,131 @@
     }
   }
 
-  async function loadRegistry() {
-    status.textContent = "Loading package records…";
-    const declarations = getJSON("registry/v1/dependencies.json", 4 * 1024 * 1024).catch(() => null);
-    try {
-      packages = mergeDependencyMetadata(normalizeIndex(await getJSON("registry/v1/index.json")), null);
-      const targets = [...new Set(packages.flatMap((pkg) => pkg.targets))].sort();
-      targets.forEach((target) => {
-        const option = element("option", "", target);
-        option.value = target;
-        targetSelect.append(option);
-      });
-      document.getElementById("registry-controls").hidden = false;
-      search.addEventListener("input", renderPackages);
-      targetSelect.addEventListener("change", renderPackages);
-      renderPackages();
-      showPackageFromHash();
-      renderCliDownload();
-      renderMathGuide();
-      try {
-        packages = mergeDependencyMetadata(packages, await declarations);
-        list.querySelectorAll(".package-record").forEach((record) => {
-          const pkg = packages.find((entry) => entry.name === record.querySelector(".package-name").textContent);
-          record.querySelectorAll(".version-record").forEach((section) => {
-            const version = pkg.versions.find((entry) => entry.version === section.dataset.version);
-            section.querySelector(".dependency-section").replaceWith(renderDependencies(version));
-          });
-        });
-      } catch {
-        // Optional declarations must not make the package catalog unavailable.
-      }
-      try {
-        const records = await getJSON("registry/v1/downloads.json");
-        if (records?.schema === 1 && records.source === "github-release-assets") {
-          downloadRecords = records;
-          // Preserve opened records and focus when the optional counter arrives.
-          list.querySelectorAll(".package-record").forEach((record) => {
-            const name = record.querySelector(".package-name").textContent;
-            const pkg = packages.find((entry) => entry.name === name);
-            record.querySelector(".package-downloads").textContent = downloadCount(pkg);
-          });
-        }
-      } catch {
-        // Counts are optional. A missing counter is not a zero.
-      }
-    } catch {
-      status.textContent = "The package index could not be loaded. Open the index link or browse the source below.";
+  function updateArchitectureOptions(selected) {
+    const groups = architectureGroups(packages);
+    const options = [element("option", "", "All architectures")];
+    options[0].value = "";
+    groups.forEach((group) => {
+      const option = element("option", "", `${group.name} (${group.id})`);
+      option.value = group.id;
+      options.push(option);
+    });
+    if (selected && !groups.some((group) => group.id === selected)) {
+      const option = element("option", "", `Unavailable architecture: ${architectureLabel(selected)} (${selected})`);
+      option.value = selected;
+      options.push(option);
     }
+    architectureSelect.replaceChildren(...options);
+    architectureSelect.value = selected;
   }
+
+  function updateCatalog(next) {
+    const initial = !catalogReady;
+    const selectedTarget = targetSelect.value;
+    const selectedArchitecture = architectureSelect.value;
+    packages = next;
+    const stats = catalogStats(packages);
+    document.querySelectorAll("dd[data-catalog-stat]").forEach((node) => {
+      const value = stats[node.dataset.catalogStat];
+      showCount(node, value);
+    });
+    updateArchitectureOptions(selectedArchitecture);
+    const targets = [...new Set(packages.flatMap(activeArtifacts).map((artifact) => artifact.target))].sort();
+    const options = [element("option", "", "All targets")];
+    options[0].value = "";
+    targets.forEach((target) => {
+      const option = element("option", "", target);
+      option.value = target;
+      options.push(option);
+    });
+    if (selectedTarget && !targets.includes(selectedTarget)) {
+      const option = element("option", "", `Unavailable target: ${selectedTarget}`);
+      option.value = selectedTarget;
+      option.dataset.unavailableTarget = "true";
+      options.push(option);
+    }
+    targetSelect.replaceChildren(...options);
+    targetSelect.value = selectedTarget;
+    catalogReady = true;
+    if (initial) {
+      search.disabled = false;
+      targetSelect.disabled = false;
+      kindSelect.disabled = false;
+      architectureSelect.disabled = false;
+      if (searchSubmit) searchSubmit.disabled = false;
+      search.addEventListener("input", updateSearch);
+      targetSelect.addEventListener("change", updateSearch);
+      kindSelect.addEventListener("change", updateSearch);
+      architectureSelect.addEventListener("change", updateSearch);
+      restoreSearch();
+      window.addEventListener("popstate", restoreSearch);
+      window.addEventListener("hashchange", restoreSearch);
+    } else renderPackages();
+  }
+
+  function refreshHasFocus() {
+    return discoveryHasFocus() || list.contains(document.activeElement) || toolbar.contains(document.activeElement);
+  }
+
+  function applyRefresh(result) {
+    if (result.catalog.status === "fulfilled" && !result.initial) {
+      updateCatalog(result.catalog.value);
+      discoverySnapshot = rejoinDiscovery(discoverySnapshot, packages);
+    }
+    if (!catalogReady) {
+      document.body.classList.remove("has-search-results");
+      status.classList.remove("sr-only");
+      setRegistryStatus("The package index could not be loaded. Browse all packages or open the index link below.");
+      if (fallback) fallback.hidden = false;
+    }
+    let failed = result.catalog.status === "rejected" || result.discovery.status === "rejected";
+    if (catalogReady && result.discovery.status === "fulfilled") {
+      try {
+        const next = normalizeDiscovery(result.discovery.value, packages);
+        if (discoveryObservedAt && (!next.observed_at || Date.parse(next.observed_at) < Date.parse(discoveryObservedAt))) {
+          throw new RangeError("Discovery observations cannot move backwards.");
+        }
+        discoverySnapshot = next;
+        discoveryObservedAt = next.observed_at;
+      } catch { failed = true; }
+    }
+    if (failed && discoverySnapshot) {
+      discoverySnapshot = { ...discoverySnapshot, stale: true, refresh_error: "The latest refresh failed." };
+    }
+    discoveryLoading = false;
+    renderDiscovery();
+  }
+
+  async function refreshData(initial = false) {
+    if (refreshRunning || (!initial && document.hidden)) return;
+    refreshRunning = true;
+    lastRefreshStarted = Date.now();
+    if (initial) setRegistryStatus("Loading package records…");
+    const catalogRequest = getJSON("registry/v1/index.json").then(normalizeIndex).then((next) => {
+      if (initial) { updateCatalog(next); renderDiscovery(); }
+      return next;
+    });
+    const discoveryRequest = getJSON("registry/v1/discovery.json");
+    const [catalog, snapshot] = await Promise.allSettled([catalogRequest, discoveryRequest]);
+    refreshRunning = false;
+    const result = { catalog, discovery: snapshot, initial };
+    if (!initial && refreshHasFocus()) pendingRefresh = result;
+    else applyRefresh(result);
+  }
+
+  document.addEventListener("focusout", () => {
+    queueMicrotask(() => {
+      if (pendingRefresh && !refreshHasFocus()) {
+        const result = pendingRefresh;
+        pendingRefresh = null;
+        applyRefresh(result);
+      } else if (discoveryRenderPending && !discoveryHasFocus()) renderDiscovery();
+    });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Date.now() - lastRefreshStarted >= 60000) refreshData();
+  });
+  window.setInterval(() => { if (!document.hidden) refreshData(); }, 60000);
+  function loadRegistry() { return refreshData(true); }
   loadRegistry();
 })();

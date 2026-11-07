@@ -1,0 +1,618 @@
+"""Package pages retain exact release facts and treat source text as untrusted.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+from copy import deepcopy
+from html.parser import HTMLParser
+import importlib
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from urllib.parse import urljoin, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import registry
+from test_count_format import accessible_text
+from test_site import HierarchyParser
+
+
+class Page(HTMLParser):
+    def __init__(self, content):
+        super().__init__()
+        self.links, self.scripts, self.assets, self.ids, self.text = [], [], [], [], []
+        self.forms, self.script_attributes = [], []
+        self.feed(content)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "a": self.links.append(attrs.get("href", ""))
+        if tag == "script": self.scripts.append(attrs.get("src", ""))
+        if tag == "script": self.script_attributes.append(attrs)
+        if tag == "form": self.forms.append(attrs)
+        if tag in ("script", "img"): self.assets.append(attrs.get("src", ""))
+        if tag == "link" and attrs.get("rel") in ("stylesheet", "icon"): self.assets.append(attrs.get("href", ""))
+        if "id" in attrs: self.ids.append(attrs["id"])
+
+    def handle_data(self, data): self.text.append(data)
+
+
+class PackagePageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name) / "repo"
+        self.stage = Path(self.temp.name) / "stage"
+        self.repo.mkdir(); self.stage.mkdir()
+        self.git("init", "-q")
+        self.git("remote", "add", "origin", "https://github.com/stubbi/asm")
+        self.readme = self.repo / "examples/math/README.md"
+        self.readme.parent.mkdir(parents=True)
+        self.readme.write_text("# Old guide\n\nOld exact body.\n\n[Routine](src/min.s)\n")
+        (self.readme.parent / "LICENSE").write_text("MIT fixture license\n")
+        (self.repo / "examples/hello").mkdir()
+        (self.repo / "examples/hello/README.md").write_text("Nested README must not be guessed.\n")
+        self.old_commit = self.commit()
+        self.readme.write_text("# New guide\n\nNew exact body.\n")
+        self.new_commit = self.commit()
+        self.records = [self.record("0.2.0", self.old_commit, "Old summary", "MIT", "x86_64-linux"),
+                        self.record("0.10.0", self.new_commit, "New summary", "AGPL-3.0-or-later", "aarch64-macos")]
+        (self.stage / "index.html").write_text((ROOT / "site/index.html").read_text())
+        self.counts = {"schema": 1, "source": "github-release-assets", "observed_at": "2026-11-07T00:00:00Z",
+                       "packages": {"stubbi/math": {"total": 0, "versions": {"0.2.0": 0, "0.10.0": None}}}}
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True).stdout.decode().strip()
+
+    def commit(self):
+        self.git("add", ".")
+        self.git("-c", "user.name=Package page test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Save fixture")
+        return self.git("rev-parse", "HEAD")
+
+    def record(self, version, commit, summary, license_id, target, *, name="stubbi/math", source_path="examples/math"):
+        return {"schema": 1, "name": name, "version": version, "summary": summary, "license": license_id,
+                "source": {"repository": "https://github.com/stubbi/asm", "commit": commit, "path": source_path},
+                "yanked": False, "artifacts": [{"kind": "source", "target": target, "sha256": "b" * 64,
+                "bytes": 100, "url": f"https://github.com/stubbi/asm/releases/download/packages-v{version}/{name.split('/')[1]}-{version}-{target}.tar.gz"}]}
+
+    def generate(self, checked=None, dependency_metadata=None):
+        self.assertTrue((ROOT / "tools/package_pages.py").exists(), "Package page generator is not implemented")
+        self.module = importlib.import_module("package_pages")
+        _, self.index = registry.make_indexes(self.records, checked or set())
+        options = {} if dependency_metadata is None else {"dependency_metadata": dependency_metadata}
+        return self.module.write_package_pages(self.repo, self.stage, self.records, self.index, self.counts, **options)
+
+    def declarations(self, record=None, *, dependencies=None, features=None):
+        record = record or self.records[0]
+        return {"schema": 1, "sources": [{"name": record["name"], "version": record["version"],
+            "target": record["artifacts"][0]["target"], "metadata": {"schema": 1,
+            "source_sha256": record["artifacts"][0]["sha256"],
+            "dependencies": dependencies or [], "features": features or {}}}]}
+
+    def read(self, route): return (self.stage / route / "index.html").read_text()
+
+    def test_source_declarations_keep_requirements_features_and_native_package_links(self):
+        self.records.append(self.record("1.2.0", self.old_commit, "Core fixture", "MIT", "x86_64-linux", name="stubbi/core"))
+        metadata = self.declarations(dependencies=[
+            {"name": "stubbi/core", "requirement": "^1.2.0", "optional": False,
+             "default_features": True, "features": ["checked"]},
+            {"name": "stubbi/vector", "requirement": "~2.3.0", "optional": True,
+             "default_features": False, "features": ["portable"]}],
+            features={"default": ["vectors"], "vectors": ["dep:stubbi/vector", "stubbi/core/checked"], "portable": []})
+        original = deepcopy(metadata)
+        self.generate({("stubbi/math", "0.2.0")}, metadata)
+        html = self.read("packages/stubbi/math/0.2.0")
+        text = " ".join(Page(html).text)
+        for value in ("Declared dependencies", "^1.2.0", "~2.3.0", "Required", "Optional",
+                      "Default features requested", "Default features disabled", "Requested features: portable",
+                      "Enabled by: vectors", "Feature options", "Enabled unless disabled", "Not in this catalog",
+                      "Enable dependency", "Request", "No additional package requirements."):
+            self.assertIn(value, text)
+        self.assertIn("https://asm.build/packages/stubbi/core/", [urljoin("https://asm.build/packages/stubbi/math/0.2.0/", href) for href in Page(html).links])
+        self.assertNotIn("https://asm.build/packages/stubbi/vector/", [urljoin("https://asm.build/packages/stubbi/math/0.2.0/", href) for href in Page(html).links])
+        self.assertIn("Direct declarations", text)
+        self.assertNotIn("ABI, required CPU features, or dependencies", text)
+        self.assertEqual(metadata, original)
+        overview = self.read("packages/stubbi/math")
+        self.assertNotIn("^1.2.0", overview)
+        self.assertIn("Dependency information unavailable for this source archive.", overview)
+
+    def test_known_empty_source_declarations_are_distinct_from_unavailable(self):
+        self.generate({("stubbi/math", "0.2.0")}, self.declarations())
+        old = self.read("packages/stubbi/math/0.2.0")
+        self.assertIn("No package dependencies declared.", old)
+        self.assertIn("No feature options declared.", old)
+        self.assertNotIn("Dependency information unavailable for this source archive.", old)
+        self.assertIn("Dependency information unavailable for this source archive.", self.read("packages/stubbi/math/0.10.0"))
+
+    def test_missing_corrupt_unchecked_and_mismatched_declarations_remain_unavailable(self):
+        valid = self.declarations()
+        cases = [None, {"schema": 99, "sources": []}, {"schema": 1, "sources": valid["sources"] * 2}]
+        for field, value in (("name", "stubbi/other"), ("version", "0.10.0"), ("target", "aarch64-macos")):
+            changed = deepcopy(valid); changed["sources"][0][field] = value; cases.append(changed)
+        for field, value in (("source_sha256", "c" * 64), ("schema", True),
+                             ("dependencies", [{"name": "<script>alert(1)</script>"}]),
+                             ("features", {"default": ["default"]})):
+            changed = deepcopy(valid); changed["sources"][0]["metadata"][field] = value; cases.append(changed)
+        dependency = {"name": "stubbi/core", "requirement": "1.0.0", "optional": False,
+                      "default_features": True, "features": []}
+        for field, value in (("requirement", "javascript:alert(1)"), ("optional", 1),
+                             ("features", ["checked", "checked"])):
+            changed = deepcopy(valid)
+            changed["sources"][0]["metadata"]["dependencies"] = [dict(dependency, **{field: value})]
+            cases.append(changed)
+        changed = deepcopy(valid)
+        changed["sources"][0]["metadata"]["features"] = {"default": ["dep:stubbi/core"]}
+        changed["sources"][0]["metadata"]["dependencies"] = [dependency]
+        cases.append(changed)
+        cases.append({"schema": 1, "sources": valid["sources"] * (registry.MAX_ROWS + 1)})
+        for metadata in cases:
+            with self.subTest(metadata=metadata):
+                self.generate({("stubbi/math", "0.2.0")}, metadata)
+                html = self.read("packages/stubbi/math/0.2.0")
+                self.assertIn("Dependency information unavailable for this source archive.", html)
+                self.assertNotIn("No package dependencies declared.", html)
+                self.assertNotIn("<script>alert(1)</script>", html)
+        self.generate(dependency_metadata=valid)
+        self.assertIn("Dependency information unavailable for this source archive.", self.read("packages/stubbi/math/0.2.0"))
+
+    def test_shared_source_bytes_retain_target_specific_metadata_without_executable_inheritance(self):
+        record = self.records[0]
+        second = deepcopy(record["artifacts"][0]); second["target"] = "aarch64-linux"
+        second["url"] = second["url"].replace("x86_64-linux", "aarch64-linux")
+        record["artifacts"].append(second)
+        executable = deepcopy(record["artifacts"][0]); executable["kind"] = "executable"
+        executable["url"] += ".bin"; record["artifacts"].append(executable)
+        metadata = self.declarations()
+        arm = deepcopy(metadata["sources"][0]); arm["target"] = "aarch64-linux"
+        arm["metadata"]["dependencies"] = [{"name": "stubbi/arm", "requirement": "1.0.0",
+            "optional": False, "default_features": True, "features": []}]
+        metadata["sources"].append(arm)
+        self.generate({("stubbi/math", "0.2.0")}, metadata)
+        html = self.read("packages/stubbi/math/0.2.0")
+        x86 = html.split('id="artifact-source-x86_64-linux"', 1)[1].split('</article>', 1)[0]
+        arm = html.split('id="artifact-source-aarch64-linux"', 1)[1].split('</article>', 1)[0]
+        exe = html.split('id="artifact-executable-x86_64-linux"', 1)[1].split('</article>', 1)[0]
+        self.assertIn("No package dependencies declared.", x86)
+        self.assertNotIn("stubbi/arm", x86)
+        self.assertIn("stubbi/arm", arm)
+        self.assertNotIn("Declared dependencies", exe)
+
+    def test_static_routes_canonical_chrome_and_plain_catalog_links(self):
+        routes = self.generate()
+        self.assertEqual(set(routes), {"packages/", "packages/stubbi/", "packages/stubbi/math/",
+                                      "packages/stubbi/math/0.2.0/", "packages/stubbi/math/0.10.0/", "404.html"})
+        catalog = self.read("packages")
+        self.assertIn("https://asm.build/packages/stubbi/math/", [urljoin("https://asm.build/packages/", link) for link in Page(catalog).links])
+        self.assertIn('https://asm.build/packages/', catalog)
+        overview = self.read("packages/stubbi/math")
+        self.assertIn('href="../../../styles.css"', overview)
+        self.assertIn('href="../../../packages.css"', overview)
+        self.assertIn('src="../../../package-page.js"', overview)
+        self.assertIn('href="https://github.com/stubbi/asm#install-the-command"', overview)
+        self.assertEqual(overview.count('class="site-header"'), 1)
+        self.assertEqual(overview.count('<footer '), 1)
+        self.assertNotIn('aria-current="page">Sponsor', overview)
+        self.assertIn("namespace", self.read("packages/stubbi").lower())
+        missing = (self.stage / "404.html").read_text()
+        self.assertIn('content="noindex"', missing)
+        self.assertIn('href="https://asm.build/404.html"', missing)
+
+    def test_native_catalog_previews_use_only_the_selected_active_release(self):
+        self.generate()
+        catalog = self.read('packages')
+        self.assertIn('Source targets', catalog)
+        self.assertIn('aarch64-macos', catalog)
+        self.assertNotIn('x86_64-linux', catalog)
+        self.assertIn('<dd>AGPL-3.0-or-later</dd>', catalog)
+        self.assertNotIn('<dd>MIT</dd>', catalog)
+        self.assertIn('stubbi/math/0.10.0/', catalog)
+
+    def test_missing_page_recovery_and_assets_resolve_from_nested_unknown_address(self):
+        self.generate()
+        page = Page((self.stage / "404.html").read_text())
+        requested = "https://asm.build/packages/unknown/deep/"
+        resolved = [urljoin(requested, link) for link in page.links]
+        self.assertIn("https://asm.build/packages/", resolved)
+        self.assertIn("https://asm.build/index.html", resolved)
+        self.assertTrue(all(urlsplit(urljoin(requested, asset)).path.count("/") == 1 for asset in page.assets))
+        self.assertIn(requested + "#main", resolved)
+
+    def test_shared_header_search_and_navigation_resolve_from_nested_and_missing_routes(self):
+        self.generate()
+        for filename, address in (("packages/stubbi/math/index.html", "https://asm.build/packages/stubbi/math/"),
+                                  ("404.html", "https://asm.build/unknown/deep/")):
+            with self.subTest(filename=filename):
+                html = (self.stage / filename).read_text()
+                page = Page(html)
+                forms = [form for form in page.forms if "data-header-search" in form]
+                self.assertEqual(len(forms), 1)
+                self.assertEqual(forms[0]["method"], "get")
+                self.assertIn("hidden", forms[0])
+                self.assertEqual(urljoin(address, forms[0]["action"]), "https://asm.build/index.html")
+                self.assertIn('class="header-search-fallback"', html)
+                navigation = [attrs for attrs in page.script_attributes if attrs.get("src", "").endswith("navigation.js")]
+                self.assertEqual(len(navigation), 1)
+                self.assertNotIn("defer", navigation[0])
+                self.assertNotIn("async", navigation[0])
+                self.assertEqual(urljoin(address, navigation[0]["src"]), "https://asm.build/navigation.js")
+                stars = [attrs for attrs in page.script_attributes if attrs.get("src", "").endswith("repository-stars.js")]
+                self.assertEqual(len(stars), 1)
+                self.assertEqual(set(stars[0]), {"src", "defer"})
+                self.assertEqual(urljoin(address, stars[0]["src"]), "https://asm.build/repository-stars.js")
+
+    def test_exact_release_uses_canonical_old_summary_license_source_and_readme(self):
+        self.generate()
+        old = self.read("packages/stubbi/math/0.2.0")
+        self.assertIn("Old summary", old); self.assertNotIn("New summary", old)
+        self.assertIn("Old exact body.", old); self.assertNotIn("New exact body.", old)
+        self.assertIn("<dd>MIT</dd>", old)
+        self.assertIn(self.old_commit, old)
+        self.assertIn("/blob/" + self.old_commit + "/examples/math/src/min.s", old)
+        self.assertIn("Source snapshot", old)
+        self.assertIn("aarch64-macos", self.read("packages/stubbi/math"))
+        links = [urljoin("https://asm.build/packages/stubbi/math/0.2.0/", link) for link in Page(old).links]
+        self.assertIn("https://asm.build/packages/stubbi/math/", links)
+        self.assertLess(links.index("https://asm.build/packages/stubbi/math/0.10.0/"), links.index("https://asm.build/packages/stubbi/math/0.2.0/"))
+        self.assertIn("registry/v1/packages/stubbi/math/0.2.0.json", old)
+        self.assertLess(old.index('id="use"'), old.index('id="files"'))
+        page = Page(old)
+        self.assertEqual(len(page.ids), len(set(page.ids)))
+
+    def test_only_byte_checked_artifacts_become_download_links(self):
+        self.generate({("stubbi/math", "0.2.0")})
+        old, new = self.read("packages/stubbi/math/0.2.0"), self.read("packages/stubbi/math/0.10.0")
+        self.assertIn(self.records[0]["artifacts"][0]["url"], Page(old).links)
+        self.assertNotIn(self.records[1]["artifacts"][0]["url"], Page(new).links)
+        self.assertIn(self.records[1]["artifacts"][0]["url"], "".join(Page(new).text))
+        self.assertIn("Not run", new)
+        self.assertIn("asm fetch stubbi/math@0.10.0 --target aarch64-macos --kind source", new)
+        self.assertNotIn("asm add ", new); self.assertNotIn("asm install ", new)
+        self.assertIn("asm doctor", new)
+        self.assertIn("identity", new); self.assertIn("safety", new)
+        self.assertIn('id="fetch-source-aarch64-macos"', new)
+        self.assertIn('data-artifact-target="aarch64-macos"', new)
+        self.assertIn('data-artifact-architecture="aarch64"', new)
+        self.assertIn('<label for="artifact-architecture">Architecture</label>', new)
+        self.assertIn('ARM64 (aarch64)', new)
+
+    def test_use_precedes_long_documentation_and_selects_an_exact_file(self):
+        self.generate()
+        page = self.read("packages/stubbi/math")
+        self.assertLess(page.index('id="use"'), page.index('id="readme"'))
+        use = page.split('id="use"', 1)[1].split('</section>', 1)[0]
+        self.assertIn('aria-label="Filter release files"', use)
+        self.assertIn('id="selected-fetch-command"', use)
+        self.assertIn('asm fetch stubbi/math@0.10.0 --target aarch64-macos --kind source', use)
+        self.assertIn('Source archive · aarch64-macos', use)
+        self.assertIn('<dt>Formats</dt><dd>Source archive</dd>', page)
+        self.assertNotIn('asm add ', use)
+
+    def test_quick_fetch_does_not_choose_one_of_multiple_targets(self):
+        extra = deepcopy(self.records[1]['artifacts'][0])
+        extra.update(target='x86_64-linux', url=extra['url'].replace('aarch64-macos','x86_64-linux'))
+        self.records[1]['artifacts'].append(extra)
+        self.generate()
+        page = self.read('packages/stubbi/math')
+        use = page.split('id="use"', 1)[1].split('</section>', 1)[0]
+        self.assertIn('data-selected-fetch hidden', use)
+        self.assertIn('Choose a release file below', use)
+        self.assertNotIn('asm fetch ', use)
+
+    def test_failed_byte_evidence_stays_failed_and_does_not_enable_download(self):
+        self.generate()
+        self.index["packages"][0]["versions"][1]["evidence"]["artifacts"] = "fail"
+        self.module.write_package_pages(self.repo, self.stage, self.records, self.index, self.counts)
+        page = self.read("packages/stubbi/math/0.10.0")
+        self.assertIn("Artifact byte check: Fail.", page)
+        self.assertNotIn(self.records[1]["artifacts"][0]["url"], Page(page).links)
+
+    def test_yanked_release_keeps_reason_and_metadata_without_fetch_or_download(self):
+        self.records[1].update(yanked=True, yank_reason="Broken <target> fixture.")
+        self.generate({("stubbi/math", "0.10.0")}, self.declarations(self.records[1]))
+        yanked = self.read("packages/stubbi/math/0.10.0")
+        self.assertIn("Yanked", yanked); self.assertIn("Broken &lt;target&gt; fixture", yanked)
+        self.assertNotIn("fixture..", yanked)
+        self.assertNotIn("asm fetch", yanked)
+        self.assertNotIn(self.records[1]["artifacts"][0]["url"], Page(yanked).links)
+        self.assertIn("No package dependencies declared.", yanked)
+        self.assertIn("Old summary", self.read("packages/stubbi/math"))
+
+    def test_no_active_release_does_not_select_yanked_release(self):
+        for record in self.records: record.update(yanked=True, yank_reason="Withdrawn fixture")
+        self.generate()
+        page = self.read("packages/stubbi/math")
+        self.assertIn("No active release", page)
+        self.assertNotIn("asm fetch", page)
+        self.assertNotIn("New exact body.", page)
+        self.assertIn("0.10.0/", page)
+
+    def test_optional_counts_distinguish_unknown_and_measured_zero(self):
+        self.generate()
+        self.assertIn("GitHub asset downloads: 0", accessible_text(self.read("packages/stubbi/math")))
+        old = self.read("packages/stubbi/math/0.2.0")
+        self.assertIn("GitHub asset downloads: 0", accessible_text(old))
+        self.assertIn("observed 2026-11-07", old)
+        self.assertIn("GitHub asset downloads: unavailable", self.read("packages/stubbi/math/0.10.0"))
+
+    def test_missing_root_readme_wrong_repository_commit_and_oversize_are_explicit(self):
+        self.records = [self.record("0.1.0", self.new_commit, "Hello fixture", "MIT", "x86_64-linux", name="stubbi/hello", source_path="examples")]
+        self.generate()
+        hello = self.read("packages/stubbi/hello")
+        self.assertIn("README is unavailable", hello)
+        self.assertNotIn("Nested README must not be guessed", hello)
+        self.records[0]["source"]["path"] = "examples/math"
+        self.git("remote", "set-url", "origin", "https://github.com/another/repository")
+        self.generate()
+        self.assertNotIn("New exact body", self.read("packages/stubbi/hello"))
+        self.git("remote", "set-url", "origin", "https://github.com/stubbi/asm")
+        self.readme.write_bytes(b"x" * (128 * 1024 + 1))
+        self.records[0]["source"]["commit"] = self.commit()
+        self.generate()
+        self.assertIn("README is unavailable", self.read("packages/stubbi/hello"))
+        self.records[0]["source"]["commit"] = "f" * 40
+        self.generate()
+        self.assertIn("README is unavailable", self.read("packages/stubbi/hello"))
+
+    def test_supported_root_readme_names_use_the_recorded_snapshot(self):
+        for filename in ("README", "README.txt"):
+            with self.subTest(filename=filename):
+                for candidate in ("README.md", "README", "README.txt"):
+                    (self.readme.parent / candidate).unlink(missing_ok=True)
+                selected = self.readme.parent / filename
+                selected.write_text("# Accepted root document\n\nRecorded " + filename + " body.\n\n[This document](#accepted-root-document)\n")
+                commit = self.commit()
+                self.records[1]["source"]["commit"] = commit
+                selected.write_text("Uncommitted text must not appear.\n")
+                self.generate()
+                page = self.read("packages/stubbi/math/0.10.0")
+                links = Page(page).links
+                pinned = "https://github.com/stubbi/asm/blob/" + commit + "/examples/math/" + filename
+                self.assertIn(pinned, links)
+                self.assertIn(pinned + "#accepted-root-document", links)
+                self.assertIn("Recorded " + filename + " body.", page)
+                self.assertNotIn("Uncommitted text", page)
+                self.assertIn("Old exact body.", self.read("packages/stubbi/math/0.2.0"))
+
+    def test_root_readme_selection_has_a_deterministic_priority(self):
+        (self.readme.parent / "README").write_text("Plain README fallback.\n")
+        (self.readme.parent / "README.txt").write_text("Text README fallback.\n")
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        page = self.read("packages/stubbi/math/0.10.0")
+        self.assertIn("New exact body.", page)
+        self.assertNotIn("Plain README fallback.", page)
+        self.assertNotIn("Text README fallback.", page)
+        self.readme.unlink()
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        page = self.read("packages/stubbi/math/0.10.0")
+        self.assertIn("Plain README fallback.", page)
+        self.assertNotIn("Text README fallback.", page)
+
+    def test_readme_hostile_markup_links_images_and_invalid_encoding_do_not_execute(self):
+        self.readme.write_text('# Readme\n\n<script>alert("bad")</script>\n\n[Bad](javascript:alert)\n\n[Escape](../../private)\n\n![remote](https://example.com/x.png)\n\n| Value | Result |\n| --- | --- |\n| `one` | **two** |\n\n```asm\nmov rax, 1\n```\n')
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        page = self.read("packages/stubbi/math")
+        parsed = Page(page)
+        self.assertEqual(sorted(parsed.scripts), ["../../../app.js", "../../../navigation.js", "../../../package-page.js", "../../../repository-stars.js"])
+        self.assertFalse(any(url.startswith("javascript:") or "private" in url for url in parsed.links))
+        self.assertNotIn('<img src="https://example.com', page)
+        self.assertIn("&lt;script&gt;", page)
+        self.assertIn("package-table-scroll", page)
+        self.assertIn('<pre tabindex="0"><code>', page)
+        self.readme.write_bytes(b"\xff\xfe")
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        self.assertIn("README is unavailable", self.read("packages/stubbi/math"))
+
+    def test_maximum_readme_with_unfinished_links_remains_bounded(self):
+        # Run hostile inputs outside the suite process so a regression cannot
+        # occupy the entire site check indefinitely.
+        script = '''import sys
+sys.path.insert(0, sys.argv[1])
+import package_pages
+source = {"repository": "https://github.com/stubbi/asm", "commit": "a" * 40, "path": "."}
+for fragment in ("[", "[a]("):
+    text = fragment * (package_pages.MAX_README_BYTES // len(fragment))
+    result = package_pages._markdown(text, source, "README.md")
+    assert result == "<p>" + text + "</p>"
+'''
+        result = subprocess.run([sys.executable, "-c", script, str(ROOT / "tools")],
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+
+    def test_readme_heading_ids_do_not_collide_with_numbered_titles(self):
+        self.readme.write_text("# Part\n\n## Part\n\n# Part-2\n\n# Part\n")
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        page = Page(self.read("packages/stubbi/math"))
+        self.assertEqual(len(page.ids), len(set(page.ids)))
+
+    def test_invalid_package_route_is_rejected_before_writing_pages(self):
+        self.records[0]["name"] = "../escape"
+        with self.assertRaises(registry.RegistryError): self.generate()
+        self.assertFalse((self.stage / "packages").exists())
+
+
+if __name__ == "__main__": unittest.main()
+
+
+class DiscoveryPageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.stage = Path(self.temp.name)
+        (self.stage / "index.html").write_text((ROOT / "site/index.html").read_text())
+        self.records = registry.read_records(ROOT / "registry")
+        _, self.index = registry.make_indexes(self.records, set())
+        self.module = importlib.import_module("package_pages")
+        import discovery
+        self.snapshot = discovery.delivery_snapshot(self.records)
+
+    def test_native_architecture_directory_keeps_heading_routes_and_distinct_package_counts(self):
+        before = deepcopy(self.index)
+        original = (self.stage / "index.html").read_text()
+        self.module.write_architecture_browse(self.stage, self.index)
+        html = (self.stage / "index.html").read_text()
+        self.assertEqual(self.index, before)
+        self.module.write_architecture_browse(self.stage, self.index)
+        self.assertEqual((self.stage / "index.html").read_text(), html)
+        for marker, part in (("<!-- architecture-browse:start -->", 0), ("<!-- architecture-browse:end -->", 1)):
+            self.assertEqual(original.split(marker)[part], html.split(marker)[part])
+        page = HierarchyParser()
+        page.feed(html)
+        def within(element, parent): return id(parent) in element["ancestors"]
+        def has_class(element, name): return name in element["attrs"].get("class", "").split()
+        directories = [item for item in page.elements if item["tag"] == "nav" and item["attrs"].get("aria-label") == "Browse packages by architecture"]
+        self.assertEqual(len(directories), 1)
+        directory = directories[0]
+        self.assertTrue(has_class(directory, "discovery-directory"))
+        heading = page.elements_by_id[directory["attrs"]["aria-labelledby"]]
+        self.assertEqual(heading["tag"], "h3")
+        self.assertEqual("".join(heading["text"]), "Browse by architecture")
+        self.assertTrue(within(heading, directory))
+        actions = [item for item in page.elements if within(item, directory) and item["tag"] == "a"]
+        view_all = [item for item in actions if item["attrs"].get("aria-label") == "View all architectures"]
+        self.assertEqual([item["attrs"]["href"] for item in view_all], ["browse/architectures/"])
+        expected = {"aarch64": ("ARM64", 2), "x86_64": ("x86-64", 3), "riscv64": ("RISC-V64", 1)}
+        rows = [item for item in actions if has_class(item, "discovery-directory-link")]
+        self.assertEqual(len(rows), len(expected))
+        for row in rows:
+            key = row["attrs"]["href"].split("/")[-2]
+            label, count = expected[key]
+            descendants = [item for item in page.elements if within(item, row)]
+            self.assertEqual(["".join(item["text"]) for item in descendants if item["tag"] == "code"], [key])
+            self.assertIn(label, "".join(row["accessible_text"]))
+            self.assertIn(str(count) + (" package" if count == 1 else " packages"), "".join(row["accessible_text"]))
+            self.assertEqual(sum(has_class(item, "discovery-directory-arrow") and item["attrs"].get("aria-hidden") == "true" for item in descendants), 1)
+        self.assertEqual(len(page.ids), len(set(page.ids)))
+
+    def write_categories(self, value):
+        registry.write_atomic(self.stage / "registry/v1/categories.json", registry.json_bytes(value))
+
+    def test_native_pages_keep_unknown_counts_and_do_not_relabel_totals(self):
+        routes = self.module.write_discovery_pages(self.stage, self.index, self.snapshot)
+        self.assertEqual(set(routes), {"browse/popular/", "browse/new/", "browse/updated/", "discovery/"})
+        page = (self.stage / "browse/popular/index.html").read_text()
+        self.assertIn("Download data is unavailable", page)
+        self.assertNotIn("1 downloads", page)
+        metrics = (self.stage / "discovery/index.html").read_text()
+        self.assertIn("known bots, and internal validation do not enter Popular", metrics)
+        self.assertIn("Historical imports do not invent those events", metrics)
+        self.assertIn("≥", metrics)
+
+    def test_real_snapshot_order_dates_zero_and_lower_bounds_reach_native_html(self):
+        self.snapshot["observed_at"] = "2026-11-07T08:00:00Z"
+        self.snapshot["stale"] = False
+        for i, fact in enumerate(self.snapshot["packages"]):
+            fact.update(first_published_at="2026-11-01T00:29:24Z", last_published_at="2026-11-01T19:08:39Z",
+                        downloads_30d=i + 1, downloads_30d_exact=(i == 0),
+                        downloads_30d_coverage="complete" if i == 0 else "lower-bound")
+        names = [fact["name"] for fact in self.snapshot["packages"]]
+        self.snapshot["feeds"] = {"popular": names[::-1], "new": names, "updated": names}
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "popular")
+        self.assertLess(page.index('>' + names[-1] + '</a>'), page.index('>' + names[0] + '</a>'))
+        self.assertIn("≥ 3 downloads", accessible_text(page))
+        self.assertIn("1 downloads", accessible_text(page))
+        new = self.module.discovery_page(self.stage, self.index, self.snapshot, "new")
+        self.assertIn('datetime="2026-11-01T00:29:24Z"', new)
+        self.assertIn("First GitHub release", new)
+        self.assertNotIn("first entered the registry", new)
+
+    def test_explicit_purpose_categories_join_active_packages_and_reject_typos(self):
+        value = {"schema": 1, "categories": [{"id": "math", "name": "Math", "packages": ["stubbi/math"]}]}
+        self.write_categories(value)
+        enriched = self.module.with_discovery_categories(self.stage, self.index, self.snapshot)
+        self.assertEqual(enriched["categories"], value["categories"])
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "categories/math")
+        self.assertIn('stubbi/math</a>', page)
+        self.assertNotIn('stubbi/hello</a>', page)
+        self.assertIn('Math</h1>', page)
+        with self.assertRaises(KeyError):
+            self.module.discovery_page(self.stage, self.index, self.snapshot, "categories/unknown")
+        index = deepcopy(self.index)
+        next(item for item in index["packages"] if item["name"] == "stubbi/math")["latest"] = None
+        self.assertEqual(self.module.with_discovery_categories(self.stage, index, self.snapshot)["categories"], [])
+        value["categories"][0]["packages"] = ["stubbi/typo"]
+        self.write_categories(value)
+        with self.assertRaises(registry.RegistryError):
+            self.module.with_discovery_categories(self.stage, self.index, self.snapshot)
+
+    def test_category_paths_and_duplicate_feed_members_fail_closed(self):
+        for identifier in ("../math", "math/evil", "math--code", "math-", "Math"):
+            self.write_categories({"schema": 1, "categories": [{"id": identifier, "name": "Math", "packages": ["stubbi/math"]}]})
+            with self.subTest(identifier=identifier), self.assertRaises(registry.RegistryError):
+                self.module.with_discovery_categories(self.stage, self.index, self.snapshot)
+        (self.stage / "registry/v1/categories.json").unlink()
+        self.snapshot["feeds"]["popular"] = ["stubbi/math", "stubbi/math"]
+        with self.assertRaises(registry.RegistryError):
+            self.module.discovery_page(self.stage, self.index, self.snapshot, "popular")
+
+    def test_same_second_publication_precedes_a_fractional_observation(self):
+        self.snapshot["observed_at"] = "2026-11-07T07:00:00.123456Z"
+        for fact in self.snapshot["packages"]:
+            fact.update(first_published_at="2026-11-07T07:00:00Z", last_published_at="2026-11-07T07:00:00Z")
+        self.snapshot["feeds"]["new"] = ["stubbi/math"]
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "new")
+        self.assertIn('datetime="2026-11-07T07:00:00Z"', page)
+        next(fact for fact in self.snapshot["packages"] if fact["name"] == "stubbi/math")["first_published_at"] = "2026-11-07T07:00:00.234567Z"
+        with self.assertRaises(registry.RegistryError):
+            self.module.discovery_page(self.stage, self.index, self.snapshot, "new")
+
+    def test_publication_date_is_not_presented_as_the_highest_version_date(self):
+        self.snapshot["observed_at"] = "2026-11-07T08:00:00Z"
+        for fact in self.snapshot["packages"]:
+            fact.update(first_published_at="2026-11-01T00:00:00Z", last_published_at="2026-11-06T00:00:00Z")
+        self.snapshot["feeds"]["updated"] = ["stubbi/math"]
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "updated")
+        latest = next(package["latest"] for package in self.index["packages"] if package["name"] == "stubbi/math")
+        self.assertIn("Latest version " + latest, page)
+        self.assertIn('Latest GitHub release <time datetime="2026-11-06T00:00:00Z"', page)
+        self.assertIn("Package release activity, newest publication first.", page)
+
+    def test_discovery_targets_describe_the_latest_active_release(self):
+        math = next(item for item in self.index["packages"] if item["name"] == "stubbi/math")
+        math["versions"][0]["artifacts"][0]["target"] = "aarch64-macos"
+        math["targets"].append("aarch64-macos")
+        self.write_categories({"schema": 1, "categories": [{"id": "math", "name": "Math", "packages": ["stubbi/math"]}]})
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "categories/math")
+        self.assertIn("x86_64-linux", page)
+        self.assertNotIn("aarch64-macos", page)
+
+    def test_historical_publication_does_not_require_download_observations(self):
+        self.snapshot["publication_observed_at"] = "2026-11-07T08:00:00Z"
+        for fact in self.snapshot["packages"]:
+            fact.update(first_published_at="2026-11-01T00:00:00Z", last_published_at="2026-11-06T00:00:00Z")
+        self.snapshot["feeds"]["new"] = ["stubbi/math"]
+        self.assertIsNone(self.snapshot["observed_at"])
+        page = self.module.discovery_page(self.stage, self.index, self.snapshot, "new")
+        self.assertIn('datetime="2026-11-01T00:00:00Z"', page)
+
+    def test_zero_window_does_not_deny_downloads_before_the_window(self):
+        counts = {"schema": 1, "source": "asm-delivery-events", "complete": False,
+                  "collection_started_at": "2026-01-01T00:00:00Z", "observed_at": "2026-11-07T08:00:00Z",
+                  "packages": {"stubbi/math": {"total": 0, "versions": {"0.4.0": 0}}}}
+        message = self.module._counts(counts, "stubbi/math", None)
+        self.assertIn("observed part of this window", message)
+        self.assertNotIn("since", message)
+        self.assertNotIn("2026-01-01", message)
+        counts["stale"] = True
+        self.assertIn("Observations are stale", self.module._counts(counts, "stubbi/math", None))
+
+    def test_catalog_stats_retain_history_without_counting_duplicates_or_storage_objects(self):
+        expected = self.module.catalog_stats(self.index)
+        index = deepcopy(self.index)
+        index["packages"].append(deepcopy(index["packages"][0]))
+        for package in index["packages"]:
+            package["versions"].append(deepcopy(package["versions"][0]))
+            package["targets"] = ["not-a-published-target"]
+            for release in package["versions"]:
+                release["yanked"] = True
+                release["artifacts"].append(deepcopy(release["artifacts"][0]))
+        self.assertEqual(self.module.catalog_stats(index), expected)
+        self.assertEqual(self.module.catalog_stats({"schema": 1, "packages": []}),
+                         {"packages": 0, "releases": 0, "files": 0, "targets": 0})
