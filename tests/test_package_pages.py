@@ -171,6 +171,18 @@ class PackagePageTests(unittest.TestCase):
                          "https://asm.build/browse/keywords/integers/", "https://asm.build/browse/architectures/aarch64/"} <= links)
         self.assertNotIn("https://asm.build/browse/architectures/x86_64/", links)
         self.assertEqual(self.schema(overview)["keywords"], ["integers", "math"])
+        page = SiteParser(); page.feed(overview)
+        related = [item for item in page.elements if item["tag"] == "a"
+                   and any("browse/" + group + "/" in item["attrs"].get("href", "")
+                           for group in ("categories", "keywords", "architectures"))]
+        self.assertEqual([item["attrs"].get("aria-label") for item in related],
+                         ["Math category", "integers keyword", "math keyword", "ARM64 (aarch64) architecture"])
+        self.assertEqual(["".join(item["text"]) for item in related],
+                         ["Math", "integers", "math", "ARM64 (aarch64)"])
+        groups = [item["attrs"].get("aria-labelledby") for item in page.elements if item["tag"] == "ul"
+                  and item["attrs"].get("aria-labelledby", "").startswith("package-topics-")]
+        self.assertEqual(groups, ["package-topics-categories", "package-topics-keywords", "package-topics-architectures"])
+        self.assertTrue(set(groups) <= {item["attrs"].get("id") for item in page.elements if item["tag"] == "dt"})
         for version in ("0.2.0", "0.10.0"):
             exact = self.read("packages/stubbi/math/" + version)
             self.assertNotIn("Browse related", exact)
