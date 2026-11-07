@@ -171,6 +171,38 @@ Primary sources:
 - [PostgreSQL source checksum](https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2.sha256).
 - [RISC-V psABI, section 10.1](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/#_file_header), version 2.0-rc0 dated 4 November 2026; checked 5 November 2026.
 
+## Dependency cache
+
+CI exports only the Dockerfile's `dependencies` stage through a local BuildKit cache.
+The exported cache contains no Asm application, runtime-image, or qualification layers.
+The source revision is declared and checked after dependency compilation.
+CI checks the revision before it builds dependencies.
+The Dockerfile checks it again before application compilation.
+Each run builds the application for its current source revision and runs the complete qualification suite.
+A cache miss runs the unchanged dependency recipe.
+
+The cache key includes Linux architecture, the complete Dockerfile hash, the BuildKit image digest, and a cache version.
+The workflow uses BuildKit 0.34.2 at its pinned image digest and pinned GitHub-owned cache actions.
+Only successful target qualification on a default-branch push saves a cache.
+Pull requests and manual runs use the restore action without a save step.
+Restore-only steps do not remove cache-write capability from the job token.
+GitHub scopes pull-request caches to their merge ref; those entries cannot be restored by the default branch.
+No broad restore key selects another recipe or architecture.
+
+Cached Debian build packages can outlive updates in Debian's repositories.
+To refresh them, increment the workflow's `asm-server-dependencies-v1` cache version or change the Dockerfile recipe.
+The next default-branch push rebuilds dependencies before saving the new cache.
+Runtime Debian packages remain outside the exported dependency cache.
+
+The cache is a build input, not qualification evidence.
+It does not replace archive digest checks, target checks, runtime tests, or exact-image publication checks.
+The first cache fill still requires a cold dependency build.
+No RISC-V speedup is established by the cache design alone.
+
+Docker documents [ARG cache invalidation](https://docs.docker.com/reference/dockerfile/#impact-on-build-caching) and the [local cache backend](https://docs.docker.com/build/cache/backends/local/).
+GitHub documents [cache scope and access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+These primary sources were checked on 7 November 2026.
+
 ## Run and retain evidence
 
 Use a healthy Linux Docker host with enough space for two source builds and PostgreSQL tools.

@@ -76,16 +76,49 @@ jobs:
               sha256sum /usr/bin/qemu-riscv64-static
             fi
           } | tee server-image-evidence/environment.txt
+      - name: Restore the exact dependency recipe cache
+        id: dependencies-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/asm-server-dependencies
+          key: asm-server-dependencies-v1-linux-${{ matrix.arch }}-buildkit-c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe-${{ hashFiles('containers/server.Dockerfile') }}
+      - name: Build the pinned dependencies without application cache
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_CACHE_HIT: ${{ steps.dependencies-cache.outputs.cache-hit }}
+          ASM_CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$GITHUB_SHA" != 0000000000000000000000000000000000000000
+          ASM_CACHE="$RUNNER_TEMP/asm-server-dependencies"
+          ASM_CACHE_OPTIONS=(--progress plain)
+          if [ "$ASM_CACHE_HIT" = true ]; then
+            ASM_CACHE_OPTIONS+=(--cache-from "type=local,src=$ASM_CACHE")
+          else
+            rm -rf -- "$ASM_CACHE"
+            if [ "$ASM_CACHE_WRITE" = true ]; then
+              ASM_CACHE_OPTIONS+=(--cache-to "type=local,dest=$ASM_CACHE,mode=max")
+            fi
+          fi
+          docker buildx create --name asm-server-build --driver docker-container \
+            --driver-opt image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe \
+            --bootstrap 2>&1 | tee server-image-evidence/builder.log
+          docker buildx build --builder asm-server-build --platform "linux/$ASM_ARCH" \
+            --file containers/server.Dockerfile --target dependencies --output type=cacheonly \
+            "${ASM_CACHE_OPTIONS[@]}" . \
+            2>&1 | tee server-image-evidence/build-dependencies.log
       - name: Build the target runtime and its derived qualification image
         shell: bash
         env:
           ASM_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+          docker buildx build --builder asm-server-build --load --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
             --tag "asm-server:runtime-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-runtime.log
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+          docker buildx build --builder asm-server-build --load --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
             --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
       - name: Run the actual HTTP, PostgreSQL, TLS, and security suite
@@ -110,6 +143,12 @@ jobs:
           docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{json .}}' > server-image-evidence/image.json
           docker save --output server-image-evidence/runtime.tar "asm-server:runtime-$ASM_ARCH"
           (cd server-image-evidence && sha256sum runtime.tar > runtime.sha256)
+      - name: Save dependencies only after successful default-branch qualification
+        if: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && steps.dependencies-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/asm-server-dependencies
+          key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}
       - name: Retain successful and failed qualification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
