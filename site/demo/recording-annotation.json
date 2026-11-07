@@ -1,0 +1,13 @@
+{
+  "kind": "post-recording metadata annotation",
+  "date": "2026-11-03",
+  "recording_sha256": "8cc2fc7d4b41631136d2d2f706dadff4ff975477c81aee029a4d4434534b08bc",
+  "field": "environment.gzip_compatibility_path",
+  "recorded_value": "/usr/bin/gzip -> /usr/bin/gzip",
+  "correction": "/usr/bin/gzip -> /bin/gzip",
+  "basis": "The recording stores /bin/gzip as the pre-link executable path. The retained harness passes shutil.which(\"gzip\") directly to os.symlink before creating /usr/bin/gzip. It then calls shutil.which again for the log string. That second lookup finds the newly created /usr/bin/gzip, so the log string repeats the link path instead of recording its target.",
+  "observed": "environment.gzip.path is /bin/gzip; its recorded SHA-256 is b7a99c66a1a62a610371c5c701379ffddd6d50bea3b4659f69745ef1e3de1fe5. The complete released-source dependency workflow passed after compatibility setup.",
+  "limit": "The guest did not record os.readlink output. The corrected target is reconstructed from the retained harness and pre-link executable path, rather than a new inspection of the stopped guest.",
+  "diagnostic": "A local temporary-directory reproduction of the same two lookups confirmed that the created link targets bin/gzip while the subsequent lookup returns usr/bin/gzip. No guest restart was required.",
+  "raw_recording_policy": "Preserve the original recording and its hash. Publish this annotation separately; do not silently replace the recorded value."
+}

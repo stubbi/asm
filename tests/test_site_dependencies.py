@@ -90,6 +90,10 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.assertEqual(self.requests, [artifact["url"]])
         self.assertEqual(release["evidence"]["artifacts"], "validated")
         self.assertEqual(json.loads((output / "registry/v1/packages/owner/hello/1.0.0.json").read_bytes()), self.record)
+        page = (output / "packages/owner/hello/1.0.0/index.html").read_text()
+        for value in ("Declared dependencies", "^1.2.0", "~2.3.0", "Optional", "Default features disabled",
+                      "Requested features: portable", "Feature options", "Not in this catalog"):
+            self.assertIn(value, page)
 
     def test_checked_index_remains_compatible_with_existing_catalog_clients(self):
         self.source()
@@ -108,6 +112,9 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.assertEqual(len(declarations), 1)
         self.assertEqual(declarations[0]["metadata"], {
             "schema": 1, "source_sha256": artifact["sha256"], "dependencies": [], "features": {}})
+        page = (output / "packages/owner/hello/index.html").read_text()
+        self.assertIn("No package dependencies declared.", page)
+        self.assertIn("No feature options declared.", page)
 
     def test_unchecked_source_metadata_remains_unavailable(self):
         self.source()
@@ -117,6 +124,9 @@ class SiteDependencyExportTests(unittest.TestCase):
         self.assertEqual(release["evidence"]["artifacts"], "not-run")
         self.assertEqual(self.declarations(output), [])
         self.assertEqual(self.requests, [])
+        page = (output / "packages/owner/hello/index.html").read_text()
+        self.assertIn("Dependency information unavailable for this source archive.", page)
+        self.assertNotIn("No package dependencies declared.", page)
 
     def test_source_targets_retain_their_separate_declarations(self):
         self.source()

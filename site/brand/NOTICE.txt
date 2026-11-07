@@ -1,0 +1,14 @@
+Asm wordmark
+
+Typeface: JetBrains Mono SemiBold, weight 600, version 2.304.
+Copyright 2020 The JetBrains Mono Project Authors.
+Source: https://github.com/JetBrains/JetBrainsMono/tree/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9
+Font file: fonts/ttf/JetBrainsMono-SemiBold.ttf
+Font SHA-256: 1b3bfa1ed5665a4ce3f9feb68d2d4e40e70bf8b4b7d9a3edd418f321b4e166a0
+Source checked: 2 November 2026.
+License: SIL Open Font License 1.1. See ../fonts/OFL.txt.
+
+The SVG preserves the lowercase asm outlines and normal letter spacing.
+An original greater-than prompt precedes the letters with optical spacing, without a full word space.
+The mark uses #181818 and requires no font download.
+The prompt and favicon were drawn for Asm on 6 November 2026.

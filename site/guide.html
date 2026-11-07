@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f5f4">
+    <meta name="description" content="Learn how Asm packages assembly software. Inspect a real package, step through its source, and read the recorded result.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Build with Asm — asm">
+    <meta property="og:description" content="Learn how Asm packages assembly software. Inspect a real package, step through its source, and read the recorded result.">
+    <meta property="og:url" content="https://asm.build/guide.html">
+    <meta property="og:image" content="https://asm.build/social-preview.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Build with Asm — asm">
+    <meta name="twitter:description" content="Learn how Asm packages assembly software. Inspect a real package, step through its source, and read the recorded result.">
+    <meta name="twitter:image" content="https://asm.build/social-preview.png">
+    <meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
+    <link rel="canonical" href="https://asm.build/guide.html">
+    <link rel="alternate" type="text/markdown" href="llms.txt" title="Asm agent instructions">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <script src="navigation.js"></script>
+    <script src="repository-stars.js" defer></script>
+    <script src="app.js" defer></script>
+    <script src="package-demo.js" defer></script>
+    <title>Build with Asm — asm</title>
+  </head>
+  <body class="guide-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="masthead-surface" aria-hidden="true"></div>
+      <div class="container header-inner">
+        <a class="wordmark" href="index.html" aria-label="Asm home"><img src="wordmark.svg" width="232" height="72" alt="asm"></a>
+        <form class="header-search" data-header-search action="index.html" method="get" role="search" aria-label="Package search" hidden>
+          <div class="search-box header-search-box">
+            <label for="header-package-search">Search</label>
+            <input id="header-package-search" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Packages" enterkeyhint="search">
+            <button type="submit" aria-label="Search packages" title="Search packages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></button>
+          </div>
+        </form>
+        <a class="header-search-fallback" data-header-search-fallback href="packages/">Browse packages</a>
+        <nav aria-label="Main navigation">
+          <a href="explore/">Explore</a>
+          <a href="stats/">Stats</a>
+          <a href="blog/">Blog</a>
+          <a href="docs/" aria-current="page">Docs</a>
+        </nav>
+        <!-- github-stars:start --><a class="github-stars" href="https://github.com/stubbi/asm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/></svg><span>Star on GitHub</span></a><!-- github-stars:end -->
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero-section" aria-labelledby="hero-heading">
+        <div class="hero container">
+          <div class="hero-copy">
+            <h1 id="hero-heading">Build with <span>Asm.</span></h1>
+            <div class="hero-summary">
+              <p class="hero-description">The package registry and command-line tool for assembly projects.</p>
+              <div class="hero-actions">
+                <a class="button button-primary" href="https://github.com/stubbi/asm#install-the-command">Install Asm</a>
+                <a class="button button-secondary" href="index.html#catalog">Browse packages</a>
+              </div>
+            </div>
+          </div>
+
+          <section class="package-demo" data-package-demo aria-labelledby="demo-heading">
+            <header class="demo-header">
+              <div class="demo-identity"><h2 id="demo-heading">stubbi/math</h2><span>0.4.0</span><span>Linux x86-64</span></div>
+              <div class="demo-step-list" data-demo-tabs role="tablist" aria-label="Explore the package" aria-orientation="horizontal" hidden>
+                <button type="button" id="demo-tab-find" data-demo-tab="find" role="tab" aria-controls="demo-panel-find" aria-selected="true" aria-label="Find a package">Find</button>
+                <button type="button" id="demo-tab-inspect" data-demo-tab="inspect" role="tab" aria-controls="demo-panel-inspect" aria-selected="false" tabindex="-1" aria-label="Inspect the source">Inspect</button>
+                <button type="button" id="demo-tab-use" data-demo-tab="use" role="tab" aria-controls="demo-panel-use" aria-selected="false" tabindex="-1" aria-label="Use the package">Use</button>
+              </div>
+            </header>
+            <div class="demo-panels">
+              <div class="demo-panel" id="demo-panel-find" data-demo-panel="find" role="tabpanel" aria-labelledby="demo-tab-find" tabindex="0">
+                <div class="demo-find-grid">
+                  <div class="demo-package-description">
+                    <h3>Unsigned minimum</h3>
+                    <p>Returns the smaller of two unsigned 64-bit integers.</p>
+                    <dl class="demo-package-meta"><div><dt>Format</dt><dd>Source</dd></div><div><dt>Interface</dt><dd>System V AMD64</dd></div><div><dt>License</dt><dd>MIT</dd></div></dl>
+                    <a href="https://github.com/stubbi/asm/blob/1dbe731fbe19d1e6201afd662699382e4983655a/examples/math/src/min.s">Read the source</a>
+                  </div>
+                  <div class="demo-routine-preview">
+                    <div class="demo-code-caption"><span>src/min.s</span></div>
+                      <!-- The source excerpt and consumer example retain their MIT grant.
+MIT License
+
+Copyright (c) 2026 ASM contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+                      -->
+                    <pre class="demo-code demo-code-preview" tabindex="0" aria-label="The minimum function"><code><span><b>mov</b>   rax, rdi</span><span><b>cmp</b>   rdi, rsi</span><span><b>cmova</b> rax, rsi</span><span><b>ret</b></span></code></pre>
+                  </div>
+                </div>
+                <div class="demo-panel-foot"><code>asm search math</code><a href="demo/recording.json">View recording</a></div>
+              </div>
+
+              <div class="demo-panel" id="demo-panel-inspect" data-demo-panel="inspect" role="tabpanel" aria-labelledby="demo-tab-inspect" tabindex="0" hidden>
+                <div class="demo-inspect-grid">
+                  <div class="demo-instruction-workbench">
+                    <div class="demo-code-caption"><h3>asm_u64_min</h3><a href="https://github.com/stubbi/asm/blob/1dbe731fbe19d1e6201afd662699382e4983655a/examples/math/src/min.s">Source</a></div>
+                    <pre tabindex="0" class="demo-code demo-stepping-code" aria-label="Four instructions in the function"><code><span class="demo-code-line" data-min-line="1"><span class="demo-line-number" aria-hidden="true">1</span><span><b>mov</b>   rax, rdi</span></span><span class="demo-code-line" data-min-line="2"><span class="demo-line-number" aria-hidden="true">2</span><span><b>cmp</b>   rdi, rsi</span></span><span class="demo-code-line" data-min-line="3"><span class="demo-line-number" aria-hidden="true">3</span><span><b>cmova</b> rax, rsi</span></span><span class="demo-code-line" data-min-line="4"><span class="demo-line-number" aria-hidden="true">4</span><span><b>ret</b></span></span></code></pre>
+                    <div class="demo-registers"><div><small>rdi</small><strong data-min-register="rdi">12</strong></div><div><small>rsi</small><strong data-min-register="rsi">37</strong></div><div><small>rax</small><strong data-min-register="rax">—</strong></div></div>
+                  </div>
+                  <div class="demo-input-workbench">
+                    <h3>Instruction model</h3>
+                    <div class="demo-inputs"><label>First input <span>rdi</span><input type="text" inputmode="numeric" data-min-input="a" value="12" aria-describedby="min-status" autocomplete="off" spellcheck="false"></label><label>Second input <span>rsi</span><input type="text" inputmode="numeric" data-min-input="b" value="37" aria-describedby="min-status" autocomplete="off" spellcheck="false"></label></div>
+                    <div class="demo-model-actions"><button class="demo-action" type="button" data-min-step>Step instruction</button><button class="demo-reset" type="button" data-min-reset>Reset</button></div>
+                    <p id="min-status" class="demo-model-status" data-min-status role="status" aria-live="polite">Change the inputs or step through the function.</p>
+                    <p class="demo-model-note">The registers hold the inputs and result. <a href="https://github.com/stubbi/asm/blob/1dbe731fbe19d1e6201afd662699382e4983655a/examples/math/tests/main.s">Package tests</a></p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="demo-panel" id="demo-panel-use" data-demo-panel="use" role="tabpanel" aria-labelledby="demo-tab-use" tabindex="0" hidden>
+                <p class="demo-prerequisite">Requires Linux x86-64 and GNU binutils. <a href="https://github.com/stubbi/asm#install-the-command">Install Asm and host tools</a>.</p>
+                <div class="demo-use-grid">
+                  <div>
+                    <div class="demo-section-caption"><h3>Create a project</h3><button class="copy-button demo-copy" type="button" data-copy="demo-add-commands" aria-label="Copy project and dependency commands">Copy</button></div>
+                    <pre class="demo-command" tabindex="0"><code id="demo-add-commands">asm new minimum &amp;&amp;
+cd minimum &amp;&amp;
+asm add stubbi/math@0.4.0 --target x86_64-linux</code></pre>
+                    <div class="demo-edit-step"><p>Replace <code>src/main.s</code> with the example.</p><a href="demo/minimum.s" download>Download source</a></div>
+                    <div class="demo-section-caption"><h3>Run</h3><button class="copy-button demo-copy" type="button" data-copy="demo-run-commands" aria-label="Copy locked run commands">Copy</button></div>
+                    <pre class="demo-command" tabindex="0"><code id="demo-run-commands">asm lock &amp;&amp;
+asm run --locked</code></pre>
+                  </div>
+                  <div class="demo-use-source">
+                    <div class="demo-section-caption"><h3>src/main.s</h3><span>Excerpt</span></div>
+                    <pre class="demo-command demo-source-excerpt" tabindex="0"><code>.include "stubbi/math/0.4.0/x86_64-linux/src/min.s"
+
+mov edi, 12
+mov esi, 37
+call asm_u64_min</code></pre>
+                    <div class="demo-recorded-result"><span>Recorded output · Asm 0.4.0 · Linux x86-64</span><samp>min(12, 37) = 12</samp></div>
+                    <div class="demo-use-links"><a href="demo/recording.json">View recording</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+                  <details class="demo-source-detail"><summary>Example source · src/main.s</summary><button class="copy-button demo-copy" type="button" data-copy="demo-full-program" data-copy-verbatim hidden aria-label="Copy full source for the complete program">Copy full source</button><pre class="demo-command" tabindex="0"><code id="demo-full-program">/*
+MIT License
+
+Copyright (c) 2026 ASM contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+.intel_syntax noprefix
+.include &quot;stubbi/math/0.4.0/x86_64-linux/src/min.s&quot;
+
+.section .text
+.global _start
+_start:
+    mov edi, 12
+    mov esi, 37
+    call asm_u64_min
+    cmp rax, 12
+    jne .Lfailure
+    mov eax, 1
+    mov edi, 1
+    lea rsi, [rip + message]
+    mov edx, message_end - message
+    syscall
+    mov eax, 60
+    xor edi, edi
+    syscall
+.Lfailure:
+    mov eax, 60
+    mov edi, 1
+    syscall
+
+.section .rodata
+message: .ascii &quot;min(12, 37) = 12\n&quot;
+message_end:
+.section .note.GNU-stack,&quot;&quot;,@progbits
+</code></pre></details>
+        </div>
+      </section>
+
+      <section class="section package-section" id="packages" aria-labelledby="packages-heading">
+        <div class="container">
+          <div class="section-intro"><p class="eyebrow">THE PACKAGE MODEL</p><h2 id="packages-heading">The target is part of the package.</h2><p>Check the target, calling interface, and build instructions before you reuse a package. Some requirements are stated in its documentation.</p></div>
+          <div class="contract-grid">
+            <article class="contract-card"><h3>Machine requirements</h3><p>The instruction set, required CPU features, operating system, and object format determine where the code can run.</p></article>
+            <article class="contract-card"><h3>Calling interface</h3><p>The application binary interface (ABI) defines calls and data layout. Read the package's symbol names, memory ownership, and register use.</p></article>
+            <article class="contract-card"><h3>Build record</h3><p>Declared tools, pinned inputs, and recorded outputs give you something concrete to reproduce and review.</p></article>
+          </div>
+          <a class="text-link section-link" href="https://github.com/stubbi/asm/blob/main/docs/specs/registry.md">Read the package design <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
+      <section class="section container evidence-section" id="evidence" aria-labelledby="evidence-heading">
+        <div class="evidence-intro"><p class="eyebrow">RELEASE EVIDENCE</p><h2 id="evidence-heading">Show the evidence.</h2><p>Package records show metadata checks, artifact checks, and checks that were not run. Read each result's version, target, scope, and assumptions.</p><a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Read the security model <span aria-hidden="true">↗</span></a><div class="evidence-note"><span class="outlined-dot" aria-hidden="true"></span><p>Each release lists its current checks. Hosted proof and analysis services are planned.</p></div></div>
+        <div class="evidence-list">
+          <article><h3>Integrity</h3><p>Size and SHA-256 checks compare a file with its release record. A matching digest does not establish publisher identity or safety.</p></article>
+          <article><h3>Provenance</h3><p>Connects an artifact to its source, build process, and publisher identity within a stated policy.</p></article>
+          <article><h3>Scanning</h3><p>Records what a named tool inspected, the tool version, and its findings.</p></article>
+          <article><h3>Testing</h3><p>Records the inputs, target, environment, and observed results of specific tests.</p></article>
+          <article><h3>Formal proofs</h3><p>Establish stated mathematical properties within a model and explicit assumptions.</p></article>
+          <article><h3>Agent review</h3><p>Provides advisory analysis. It does not replace an accountable review or a release gate.</p></article>
+        </div>
+      </section>
+
+      <section class="section why-section" id="why" aria-labelledby="why-heading">
+        <div class="container why-grid">
+          <div><p class="eyebrow">WHY Asm</p><h2 id="why-heading">Make the useful work reusable.</h2></div>
+          <div class="why-copy">
+            <p>Software should serve people well and use resources with care. Assembly gives builders direct control over instructions and machine features.</p>
+            <p>We expect AI to make assembly cheaper to create and maintain. More generated code makes dependable reuse and inspectable evidence more important.</p>
+            <p>Asm brings assembly projects, packages, targets, and release evidence into a shared workflow. People decide what to build, what to use, and what to trust.</p>
+            <p>Assembly must earn its place through correct behavior, useful results, and measured total cost.</p>
+            <a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/why-asm.md">Read the project motivation <span aria-hidden="true">↗</span></a>
+            <div class="measured-example">
+              <h3>A measured example</h3>
+              <p>An <a href="https://github.com/stubbi/asmwc/tree/13ddc7effea46f3f2aad3f5b69635817e6fd6541">asmwc experiment</a> measured default counting on a 128 MiB text file. On Apple M3 with macOS 15.6.1, median time was 15.234 ms for optimized assembly and 68.468 ms for native Rust. Each implementation had 24 samples with a warm file cache. The comparison includes algorithm, I/O, and startup differences. Asm checked the published records; we have not reproduced the experiment.</p>
+              <a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/evidence.md">Read the experiment and its limits <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section roadmap-section" id="roadmap" aria-labelledby="roadmap-heading">
+        <div class="container">
+          <div class="section-heading-row"><div class="section-intro"><p class="eyebrow">BUILT IN THE OPEN</p><h2 id="roadmap-heading">What comes next.</h2><p>Asm 0.6.0 supports local projects, exact dependencies, and standalone Linux cross builds. Broader resolution and hosted verification remain planned.</p></div><a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Full roadmap <span aria-hidden="true">↗</span></a></div>
+          <ul class="roadmap-grid">
+            <li class="current"><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>NOW</div><h3>CLI foundation</h3><p>A native assembly executable, local project commands, and a format for package records.</p></li>
+            <li class="current"><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>NOW</div><h3>Exact dependencies</h3><p>Target-specific locks, checked source files, managed executable installs, and reproducible release artifacts.</p></li>
+            <li><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>PLANNED</div><h3>Registry operations</h3><p>Authenticated publication, ownership controls, account recovery, and dependency range resolution.</p></li>
+            <li><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>RESEARCH</div><h3>Deeper assurance</h3><p>Clients for more hosts, isolated analysis, and scoped proof checks for supported routines.</p></li>
+          </ul>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="site-footer">
+      <div class="container registry-footer-grid">
+        <div class="footer-brand">
+          <a class="wordmark" href="index.html" aria-label="Asm home"><img src="wordmark.svg" width="232" height="72" alt="asm"></a>
+          <p>A home for assembly.</p>
+        </div>
+        <div class="footer-navs">
+          <nav aria-label="Learn"><h2>Learn</h2><a href="docs/">Docs</a><a href="guide.html">Guide</a><a href="https://github.com/stubbi/asm#install-the-command">Install Asm</a><a href="reference/">CLI source</a><a href="agents.md">For AI agents</a></nav>
+          <nav aria-label="Registry"><h2>Registry</h2><a href="explore/">Explore</a><a href="packages/">All packages</a><a href="browse/new/">New packages</a><a href="browse/popular/">Most downloaded</a><a href="stats/">Statistics</a></nav>
+          <nav aria-label="Project"><h2>Project</h2><a href="guide.html#why">Why Asm</a><a href="blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="sponsors.html">Sponsorship</a></nav>
+          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/stubbi/asm#status">Supported hosts</a></nav>
+        </div>
+      </div>
+      <div class="footer-support">
+        <div class="container footer-support-inner">
+          <div><h2>Help build Asm</h2><p>Contribute code, improve the guide, or support the project.</p></div>
+          <div class="footer-support-actions"><a class="button button-secondary" href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a class="button button-primary" href="sponsors.html">Sponsor Asm</a></div>
+        </div>
+      </div>
+    </footer>
+    <p class="sr-only" role="status" aria-live="polite" id="copy-status"></p>
+  </body>
+</html>

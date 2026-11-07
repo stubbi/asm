@@ -1,0 +1,229 @@
+{
+  "date": "2026-11-03",
+  "environment": {
+    "platform": "Linux-6.18.58-0-virt-x86_64-with-musl1",
+    "machine": "x86_64",
+    "curl": {
+      "path": "/usr/bin/curl",
+      "sha256": "9eb8284fd54bcecc516acf5102c4ddd80732fae8fb563c93a5737a5ee1c0b47d"
+    },
+    "as": {
+      "path": "/usr/bin/as",
+      "sha256": "de886b8a70a35803ec72072d716461d14bbb526fc7bc8184f8e463da524bb057"
+    },
+    "ld": {
+      "path": "/usr/bin/ld",
+      "sha256": "48c952c44302d407c9f8e2944fc2f9291785875494e8fdc5e63b67ad032504af"
+    },
+    "sha256sum": {
+      "path": "/usr/bin/sha256sum",
+      "sha256": "b741c1ac63a4fc1666b1030f81f9981dfeb1b6132f69591081f46bf254db2755"
+    },
+    "gzip": {
+      "path": "/bin/gzip",
+      "sha256": "b7a99c66a1a62a610371c5c701379ffddd6d50bea3b4659f69745ef1e3de1fe5"
+    },
+    "gzip_compatibility_path": "/usr/bin/gzip -> /usr/bin/gzip"
+  },
+  "commands": [
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "version"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final",
+      "exit": 0,
+      "stdout": "asm 0.4.0 (x86_64-linux)\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "search",
+        "math"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final",
+      "exit": 0,
+      "stdout": "stubbi/math\t0.1.0\tx86_64-linux\tsource\t23b0c06943e83a943e26b396dc9177b0b966286bdbce662f935dadfd9c88fe3b\thttps://github.com/stubbi/asm/releases/download/v0.1.0/math-0.1.0-x86_64-linux-source.tar.gz\t2052\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.2.0\tx86_64-linux\tsource\t23468e2b1038189cf3b8b166ef34676cfa4ea9a62967399a6c602d44991e4e13\thttps://github.com/stubbi/asm/releases/download/v0.2.0/math-0.2.0-x86_64-linux-source.tar.gz\t2052\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.3.0\tx86_64-linux\tsource\t169c5d13f6b0f0a161225b03a816af6be2aa103f29d8385d67d698082bfd328b\thttps://github.com/stubbi/asm/releases/download/v0.3.0/math-0.3.0-x86_64-linux-source.tar.gz\t2054\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.4.0\tx86_64-linux\tsource\t5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08\thttps://github.com/stubbi/asm/releases/download/v0.4.0/math-0.4.0-x86_64-linux-source.tar.gz\t2054\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "info",
+        "stubbi/math"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final",
+      "exit": 0,
+      "stdout": "stubbi/math\t0.1.0\tx86_64-linux\tsource\t23b0c06943e83a943e26b396dc9177b0b966286bdbce662f935dadfd9c88fe3b\thttps://github.com/stubbi/asm/releases/download/v0.1.0/math-0.1.0-x86_64-linux-source.tar.gz\t2052\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.2.0\tx86_64-linux\tsource\t23468e2b1038189cf3b8b166ef34676cfa4ea9a62967399a6c602d44991e4e13\thttps://github.com/stubbi/asm/releases/download/v0.2.0/math-0.2.0-x86_64-linux-source.tar.gz\t2052\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.3.0\tx86_64-linux\tsource\t169c5d13f6b0f0a161225b03a816af6be2aa103f29d8385d67d698082bfd328b\thttps://github.com/stubbi/asm/releases/download/v0.3.0/math-0.3.0-x86_64-linux-source.tar.gz\t2054\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\nstubbi/math\t0.4.0\tx86_64-linux\tsource\t5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08\thttps://github.com/stubbi/asm/releases/download/v0.4.0/math-0.4.0-x86_64-linux-source.tar.gz\t2054\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "new",
+        "minimum"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final",
+      "exit": 0,
+      "stdout": "Created asm.toml, src/main.s and tests/main.s.\nNext: asm run\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "add",
+        "stubbi/math@0.4.0",
+        "--target",
+        "x86_64-linux"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 0,
+      "stdout": "Added the exact source dependency. Run asm lock to check the cache.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "lock"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 0,
+      "stdout": "Verified every locked archive and source file.\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "run",
+        "--locked"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 0,
+      "stdout": "min(12, 37) = 12\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "test"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 0,
+      "stdout": "Passed tests/main.s\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "add",
+        "stubbi/math@0.4.0",
+        "--target",
+        "aarch64-linux"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "asm: installation requires x86_64-linux; use fetch to inspect another target\n"
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "run",
+        "--locked"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "asm: source cache verification failed. Remove the changed package cache directory, then run asm sync\n"
+    },
+    {
+      "argv": [
+        "/tmp/asm-recorded-demo-final/asm",
+        "run",
+        "--locked"
+      ],
+      "cwd": "/tmp/asm-recorded-demo-final/minimum",
+      "exit": 0,
+      "stdout": "min(12, 37) = 12\n",
+      "stderr": ""
+    }
+  ],
+  "artifacts": {
+    "asm": {
+      "url": "https://github.com/stubbi/asm/releases/download/v0.4.0/asm-0.4.0-x86_64-linux",
+      "sha256": "7a618e4070a9b373d63554c7f144b40ad51729ff868fa091bd1d72de4b4fe586",
+      "bytes": 97504
+    },
+    "math-0.4.0.tar.gz": {
+      "url": "https://github.com/stubbi/asm/releases/download/v0.4.0/math-0.4.0-x86_64-linux-source.tar.gz",
+      "sha256": "5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08",
+      "bytes": 2054
+    }
+  },
+  "source_provenance": {
+    "package": "stubbi/math",
+    "version": "0.4.0",
+    "license": "MIT",
+    "source_commit": "1dbe731fbe19d1e6201afd662699382e4983655a",
+    "source_path": "examples/math",
+    "repository": "https://github.com/stubbi/asm",
+    "consumer_license": "MIT",
+    "registry_record_sha256": "cbe3f989a49f5095d63f7b591b99784162b8375a934d00b30e8bf57efc2f1434",
+    "commit_file_sha256": {
+      "src/min.s": "02726f5b7f3b788eb59a189cfdbea85c4add5b87ae87e29a75f971b3654f8933",
+      "tests/main.s": "4c0196525ccef062727732af606c240208f71c234703e2478036179cc4189530",
+      "LICENSE": "91d5d85f1cee47d47ce45ca577d1dda31123c4200713f622794370744a8e4e0d",
+      "asm.toml": "369e0f406544b922fb733fcf1da18841ee75b1996c6ef1525eb6959304ceb9ce"
+    },
+    "registry_record": {
+      "artifacts": [
+        {
+          "bytes": 2054,
+          "kind": "source",
+          "sha256": "5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08",
+          "target": "x86_64-linux",
+          "url": "https://github.com/stubbi/asm/releases/download/v0.4.0/math-0.4.0-x86_64-linux-source.tar.gz"
+        }
+      ],
+      "license": "MIT",
+      "name": "stubbi/math",
+      "schema": 1,
+      "source": {
+        "commit": "1dbe731fbe19d1e6201afd662699382e4983655a",
+        "path": "examples/math",
+        "repository": "https://github.com/stubbi/asm"
+      },
+      "summary": "An unsigned 64-bit minimum routine for the System V AMD64 ABI.",
+      "version": "0.4.0",
+      "yanked": false
+    },
+    "source_file_match": "Tested dependency src/min.s matches the declared source commit exactly."
+  },
+  "project": {
+    "asm.toml": {
+      "sha256": "b3e85158b5eac7dcd030351ff6f6b8a4069212ab58e94da5c406d882e2f33057",
+      "text": "[package]\nname = \"minimum\"\nversion = \"0.1.0\"\n\n[build]\nsource = \"src/main.s\"\ntarget = \"x86_64-linux\"\n"
+    },
+    "asm.lock": {
+      "sha256": "74b304c4203df29699d1a4ba01a710318484963bb865d0e26e413a580d8f8b6d",
+      "text": "# asm-lock-v1\n# registry https://asm.build/registry/v1/index.tsv\nstubbi/math\t0.4.0\tx86_64-linux\tsource\t5276f2810d875b54c1dd579e3a6152cfd9d0e63a49decd1d411d0796d2bd0a08\thttps://github.com/stubbi/asm/releases/download/v0.4.0/math-0.4.0-x86_64-linux-source.tar.gz\t2054\tAn unsigned 64-bit minimum routine for the System V AMD64 ABI.\n"
+    },
+    "src/main.s": {
+      "sha256": "33d0bb36359da4b7e244b6be6c300d159c737cf5beb729f5753a9519939e42ab",
+      "text": "/*\nMIT License\n\nCopyright (c) 2026 ASM contributors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n*/\n\n.intel_syntax noprefix\n.include \"stubbi/math/0.4.0/x86_64-linux/src/min.s\"\n\n.section .text\n.global _start\n_start:\n    mov edi, 12\n    mov esi, 37\n    call asm_u64_min\n    cmp rax, 12\n    jne .Lfailure\n    mov eax, 1\n    mov edi, 1\n    lea rsi, [rip + message]\n    mov edx, message_end - message\n    syscall\n    mov eax, 60\n    xor edi, edi\n    syscall\n.Lfailure:\n    mov eax, 60\n    mov edi, 1\n    syscall\n\n.section .rodata\nmessage: .ascii \"min(12, 37) = 12\\n\"\nmessage_end:\n.section .note.GNU-stack,\"\",@progbits\n"
+    }
+  },
+  "executable_sha256": "c3cd8a634cf34f9c685e60c7977ff63cf0fa3c3e4a049c88de0cb36544f05471",
+  "dependency_source": {
+    "sha256": "02726f5b7f3b788eb59a189cfdbea85c4add5b87ae87e29a75f971b3654f8933",
+    "text": ".intel_syntax noprefix\n.section .text\n.global asm_u64_min\n.type asm_u64_min, @function\n\n/* Return the smaller unsigned 64-bit input.\n * ABI: Linux x86-64, System V.\n * Input: rdi = a, rsi = b. Every 64-bit value is permitted.\n * Output: rax = min(a, b), with unsigned comparison.\n * Clobbers: rax and flags. Other registers are unchanged.\n * Memory: no data access. RET reads the caller's valid return address.\n * Stack: no local storage. The caller must supply a valid call frame.\n */\nasm_u64_min:\n    mov rax, rdi\n    cmp rdi, rsi\n    cmova rax, rsi\n    ret\n.size asm_u64_min, .-asm_u64_min\n\n.section .note.GNU-stack,\"\",@progbits\n"
+  },
+  "status": "pass",
+  "execution_scope": "Alpine Linux 3.24.3 x86_64 guest, QEMU TCG 9.2.0 on Apple Silicon; no performance measurement.",
+  "validation_notes": [
+    "First harness expected unsupported-target exit 1; CLI returned 2. Attempt 1 retained. Only the expected exit was corrected.",
+    "Attempt 2 passed without a consumer license comment. Final attempt repeats the full flow with the complete MIT notice.",
+    "Generated consumer asm test checks the starter tests only. The published Math package tests ran separately and passed all eight encoded input cases."
+  ]
+}

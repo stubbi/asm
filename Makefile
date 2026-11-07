@@ -98,10 +98,14 @@ endif
 package-test:
 	$(PYTHON) -m unittest discover -s tests/packages -p 'test_*.py' -v
 
-check: test package-test
+check: test package-test site-test
 	$(PYTHON) -m unittest discover -s tests/registry -p 'test_*.py' -v
 	$(PYTHON) -m unittest discover -s tests/release -p 'test_*.py' -v
-	node --test tests/site.test.cjs
+
+.PHONY: site-test
+site-test:
+	node --test tests/site.test.cjs tests/package-demo.test.cjs tests/package-navigation.test.cjs tests/discovery.test.cjs tests/navigation.test.cjs tests/repository-stars.test.cjs
+	PYTHONPATH=tests $(PYTHON) -m unittest test_site test_site_dependencies test_package_pages test_package_activity test_discovery test_discovery_metadata test_download_data test_registry_explore test_registry_stats test_release_blog test_blog_posts test_site_docs test_count_format test_repository_stars test_target_metadata test_artifact_delivery test_serve_site test_bootstrap.BootstrapGenerationTests test_trusted_site.TrustedSiteTests -v
 
 .PHONY: agent-test
 agent-test:

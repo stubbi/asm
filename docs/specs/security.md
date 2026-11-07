@@ -16,6 +16,17 @@ Asm's own bootstrap installer and manual self-update command verify release prov
 
 The controls in the following sections are requirements for those later services. Passing the current validator is not evidence that the later controls have run.
 
+The website's optional GitHub star counter first reads a first-party public observation.
+On static hosting, it can request the fixed public repository API when that observation is absent or expired.
+This request omits credentials and referrers; GitHub receives the connection's network address.
+GitHub also receives standard browser metadata, including the site origin.
+No search terms, page paths, or application-added identifiers enter the request.
+The response must identify `stubbi/asm` and supply a safe nonnegative integer.
+Bound response size, request time, and refresh frequency.
+The browser renders counts as text and hides expired observations when refresh fails.
+Session storage contains public repository metadata and a bounded retry deadline, without visitor identifiers.
+These counts do not establish package suitability or safety.
+
 Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate Asm processes; they do not constrain other processes running as the same user.
 
 Asm 0.5.0 records installed executables in a bounded local inventory, including explicit output paths.
@@ -169,6 +180,35 @@ Agents may propose tests, inspect changes, identify suspicious routines, explain
 Give each analysis job a bounded input set and disposable workspace. Keep registry signing, credentials, releases, and owner changes outside its permissions. Record the model identifier, prompt/policy revision, input digests, tool calls, and report. Redact credentials and private data before any external model request. Repository comments and documentation must not be allowed to change the agent's tools or policy.
 
 No model verdict may override a failed digest, unauthorized publisher, unsupported proof, or failed kernel check. There is no “LLM approved” safety badge. A proven finding may trigger a defined quarantine rule. Uncertain findings need review, supporting evidence, and an appeal route.
+
+## Local artifact delivery and download observations
+
+The local website tool serves exact artifact selections and records Asm-owned transfer events.
+This is a loopback development adapter, not a deployed distribution or publishing service.
+The [discovery contract](discovery.md) defines its counting and coverage policy.
+
+A versioned route binds package, version, target, format, and digest before storage access.
+The adapter rejects unknown selections and new yanked selections.
+It checks byte length, SHA-256, and artifact structure before sending a retained object.
+The private cache uses conditional digest-key creation, owned files, bounded storage, and explicit transfer limits.
+An operator-selected storage reader is separate from the event source.
+Requests cannot supply an upstream URL, traffic class, or counter increment.
+
+A completed full response can create an event only after its body write and flush succeed.
+This does not prove client receipt, verification, installation, publisher identity, or software safety.
+Known bot and internal classifications are advisory exclusions, not authenticated identities.
+Reporting errors interrupt coverage without turning a successful file response into a failure.
+A reporting gap cannot silently establish zero activity.
+
+The private ledger accepts selection-bound, idempotent events through local tooling.
+It stores no visitor identifiers, IP addresses, cookies, fingerprints, user-agent strings, or search terms.
+The service does not log request URLs.
+Host, Origin, path, header, time, byte, concurrency, and filesystem checks bound the local route.
+There is no public event-ingestion API or authenticated browser session on this adapter.
+
+Production delivery requires the architecture's separate artifact origin, authenticated metadata, edge reporting, and recovery gates.
+Published v1 records and native HTTPS rules remain unchanged.
+Legacy direct-origin downloads are outside the local Asm event coverage.
 
 ## Release gates
 
