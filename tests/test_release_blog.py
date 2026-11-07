@@ -139,6 +139,25 @@ class ReleaseBlogTests(unittest.TestCase):
             self.assertNotIn("A planned record", page)
         self.assertEqual((self.repo / "CHANGELOG.md").read_bytes(), before)
 
+    def test_search_metadata_distinguishes_versions_and_archives_without_rewriting_feed_identity(self):
+        self.build(dates=self.dates)
+        for version, license_id in (("0.1.0", "MIT"), ("0.2.0", "AGPL-3.0-or-later")):
+            head = self.post(version).split("</head>", 1)[0]
+            self.assertIn("<title>Release " + version + " notes", head)
+            title = head.split("<title>", 1)[1].split("</title>", 1)[0]
+            self.assertEqual(title.count("Asm"), 1)
+            self.assertIn(license_id, head)
+            self.assertIn("source commit", head)
+        for route, title in (("blog", "Project blog and release notes"), ("blog/articles", "Project articles"),
+                             ("blog/releases", "CLI release notes")):
+            content = (self.stage / route / "index.html").read_text()
+            self.assertIn("<title>" + title, content)
+        article_head = (self.stage / "blog/articles/index.html").read_text().split("</head>", 1)[0]
+        self.assertIn("No articles are published yet", article_head)
+        entry = self.feed().find("a:entry", ATOM)
+        self.assertEqual(entry.findtext("a:id", namespaces=ATOM), "https://asm.build/blog/releases/0.2.0/")
+        self.assertEqual(entry.findtext("a:title", namespaces=ATOM), "Asm 0.2.0")
+
     def test_pages_have_shared_chrome_canonical_links_landmarks_and_only_navigation_script(self):
         routes = self.build(dates=self.dates)
         for route in routes:
@@ -353,6 +372,8 @@ class ReleaseBlogTests(unittest.TestCase):
         for route in routes + ["blog/articles/unpublished/", "blog/articles/future-draft/"]:
             content = (self.stage / route / "index.html").read_text(encoding="utf-8")
             self.assertIn("noindex", Page(content).robots)
+        archive_head = (self.stage / "blog/articles/index.html").read_text().split("</head>", 1)[0]
+        self.assertIn("unpublished drafts", archive_head)
         draft = (self.stage / "blog/articles/unpublished/index.html").read_text()
         self.assertIn("Draft", draft)
         self.assertIn("Unpublished", draft)

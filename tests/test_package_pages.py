@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import registry
 from test_count_format import accessible_text
-from test_site import HierarchyParser
+from test_site import HierarchyParser, SiteParser
 
 
 class Page(HTMLParser):
@@ -92,6 +92,48 @@ class PackagePageTests(unittest.TestCase):
             "dependencies": dependencies or [], "features": features or {}}}]}
 
     def read(self, route): return (self.stage / route / "index.html").read_text()
+
+    def test_search_metadata_uses_each_exact_record_without_changing_its_bytes(self):
+        original = deepcopy(self.records)
+        self.generate()
+        descriptions = []
+        for version in (None, "0.2.0", "0.10.0"):
+            route = "packages/stubbi/math" + ("/" + version if version else "")
+            page = SiteParser(); page.feed(self.read(route))
+            description = next(item["content"] for item in page.metadata if item.get("name") == "description")
+            selected = self.records[0] if version == "0.2.0" else self.records[1]
+            for expected in (selected["summary"], selected["license"], selected["artifacts"][0]["target"]):
+                self.assertIn(expected, description)
+            if version: self.assertIn("stubbi/math " + version, description)
+            descriptions.append(description)
+            title = next("".join(item["text"]) for item in page.elements if item["tag"] == "title")
+            self.assertEqual(title, "stubbi/math" + ("@" + version if version else "") + " | Asm")
+            self.assertEqual([item["content"] for item in page.metadata if item.get("property") == "og:site_name"], ["Asm"])
+        self.assertEqual(len(set(descriptions)), 3)
+        self.assertEqual(self.records, original)
+
+    def test_breadcrumb_schema_describes_visible_hierarchy_and_retains_native_links(self):
+        self.generate()
+        page = SiteParser(); page.feed(self.read("packages/stubbi/math/0.2.0"))
+        lists = [item for item in page.elements if item["attrs"].get("itemtype") == "https://schema.org/BreadcrumbList"]
+        self.assertEqual(len(lists), 1)
+        names = ["".join(item["text"]) for item in page.elements if item["attrs"].get("itemprop") == "name"]
+        self.assertEqual(names, ["Packages", "stubbi", "stubbi/math", "0.2.0"])
+        positions = [item["attrs"]["content"] for item in page.elements if item["attrs"].get("itemprop") == "position"]
+        self.assertEqual(positions, ["1", "2", "3", "4"])
+        parents = [item["attrs"]["href"] for item in page.elements if item["tag"] == "a" and item["attrs"].get("itemprop") == "item"]
+        self.assertEqual([urljoin("https://asm.build/packages/stubbi/math/0.2.0/", path) for path in parents],
+                         ["https://asm.build/packages/", "https://asm.build/packages/stubbi/", "https://asm.build/packages/stubbi/math/"])
+        self.assertIn("Back to search", " ".join(page.text))
+
+    def test_readme_tables_have_distinct_accessible_names_from_the_source_section(self):
+        self.readme.write_text('# Host "support"\n\n| Host | State |\n| --- | --- |\n| Linux | Supported |\n\n| Tool | Version |\n| --- | --- |\n| binutils | 2 |\n')
+        self.records[1]["source"]["commit"] = self.commit()
+        self.generate()
+        page = SiteParser(); page.feed(self.read("packages/stubbi/math"))
+        tables = [item for item in page.elements if item["tag"] == "table"]
+        self.assertEqual([item["attrs"].get("aria-label") for item in tables],
+                         ['Host "support", table 1', 'Host "support", table 2'])
 
     def test_source_declarations_keep_requirements_features_and_native_package_links(self):
         self.records.append(self.record("1.2.0", self.old_commit, "Core fixture", "MIT", "x86_64-linux", name="stubbi/core"))

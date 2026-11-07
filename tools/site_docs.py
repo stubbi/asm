@@ -26,7 +26,7 @@ GROUPS = (
         ("Use a source package", SOURCE + "docs/use-a-package.md",
          "Select an exact dependency and check the resulting program."),
         ("Prepare a package release", SOURCE + "docs/specs/registry.md#package-and-prepare-a-record",
-         "Prepare source-bound artifacts and submit a registry pull request."),
+         "Prepare source-bound artifacts and a local release record without uploading."),
     )),
     ("reference", "Reference", (
         ("CLI source", "../reference/",
@@ -60,7 +60,8 @@ def write_docs(repo: Path, stage: Path) -> list[str]:
             body += ('<a class="directory-card" href="' + escape(href, quote=True) + '"><h3>'
                      + escape(title) + '</h3><p>' + escape(description) + '</p></a>')
         body += '</div></section>'
-    content = package_pages._page("docs/", "Documentation", "Install Asm, use assembly packages, and read CLI and registry references.",
+    content = package_pages._page("docs/", "Installation and package documentation",
+                                  "Find installation, first-project, package, target, and security guides. Detailed instructions open in the maintained repository documentation.",
                                   body, package_pages._chrome(stage), active_nav="Docs", scripts=False)
     registry.write_atomic(stage / "docs/index.html", content.encode("utf-8"))
     return ["docs/"]

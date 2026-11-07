@@ -235,7 +235,9 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                 package_pages._anchor("GitHub release notes", REPOSITORY + "/releases/tag/v" + version) + ' · ' +
                 package_pages._anchor("Exact package and evidence", prefix + package_pages.package_route(NAME, version)) + '</p>'
                 '<p>Release source commit: <code>' + record["source"]["commit"] + '</code></p></section></article>')
-        html = _blog_page(route, "Asm " + version, "Release notes for Asm " + version + ".", body, chrome, include_drafts)
+        description = ("Read the recorded change log for Asm " + version + ". Review its " + record["license"]
+                       + " license, source commit, and exact package evidence.")
+        html = _blog_page(route, "Release " + version + " notes", description, body, chrome, include_drafts)
         outputs.append((route + "index.html", html.encode("utf-8")))
         posts.append({"kind": "release", "title": "Asm " + version, "version": version, "route": route, "date": dates.get(version), "html": content,
                       "summary": package_pages._inline(_summary(sections[version]), record["source"], "CHANGELOG.md")})
@@ -271,7 +273,18 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                 _navigation(route, selected) + '<p class="blog-feed-link">' + package_pages._anchor("Subscribe with Atom", prefix + "blog/atom.xml") + '</p>')
         body += _listing(entries, route) if entries else '<p>' + ("No articles are published yet." if selected == "Articles" else "No Asm releases are registered yet." if selected == "Releases" else "No posts are published yet.") + '</p>'
         body += '<p class="package-note">Release entries require registered Asm versions. Unreleased changes stay in the repository change log. The feed includes published articles and releases with known dates.</p>'
-        outputs.append((route + "index.html", _blog_page(route, title, description, body, chrome, include_drafts).encode("utf-8")))
+        page_title, page_description = {
+            "All": ("Project blog and release notes", "Read recorded CLI release notes and repository-authored articles. Each entry retains its source and publication date when available."),
+            "Articles": ("Project articles", "Read published articles about assembly software and dependable package reuse. Each article identifies its author, source, and declared publication date."),
+            "Releases": ("CLI release notes", "Read change logs for registered CLI versions. Inspect each release's recorded license, source commit, package evidence, and publication date when available."),
+        }[selected]
+        if not entries:
+            page_description = ("No articles are published yet. This archive lists repository-authored articles after publication." if selected == "Articles" else
+                                "No CLI releases are registered yet. Published releases appear here with their recorded change log and available evidence." if selected == "Releases" else
+                                "No posts are published yet. Published articles and registered CLI release notes appear here when available.")
+        elif selected == "Articles" and any(post.get("draft") for post in entries):
+            page_description = "Preview repository-authored articles, including unpublished drafts. Drafts remain outside the public feed and sitemap."
+        outputs.append((route + "index.html", _blog_page(route, page_title, page_description, body, chrome, include_drafts).encode("utf-8")))
     outputs.append(("blog/atom.xml", _feed(posts, now)))
     for relative, data in outputs: registry.write_atomic(stage / relative, data)
     return ["blog/", "blog/articles/", "blog/releases/"] + [post["route"] for post in posts if not post.get("draft")]

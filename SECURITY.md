@@ -10,6 +10,10 @@ Use harmless test data in the reproduction.
 If the private form is unavailable, open an issue that asks for a private reporting route.
 Do not include the vulnerability details in that issue.
 
+The website also publishes this route in [security.txt](https://asm.build/.well-known/security.txt).
+Review its contact and policy before its stated expiry.
+Renew the expiry only after that review.
+
 ## Support scope
 
 Asm is an early alpha.

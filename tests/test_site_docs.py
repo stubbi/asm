@@ -91,6 +91,15 @@ class DocsTests(unittest.TestCase):
                 anchors = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
                 self.assertIn(parsed.fragment, anchors, href)
 
+    def test_search_metadata_describes_a_task_hub_and_record_preparation_remains_local(self):
+        _, content = self.generate()
+        head = content.split("</head>", 1)[0]
+        self.assertIn("<title>Installation and package documentation", head)
+        self.assertIn("installation", head)
+        self.assertIn("maintained repository", head)
+        self.assertIn("Prepare source-bound artifacts and a local release record without uploading.", content)
+        self.assertNotIn("submit a registry pull request", content)
+
     def test_local_assets_and_cards_are_native_links_with_readable_task_labels(self):
         _, content = self.generate()
         page = Page(content)

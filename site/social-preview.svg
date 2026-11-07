@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
-<title id="title">asm — Packages for assembly</title>
+<title id="title">Assembly package registry and CLI | Asm</title>
 <desc id="description">A small Asm wordmark above a search field in a quiet gray band.</desc>
 <rect width="1280" height="640" fill="#fff"/>
 <path d="M0 0H1280V440H0Z" fill="#f5f5f4"/>

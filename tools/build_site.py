@@ -160,23 +160,24 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f5f4">
-    <meta name="description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta name="description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
+    <meta property="og:site_name" content="Asm">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="CLI source reference — asm">
-    <meta property="og:description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta property="og:title" content="CLI source reference | Asm">
+    <meta property="og:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta property="og:url" content="https://asm.build/reference/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
     <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="CLI source reference — asm">
-    <meta name="twitter:description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta name="twitter:title" content="CLI source reference | Asm">
+    <meta name="twitter:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
     <link rel="canonical" href="https://asm.build/reference/">
     <link rel="icon" type="image/svg+xml" href="../icon.svg">
     <link rel="stylesheet" href="../styles.css">
     <script src="../navigation.js"></script>
     <script src="../repository-stars.js" defer></script>
-    <title>CLI source reference — asm</title>
+    <title>CLI source reference | Asm</title>
   </head>
   <body class="reference-page">
     <a class="skip-link" href="#main">Skip to content</a>

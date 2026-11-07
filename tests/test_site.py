@@ -1,6 +1,7 @@
 """Static checks for accessible references and local website assets."""
 
 from html.parser import HTMLParser
+from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import json
@@ -296,10 +297,24 @@ class SiteTests(unittest.TestCase):
                     "sponsors.html": ["navigation.js", "repository-stars.js"]}
         for name, page in self.pages.items():
             with self.subTest(page=name):
-                scripts = [item for item in page.elements if item["tag"] == "script"]
+                scripts = [item for item in page.elements if item["tag"] == "script"
+                           and item["attrs"].get("type") != "application/ld+json"]
                 self.assertEqual([item["attrs"] for item in scripts],
                                  [{"src": src, **({} if src == "navigation.js" else {"defer": None})} for src in expected[name]])
                 self.assertTrue(all(not "".join(item["text"]).strip() for item in scripts))
+
+    def test_homepage_declares_the_actual_site_name_without_invented_search_or_ratings(self):
+        for name, page in self.pages.items():
+            data = [item for item in page.elements if item["tag"] == "script"
+                    and item["attrs"].get("type") == "application/ld+json"]
+            if name != "index.html":
+                self.assertEqual(data, [])
+                continue
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["attrs"], {"type": "application/ld+json"})
+            self.assertEqual(json.loads("".join(data[0]["text"])), {
+                "@context": "https://schema.org", "@type": "WebSite", "name": "Asm",
+                "alternateName": "asm.build", "url": "https://asm.build/"})
 
     def test_sponsorship_route_is_available_from_project_entry_points(self):
         for name in ("index.html", "guide.html"):
@@ -864,6 +879,38 @@ Unpublished body sentinel.
                     self.assertTrue(robots.can_fetch(crawler, location))
         for path in ("/styles.css", "/app.js", "/registry/v1/index.json"):
             self.assertTrue(robots.can_fetch("Googlebot", "https://asm.build" + path))
+
+    def test_indexable_metadata_is_unique_and_uses_the_prose_brand_and_pipe_separator(self):
+        titles, descriptions = set(), set()
+        for entry in self.routes.pages.values():
+            name = entry["file"].as_posix()
+            page = self.pages[name]
+            if "noindex" in page.robots:
+                continue
+            title = next("".join(item["text"]) for item in page.elements if item["tag"] == "title")
+            self.assertTrue(title.endswith(" | Asm"), (name, title))
+            self.assertFalse(any(character in title for character in ("\u2013", "\u2014")), name)
+            self.assertNotIn(title, titles, (name, title))
+            titles.add(title)
+            description = page.descriptions[0]
+            self.assertNotIn(description, descriptions, (name, description))
+            descriptions.add(description)
+            self.assertEqual([item.get("content") for item in page.metadata
+                              if item.get("property") == "og:site_name"], ["Asm"])
+
+    def test_security_contact_is_published_unchanged_with_a_current_expiry(self):
+        path = ".well-known/security.txt"
+        content = (self.output / path).read_bytes()
+        self.assertEqual(content, (SITE / path).read_bytes())
+        self.assertTrue(content.endswith(b"\n"))
+        fields = dict(line.split(": ", 1) for line in content.decode("utf-8").splitlines())
+        policy = (ROOT / "SECURITY.md").read_text()
+        self.assertIn(fields["Contact"], policy)
+        self.assertEqual(fields["Canonical"], "https://asm.build/" + path)
+        self.assertEqual(fields["Policy"], "https://github.com/stubbi/asm/blob/main/SECURITY.md")
+        self.assertEqual(fields["Preferred-Languages"], "en")
+        expires = datetime.fromisoformat(fields["Expires"].replace("Z", "+00:00"))
+        self.assertGreater(expires, datetime.now(timezone.utc), "Review the security contact before renewing its expiry")
 
     def test_indexnow_ownership_file_is_published_with_exact_utf8_content(self):
         keys = [path for path in SITE.iterdir() if re.fullmatch(r"[0-9a-f]{32}\.txt", path.name)]
