@@ -306,22 +306,44 @@ class ContractTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_runtime_log_capture_is_bounded_redacted_and_refuses_links(self):
+    def test_diagnostic_redaction_removes_credentials_in_memory(self):
+        module = self.runtime_module()
+        secret = "a" * 48
+        self.assertEqual(module.redact_diagnostic_text("fixture " + secret + "\n", secret),
+                         "fixture [redacted]\n")
+        for scheme in ("postgresql", "postgres"):
+            text = 'fixture "' + scheme + '://user:password@localhost/db"\n'
+            self.assertEqual(module.redact_diagnostic_text(text), 'fixture "[redacted]"\n')
+        for absent in (None, "", 1):
+            self.assertEqual(module.redact_diagnostic_text("plain diagnostic text", absent),
+                             "plain diagnostic text")
+
+        # Exercise the real tail reader without writing credential-shaped data.
+        for text, limit, expected in (
+                ("fixture " + secret + " postgresql://user:password@localhost/db\n", 256,
+                 "fixture [redacted] [redacted]\n"),
+                ("postgresql://user:" + secret + "@localhost/db\nretained line\n", 32, "retained line\n")):
+            stream = io.BytesIO(text.encode())
+            stream.fileno = lambda: 0
+            metadata = type("Metadata", (), {"st_mode": module.stat.S_IFREG, "st_size": len(stream.getvalue())})()
+            with patch.object(module.os, "open", return_value=0), \
+                 patch.object(module.os, "fdopen", return_value=stream), \
+                 patch.object(module.os, "fstat", return_value=metadata):
+                self.assertEqual(module.diagnostic_file(Path("in-memory-log"), limit, tail=True,
+                                                       secret=secret)["text"], expected)
+
+    def test_runtime_log_capture_is_bounded_and_refuses_links(self):
         module = self.runtime_module()
         with tempfile.TemporaryDirectory(prefix="asm-runtime-diagnostics-") as directory:
             root = Path(directory)
-            secret = "a" * 48
             log = root / "server.log"
-            log.write_bytes(b"discarded prefix\n" * 100 +
-                            ("fixture " + secret + " postgresql://user:password@localhost/db\n").encode())
-            value = module.diagnostic_file(log, 256, tail=True, secret=secret)
+            log.write_bytes(b"discarded prefix\n" * 100 + b"plain retained line\n")
+            value = module.diagnostic_file(log, 256, tail=True)
             self.assertTrue(value["truncated"])
             self.assertLessEqual(len(value["text"].encode()), 256)
-            self.assertNotIn(secret, value["text"])
-            self.assertNotIn("postgresql://", value["text"])
-            self.assertIn("[redacted]", value["text"])
-            log.write_text("postgresql://user:" + secret + "@localhost/db\nretained line\n")
-            self.assertEqual(module.diagnostic_file(log, 32, tail=True, secret=secret)["text"],
+            self.assertIn("plain retained line\n", value["text"])
+            log.write_text("discarded partial line " + "x" * 64 + "\nretained line\n")
+            self.assertEqual(module.diagnostic_file(log, 32, tail=True)["text"],
                              "retained line\n")
             link = root / "linked.log"
             link.symlink_to(log)

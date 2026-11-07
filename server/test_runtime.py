@@ -32,6 +32,12 @@ import registry
 import registry_admin
 
 
+def redact_diagnostic_text(text, secret=None):
+    if isinstance(secret, str) and secret:
+        text = text.replace(secret, "[redacted]")
+    return re.sub(r"postgres(?:ql)?://[^\s\"']+", "[redacted]", text)
+
+
 def diagnostic_file(path, limit, *, tail=False, secret=None):
     """Read only a bounded regular-file excerpt; never follow a log symlink."""
     try:
@@ -49,10 +55,7 @@ def diagnostic_file(path, limit, *, tail=False, secret=None):
             # password must not leave its trailing characters in the excerpt.
             data = data.partition(b"\n")[2]
         text = data[:limit].decode("utf-8", "replace")
-        if isinstance(secret, str) and secret:
-            text = text.replace(secret, "[redacted]")
-        text = re.sub(r"postgres(?:ql)?://[^\s\"']+", "[redacted]", text)
-        return {"text": text, "truncated": truncated}
+        return {"text": redact_diagnostic_text(text, secret), "truncated": truncated}
     except OSError as error:
         return {"unavailable": type(error).__name__}
 
