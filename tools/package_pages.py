@@ -105,13 +105,16 @@ def _topic_links(topics: dict | None, prefix: str) -> str:
     if not topics:
         return ""
     rows = []
-    for label, group, entries in (("Categories", "categories", topics["categories"]),
-                                  ("Keywords", "keywords", [(tag, tag) for tag in topics["keywords"]]),
-                                  ("Architectures", "architectures", topics["architectures"])):
+    for label, group, purpose, entries in (("Categories", "categories", "category", topics["categories"]),
+                                          ("Keywords", "keywords", "keyword", [(tag, tag) for tag in topics["keywords"]]),
+                                          ("Architectures", "architectures", "architecture", topics["architectures"])):
         if entries:
-            links = "".join('<li>' + _anchor(name, prefix + "browse/" + group + "/" + identifier + "/") + '</li>'
+            links = "".join('<li>' + _anchor(name, prefix + "browse/" + group + "/" + identifier + "/",
+                            attrs=' aria-label="' + escape(name + " " + purpose, quote=True) + '"') + '</li>'
                             for identifier, name in entries)
-            rows.append('<div><dt>' + label + '</dt><dd><ul>' + links + '</ul></dd></div>')
+            identifier = "package-topics-" + group
+            rows.append('<div><dt id="' + identifier + '">' + label + '</dt><dd><ul aria-labelledby="'
+                        + identifier + '">' + links + '</ul></dd></div>')
     if not rows:
         return ""
     return ('<section class="package-section"><h2>Browse related</h2><dl class="package-source-facts package-topics">'
