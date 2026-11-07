@@ -3,7 +3,6 @@
 > Asm is a package registry and command-line tool for assembly projects.
 
 Use explicit targets, inspect exact releases, and retain evidence for the resulting software.
-These entry points become available when this site build is published.
 
 ## Agent entry points
 

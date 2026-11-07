@@ -4,7 +4,6 @@ import copy
 import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import importlib
 import io
 import json
 from pathlib import Path
@@ -21,10 +20,7 @@ from urllib.request import HTTPSHandler
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import registry
-try:
-    agent_catalog = importlib.import_module("agent_catalog")
-except ModuleNotFoundError:
-    agent_catalog = None
+import agent_catalog
 
 
 def release(name="test/hello", version="1.0.0", target="x86_64-linux", license="MIT", yanked=False):
@@ -70,7 +66,6 @@ class Opener:
 
 class CatalogTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(agent_catalog, "The bounded agent catalog has not been implemented.")
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "index.json"

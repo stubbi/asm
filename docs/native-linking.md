@@ -162,14 +162,14 @@ Local LLVM assembly checks produced ELF machine 243 with flags 5: compressed ins
 GNU linkage and runtime execution still require target-specific qualification.
 The existing RV64I/LP64 hello example does not establish this native-library ABI or server behavior.
 
-The independently owned RISC-V CLI port must select `-march=rv64gc -mabi=lp64d` for `link = "c"` projects.
+The separate RISC-V CLI port must select `-march=rv64gc -mabi=lp64d` for `link = "c"` projects.
 Its freestanding profile must remain distinct.
 Until that CLI integration passes, the RISC-V reference package's extracted `asm build` gate remains open.
 The hosted foundation uses its direct native compiler build and can qualify independently.
 
 The RISC-V CLI implementation is maintained on a separate branch.
 Its native-library integration needs the same compiler argument rejection and runtime checks before qualification.
-Release and installer changes belong to the separate release workstream after target qualification.
+Release and installer changes require target qualification first.
 The [RISC-V psABI](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/) defines ABI and ELF distinctions.
 Version 2.0-rc0, dated 4 November 2026, was inspected on 5 November 2026.
 The [GNU assembler 2.47 options](https://sourceware.org/binutils/docs/as/RISC_002dV_002dOptions.html) define ISA, ABI, PIC, and relaxation controls.
@@ -189,7 +189,6 @@ Run `asm build` there on the matching Linux host, with the required native libra
 The helper rejects existing destinations, source links, special files, and nonportable paths.
 Preparation runs no package code.
 
-The source-only hosted handoff is `codex/server-runtime-ports`, commits `e3fabf00` and `3d2d0f45`, based on public main `78c6c91`.
-It contains no image, installer, or release changes.
+Server port commits `e3fabf00` and `3d2d0f45`, based on `78c6c91`, contain no image, installer, or release changes.
 The native-package workflow separately exercises current Linux x86-64 and ARM64 CLI builds and both server suites.
 The hosted image workflow owns native x86-64/ARM64 and explicitly emulated RISC-V image qualification.

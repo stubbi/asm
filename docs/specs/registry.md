@@ -1,6 +1,10 @@
 # Registry v1
 
-Asm v1 serves a static registry over HTTPS. Maintainers review publication records in GitHub pull requests. GitHub Releases holds the artifacts. The native CLI and website read indexes made from the same records.
+Asm v1 serves retained compatibility records over HTTPS.
+GitHub Releases holds the artifacts.
+The native CLI and website read indexes made from the same records.
+The former pull-request intake is retired.
+The [hosted publication boundary](../hosted-registry.md#publication-boundary) separates the operator import from the unimplemented public publisher service.
 
 The native CLI supports package discovery, version lists, exact artifact selection, download, and size and SHA-256 checks. It can also prepare a local publication record. Direct dependency locks and cache verification are separate from transitive resolution. Authenticated index metadata and unattended publishing remain future work. See the [roadmap](../roadmap.md).
 
@@ -17,7 +21,10 @@ A registry name has the form `owner/name`, such as `stubbi/hello`. The local pro
 
 Names use lowercase ASCII and compare exactly. Version ranges, prereleases, and build metadata are not v1 syntax. Unsupported syntax is an error.
 
-The first registry is curated. A maintainer must review a new namespace claim. A chosen owner prefix, source URL, or release URL does not prove ownership. The current route relies on repository review; it is not a self-service identity provider.
+The retained registry records came from the curated alpha.
+A maintainer must review a new namespace claim before accepting publication input.
+A chosen owner prefix, source URL, or release URL does not prove ownership.
+The hosted bootstrap importer records operator assertions; it is not a self-service identity provider.
 
 ## Project manifest
 
@@ -44,7 +51,9 @@ Combining that metadata schema with named target tables remains unsupported.
 
 ## Release record
 
-The canonical path is `registry/packages/<owner>/<name>/<version>.json`.
+The retained snapshot path is `registry/packages/<owner>/<name>/<version>.json`.
+The static builder and hosted bootstrap importer still read this path.
+It is not a public package-submission interface.
 
 | Field | Meaning |
 | --- | --- |
@@ -81,7 +90,7 @@ Duplicate JSON keys, unknown fields, invalid types, and non-finite numbers are r
 The supported identifiers include `AGPL-3.0-only`, `AGPL-3.0-or-later`, `MIT`, and `Apache-2.0`.
 The Asm platform's license does not replace a package's declared license.
 Packages with separately licensed components must retain their notices and explain their scope.
-The [licensing guide](../../LICENSING.md) defines Asm's own core, template, and example boundaries.
+The [licensing guide](../../README.md#license) defines Asm's own core, template, and example boundaries.
 
 Published license declarations are immutable with the rest of the release record.
 A later version can declare a different supported license.
@@ -140,7 +149,12 @@ registry/
 
 Linux uses `https://asm.build/registry/v1/index.tsv`. macOS uses `https://asm.build/registry/v1/index-macos.tsv`. The website uses `index.json` and `downloads.json`. These indexes are generated; do not edit them by hand.
 
-GitHub Pages serves the index and website. It does not accept uploads or run checks. The publication route uses repository review and CI. Artifact storage is separate from Pages. Capacity planning must follow [GitHub Pages' limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
+GitHub Pages serves the compatibility index and website.
+It does not accept uploads or run checks.
+The build validates retained records and referenced artifacts before deployment.
+Artifact storage is separate from Pages.
+The hosted operator import does not replace these feeds until deployment qualification passes.
+Capacity planning must follow [GitHub Pages' limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
 
 The compatibility feed `index.tsv` retains the three Linux targets recognized by released 0.3 clients.
 Those targets are `x86_64-linux`, `aarch64-linux`, and `riscv64-linux`.
@@ -281,20 +295,26 @@ The collector matches the exact GitHub release URL and asset size. It also check
 
 These are GitHub asset downloads. They include repeated requests, automation, and both source and executable assets. They do not measure unique users or installed packages. Search order and download counts never affect artifact resolution.
 
-## Package and publish
+## Package and prepare a record
 
 Use `tools/registry.py` with Python 3.11 or later. It uses the standard library.
 
-1. Commit the source that you intend to publish. Include its manifest, source, README, and license.
-2. Use `pack-git` with the full commit ID and source path. It excludes dirty working files and ignores local object replacements.
-3. Build any executable artifact from that same committed source. Record the toolchain and test result.
-4. Upload the exact artifacts to a public GitHub release. Keep the existing bytes when you retry a release.
-5. Use `prepare` to compute sizes and SHA-256 digests, check each artifact, and write the publication record.
-6. Submit that record as a pull request. Include the source commit, test instructions, namespace claim, and any relevant check reports.
-7. Maintainers review the claim and validate against the published history. A trusted deployment job checks accepted bytes again and generates the registry indexes.
+1. Commit the package's manifest, source, README, and license.
+2. Use `pack-git` with the full commit ID and source path.
+   It excludes dirty working files and ignores local object replacements.
+3. Build any executable artifact from that same committed source.
+4. Record the toolchain and test result.
+5. Use `prepare` to check each artifact and write a local record with its size and SHA-256 digest.
 
 `pack` can make a local archive for inspection. It does not provide commit binding. `prepare` writes a local file; it does not upload, reserve a name, or publish a package. The native `asm publish` command prepares a local record without Python.
-Released 0.5.0 publication commands recognize the four original targets and accept up to six artifacts. Concrete commands are in the [registry contributor guide](../../registry/README.md).
+Released 0.5.0 publication commands recognize the four original targets and accept up to six artifacts.
+The [packaging and compatibility guide](../../registry/README.md) supplies concrete commands.
+
+Public package publication remains unavailable while the hosted service is under qualification.
+The [operator procedure](../../server/catalog/README.md#operator-procedure) imports accepted Git snapshots through separate database credentials.
+It retains namespace assertions, immutable records, expected revisions, and atomic exports.
+It does not authenticate public publishers or verify artifact bytes.
+Those requirements remain separate [hosted publication gates](../hosted-registry.md#publication-boundary).
 
 Archives use deterministic USTAR and gzip: sorted paths, normalized modes, zero timestamps and ownership, and no links or special files. The inspector reads the archive without extracting or executing it. It rejects traversal, duplicate paths, case collisions, file/directory conflicts, invalid checksums, and hidden trailing content. It also rejects sensitive file names and resource-limit violations.
 

@@ -4,7 +4,7 @@ Read [the project purpose](docs/why-asm.md) and [AGENTS.md](AGENTS.md).
 Follow the [code of conduct](CODE_OF_CONDUCT.md) in project spaces.
 Use [design.md](design.md) for interface changes.
 Use [the writing guide](docs/writing.md) for documentation and messages.
-Read [the license scope](LICENSING.md) before contributing code or other material.
+Read [the license scope](README.md#license) before contributing code or other material.
 Contributions use the license that applies to the affected files.
 Keep required notices and identify the origin of imported material.
 
@@ -17,11 +17,11 @@ Keep required notices and identify the origin of imported material.
 | `tools/` | Build preparation, registry operations, installation generation, releases, and measurement tools. |
 | `tests/` | CLI, registry, release, and site checks, including failure cases. |
 | `examples/` | Independently licensed reference packages used by tests and release builds. |
-| `registry/packages/` | Immutable published version records, including earlier licenses and artifact digests. |
+| `registry/packages/` | Retained compatibility records and operator bootstrap imports, including earlier licenses and artifact digests. |
+| `server/` | Canonical assembly HTTP runtime and the `server/catalog/` schema and operator contract. |
+| `containers/` | Build and qualification recipes for MCP, the server, and the isolated registry operator. |
 | `site/` | Static website sources. The site builder generates indexes and the installer. |
 | `docs/` | Current guides, specifications, proposals, release notes, and evidence reports. |
-| `LICENSES/` | Additional license notices required by [the license scope](LICENSING.md). |
-| `benchmarks/` | Raw measurements, input identities, traces, regressions, and excluded runs for [the registry report](docs/performance-registry.md). |
 | `experiments/` | The [local assembly server experiment](experiments/assembly-server/README.md), its fixture, tests, and recorded limits. |
 | `.github/` | Review templates, ownership rules, and checked build and publication workflows. |
 
@@ -30,8 +30,8 @@ Use `make` for native host selection.
 The manifest describes one project with a legacy build or named target implementations.
 Project declarations do not establish CLI host support.
 
-Keep measurements separate from experiments that explore new behavior.
-Retain failed and superseded measurements when they explain a published result.
+The [registry report](docs/performance-registry.md) links to measurements retained at an exact historical commit.
+That record includes failed and superseded runs.
 Remove completed implementation plans when current specifications cover their decisions and Git retains their history.
 
 ## Set up the project
@@ -70,13 +70,14 @@ Include a specific scope when it helps the reader.
 Explain non-obvious decisions in the commit body.
 Do not include build output or local credentials.
 
-## Submit a package
+## Prepare a package
 
 Follow [the registry specification](docs/specs/registry.md).
 Use an exact source commit and an explicit open-source license.
 Provide one artifact record for each supported target and artifact kind.
 Keep source and executable artifacts distinct.
 Do not replace a published version.
+Public publication remains unavailable while the [hosted service](docs/hosted-registry.md#publication-boundary) is under qualification.
 
 ## Report a defect
 

@@ -76,7 +76,7 @@ See the [release notes](docs/releases/0.3.0.md) and [performance record](docs/pe
 - Include the applicable license notices in release source archives.
 
 Asm 0.1.0 retains its original MIT license.
-See the [release notes](docs/releases/0.2.0.md) and [license scope](LICENSING.md).
+See the [release notes](docs/releases/0.2.0.md) and [license scope](README.md#license).
 
 ## 0.1.0
 

@@ -1155,7 +1155,8 @@ def main(argv: list[str] | None = None) -> int:
             for data, artifact in zip(payloads, record["artifacts"]):
                 validate_artifact(data, record, artifact)
             write_atomic(arguments.output, json_bytes(record))
-            print(f"Prepared {record['name']}@{record['version']}; submit this manifest for review. Nothing was uploaded.")
+            print(f"Prepared local record for {record['name']}@{record['version']}. Nothing was uploaded.")
+            print("Hosted publication is unavailable pending service qualification.")
         else:
             records = read_records(arguments.registry)
             if arguments.command == "downloads":

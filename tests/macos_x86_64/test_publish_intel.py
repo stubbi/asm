@@ -23,7 +23,7 @@ class IntelPublicationTests(unittest.TestCase):
             for include_checker in [False, True]:
                 files = {'asm.toml': manifest.encode(), 'main.s': b'.global _main\n.text\n_main: ret\n',
                          'README.md': b'Intel Darwin native library source fixture.\n',
-                         'LICENSE': (ROOT / 'LICENSES/MIT.txt').read_bytes()}
+                         'LICENSE': (ROOT / 'examples/hello/LICENSE').read_bytes()}
                 if include_checker:
                     files['abi.c'] = b'_Static_assert(sizeof(void *) == 8, "LP64");\n'
                 data = io.BytesIO()

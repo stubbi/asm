@@ -7,8 +7,7 @@ The native CLI and HTTP application remain assembly.
 Python supplies registry operations under the existing [language boundary](../AGENTS.md#protect-the-native-cli).
 No public write endpoint, build worker, proof worker, or automatic import starts with this image.
 
-The user outcome is a repeatable path from reviewed source to an isolated catalog change.
-The governing principles are dependable reuse, human control, and evidence tied to exact bytes.
+The image connects reviewed source to an isolated catalog change.
 The [catalog contract](../server/catalog/README.md) defines SQL authority, immutable records, and four canonical exports.
 This recipe does not change its schema, guards, validator, or operator transport.
 

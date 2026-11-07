@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/operator_source.py"
 sys.path.insert(0, str(ROOT / "tools"))
 import operator_source
-FILES = ("LICENSE", "LICENSING.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
+FILES = ("LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
          "tools/prepare_operator.py", "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
          "server/catalog/read-exports.sql")
 

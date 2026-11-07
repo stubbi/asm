@@ -112,10 +112,10 @@ hosted-registry-test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/hosted_registry -p 'test_*.py' -v
 
 install: build/asm
-	sh cli/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
+	sh tools/install.sh install build/asm "$(DESTDIR)$(PREFIX)/bin/asm" "$(REPLACE)"
 
 uninstall: build/asm
-	sh cli/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
+	sh tools/install.sh uninstall build/asm "$(DESTDIR)$(PREFIX)/bin/asm" 0
 
 clean:
 	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s

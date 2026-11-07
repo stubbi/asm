@@ -225,7 +225,7 @@ Check the proposed result against all earlier capabilities, requirements, and se
 Record affected decisions, intentional departures, and unavailable history in the pull request.
 Do not treat a review of recent commits as a complete history review.
 
-Read [the license scope](LICENSING.md) before adding or moving source files.
+Read [the license scope](README.md#license) before adding or moving source files.
 The platform uses AGPL-3.0-or-later.
 Starter text and the reference examples have explicit MIT grants.
 Independent packages keep their own version-specific licenses.

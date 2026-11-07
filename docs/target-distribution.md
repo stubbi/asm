@@ -1,9 +1,10 @@
 # Native target distribution
 
-Status: integration work, 5 November 2026. New ports remain unqualified.
+This document records feed compatibility and the 0.5.0 integration baseline from 5 November 2026.
+The [README](../README.md#status) states current release support.
+The [Intel source-port guide](intel-macos-port.md) records its later qualification and release limits.
 
 People must receive a compatible artifact without losing access through an older client.
-The governing principles are dependable reuse, explicit targets, and trust earned through evidence.
 A catalog target does not declare a CLI host, a native runtime result, or a deployed server.
 
 ## Published 0.5.0 baseline
@@ -24,8 +25,7 @@ The separate package integrity policy does not inherit Asm's release-provenance 
 | `x86_64-windows` | External draft; not integrated | Draft PE container check passed | Not run here | None | None |
 | `aarch64-windows` | External draft; not integrated | Draft PE container check passed | Not run here | None | None |
 
-The source status describes this integration branch.
-Other sessions can hold incomplete or uncommitted port implementations.
+The table records source status at the 0.5.0 baseline, before later port integration.
 Assembly, emulation, native execution, release publication, and deployment establish separate results.
 
 | Published CLI artifact | Bytes | SHA-256 |
@@ -84,4 +84,4 @@ Cross-assembly alone cannot qualify these boundaries.
 
 Keep existing release records and published assets unchanged.
 Add qualified artifacts under a new version after the required gates pass.
-See the [integration plan](superpowers/plans/2026-11-05-target-distribution.md) for the staged implementation.
+The [historical implementation record](https://github.com/stubbi/asm/blob/d5ab7d954f752018e4496171c5885397bc25339b/docs/superpowers/plans/2026-11-05-target-distribution.md) retains intermediate checks and rejected attempts.

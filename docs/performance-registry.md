@@ -36,6 +36,9 @@ No result is emitted before the complete catalog passes validation.
 
 ## Public evidence
 
+The raw evidence is retained in Git history at commit `566701967d38d2f2a984fc9acb31e4d95c266f81`.
+The links below identify that unchanged record, including failed runs and regressions.
+
 The linked reports are public copies with local identifiers removed.
 Exact copies were preserved outside the public repository before this redaction.
 Local executable paths use `artifacts/` labels, fixture paths use `fixtures/` labels, and exploratory trace paths use `traces/exploratory/` labels.
@@ -46,7 +49,7 @@ The exploratory hostname was already omitted before this edition.
 All numeric samples, complete sample objects, CPU model, kernel and toolchain descriptions, recorded digests, system-call counts, failures, and regressions are retained.
 All 11 trace files were inspected and required no redaction.
 The original benchmark harness and assembly source manifest also remain byte for byte unchanged.
-The [redaction manifest](../benchmarks/registry-linux-x86_64-20261101/public-redaction.json) identifies each changed JSON field and gives original and public file hashes.
+The [redaction manifest](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/public-redaction.json) identifies each changed JSON field and gives original and public file hashes.
 It contains no removed local identifiers.
 The manifest records publication snapshots, including an earlier version of this guide.
 Later guide corrections can differ from those snapshot hashes.
@@ -65,13 +68,13 @@ It keeps version text and other CLI modules identical to isolate the registry ch
 | Source-manifest SHA-256 | `cd6810051a7f12ba5dcc8dbc8f9b23a0484d140f3bc5adb05e662c60c1816109` | `8fed51a66ccc0e0a606c395024f0bbdc2f28cca4fd71d8367b80fedd5fb12782` |
 
 The registry source used for the measurements has SHA-256 `e9de264490fe5d1558d541ab71fb76e09e72020d17237812464b10bb3dbeccbb`.
-The [source manifest](../benchmarks/registry-linux-x86_64-20261101/source-manifest.json) records every assembly file, size, and digest.
+The [source manifest](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/source-manifest.json) records every assembly file, size, and digest.
 These are experiment identities, not a relabeling of an existing release.
 
 After measurement, the output-helper comment was corrected to limit its cleanup guarantee to a returned write error.
 The corrected x86-64 registry source has SHA-256 `4fe271d95054828da7d1066edb141adfe22a8602fdcba69bd23bde763ad88225`.
 Rebuilt within the original v0.2 source snapshot, its object and executable match the measured candidate byte for byte.
-The [comment-correction record](../benchmarks/registry-linux-x86_64-20261101/registry-comment-correction.json) contains the source hashes, build commands, and equality checks.
+The [comment-correction record](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/registry-comment-correction.json) contains the source hashes, build commands, and equality checks.
 No runtime code changed, and no new timing samples were collected.
 The source manifest remains unchanged.
 Hashes in the comment-correction record identify the original evidence checked at that time.
@@ -109,7 +112,7 @@ Tracing overhead is excluded from the latency measurements.
 
 The table gives median elapsed time in milliseconds.
 A ratio below 1 indicates a slower candidate in that run.
-The [public report](../benchmarks/registry-linux-x86_64-20261101/paired-results.json) includes every sample, minimum, maximum, and nearest-rank 95th percentile.
+The [public report](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/paired-results.json) includes every sample, minimum, maximum, and nearest-rank 95th percentile.
 
 | Records | Output | Baseline | Candidate | Baseline / candidate |
 | ---: | --- | ---: | ---: | ---: |
@@ -158,7 +161,7 @@ The unchanged controls also varied.
 These observations do not establish a consistent small-catalog wall-time improvement.
 The CPU counters and system-call counts support reduced work for output-heavy commands.
 A further small-catalog optimization needs clearer evidence.
-The [focused report](../benchmarks/registry-linux-x86_64-20261101/small-results.json) preserves all 1,812 timed observations and their counters.
+The [focused report](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/small-results.json) preserves all 1,812 timed observations and their counters.
 
 ## Correctness and failed attempts
 
@@ -174,14 +177,14 @@ Eight additional contract tests cover:
 
 A separate test injected `EINTR` before the first output write.
 The retry produced the complete expected 1,199,420-byte JSON result.
-The [result](../benchmarks/registry-linux-x86_64-20261101/eintr-result.json) and trace preserve that check.
+The [result](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/eintr-result.json) and trace preserve that check.
 
 The first environment setup could not read `/proc/cpuinfo` in the restricted filesystem.
 A separate build-metadata attempt could not read the system package database there.
 Both failed before performance measurements or source compilation began.
 The recorded experiment used the system environment with those read paths available.
 
-An [exploratory baseline](../benchmarks/registry-linux-x86_64-20261101/exploratory-baseline.json) overlapped possible tool provisioning and was excluded from the comparison.
+An [exploratory baseline](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/exploratory-baseline.json) overlapped possible tool provisioning and was excluded from the comparison.
 Its samples are retained; the public record omits the hostname and replaces local paths as described above.
 The two comparison reports retain all measured regressions and outliers.
 
@@ -227,7 +230,7 @@ Omit that option to collect elapsed time without system-call counts.
 Use `--small-only --samples 151 --warmups 5` and a different output directory for the focused comparison.
 That mode requires identical `version` and `help` output from both executables.
 
-The [original comparison harness](../benchmarks/registry-linux-x86_64-20261101/paired-benchmark.py) is preserved beside its report.
+The [original comparison harness](https://github.com/stubbi/asm/blob/566701967d38d2f2a984fc9acb31e4d95c266f81/benchmarks/registry-linux-x86_64-20261101/paired-benchmark.py) is preserved beside its report.
 The current harness adds the focused controls and child CPU counters.
 Each report records the digest of the harness that produced it.
 

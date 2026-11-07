@@ -19,6 +19,7 @@ import tomllib
 import registry
 
 
+# Optional legacy notice and benchmark paths preserve exact earlier source layouts.
 SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
@@ -374,7 +375,7 @@ def artifact(data: bytes, filename: str, target: str, kind: str, base: str) -> d
 def core_license(files: dict[str, tuple[bytes, int]], commands: dict) -> str:
     """Read the declaration from the packaged source, preserving legacy MIT.
 
-    These checks enforce the two supported Asm source layouts. They do not
+    These checks enforce the recorded Asm source license layouts. They do not
     determine copyright ownership or replace a review of license scope.
     """
     text = files.get("LICENSE", (b"", 0))[0]
@@ -391,8 +392,16 @@ def core_license(files: dict[str, tuple[bytes, int]], commands: dict) -> str:
                          and b"Version 3, 19 November 2007" in text[:512],
                          "AGPL declaration differs from the source license file")
         registry.require(commands.get("template_license") == "MIT", "starter templates must retain their MIT declaration")
-        registry.require("LICENSING.md" in files, "source archive needs its licensing scope document")
-        template_text = files.get("LICENSES/MIT.txt", (b"", 0))[0]
+        if "LICENSING.md" in files:
+            # Published source snapshots retain their original notice paths.
+            template_path = "LICENSES/MIT.txt"
+        else:
+            scope = files.get("README.md", (b"", 0))[0].partition(b"## License\n")[2]
+            registry.require(all(term in scope for term in (
+                b"AGPL-3.0-or-later", b"cli/templates.s", b"cli/aarch64/templates.s", b"MIT")),
+                "source archive needs the README license scope")
+            template_path = "examples/hello/LICENSE"
+        template_text = files.get(template_path, (b"", 0))[0]
         registry.require(template_text.startswith(b"MIT License\n"), "source archive needs the MIT template license")
     return declared
 

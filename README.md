@@ -3,27 +3,12 @@
 **A home for assembly.**
 
 Asm is a package registry and command-line tool for assembly projects.
-Create a project, use packages, and share releases with their source and verification results.
+Create and test projects, inspect packages, and download exact artifacts.
 
 [Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md) · [Sponsor Asm](https://asm.build/sponsors.html)
 
-## A new era for software
-
-Programming languages made software practical for people to write and maintain.
-AI opens up a different approach: generate implementations for the machine, and judge them by the experience they deliver.
-
-The priorities are familiar: software that works, responds quickly, and protects its users.
-As code becomes cheaper to produce, the cost of running it matters more.
-Memory, compute, and energy use affect both the experience and the cost of delivering it.
-
-Assembly gives direct control over instructions, memory layout, and CPU features.
-AI could make that control practical for a much wider range of software.
-Each implementation still needs a way to reach the people and projects that can use it.
-
-Asm brings assembly into a shared package ecosystem: named packages, explicit machine targets, repeatable builds, and evidence tied to each release.
-The goal is to make efficient, dependable software practical to distribute and reuse.
-
-[More on the technical reasoning](docs/why-asm.md).
+Packages declare their targets and connect release records to exact source and artifact digests.
+The [project purpose](docs/why-asm.md) explains our technical assumptions about AI-assisted assembly.
 
 ## Quick start
 
@@ -202,7 +187,7 @@ Asm is an early alpha.
 | Packages | Search, inspect versions, download source, install executables, list installations, upgrade, and uninstall. |
 | Dependencies | Exact direct source dependencies, with target-specific selections in a shared lock file. |
 | Registry | Package search, target filters, release records, and verification results. |
-| Publication | Source archives and release records submitted through reviewed pull requests. |
+| Publication | Local record preparation; hosted publication remains under qualification. |
 | Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
 | CLI updates | Manual updates with signed release provenance. |
 
@@ -217,13 +202,16 @@ Packages can provide separate artifacts for other targets, including RISC-V Linu
 Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
 The [roadmap](docs/roadmap.md) tracks that work.
 
-## Publish from source
+## Prepare a release record
 
 A package release records its source repository, exact Git commit, target, and artifact digests.
-`asm publish` checks the release files and prepares a local submission record.
-Publication proceeds through a pull request to the registry.
+`asm publish` checks the release files and prepares a local release record.
+It makes no network request and publishes nothing.
+The hosted operator can import accepted catalog snapshots.
+Public publisher authentication and hosted deployment remain unqualified.
 
-Follow the [publishing guide](registry/README.md) for the commands and submission process.
+Use the [packaging and compatibility guide](registry/README.md) to prepare artifacts and records.
+The [hosted publication boundary](docs/hosted-registry.md#publication-boundary) states the remaining requirements.
 
 ## Build with an AI
 
@@ -258,7 +246,10 @@ asm version
 ```
 
 `make` selects the native implementation for your machine.
+It runs the assembler and linker to create the executable.
+It also provides test and installation commands.
 The root `asm.toml` describes the Linux x86-64 reference build.
+The [CLI source guide](cli/README.md) explains the layout and installation helper.
 The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
 
 ## Support Asm
@@ -287,7 +278,30 @@ Report defects through [GitHub Issues](https://github.com/stubbi/asm/issues).
 
 ## License
 
-Asm uses [AGPL-3.0-or-later](LICENSE).
-Starter code and reference examples use MIT.
-Packages retain the license declared for each version.
-See the [license scope](LICENSING.md), or run `asm license`.
+Copyright (c) 2026 ASM contributors.
+
+Unless a file has a separate notice, Asm uses [AGPL-3.0-or-later](LICENSE).
+You can use version 3 or a later version published by the Free Software Foundation.
+Asm is provided without warranty.
+
+| Material | License |
+| --- | --- |
+| CLI, registry tools, website, tests, and project documentation | AGPL-3.0-or-later |
+| `cli/templates.s`, `cli/aarch64/templates.s`, and their emitted starter text | MIT |
+| Reference packages under `examples/` | Each package's included MIT license |
+| Independently published packages | The license declared by that package version |
+| Earlier published versions | The license included with that version |
+
+Starter assembly files contain the complete MIT notice.
+The same notice remains in [examples/hello/LICENSE](examples/hello/LICENSE) and [examples/math/LICENSE](examples/math/LICENSE).
+It covers the identified MIT material and preserves the notice for material originally distributed in Asm 0.1.0.
+
+Running Asm does not assign its license to a separate program.
+Copied or linked package code has its own license conditions.
+Contributions use the license that applies to the affected material.
+Keep required copyright and permission notices.
+
+Asm 0.1.0 was published under MIT.
+Asm 0.2.0 introduced AGPL-3.0-or-later for the platform.
+Earlier releases retain their original bytes and licenses.
+Run `asm license` for the identifier, source location, and warranty notice.

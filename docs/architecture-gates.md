@@ -22,7 +22,7 @@ The [published assembly source experiment](../experiments/assembly-server/README
 | Trust scaling | No measured delegation or snapshot profile | Cold and warm dependency tests establish bounded trust requests, bytes, validation time, and rotation behavior |
 | Artifact storage | GitHub release assets; 64 MiB alpha limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
 | Mirrors and CDN | No qualified multi-origin artifact delivery | Corrupt and stale mirrors fail verification; healthy alternatives work without changing package authority |
-| Publication | Public registry accepts reviewed records; reference adds operator imports and sealed transactions | Authenticated durable tasks, final authorization checks, fencing, idempotency, and recoverable distribution steps |
+| Publication | Retained v1 records and hosted operator imports; public publisher authentication remains unimplemented | Authenticated durable tasks, final authorization checks, fencing, idempotency, and recoverable distribution steps |
 | Distribution heads | No authenticated metadata-head publication service | Fenced conditional advancement preserves monotonic revisions and critical policy despite reversed worker completion |
 | Discovery availability | No asynchronous public distribution state | Only distributed `published` releases appear as installable; that transition emits its own revisioned event |
 | Publisher identity | Reference numeric owner binding is an operator assertion | Verified provider identities and scoped publisher policies resist rename, transfer, expiry, and replay mistakes |

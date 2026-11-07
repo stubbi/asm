@@ -7,8 +7,6 @@ The native CLI and authoritative HTTP application remain assembly.
 Registry operations can use other languages under [AGENTS.md](../../AGENTS.md).
 
 The user outcome is a durable catalog with immutable release metadata and consistent consumer exports.
-Dependable reuse requires exact identities and complete historical records.
-Evidence remains limited to the checks performed here.
 
 ## Data and authority
 
@@ -84,7 +82,7 @@ The marker records which migration was applied; it cannot constrain a trusted ad
 Tests compare its literal digest, the tool constant, and the migration file hash.
 An installed migration must not be edited in place.
 A future schema change requires a new migration and an explicit reader contract update.
-The legacy `server/guard.sql` is unchanged.
+The separate prototype retains its [experiment guard](../../experiments/assembly-server/guard.sql).
 
 ## Private operator connection
 

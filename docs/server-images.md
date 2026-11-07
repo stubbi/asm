@@ -10,7 +10,6 @@ The [retained results](#canonical-export-results) do not qualify the integrated 
 Earlier foundation-image results do not qualify this additional routing and database behavior.
 
 The operator outcome is an immutable image connected to its source, executable, target, and observed checks.
-The governing principles are dependable reuse and trust earned through evidence.
 An assembly image check does not qualify the separate MCP adapter or native CLI.
 
 ## Architecture and execution
@@ -46,7 +45,6 @@ This rejects soft, single, and quad floating-point ABIs, RVE, TSO, experimental 
 The check does not prove that every instruction belongs to RV64GC.
 The port's compiler flags, ABI assertions, library requirements, and executed tests remain separate evidence.
 
-Assembly port implementation belongs to the coordinated server source workstream.
 The image build invokes `make -C server all` on the target platform.
 An unavailable port fails the build.
 There is no successful fallback, skipped architecture, or alternate application backend.

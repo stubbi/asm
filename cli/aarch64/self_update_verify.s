@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 ASM contributors
- * See LICENSE and LICENSING.md for the terms and scope.
+ * See LICENSE and README.md#license for the terms and scope.
  */
 .equ SELF_VERIFIER_DEADLINE_SECONDS, 120
 

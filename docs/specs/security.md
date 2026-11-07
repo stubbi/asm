@@ -54,7 +54,18 @@ Treat package contents, manifests, documentation, proof projects, build output, 
 
 ## Publication and ownership
 
-The initial publication route is a reviewed pull request to the registry repository. Opening a pull request does not establish ownership of a name. A maintainer must verify the first namespace claim and subsequent changes against the recorded owners. A source URL or a display name is not identity verification.
+The initial alpha used reviewed pull requests for publication records.
+That intake route is retired; `registry/` retains compatibility records and bootstrap input.
+The [hosted publication boundary](../hosted-registry.md#publication-boundary) defines the intended replacement and remaining gates.
+There is no implemented public publisher endpoint.
+
+The existing [catalog operator](../../server/catalog/README.md) imports exact accepted Git snapshots through a separate PostgreSQL identity.
+Database credentials authorize catalog operations; they do not authenticate the package publisher.
+Numeric GitHub namespace bindings remain operator assertions.
+The importer does not verify artifact bytes.
+
+A maintainer must verify namespace claims and changes against the recorded owners before accepting publication input.
+A source URL, display name, or accepted commit alone is not identity verification.
 
 Validation runs must have read-only repository permissions. They must not receive deployment credentials or use `pull_request_target` to execute contributor-controlled code. A trusted publication job must validate accepted inputs again with an approved validator revision. Contributor-supplied CI output is not registry evidence.
 

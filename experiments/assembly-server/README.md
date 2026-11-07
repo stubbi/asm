@@ -1,5 +1,9 @@
 # Asm server package
 
+This experiment retains loopback HTTP and PostgreSQL tests against a frozen fixture schema.
+The [hosted runtime](../../server/README.md) instead serves canonical catalog exports with a restricted database reader and certificate checks.
+It still needs deployment qualification.
+
 `asm-server` version `0.1.0` is an experimental Asm source package.
 The checkout's `asm.toml` declares `server.s` for `x86_64-linux`.
 The included `LICENSE` supplies the AGPL-3.0-or-later terms.
@@ -18,8 +22,9 @@ The package calls C libraries through the selected ABI.
 The RISC-V profile differs from the freestanding RV64I/LP64 hello example.
 Linux kernel and libc minimums need separate qualification; the sources do not establish them.
 The manifest declares the native libraries and compile-only ABI assertions.
-Use a source-built Asm CLI with [native library build support](https://github.com/stubbi/asm/blob/main/docs/native-linking.md).
-Published Asm 0.5.0 binaries do not support these build fields.
+Use a matching Asm CLI with [native library build support](https://github.com/stubbi/asm/blob/main/docs/native-linking.md).
+Asm 0.6.0 provides this feature on its released hosts.
+An experimental server port does not qualify a native CLI for that host.
 
 This package contains an assembly application that calls established HTTP and PostgreSQL libraries through the C ABI.
 Its source profiles target the three Linux systems listed above.
@@ -116,7 +121,7 @@ The program reads that file once before starting threads.
 ## Reproduce the local checks
 
 Use a matching Linux host, GNU libmicrohttpd 1.0.3, PostgreSQL 16.15, and Python 3.11 or later.
-Install a source-built Asm CLI and a system C compiler at `/usr/bin/cc`.
+Install a matching Asm CLI and a system C compiler at `/usr/bin/cc`.
 Run tests as an ordinary user, without `sudo`.
 The [dependency recipe](DEPENDENCIES.md) supplies pinned sources and exact local build commands.
 The compile-only ABI check rejects different library headers.
@@ -200,7 +205,7 @@ python3 tools/registry.py pack experiments/assembly-server \
 The command reports the archive path, SHA-256 digest, and byte size.
 This local archive does not establish a source commit or publish a release.
 Before publication, commit the package and use `pack-git` with `--source-path experiments/assembly-server`.
-Follow the [publication guide](https://github.com/stubbi/asm/blob/main/registry/README.md) for commit binding and release records.
+Follow the [packaging guide](https://github.com/stubbi/asm/blob/main/registry/README.md) for commit binding and local release records.
 
 ## Production work that remains
 

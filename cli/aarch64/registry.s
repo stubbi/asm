@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 ASM contributors
- * See LICENSE and LICENSING.md for the terms and scope.
+ * See LICENSE and README.md#license for the terms and scope.
  */
 .global cmd_search, cmd_info, cmd_versions, cmd_fetch, cmd_install
 .extern next_arg, streq, strlen, copy_string, out, write_cstr, write_all

@@ -1,4 +1,4 @@
-# Linux RISC-V RV64GC, LP64D. Use a source-built Asm CLI.
+# Linux RISC-V RV64GC, LP64D. Requires Asm native library build support.
 [package]
 name = "asm-server"
 version = "0.1.0"

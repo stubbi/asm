@@ -5,7 +5,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import platform
 import subprocess

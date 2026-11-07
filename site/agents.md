@@ -4,10 +4,6 @@ Asm is a package registry and command-line tool for assembly projects.
 Give your AI the software task and the address `https://asm.build`.
 Use [the maintained development skill](https://asm.build/skills/asm-build/SKILL.md) for the complete workflow.
 
-These files are prepared for site publication.
-Their public URLs become available after publication of this build.
-This document does not record a deployment.
-
 ## Establish the result
 
 1. Read the user's instructions and the workspace rules.
@@ -30,7 +26,8 @@ The native Asm CLI supports three hosts in the current alpha release:
 | `aarch64-linux` | Linux ARM64 | GNU Binutils assembler and linker |
 | `aarch64-macos` | Apple Silicon, macOS 15 or later | Xcode Command Line Tools |
 
-The catalog accepts those three targets and `riscv64-linux`.
+The MCP planning tools describe those three targets and `riscv64-linux`.
+The registry also accepts two Windows artifact labels; the MCP target filters do not expose them.
 Catalog target support does not mean native CLI support.
 RISC-V development needs the documented cross tools.
 Asm 0.6.0 selects its native host by default and supports explicit standalone Linux cross builds.
@@ -77,7 +74,7 @@ Report unavailable discovery separately from no matching packages.
 `asm run` builds and executes its main program.
 Use their `--locked` forms for existing locked dependencies.
 Local builds can read assembly includes and are not isolated security boundaries.
-There is no hosted build service in this integration.
+There is no hosted build service.
 
 ## Measure and deliver
 

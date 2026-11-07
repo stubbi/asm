@@ -77,7 +77,7 @@ Use `asm build`, `asm test`, and `asm run` for reviewed native project code.
 For locked dependencies, use their `--locked` forms.
 `asm run` builds and executes; `asm test` executes the project's test program.
 Asm 0.6.0 also supports named target recipes and standalone Linux cross builds.
-Read [the project contract](../../docs/multi-target-projects.md) before selecting another target.
+Read [the project contract](https://github.com/stubbi/asm/blob/main/docs/multi-target-projects.md) before selecting another target.
 Use `asm test --target TARGET --no-run` to build a foreign test without executing it.
 Select the target explicitly for v2 dependency-lock commands.
 Cross builds require the fixed GNU or LLVM tools described in that contract.

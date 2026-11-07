@@ -443,6 +443,23 @@ class LicenseDeclarationTests(unittest.TestCase):
             release.require_mit_example({"LICENSE": files["LICENSE"]}, "hello")
         release.require_mit_example({"LICENSE": files["LICENSES/MIT.txt"]}, "hello")
 
+    def test_agpl_readme_scope_keeps_the_existing_mit_notice(self):
+        files = {
+            "LICENSE": (b"GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3, 19 November 2007\n", 0o644),
+            "README.md": (b"# Asm\n\n## License\n\nAGPL-3.0-or-later; cli/templates.s and cli/aarch64/templates.s use MIT.\n", 0o644),
+            "examples/hello/LICENSE": (b"MIT License\nTemplate fixture.\n", 0o644),
+        }
+        commands = {"version": "0.5.0", "license": "AGPL-3.0-or-later", "template_license": "MIT"}
+        self.assertEqual(release.core_license(files, commands), "AGPL-3.0-or-later")
+        for missing in files:
+            candidate = dict(files)
+            del candidate[missing]
+            with self.subTest(missing=missing), self.assertRaises(registry.RegistryError):
+                release.core_license(candidate, commands)
+        for readme in (b"# Asm\n", b"## License\n\nAGPL-3.0-or-later\n"):
+            with self.subTest(readme=readme), self.assertRaises(registry.RegistryError):
+                release.core_license({**files, "README.md": (readme, 0o644)}, commands)
+
 
 @unittest.skipUnless(platform.system() == "Linux" and platform.machine() == "x86_64" and
                      all(shutil.which(tool) for tool in ("git", "make", "as", "ld")),
@@ -469,12 +486,10 @@ class ReleaseTests(unittest.TestCase):
             shutil.copytree(ROOT / "examples/math", cls.repo / "examples/math", ignore=shutil.ignore_patterns("build"))
         shutil.copytree(ROOT / "site", cls.repo / "site")
         shutil.copytree(ROOT / "skills/asm-build", cls.repo / "skills/asm-build")
-        (cls.repo / "README.md").write_text("# Release test fixture\n\nUses the project's actual assembly sources.\n")
+        (cls.repo / "tools").mkdir()
+        shutil.copy2(ROOT / "tools/install.sh", cls.repo / "tools/install.sh")
+        shutil.copyfile(ROOT / "README.md", cls.repo / "README.md")
         shutil.copyfile(ROOT / "LICENSE", cls.repo / "LICENSE")
-        if (ROOT / "LICENSING.md").is_file():
-            shutil.copyfile(ROOT / "LICENSING.md", cls.repo / "LICENSING.md")
-        if (ROOT / "LICENSES").is_dir():
-            shutil.copytree(ROOT / "LICENSES", cls.repo / "LICENSES")
         (cls.repo / "asm.toml").write_text(f'[package]\nname = "asm"\nversion = "{cls.version}"\n\n[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n')
         shutil.copyfile(ROOT / "Makefile", cls.repo / "Makefile")
         git(cls.repo, "init", "-q")
@@ -550,10 +565,24 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.metadata["package_licenses"], licenses)
         source = registry.read_archive((self.first / f"asm-{self.version}-source.tar.gz").read_bytes())
         self.assertEqual(source["LICENSE"], (ROOT / "LICENSE").read_bytes())
-        self.assertEqual(source["LICENSES/MIT.txt"], (ROOT / "LICENSES/MIT.txt").read_bytes())
-        self.assertEqual(source["LICENSING.md"], (ROOT / "LICENSING.md").read_bytes())
+        self.assertEqual(source["examples/hello/LICENSE"], (ROOT / "examples/hello/LICENSE").read_bytes())
+        self.assertEqual(source["README.md"], (ROOT / "README.md").read_bytes())
+        self.assertEqual(source["tools/install.sh"], (ROOT / "tools/install.sh").read_bytes())
+        self.assertNotIn("LICENSING.md", source)
+        self.assertFalse(any(name.startswith("LICENSES/") for name in source))
         self.assertEqual(source["cli/templates.s"], (ROOT / "cli/templates.s").read_bytes())
         self.assertEqual(source["cli/aarch64/templates.s"], (ROOT / "cli/aarch64/templates.s").read_bytes())
+        project = self.case_dir / "source"
+        release.materialize({name: (data, 0o644) for name, data in source.items()}, project)
+        (project / "build").mkdir()
+        binary = self.first / f"asm-{self.version}-x86_64-linux"
+        shutil.copy2(binary, project / "build/asm")
+        prefix = self.case_dir / "installed"
+        result = subprocess.run(["make", "--no-print-directory", "-o", "build/asm", "install",
+                                 f"DESTDIR={prefix}", "PREFIX=/usr"], cwd=project,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual((prefix / "usr/bin/asm").read_bytes(), binary.read_bytes())
 
     def test_mac_fan_in_preserves_exact_native_bytes_and_requires_declaration(self):
         repo = self.case_dir / "native-fan-in-repo"

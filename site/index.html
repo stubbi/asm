@@ -48,7 +48,7 @@
           <p class="eyebrow"><span class="signal" aria-hidden="true"></span> AN OPEN SOURCE PROJECT</p>
           <h1 id="hero-heading">Packages for<br><span>assembly.</span></h1>
           <p class="hero-description">Build assembly projects with the target and interface spelled out.</p>
-          <p class="hero-detail">The CLI is written in assembly and runs on Linux and Apple Silicon macOS 15 or later. It checks locked package files before each build.</p>
+          <p class="hero-detail">The assembly CLI runs on Linux x86-64, Linux ARM64, and Apple Silicon macOS 15 or later.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#start">Install Asm <span aria-hidden="true">↗</span></a>
             <a class="text-link" href="#catalog">Browse packages <span aria-hidden="true">↓</span></a>
@@ -110,7 +110,7 @@ asm version</code></pre>
             <div class="alpha-heading"><h3 id="alpha-heading">The current release</h3><span class="small-tag">ALPHA</span></div>
             <p>Create, build, run, and test projects. Add exact source dependencies. Install programs, then list, upgrade, or uninstall recorded installations.</p>
             <p><a href="https://github.com/stubbi/asm/blob/main/docs/installed-programs.md">Read the program-management contract</a> for file checks and recovery limits.</p>
-            <p>Asm uses AGPL-3.0-or-later. Starter code and reference examples use MIT. Each package version keeps its own license. <a href="https://github.com/stubbi/asm/blob/main/LICENSING.md">Read the license scope</a>, or run <code>asm license</code>.</p>
+            <p>Asm uses AGPL-3.0-or-later. Starter code and reference examples use MIT. Each package version keeps its own license. <a href="https://github.com/stubbi/asm#license">Read the license scope</a>, or run <code>asm license</code>.</p>
             <ul class="source-links">
               <li><a href="reference/"><span><strong>Read the CLI source</strong><small>Inspect the source snapshot and file digests.</small></span><span aria-hidden="true">↗</span></a></li>
               <li><a href="https://github.com/stubbi/asm/releases"><span><strong>Release artifacts</strong><small>Check the available builds and release notes.</small></span><span aria-hidden="true">↗</span></a></li>
@@ -187,7 +187,7 @@ asm version</code></pre>
 
       <section class="section roadmap-section" id="roadmap" aria-labelledby="roadmap-heading">
         <div class="container">
-          <div class="section-heading-row"><div class="section-intro"><p class="eyebrow">BUILT IN THE OPEN</p><h2 id="roadmap-heading">What comes next.</h2><p>The first release covers local projects and exact dependencies. The next work is broader resolution, more hosts, and hosted verification.</p></div><a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Full roadmap <span aria-hidden="true">↗</span></a></div>
+          <div class="section-heading-row"><div class="section-intro"><p class="eyebrow">BUILT IN THE OPEN</p><h2 id="roadmap-heading">What comes next.</h2><p>The current release covers local projects and exact dependencies. Planned work includes hosted publication, dependency resolution, more hosts, and hosted verification.</p></div><a class="text-link" href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Full roadmap <span aria-hidden="true">↗</span></a></div>
           <ol class="roadmap-grid">
             <li class="current"><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>NOW</div><span class="roadmap-index">01</span><h3>CLI foundation</h3><p>A native assembly executable, local project commands, and a format for package records.</p></li>
             <li><div class="roadmap-status"><span class="roadmap-dot" aria-hidden="true"></span>NOW</div><span class="roadmap-index">02</span><h3>Exact dependencies</h3><p>Locked versions, checked source files, native executable installs, and reproducible release artifacts.</p></li>

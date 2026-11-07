@@ -195,7 +195,7 @@ class WindowsHelloTests(unittest.TestCase):
                 self.assertEqual(manifest["package"], {"name": "hello", "version": VERSION})
                 self.assertEqual(manifest["target"][target], {"source": f"targets/{target}/src/main.s",
                                                              "test": f"targets/{target}/tests/main.s"})
-                self.assertEqual((package / "LICENSE").read_bytes(), (ROOT / "LICENSES/MIT.txt").read_bytes())
+                self.assertEqual((package / "LICENSE").read_bytes(), (ROOT / "examples/hello/LICENSE").read_bytes())
 
     def test_main_and_assembly_contract_tests_build_for_each_windows_target(self):
         # Incorrect imports, assembly, ABI metadata, or PE permissions break the package build.

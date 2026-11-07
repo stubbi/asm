@@ -25,7 +25,6 @@ Native Windows execution remains a separate qualification gate.
 
 The assembly test checks complete writes, short writes, absent handles, invalid handles, failed writes, zero progress, and oversized counts.
 It checks output bytes, Windows API arguments, and stack alignment.
-The x86-64 test also checks shadow-space use.
 It produces no output and exits with status zero when all seven cases pass.
 
 ## Build directly with LLVM
