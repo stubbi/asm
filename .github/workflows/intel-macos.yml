@@ -27,9 +27,9 @@ jobs:
       - name: Check exact-source snapshot binding
         run: |
           set -euo pipefail
-          mkdir -p native-intel-checks
+          mkdir -p "$RUNNER_TEMP/native-intel-checks"
           python3 -m unittest discover -s tests/registry -p test_intel_qualification_source.py -v \
-            2>&1 | tee native-intel-checks/source-tests.log
+            2>&1 | tee "$RUNNER_TEMP/native-intel-checks/source-tests.log"
       - name: Build twice and test exact native Intel bytes
         run: python3 tools/qualify_macos_x86_64.py --commit "$GITHUB_SHA" --output native-intel
       - name: Retain qualification results and failures
@@ -38,7 +38,7 @@ jobs:
         with:
           name: native-intel-evidence-${{ github.sha }}
           path: |
-            native-intel-checks/*.log
+            ${{ runner.temp }}/native-intel-checks/*.log
             native-intel/*.log
             native-intel/*.json
           if-no-files-found: error
