@@ -165,20 +165,12 @@ body > main { position: relative; z-index: 1; }
 .target-filter { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .target-filter label { color: var(--muted); font-size: var(--text-sm); }
 .target-filter select { min-width: 0; max-width: 100%; min-height: var(--control-height); border: 1px solid var(--rule-strong); border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); background: var(--white); color: var(--ink); font-size: var(--text-sm); cursor: pointer; }
-/* Catalog totals and onboarding support search without competing with it. */
+/* Catalog totals support search without competing with it. */
 .catalog-stats { border-bottom: 1px solid var(--rule); background: var(--paper); }
 .catalog-stats-inner { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: var(--space-4) var(--space-8); margin-block: 0; padding-block: var(--space-6); }
 .catalog-stats-inner > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0 var(--space-2); min-width: 0; }
 .catalog-stats dt { min-width: 0; color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .catalog-stats dd { order: -1; margin: 0; color: var(--ink); font: var(--text-title)/1.5 var(--mono); font-variant-numeric: tabular-nums; }
-.home-start { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4) var(--space-8); margin-block: var(--space-8) var(--space-2); border: 1px solid var(--rule); border-radius: var(--radius-panel); padding: var(--space-4) var(--space-6); background: var(--stats-surface); }
-.home-start > div { min-width: 0; }
-.home-start h2 { margin: 0 0 var(--space-1); font-size: var(--text-base); font-weight: 600; letter-spacing: -.02em; }
-.home-start p { margin: 0; color: var(--muted); font-size: var(--text-sm); }
-.home-start-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.home-start-actions .button { border: 0; padding-inline: 0; background: transparent; gap: var(--space-2); text-decoration: underline; }
-.home-start-actions .button:hover { background: transparent; text-decoration-thickness: 2px; }
-.home-start-actions .button:active { background: transparent; color: var(--accent-hover); }
 
 /* Three real discovery routes, with compact selection cards. */
 .browse-all, .discovery-more { display: inline-flex; align-items: center; min-height: var(--control-height); border: 1px solid transparent; border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); background: transparent; color: var(--accent); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; }
@@ -209,27 +201,6 @@ body > main { position: relative; z-index: 1; }
 .discovery-group-note { margin: 0; padding: var(--space-4); color: var(--muted); font-size: var(--text-xs); }
 .discovery-group .discovery-items + .discovery-group-note { padding-top: 0; }
 .discovery-state { margin: 0 0 var(--space-4); border: 1px solid var(--rule); border-radius: var(--radius-control); padding: var(--space-3) var(--space-4); background: var(--surface); color: var(--muted); font-size: var(--text-sm); }
-.discovery-directories { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-6); margin-top: var(--space-8); }
-.discovery-directory { min-width: 0; border-radius: var(--radius-panel); padding: var(--space-4); background: var(--surface); container-type: inline-size; }
-.discovery-directory-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
-.discovery-directory h3 { margin: 0; font-size: var(--text-base); font-weight: 600; line-height: 1.5; }
-.discovery-directory-header .discovery-more { padding-inline: 0; font-size: var(--text-xs); }
-.discovery-directory-items { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
-.discovery-directory-link { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: var(--space-3); min-height: var(--control-height); border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
-.discovery-directory-link:hover { background: var(--paper); text-decoration: none; }
-.discovery-directory-link:active { background: var(--accent-soft); }
-.discovery-directory-name { min-width: 0; font-weight: 500; overflow-wrap: anywhere; text-decoration: underline; text-decoration-color: var(--rule-strong); }
-.discovery-directory-name code { color: var(--muted); font-size: var(--text-xs); font-weight: 400; }
-.discovery-directory-count { max-width: 12ch; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
-.discovery-directory-arrow { color: var(--muted); }
-.discovery-directory-note { margin: var(--space-2) 0; color: var(--muted); font-size: var(--text-sm); }
-.discovery-footer { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-6); margin-top: var(--space-4); border-top: 1px solid var(--rule); padding-top: var(--space-2); }
-.discovery-data { flex: 1 1 18rem; min-width: 0; font-size: var(--text-xs); }
-.discovery-data summary { width: fit-content; min-height: var(--control-height); border-radius: var(--radius-control); padding-block: var(--space-2); color: var(--muted); font-size: var(--text-sm); cursor: pointer; }
-.discovery-data summary:hover { color: var(--ink); }
-.discovery-data[open] summary { margin-bottom: var(--space-2); }
-.discovery-freshness { margin: 0; color: var(--muted); font-size: var(--text-xs); }
-.discovery-methods { display: inline-flex; align-items: center; min-height: var(--control-height); color: var(--accent); font-size: var(--text-xs); text-decoration: underline; }
 .registry-status { margin: var(--space-3) 0 var(--space-4); color: var(--muted); font-size: var(--text-sm); }
 .package-list { border-top: 1px solid var(--rule); }
 .package-result { border-bottom: 1px solid var(--rule); padding-block: var(--space-4); }
@@ -242,7 +213,7 @@ a.package-version { color: var(--accent); text-decoration: underline; }
 .has-search-results .search-hero { padding-block: var(--space-6) var(--space-8); }
 .has-search-results .search-hero h1 { margin-bottom: var(--space-3); font-size: var(--text-base); font-weight: 500; letter-spacing: 0; text-align: left; }
 .has-search-results .package-search-form { margin-inline: 0; }
-.has-search-results :is(.registry-description,.hero-browse,.catalog-stats,.home-start) { display: none; }
+.has-search-results :is(.registry-description,.hero-browse,.catalog-stats) { display: none; }
 .has-search-results .discovery { padding-top: var(--space-8); }
 .has-search-results .discovery-heading h2 { font-size: var(--text-xl); }
 .has-search-results .results-toolbar { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); gap: var(--space-4); max-width: 48rem; margin-block: var(--space-6); }
@@ -477,12 +448,6 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
   .discovery-item { grid-template-columns: minmax(0,1fr); }
   .discovery-signal { max-width: none; text-align: left; }
 }
-@container (max-width: 12rem) {
-  .discovery-directory h3 { font-size: var(--text-sm); }
-  .discovery-directory-link { grid-template-columns: minmax(0,1fr); gap: var(--space-1); padding-inline: 0; }
-  .discovery-directory-count { max-width: none; }
-  .discovery-directory-arrow { display: none; }
-}
 @media (max-width: 53.75rem) {
   .header-inner .wordmark { order: 0; }
   .header-inner nav { order: 1; }
@@ -517,13 +482,11 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
   .registry-description { max-width: 30rem; margin-inline: auto; }
   .catalog-stats-inner { grid-template-columns: repeat(auto-fit,minmax(min(100%,8rem),1fr)); gap: var(--space-3) var(--space-4); }
   .catalog-stats-inner > div { justify-content: flex-start; }
-  .home-start { align-items: flex-start; padding-inline: var(--space-4); }
   .discovery-heading { gap: var(--space-2); }
   .discovery-heading h2 { font-size: var(--text-title); }
   .browse-all { padding-inline: 0; }
   .footer-navs { grid-template-columns: repeat(auto-fit,minmax(min(100%,7.5rem),1fr)); }
   .discovery-groups { grid-template-columns: minmax(0,1fr); gap: var(--space-8); }
-  .discovery-directories { grid-template-columns: minmax(0,1fr); gap: var(--space-4); }
   .search-box { gap: var(--space-2); padding-left: var(--space-3); }
   .search-box button { padding-inline: var(--space-4); }
   .search-box > svg { display: none; }

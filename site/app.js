@@ -49,7 +49,7 @@
       if (typeof version !== "string" || !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) ||
           version.split(".").some((part) => Number(part) > 2147483647)) return null;
     }
-    return `packages/${name}/${version === undefined || version === null ? "" : version + "/"}`;
+    return `/packages/${name}${version === undefined || version === null ? "" : "/" + version}`;
   }
 
   function parseSearchState(hash) {
@@ -725,7 +725,7 @@
     const label = element("h3", "", title);
     label.id = `browse-${key}`;
     group.setAttribute("aria-labelledby", label.id);
-    const more = link("View all", `browse/${key}/`, "discovery-more");
+    const more = link("View all", `/browse/${key}`, "discovery-more");
     more.setAttribute("aria-label", `View all ${key === "updated" ? "recently updated" : key === "popular" ? "most downloaded" : "new"} packages`);
     heading.append(label, more);
     const header = element("div", "discovery-group-header");
@@ -736,7 +736,7 @@
       const items = element("ul", "discovery-items");
       rows.slice(0, 5).forEach((row) => {
         const item = element("li");
-        const anchor = link(undefined, packageLink(row.package), "discovery-item");
+        const anchor = link(undefined, packagePath(row.package.name), "discovery-item");
         const signal = element("span", "discovery-signal");
         if (key === "popular") {
           const fullCount = formatDiscoveryCount(row, { exact: true });
@@ -772,38 +772,9 @@
     return group;
   }
 
-  function discoveryDirectory(key, title, destination, moreLabel) {
-    const navigation = element("nav", "discovery-directory");
-    const label = element("h3", "", title);
-    label.id = `browse-${key}-heading`;
-    navigation.setAttribute("aria-label", `Browse packages by ${key}`);
-    navigation.setAttribute("aria-labelledby", label.id);
-    const header = element("div", "discovery-directory-header");
-    const more = link("View all", destination, "discovery-more");
-    more.setAttribute("aria-label", moreLabel);
-    header.append(label, more);
-    navigation.append(header);
-    return navigation;
-  }
-
-  function discoveryDirectoryItem(name, destination, total, canonical = "") {
-    const item = element("li");
-    const anchor = link(undefined, destination, "discovery-directory-link");
-    const label = element("span", "discovery-directory-name", name);
-    if (canonical) label.append(" ", element("code", "", canonical));
-    const count = element("span", "discovery-directory-count");
-    showCount(count, total, total === 1 ? " package" : " packages");
-    const arrow = element("span", "discovery-directory-arrow", "→");
-    arrow.setAttribute("aria-hidden", "true");
-    anchor.append(label, count, arrow);
-    item.append(anchor);
-    return item;
-  }
-
   function renderDiscovery() {
     if (discoveryHasFocus()) { discoveryRenderPending = true; return; }
     discoveryRenderPending = false;
-    const detailsOpen = Boolean(discovery.querySelector(".discovery-data")?.open);
     const nodes = [];
     if (!discoveryLoading && (!discoverySnapshot || !discoverySnapshot.observed_at || discoverySnapshot.stale || discoverySnapshot.refresh_error)) {
       let state = !discoverySnapshot ? "Discovery snapshot unavailable."
@@ -812,37 +783,11 @@
       if (discoverySnapshot?.refresh_error) state += (state ? " " : "") + "The latest download refresh failed.";
       nodes.push(element("p", "discovery-state", state));
     }
-    const categories = discoverySnapshot?.categories.filter((category) => category.packages.length > 0) || [];
     const groups = element("div", "discovery-groups");
     groups.append(discoveryGroup("new", "New packages", "First GitHub release"),
       discoveryGroup("popular", "Most downloaded", "Last 30 days"),
       discoveryGroup("updated", "Recently updated", "Latest GitHub release"));
     nodes.push(groups);
-    const directories = element("div", "discovery-directories");
-    const purpose = discoveryDirectory("purpose", "Browse by purpose", "browse/categories/", "View all purpose categories");
-    if (categories.length) {
-      const items = element("ul", "discovery-directory-items");
-      categories.forEach((category) => items.append(discoveryDirectoryItem(category.name, `browse/categories/${category.id}/`, category.packages.length)));
-      purpose.append(items);
-    } else purpose.append(element("p", "discovery-directory-note", discoveryLoading ? "Loading purpose categories…" : "Purpose categories are unavailable in this snapshot."));
-    const architecture = discoveryDirectory("architecture", "Browse by architecture", "browse/architectures/", "View all architectures");
-    const architectures = architectureGroups(packages);
-    if (architectures.length) {
-      const items = element("ul", "discovery-directory-items");
-      architectures.forEach((group) => items.append(discoveryDirectoryItem(group.name, `browse/architectures/${group.id}/`, group.packages.length, group.id)));
-      architecture.append(items);
-    } else architecture.append(element("p", "discovery-directory-note", "Open all architectures to browse declared package targets."));
-    directories.append(purpose, architecture);
-    nodes.push(directories);
-    const footer = element("div", "discovery-footer");
-    const freshness = discoverySnapshot ? discoveryFreshness(discoverySnapshot)
-      : discoveryLoading ? "Loading discovery data…" : "Discovery snapshot unavailable.";
-    const data = element("details", "discovery-data");
-    data.open = detailsOpen;
-    data.append(element("summary", "", "Data and coverage"), element("p", "discovery-freshness", freshness),
-      link("How counts work", "discovery/", "discovery-methods"));
-    footer.append(data, link("More ways to explore", "explore/", "discovery-methods"));
-    nodes.push(footer);
     discovery.replaceChildren(...nodes);
   }
 

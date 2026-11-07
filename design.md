@@ -217,12 +217,12 @@ They do not establish a measured preference for motion or comparative search usa
 
 Design the finished homepage around discovery needs, independently of the present catalog and available fields.
 Keep search first.
-Follow the hero with a factual catalog-statistics band and the compact Build with Asm row, then package discovery.
+Follow the hero with factual catalog statistics and three package activity lists.
 Link Install Asm to the GitHub README installation section.
 Link Getting started to the README quick start.
 Show **New packages**, **Most downloaded**, and **Recently updated** in three compact columns on wide screens.
 Use two columns below 860 pixels and one below 620 pixels.
-Place functional category links after the activity lists.
+Keep purpose and architecture browsing on Explore, reached from the shared navigation.
 Show up to five packages in each list, with a link to its complete results.
 Do not duplicate the complete catalog on the homepage.
 
@@ -367,7 +367,7 @@ Keep each link tied to an existing route or document.
 Do not invent sponsors, authentication controls, legal pages, or service-status assurances.
 Keep installation instructions in the GitHub README, reached directly from Install Asm.
 Do not repeat the full installation and first-project section on the website.
-Retain `#start` on the compact Build with Asm row for existing bookmarks.
+Keep installation and quick-start links in the footer and documentation; omit the homepage setup strip.
 Omit the closed installation strip and the slogan/license row below the footer.
 Keep source and license information available through the project source and README.
 Show supported hosts and prerequisites before installation commands and executable downloads.
@@ -382,7 +382,7 @@ Show observed output separately.
 
 The owner supplied PyPI hero/statistics/footer screenshots and a crates.io discovery screenshot.
 This pass initially adopted their clear full-width bands, compact discovery, start actions, and substantial grouped footer.
-The owner retained the compact onboarding row and removed the full installation section after clarifying its scope.
+The later homepage simplification removes both the compact onboarding row and the full installation section.
 It preserves Asm's compact prompt wordmark and explicit machine metadata.
 
 The first reference pass used ink-blue framing and blue actions.
@@ -415,7 +415,7 @@ Search remains the focal control through width, placement, and contrast.
 Keep the homepage heading at medium weight and give the search group more surrounding space.
 Use a 70-rem maximum content width and the existing 48-rem search measure.
 Use rounded discovery groups with quiet borders and compact package metadata.
-Retain the factual stats band, compact onboarding row, three discovery routes, and grouped footer.
+Retain the factual stats band, three activity feeds, and grouped footer.
 The package consumer still reaches complete metadata, targets, source, files, and evidence.
 
 Retain six-pixel control corners, twelve-pixel panels, and the existing 4/8-pixel spacing basis.
@@ -463,38 +463,45 @@ Check narrow screens, enlarged text, keyboard focus, and package navigation befo
 ### Homepage hierarchy refinement, 7 November 2026
 
 Keep the approved header, search hero, and catalog statistics.
-Search remains the strongest action in the first screen.
-Contain Build with Asm in a compact, neutral strip with secondary installation and getting-started actions.
-Use underlined text links for these actions, with forty-four-pixel target heights and visible keyboard focus.
-Keep its `#start` bookmark and direct README destinations.
-Installation receives less initial emphasis; it remains available before a package is used.
+Follow the statistics directly with New packages, Most downloaded, and Recently updated.
+Omit the Build with Asm strip, purpose and architecture panels, Data and coverage disclosure, and More ways to explore row.
+Keep installation and quick-start instructions in the footer and documentation.
+Keep purpose, architecture, and methodology on the dedicated Explore and statistics pages.
 
 Use a 24-pixel Browse packages heading, 16-pixel group headings, and the existing compact package type.
 Give each activity list one twelve-pixel enclosing panel and a consistent header with its scope and View all link.
 Use borderless package rows inside each panel, with rounded hover surfaces, underlined names, and visible keyboard focus.
 Keep dates, exact targets, unavailable states, and incomplete-download explanations beside their data.
 Do not add nested card borders or use explanatory text as a section separator.
+Keep stale, failed, unavailable, and incomplete-data warnings visible.
 
-Place purpose and architecture in two separately titled browse panels below the activity lists.
-Use full-width native link rows with aligned names, quiet package counts, and a directional cue.
-Keep the architecture identifier secondary to its readable name.
-Stack the browse panels on narrow screens and let long labels wrap.
-Keep contextual links to complete categories and architectures in their respective headers.
-
-Put detailed observation times and methodology in a native Data and coverage disclosure.
-Preserve its open state when the catalog refreshes.
-Keep stale, failed, unavailable, and incomplete-data warnings visible without opening it.
-The More ways to explore link remains a separate, explicit next step.
-
-This serves a package consumer who must identify the main action and distinguish different discovery routes at a glance.
+This serves a package consumer who must identify the main action and distinguish the three discovery routes at a glance.
 It follows serving the person and earning trust with evidence.
-The trade-off is less installation emphasis and one additional action to inspect detailed observation times.
+The trade-off is one navigation step to installation, additional browse routes, and detailed metric explanations.
 [Krug's sample chapter](https://sensible.com/downloads/DMMT-Revisited-sample-chapter.pdf) supports clear choices.
 NN/g's [proximity](https://www.nngroup.com/articles/gestalt-proximity/) and [common-region guidance](https://www.nngroup.com/articles/common-region/) support grouping related content.
-Its [progressive-disclosure guidance](https://www.nngroup.com/articles/progressive-disclosure/) supports separating optional detail from the main task.
 These sources were checked on 7 November 2026.
-Browser checks cover visual grouping, keyboard use, both browse routes, search, narrow screens, enlarged text, and data failures.
-They establish observed behavior; comparative usability still needs people completing package-finding tasks.
+The later removal follows owner feedback; it does not establish a measured usability improvement.
+Check native links, search, keyboard use, narrow screens, enlarged text, and unavailable data.
+
+### Public page addresses
+
+Use `/` for home and extensionless page paths without trailing slashes, such as `/docs` and `/packages/stubbi/math`.
+Keep generated directory routes internal to the build; export flat HTML aliases for the public addresses.
+Resolve relative links against their original page before exporting root-relative page and asset links.
+Update canonical metadata, sitemap locations, and clickable feed links.
+Retain old page addresses as working aliases; preserve existing Atom entry identities.
+Keep literal section fragments and private search/return fragments unchanged.
+JSON feeds, installer paths, source filenames, and artifact routes keep their existing addresses.
+The local server must match the deployed host's flat-HTML lookup before directory redirects.
+Verify exact-version paths containing dots and nested flat files beside same-name directories.
+
+The user outcome is a consistent address after navigation without exposing implementation filenames.
+This follows dependable reuse and serving the person.
+The trade-off is retaining legacy HTML files alongside canonical exports for existing links.
+[Jekyll 3.9.5's extensionless permalink documentation](https://raw.githubusercontent.com/jekyll/jekyll/v3.9.5/docs/_docs/permalinks.md) describes this GitHub Pages behavior.
+Direct HTTP checks on 7 November 2026 confirmed flat HTML lookup before a same-name directory.
+Verify the deployed addresses return HTML without a redirect; a cosmetic browser-history replacement is insufficient.
 
 ### Deeper discovery and maintained content, 7 November 2026
 
@@ -552,7 +559,7 @@ Count each package once per architecture in its latest active release.
 Exclude historical-only and yanked releases from current architecture discovery.
 Keep native architecture directories available without JavaScript or download measurements.
 Show matching exact targets on architecture pages and retain the selected architecture when refining a search.
-Keep the homepage architecture row below the activity lists, beside the secondary purpose browse routes.
+Keep architecture browsing on Explore and in the search and package-file filters.
 Use the same Format, Architecture, Target order in search and package file filters.
 Unknown or unavailable architecture selections need an empty state with a clear recovery action.
 Architecture does not establish operating system, ABI, CPU feature, or CLI host compatibility.
@@ -612,12 +619,13 @@ The package browser provides these routes:
 
 | Route | Purpose |
 | --- | --- |
-| `/packages/` | Complete catalog with ordinary package links |
-| `/packages/owner/` | Packages in a declared namespace |
-| `/packages/owner/name/` | Latest active release and complete history |
-| `/packages/owner/name/version/` | Exact release and its recorded metadata |
-| `/404.html` | Missing-page recovery on the static host |
+| `/packages` | Complete catalog with ordinary package links |
+| `/packages/owner` | Packages in a declared namespace |
+| `/packages/owner/name` | Latest active release and complete history |
+| `/packages/owner/name/version` | Exact release and its recorded metadata |
+| `/404` | Missing-page recovery |
 
+Keep `404.html` as the static host's error-page file.
 Generate these pages from validated release records during the atomic site build.
 Keep the current registry schema and raw JSON routes.
 Every page uses the shared header, footer, type, spacing, color, focus, and control tokens.

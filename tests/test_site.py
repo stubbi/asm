@@ -22,6 +22,7 @@ PAGES = ("index.html", "guide.html", "sponsors.html")
 sys.path.insert(0, str(ROOT / "tools"))
 import build_site
 import registry
+import site_routes
 
 
 class SiteParser(HTMLParser):
@@ -249,16 +250,16 @@ class SiteTests(unittest.TestCase):
                     if fragment:
                         self.assertIn(fragment, self.pages[destination].ids)
 
-    def test_homepage_discovery_has_clear_headers_directories_and_optional_data(self):
+    def test_homepage_focuses_on_search_statistics_and_three_activity_feeds(self):
         page = HierarchyParser()
         page.feed((SITE / "index.html").read_text())
         def within(element, parent): return id(parent) in element["ancestors"]
         def members(parent): return [element for element in page.elements if within(element, parent)]
         def has_class(element, name): return name in element["attrs"].get("class", "").split()
-        start = page.elements_by_id["start"]
-        self.assertFalse(any(has_class(item, "button-primary") for item in members(start)))
-        self.assertEqual({item["attrs"]["href"] for item in members(start) if item["tag"] == "a"},
-                         {"https://github.com/stubbi/asm#install-the-command", "https://github.com/stubbi/asm#quick-start"})
+        self.assertNotIn("start", page.elements_by_id)
+        for name in ("home-start", "discovery-directory", "discovery-data", "discovery-footer"):
+            self.assertFalse(any(has_class(item, name) for item in page.elements), name)
+        self.assertNotIn("More ways to explore", "".join(page.text))
         groups = [item for item in page.elements if has_class(item, "discovery-group")]
         self.assertEqual({item["attrs"].get("data-discovery-feed") for item in groups}, {"new", "popular", "updated"})
         for group in groups:
@@ -272,26 +273,8 @@ class SiteTests(unittest.TestCase):
             self.assertEqual(len(actions), 1)
             self.assertEqual(actions[0]["attrs"]["href"], "browse/" + group["attrs"]["data-discovery-feed"] + "/")
             self.assertTrue(actions[0]["attrs"].get("aria-label", "").startswith("View all "))
-        directories = [item for item in page.elements if item["tag"] == "nav" and has_class(item, "discovery-directory")]
-        self.assertEqual({item["attrs"].get("aria-label") for item in directories},
-                         {"Browse packages by purpose", "Browse packages by architecture"})
-        for directory, key, label in ((next(item for item in directories if item["attrs"]["aria-label"].endswith("purpose")), "categories", "View all purpose categories"),
-                                      (next(item for item in directories if item["attrs"]["aria-label"].endswith("architecture")), "architectures", "View all architectures")):
-            heading = page.elements_by_id[directory["attrs"]["aria-labelledby"]]
-            self.assertEqual(heading["tag"], "h3")
-            self.assertTrue(within(heading, directory))
-            self.assertEqual(sum(item["tag"] == "a" and item["attrs"].get("href") == "browse/" + key + "/"
-                                 and item["attrs"].get("aria-label") == label for item in members(directory)), 1)
-        details = [item for item in page.elements if item["tag"] == "details" and has_class(item, "discovery-data")]
-        self.assertEqual(len(details), 1)
-        self.assertNotIn("open", details[0]["attrs"])
-        self.assertEqual(["".join(item["text"]).strip() for item in members(details[0]) if item["tag"] == "summary"], ["Data and coverage"])
-        freshness = [item for item in page.elements if has_class(item, "discovery-freshness")]
-        self.assertEqual(len(freshness), 1)
-        self.assertTrue(within(freshness[0], details[0]))
-        states = [item for item in page.elements if has_class(item, "discovery-state")]
-        self.assertTrue(states)
-        self.assertTrue(all(not within(item, details[0]) for item in states))
+        self.assertTrue(any(has_class(item, "discovery-state") for item in page.elements))
+        self.assertIn("explore/", page.main_navigation_links)
 
     def test_search_controls_have_visible_labels(self):
         self.assertTrue(self.pages["index.html"].input_ids)
@@ -324,7 +307,7 @@ class SiteTests(unittest.TestCase):
                 self.assertIn("sponsors.html", self.pages[name].footer_links)
                 self.assertEqual(self.pages[name].main_navigation_links, ["explore/", "stats/", "blog/", "docs/"])
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("https://asm.build/sponsors.html", readme)
+        self.assertIn("https://asm.build/sponsors", readme)
 
     def test_sponsorship_enquiries_work_without_a_payment_provider_or_javascript(self):
         page = self.pages["sponsors.html"]
@@ -425,6 +408,8 @@ class SearchDiscoveryTests(unittest.TestCase):
         metadata = json.loads((ROOT / "registry/discovery-metadata.json").read_text())
         cls.expected_html.update(f"browse/keywords/{tag}/index.html" for package in metadata["packages"]
                                  for tag in package.get("keywords", []))
+        cls.expected_html.update(path[:-len("/index.html")] + ".html"
+                                 for path in list(cls.expected_html) if path.endswith("/index.html"))
         repo = Path(cls.temporary.name) / "repo"
         repo.mkdir()
         shutil.copytree(SITE, repo / "site")
@@ -445,6 +430,7 @@ class SearchDiscoveryTests(unittest.TestCase):
 
         build_site.build_site(repo, ROOT / "registry", cls.output,
                               artifact_reader=forbidden, metrics_fetcher=forbidden)
+        cls.routes = site_routes.PageRoutes.from_directory(cls.output)
         cls.pages = {}
         for path in sorted(cls.output.rglob("*.html")):
             page = SiteParser()
@@ -583,7 +569,9 @@ Unpublished body sentinel.
         self.assertFalse(list(public.rglob("*-fixture.md")))
         for path in list(public.rglob("*.html")) + [public / "blog/atom.xml", public / "sitemap.xml"]:
             self.assertNotIn("Unpublished", path.read_text(), path)
-        self.assertIn("https://asm.build/blog/articles/public-fixture/", (public / "sitemap.xml").read_text())
+        self.assertIn("https://asm.build/blog/articles/public-fixture",
+                      [item.text for item in ElementTree.parse(public / "sitemap.xml").findall(
+                          "{http://www.sitemaps.org/schemas/sitemap/0.9}url/{http://www.sitemaps.org/schemas/sitemap/0.9}loc")])
         feed = ElementTree.parse(public / "blog/atom.xml").getroot()
         namespace = {"a": "http://www.w3.org/2005/Atom"}
         self.assertEqual(feed.findtext("a:entry/a:id", namespaces=namespace), "https://asm.build/blog/articles/public-fixture/")
@@ -605,17 +593,18 @@ Unpublished body sentinel.
         self.assertFalse(invalid.exists())
         self.assertTrue((public / "blog/articles/public-fixture/index.html").is_file())
 
-    @staticmethod
-    def normalized_url(base, value):
+    @classmethod
+    def normalized_url(cls, base, value):
         url = urlsplit(urljoin(base, value))
         path = url.path
-        if url.netloc == "asm.build" and path.endswith("/index.html"):
-            path = path[:-len("index.html")]
+        if url.netloc == "asm.build":
+            path = cls.routes.canonical_path(path)
         return url._replace(path=path).geturl()
 
     @staticmethod
     def canonical_url(path):
-        return "https://asm.build/" + (path[:-len("index.html")] if path.endswith("index.html") else path)
+        path = path[:-len("index.html")] if path.endswith("index.html") else path[:-len(".html")]
+        return "https://asm.build/" + path.rstrip("/")
 
     def link_urls(self, page, elements=None):
         base = page.canonicals[0]
@@ -657,6 +646,7 @@ Unpublished body sentinel.
         for name, page in self.pages.items():
             self.assertEqual(len(page.canonicals), 1, name)
             base = page.canonicals[0]
+            self.assertEqual(base, self.canonical_url(name), name)
             for asset in page.assets:
                 url = urlsplit(urljoin(base, asset))
                 self.assertEqual((url.scheme, url.netloc), ("https", "asm.build"), (name, asset))
@@ -668,7 +658,10 @@ Unpublished body sentinel.
                         self.assertIn(url.scheme, {"https", "mailto"})
                         continue
                     self.assertEqual(url.scheme, "https")
-                    path = (self.output / unquote(url.path).lstrip("/")).resolve()
+                    relative = self.routes.file_for(unquote(url.path))
+                    if relative is not None:
+                        self.assertEqual(url.path, self.routes.canonical_path(url.path), (name, value))
+                    path = (self.output / (relative if relative is not None else unquote(url.path).lstrip("/"))).resolve()
                     self.assertTrue(path.is_relative_to(self.output.resolve()))
                     if path.is_dir():
                         path /= "index.html"
@@ -756,7 +749,7 @@ Unpublished body sentinel.
                 self.assertEqual(len(fallback), 1)
                 self.assertNotIn("hidden", fallback[0]["attrs"])
                 self.assertEqual(self.normalized_url(page.canonicals[0], fallback[0]["attrs"]["href"]),
-                                 "https://asm.build/packages/")
+                                 "https://asm.build/packages")
                 scripts = [item for item in page.elements if item["tag"] == "script"
                            and item["attrs"].get("src", "").endswith("navigation.js")]
                 self.assertEqual(len(scripts), 1)
@@ -775,9 +768,9 @@ Unpublished body sentinel.
 
     def test_catalog_namespaces_and_package_history_have_static_permalinks(self):
         catalog = self.pages["packages/index.html"]
-        self.assertEqual(catalog.canonicals, ["https://asm.build/packages/"])
+        self.assertEqual(catalog.canonicals, ["https://asm.build/packages"])
         home = self.pages["index.html"]
-        self.assertIn("https://asm.build/packages/", self.link_urls(home, home.main_links))
+        self.assertIn("https://asm.build/packages", self.link_urls(home, home.main_links))
         by_name = {}
         for record in self.records:
             by_name.setdefault(record["name"], []).append(record)
@@ -836,11 +829,11 @@ Unpublished body sentinel.
 
     def test_missing_route_page_has_native_recovery_without_search_scripts(self):
         page = self.pages["404.html"]
-        self.assertEqual(page.canonicals, ["https://asm.build/404.html"])
+        self.assertEqual(page.canonicals, ["https://asm.build/404"])
         self.assertIn("noindex", page.robots)
         links = self.link_urls(page, page.main_links)
         self.assertIn("https://asm.build/", links)
-        self.assertIn("https://asm.build/packages/", links)
+        self.assertIn("https://asm.build/packages", links)
 
     def test_sitemap_urls_have_html_metadata_and_allow_crawling(self):
         sitemap = ElementTree.parse(self.output / "sitemap.xml")
@@ -859,9 +852,9 @@ Unpublished body sentinel.
                 self.assertEqual((url.scheme, url.netloc, url.query, url.fragment),
                                  ("https", "asm.build", "", ""))
                 page = SiteParser()
-                path = self.output / url.path.lstrip("/")
-                if url.path.endswith("/"):
-                    path /= "index.html"
+                relative = self.routes.file_for(url.path)
+                self.assertIsNotNone(relative, location)
+                path = self.output / relative
                 page.feed(path.read_text(encoding="utf-8"))
                 self.assertEqual(page.canonicals, [location])
                 self.assertEqual(len(page.descriptions), 1)

@@ -8,12 +8,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-import package_pages
+import discovery
+import discovery_metadata
 import registry
+import registry_explore
 import target_metadata
+from test_site import HierarchyParser
 
 
 class TargetMetadataTests(unittest.TestCase):
@@ -61,21 +65,42 @@ class TargetMetadataTests(unittest.TestCase):
         self.assertEqual(observed["groups"], target_metadata.architecture_groups(index))
         self.assertEqual(observed["labels"], target_metadata.ARCHITECTURES)
 
-    def test_homepage_architecture_links_and_exact_counts_work_without_scripts(self):
-        index = registry.make_indexes(registry.read_records(ROOT / "registry"))[1]
+    def test_explore_architecture_links_and_exact_counts_work_without_scripts_and_stay_off_home(self):
+        records = registry.read_records(ROOT / "registry")
+        index = registry.make_indexes(records)[1]
+        before = deepcopy(index)
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary)
             page = stage / "index.html"
             page.write_text((ROOT / "site/index.html").read_text())
-            package_pages.write_architecture_browse(stage, index)
             first = page.read_bytes()
-            package_pages.write_architecture_browse(stage, index)
+            snapshot = discovery.delivery_snapshot(records)
+            snapshot["categories"] = []
+            metadata = discovery_metadata.project_metadata({"schema": 1, "packages": []}, index)
+            retained = discovery.retained_counts(records, None)
+            html = registry_explore.explore_page(stage, index, snapshot, metadata, retained)
+            self.assertEqual(registry_explore.explore_page(stage, index, snapshot, metadata, retained), html)
             self.assertEqual(page.read_bytes(), first)
+            self.assertEqual(index, before)
+            self.assertNotIn(b"architecture-browse", first)
+            self.assertNotIn(b"browse/architectures/", first)
+            self.assertNotIn('src="../app.js"', html)
+            parsed = HierarchyParser()
+            parsed.feed(html)
+            group = parsed.elements_by_id["explore-architectures"]
+            self.assertEqual(group["tag"], "h2")
+            self.assertEqual("".join(group["text"]), "Browse by architecture")
+            links = [element for element in parsed.elements if element["tag"] == "a"
+                     and "discovery-topic" in element["attrs"].get("class", "").split()]
+            architecture_links = {urlsplit(urljoin("https://asm.build/explore/", link["attrs"]["href"])).path: link
+                                  for link in links if "/browse/architectures/" in link["attrs"]["href"]}
+            self.assertEqual(len(architecture_links), len(target_metadata.architecture_groups(index)))
             for row in target_metadata.architecture_groups(index):
-                self.assertIn(('href="browse/architectures/' + row["id"] + '/"').encode(), first)
-            self.assertIn(b'aria-label="Browse packages by architecture"', first)
-            self.assertEqual(first.count(b'architecture-browse:start'), 1)
-            self.assertIn(b'title="2"', first)
+                link = architecture_links["/browse/architectures/" + row["id"] + "/"]
+                self.assertIn(row["name"], "".join(link["accessible_text"]))
+                counts = [element for element in parsed.elements if id(link) in element["ancestors"]
+                          and "compact-count" in element["attrs"].get("class", "").split()]
+                self.assertEqual([element["attrs"].get("title") for element in counts], [str(len(row["packages"]))])
 
 
 if __name__ == "__main__":

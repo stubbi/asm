@@ -10,6 +10,7 @@
           destination.origin !== base.origin || destination.username || destination.password ||
           destination.search || destination.hash ||
           !(destination.pathname === "/" || destination.pathname.endsWith("/index.html"))) return null;
+      if (destination.pathname.endsWith("/index.html")) destination.pathname = destination.pathname.slice(0, -10);
       const parameters = new URLSearchParams();
       if (query) parameters.set("q", query);
       parameters.set("all", "1");

@@ -689,27 +689,6 @@ def write_catalog_stats(stage: Path, index: dict) -> None:
     registry.write_atomic(stage / "index.html", content.encode("utf-8"))
 
 
-def write_architecture_browse(stage: Path, index: dict) -> None:
-    """Keep architecture navigation usable without scripts or download data."""
-    path = stage / "index.html"
-    content = registry.read_regular(stage, "index.html", 512 * 1024).decode("utf-8")
-    start, end = "<!-- architecture-browse:start -->", "<!-- architecture-browse:end -->"
-    registry.require(content.count(start) == content.count(end) == 1 and content.index(start) < content.index(end),
-                     "homepage needs one architecture browse marker pair")
-    links = []
-    for row in target_metadata.architecture_groups(index):
-        size = len(row["packages"])
-        links.append('<li><a class="discovery-directory-link" href="browse/architectures/' + row["id"] + '/">'
-                     '<span class="discovery-directory-name">' + escape(row["name"]) + ' <code>' + escape(row["id"]) + '</code></span>'
-                     '<span class="discovery-directory-count">' + count_html(size) + (' package' if size == 1 else ' packages') + '</span>'
-                     '<span class="discovery-directory-arrow" aria-hidden="true">→</span></a></li>')
-    navigation = ('<nav class="discovery-directory" aria-label="Browse packages by architecture" aria-labelledby="browse-architecture-heading">'
-                  '<div class="discovery-directory-header"><h3 id="browse-architecture-heading">Browse by architecture</h3>' +
-                  _anchor("View all", "browse/architectures/", attrs=' class="discovery-more" aria-label="View all architectures"') + '</div>'
-                  '<ul class="discovery-directory-items">' + ''.join(links) + '</ul></nav>')
-    before, after = content.split(start, 1)[0], content.split(end, 1)[1]
-    registry.write_atomic(path, (before + start + navigation + end + after).encode("utf-8"))
-
 
 # Discovery is a versioned sidecar. It never changes published release records.
 def _categories(value: dict, index: dict) -> list[dict]:
