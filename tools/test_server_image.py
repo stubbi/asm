@@ -9,6 +9,7 @@ import argparse
 import ctypes
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,7 @@ from unittest.mock import patch
 import uuid
 
 TARGETS = {"amd64": ("x86_64", 62), "arm64": ("aarch64", 183), "riscv64": ("riscv64", 243)}
+PUBLISHED_TARGETS = ("amd64", "arm64")
 DECLARED_TARGETS = {
     "amd64": {"isa": "x86_64", "os": "linux", "abi": "System V AMD64 LP64", "cpu_profile": "x86-64 baseline"},
     "arm64": {"isa": "aarch64", "os": "linux", "abi": "AAPCS64 LP64", "cpu_profile": "ARMv8-A"},
@@ -61,8 +63,8 @@ def index_contract(index, expected):
     children = index.get("manifests", [])
     if index.get("schemaVersion") != 2 or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise ValueError("The registry index has no valid immutable descriptor.")
-    if len(children) != len(TARGETS) or set(expected) != set(TARGETS):
-        raise ValueError("The registry index must contain exactly the three qualified targets.")
+    if len(children) != len(PUBLISHED_TARGETS) or set(expected) != set(PUBLISHED_TARGETS):
+        raise ValueError("The registry index must contain exactly the qualified AMD64 and ARM64 targets.")
     found = {}
     for child in children:
         target = child.get("platform", {})
@@ -125,6 +127,20 @@ def security_arguments():
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "512m", "--cpus", "2"]
 
 
+def require_runtime_success(result, count, diagnostics):
+    if not result.wasSuccessful() or result.skipped or result.testsRun != count:
+        try:
+            record = json.dumps(diagnostics if diagnostics is not None else
+                                {"unavailable": "fixture capture did not complete"}, sort_keys=True)
+        except Exception as error:
+            record = json.dumps({"unavailable": type(error).__name__})
+        try:
+            print("ASM_SERVER_FAILURE_DIAGNOSTICS=" + record, file=sys.stderr)
+        except Exception:
+            pass  # A broken diagnostic stream cannot change the failed gate.
+        raise ValueError("The architecture's complete runtime suite did not pass without skips.")
+
+
 def runtime_files(image_id, arch):
     base = ["docker", "run", "--rm", "--platform", "linux/" + arch, *security_arguments()]
     output = command([*base, "--entrypoint", "/usr/bin/ldd", image_id, "/usr/local/bin/asm-hub"]).stdout.decode()
@@ -174,8 +190,7 @@ def inside(args):
         raise ValueError("The runtime qualification suite is incomplete.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
-    if not result.wasSuccessful() or result.skipped or result.testsRun != count:
-        raise ValueError("The architecture's complete runtime suite did not pass without skips.")
+    require_runtime_success(result, count, getattr(module.RuntimeTests, "failure_diagnostics", None))
     report = {"schema": 1, "status": "pass", "scope": QUALIFICATION_SCOPE,
               "architecture": args.arch, "os": "linux", "execution": args.execution,
               "source_revision": args.revision, "binary": artifact,
@@ -248,7 +263,7 @@ def publish_index(args):
     if not re.fullmatch(r"sha-" + args.revision + r"-run-[0-9]+-[0-9]+", args.index_tag or ""):
         raise ValueError("The index tag must identify the exact source, run, and attempt.")
     expected = {}
-    for arch in TARGETS:
+    for arch in PUBLISHED_TARGETS:
         directory = Path(args.children_directory) / f"server-image-digest-{arch}-{args.revision}"
         ref = (directory / "registry-digest.txt").read_text().strip()
         if not re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[0-9a-f]{64}", ref):
@@ -266,7 +281,7 @@ def publish_index(args):
         expected[arch] = ref.split("@", 1)[1]
     reference = REPOSITORY + ":" + args.index_tag
     command(["docker", "buildx", "imagetools", "create", "--tag", reference,
-             *(REPOSITORY + "@" + expected[arch] for arch in TARGETS)], timeout=120)
+             *(REPOSITORY + "@" + expected[arch] for arch in PUBLISHED_TARGETS)], timeout=120)
     index = json.loads(command(["docker", "buildx", "imagetools", "inspect", "--format",
                                "{{json .Manifest}}", reference]).stdout)
     digest = index_contract(index, expected)
@@ -284,6 +299,130 @@ def publish_index(args):
 
 
 class ContractTests(unittest.TestCase):
+    def runtime_module(self):
+        path = Path(__file__).resolve().parents[1] / "server/test_runtime.py"
+        spec = importlib.util.spec_from_file_location("asm_runtime_diagnostic_tests", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_runtime_log_capture_is_bounded_redacted_and_refuses_links(self):
+        module = self.runtime_module()
+        with tempfile.TemporaryDirectory(prefix="asm-runtime-diagnostics-") as directory:
+            root = Path(directory)
+            secret = "a" * 48
+            log = root / "server.log"
+            log.write_bytes(b"discarded prefix\n" * 100 +
+                            ("fixture " + secret + " postgresql://user:password@localhost/db\n").encode())
+            value = module.diagnostic_file(log, 256, tail=True, secret=secret)
+            self.assertTrue(value["truncated"])
+            self.assertLessEqual(len(value["text"].encode()), 256)
+            self.assertNotIn(secret, value["text"])
+            self.assertNotIn("postgresql://", value["text"])
+            self.assertIn("[redacted]", value["text"])
+            log.write_text("postgresql://user:" + secret + "@localhost/db\nretained line\n")
+            self.assertEqual(module.diagnostic_file(log, 32, tail=True, secret=secret)["text"],
+                             "retained line\n")
+            link = root / "linked.log"
+            link.symlink_to(log)
+            for path in (link, root / "missing.log", root):
+                with self.subTest(path=path):
+                    self.assertIn("unavailable", module.diagnostic_file(path, 256, tail=True))
+            counters = root / "cgroup"
+            counters.mkdir()
+            (counters / "cpu.stat").write_text("usage_usec 123\nnr_throttled 2\n")
+            snapshot = module.cgroup_snapshot(counters)
+            self.assertEqual(snapshot["cpu.stat"]["text"], "usage_usec 123\nnr_throttled 2\n")
+            self.assertIn("unavailable", snapshot["memory.events"])
+            with patch.object(module, "diagnostic_file", side_effect=RuntimeError("private counter detail")):
+                self.assertEqual(module.cgroup_snapshot(counters), {"unavailable": "RuntimeError"})
+
+    def test_concurrent_diagnostics_preserve_status_body_and_exception_failures(self):
+        module = self.runtime_module()
+        exports = {"/registry/v1/" + name: b"expected" for name in
+                   ("index.tsv", "index-macos.tsv", "index-all.tsv", "index.json")}
+        for status, body in ((503, b"unavailable"), (200, b"wrong bytes")):
+            with self.subTest(status=status):
+                case = module.RuntimeTests("test_concurrent_exports_keep_independent_response_ownership")
+                case.exports = exports
+                case.raw_request = lambda path: (status, {}, body)
+                result = unittest.TestResult()
+                case.run(result)
+                self.assertEqual(len(result.failures), 8)
+                requests = case.concurrent_wave["requests"]
+                self.assertEqual([value["path"] for value in requests], list(exports) * 2)
+                self.assertEqual([value["status"] for value in requests], [status] * 8)
+                self.assertTrue(all(value["seconds"] >= 0 for value in requests))
+        case.raw_request = lambda path: (_ for _ in ()).throw(TimeoutError("private exception detail"))
+        result = unittest.TestResult()
+        case.run(result)
+        self.assertEqual(len(result.errors), 1)
+        requests = case.concurrent_wave["requests"]
+        self.assertTrue(any(value.get("error") == "TimeoutError" for value in requests))
+        self.assertTrue(all(value.get("error") == "TimeoutError" or "unavailable" in value for value in requests))
+        self.assertNotIn("private exception detail", json.dumps(case.concurrent_wave))
+
+    def test_fixture_diagnostics_survive_owned_postgres_cleanup(self):
+        module = self.runtime_module()
+        fixture = module.RuntimeTests
+        with tempfile.TemporaryDirectory(prefix="asm-runtime-log-retention-") as directory:
+            fixture.base = Path(directory)
+            fixture.cluster = module.LocalPostgres(fixture.base)
+            fixture.cluster.temp = tempfile.TemporaryDirectory(dir=directory)
+            fixture.cluster.base = Path(fixture.cluster.temp.name)
+            fixture.cluster.password = "b" * 48
+            fixture.concurrent_wave = {"requests": []}
+            (fixture.base / "server.log").write_text("fixed server error\n")
+            pg_log = fixture.cluster.base / "postgres.log"
+            pg_log.write_text("fixed PostgreSQL error\n")
+            fixture.retain_diagnostics()
+            fixture.cluster.close()
+            self.assertFalse(pg_log.exists())
+            self.assertEqual(fixture.failure_diagnostics["logs"]["postgres"]["text"],
+                             "fixed PostgreSQL error\n")
+            self.assertEqual(fixture.failure_diagnostics["logs"]["server"]["text"], "fixed server error\n")
+            with patch.object(module, "diagnostic_file", side_effect=RuntimeError("private error detail")):
+                fixture.retain_diagnostics()
+            self.assertEqual(fixture.failure_diagnostics, {"unavailable": "RuntimeError"})
+
+    def test_failed_runtime_suite_emits_diagnostics_without_qualifying(self):
+        from contextlib import redirect_stderr
+
+        def fail():
+            raise AssertionError("synthetic runtime failure")
+
+        diagnostics = {"logs": {"server": {"text": "fixed fixture error"}}}
+        for action, skipped in ((lambda: None, False), (fail, False),
+                                (lambda: self.skipTest("synthetic skip"), True)):
+            suite = unittest.TestSuite(unittest.FunctionTestCase(action) for _ in range(MIN_RUNTIME_TESTS))
+            result = unittest.TestResult()
+            suite.run(result)
+            output = io.StringIO()
+            with redirect_stderr(output):
+                if action is fail or skipped:
+                    with self.assertRaises(ValueError):
+                        require_runtime_success(result, MIN_RUNTIME_TESTS, diagnostics)
+                else:
+                    require_runtime_success(result, MIN_RUNTIME_TESTS, diagnostics)
+            if action is fail or skipped:
+                prefix = "ASM_SERVER_FAILURE_DIAGNOSTICS="
+                self.assertTrue(output.getvalue().startswith(prefix))
+                self.assertEqual(json.loads(output.getvalue()[len(prefix):]), diagnostics)
+            else:
+                self.assertEqual(output.getvalue(), "")
+        # A diagnostic serialization or output failure must retain the failed gate.
+        suite = unittest.TestSuite([unittest.FunctionTestCase(fail)])
+        result = unittest.TestResult()
+        suite.run(result)
+        output = io.StringIO()
+        with redirect_stderr(output), self.assertRaisesRegex(ValueError, "complete runtime suite"):
+            require_runtime_success(result, MIN_RUNTIME_TESTS, {"not JSON": object()})
+        self.assertIn('"unavailable": "TypeError"', output.getvalue())
+        with patch.object(sys, "stderr") as stream:
+            stream.write.side_effect = OSError("diagnostic stream unavailable")
+            with self.assertRaisesRegex(ValueError, "complete runtime suite"):
+                require_runtime_success(result, MIN_RUNTIME_TESTS, diagnostics)
+
     def image(self):
         return {"Id": "sha256:" + "a" * 64, "Architecture": "amd64", "Os": "linux",
                 "RootFS": {"Layers": ["sha256:" + "b" * 64]},
@@ -342,7 +481,7 @@ class ContractTests(unittest.TestCase):
                     elf_contract(self.elf(243, flags=flags), "riscv64")
 
     def test_index_rejects_missing_extra_duplicate_or_changed_children(self):
-        expected = {arch: "sha256:" + str(i) * 64 for i, arch in enumerate(TARGETS, 1)}
+        expected = {arch: "sha256:" + str(i) * 64 for i, arch in enumerate(PUBLISHED_TARGETS, 1)}
         index = {"schemaVersion": 2, "digest": "sha256:" + "a" * 64,
                  "manifests": [{"digest": digest, "platform": {"os": "linux", "architecture": arch}}
                                for arch, digest in expected.items()]}
@@ -356,6 +495,19 @@ class ContractTests(unittest.TestCase):
         changed["manifests"][0]["digest"] = "sha256:" + "f" * 64
         with self.assertRaises(ValueError):
             index_contract(changed, expected)
+
+    def test_native_index_excludes_the_experimental_riscv_server(self):
+        self.assertIn("riscv64", TARGETS)  # The manual full-suite target remains available.
+        expected = {"amd64": "sha256:" + "1" * 64, "arm64": "sha256:" + "2" * 64}
+        children = [{"digest": digest, "platform": {"os": "linux", "architecture": arch}}
+                    for arch, digest in expected.items()]
+        index = {"schemaVersion": 2, "digest": "sha256:" + "a" * 64, "manifests": children}
+        self.assertEqual(index_contract(index, expected), index["digest"])
+        experimental = {**expected, "riscv64": "sha256:" + "3" * 64}
+        index["manifests"] = [*children, {"digest": experimental["riscv64"],
+                                         "platform": {"os": "linux", "architecture": "riscv64"}}]
+        with self.assertRaises(ValueError):
+            index_contract(index, experimental)
 
     def test_index_refuses_foundation_or_incomplete_catalog_evidence(self):
         revision = "c" * 40

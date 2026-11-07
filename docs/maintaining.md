@@ -39,12 +39,14 @@ Before a release, check these controls:
 | `Test distribution trust` | Native Unix and Windows verifier suites. |
 | `Check the native Intel macOS CLI` | Exact-source Intel macOS qualification. |
 | `Test MCP image qualification` | Native AMD64 and ARM64 MCP images, real clients, and agent contracts. |
-| `Test assembly server images` | AMD64, ARM64, and emulated RISC-V server images. |
+| `Test assembly server images` | Native AMD64 and ARM64 server images. |
 | `Test registry operator image` | Isolated registry operator image and publication policy. |
 
 Aggregate checks require successful results from every prerequisite job.
 A failed, cancelled, skipped, or missing prerequisite cannot qualify the aggregate.
 Keep these workflows active for every pull request.
+The unqualified RISC-V server experiment runs only when requested through the workflow's manual input.
+RISC-V package builds remain part of the release checks.
 
 [Branch protections][branch-protection] and [private vulnerability reporting][private-reporting] are GitHub settings.
 Adding policy files does not enable them.

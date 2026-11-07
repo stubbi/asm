@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      experimental_riscv64:
+        description: Include the fully emulated RISC-V server image experiment
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,10 +24,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { runner: ubuntu-24.04, arch: amd64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04-arm, arch: arm64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04, arch: riscv64, execution: emulated, minutes: 90 }
+        include: ${{ fromJSON(
+          github.event_name == 'workflow_dispatch' && inputs.experimental_riscv64
+          && '[{"runner":"ubuntu-24.04","arch":"amd64","execution":"native","minutes":45},{"runner":"ubuntu-24.04-arm","arch":"arm64","execution":"native","minutes":45},{"runner":"ubuntu-24.04","arch":"riscv64","execution":"emulated","minutes":90}]'
+          || '[{"runner":"ubuntu-24.04","arch":"amd64","execution":"native","minutes":45},{"runner":"ubuntu-24.04-arm","arch":"arm64","execution":"native","minutes":45}]'
+          ) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.minutes }}
     steps:
@@ -192,7 +198,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64, riscv64]
+        arch: [amd64, arm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
