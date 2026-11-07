@@ -489,6 +489,7 @@ class ReleaseTests(unittest.TestCase):
         (cls.repo / "tools").mkdir()
         shutil.copy2(ROOT / "tools/install.sh", cls.repo / "tools/install.sh")
         shutil.copyfile(ROOT / "README.md", cls.repo / "README.md")
+        shutil.copyfile(ROOT / "CHANGELOG.md", cls.repo / "CHANGELOG.md")
         shutil.copyfile(ROOT / "LICENSE", cls.repo / "LICENSE")
         (cls.repo / "asm.toml").write_text(f'[package]\nname = "asm"\nversion = "{cls.version}"\n\n[build]\nsource = "cli/asm.s"\ntarget = "x86_64-linux"\n')
         shutil.copyfile(ROOT / "Makefile", cls.repo / "Makefile")
@@ -714,14 +715,23 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(requests[-1].endswith("/release-attestation.sigstore.json"))
 
     def test_metrics_failure_does_not_become_success_or_zero(self):
+        requests = []
         def unavailable(url):
+            requests.append(url)
             raise URLError("network unavailable")
         output = self.case_dir / "missing-metrics"
         result = build_site.build_site(self.repo, self.first / "registry", output,
-                                      downloads=True, metrics_fetcher=unavailable)
+                                      downloads=True, metrics_fetcher=unavailable,
+                                      publication_state=self.case_dir / "publication.sqlite3")
         self.assertEqual(result["artifact_checked_releases"], 0)
+        self.assertTrue(requests)
+        self.assertEqual(len(requests), len(set(requests)))
         counts = json.loads((output / "registry/v1/downloads.json").read_text())
+        self.assertIsNone(counts["observed_at"])
         self.assertTrue(all(value["total"] is None for value in counts["packages"].values()))
+        snapshot = json.loads((output / "registry/v1/discovery.json").read_text())
+        self.assertTrue(all(item["first_published_at"] is None for item in snapshot["packages"]))
+        self.assertEqual(snapshot["feeds"], {"popular": [], "new": [], "updated": []})
 
 
 class DownloadPolicyTests(unittest.TestCase):
