@@ -117,15 +117,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  release:
+  build:
+    name: Build and qualify release bytes
     if: github.ref == 'refs/heads/main'
     needs: [arm64, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+    outputs:
+      manifest_sha256: ${{ steps.handoff.outputs.manifest_sha256 }}
+      artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -153,6 +155,110 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user
+      - name: Receive the native macOS qualification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: native-macos-${{ github.sha }}
+          path: native-input
+      - name: Receive the native ARM64 qualification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: native-arm64-${{ github.sha }}
+          path: native-arm64-input
+      - name: Check and build the release
+        env:
+          ASM_TRUSTED: ${{ inputs.trusted_distribution }}
+        run: |
+          set -euo pipefail
+          ASM_TRUSTED_FLAG=''
+          if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
+          make check
+          # Root runs every native cross-UID test on the final clean x86 bytes.
+          ASM_RELEASE_ROOT=$(sudo mktemp -d /tmp/asm-release-x86.XXXXXXXX)
+          test -d "$GITHUB_WORKSPACE/.git"
+          test ! -L "$GITHUB_WORKSPACE/.git"
+          sudo mkdir "$ASM_RELEASE_ROOT/repo"
+          sudo cp -R "$GITHUB_WORKSPACE/.git" "$ASM_RELEASE_ROOT/repo/.git"
+          sudo env -i PATH="$PATH" HOME=/root LANG=C.UTF-8 \
+            python3 tools/release.py --repo "$ASM_RELEASE_ROOT/repo" --commit "$GITHUB_SHA" \
+            --output "$ASM_RELEASE_ROOT/dist" --qualify-x86 \
+            --native-input "$GITHUB_WORKSPACE/native-input" \
+            --native-input-for aarch64-linux "$GITHUB_WORKSPACE/native-arm64-input" \
+            --hello-target x86_64-linux --hello-target aarch64-linux --hello-target riscv64-linux $ASM_TRUSTED_FLAG
+          sudo rm -rf -- "$ASM_RELEASE_ROOT/repo"
+          sudo chmod 755 "$ASM_RELEASE_ROOT"
+          printf 'ASM_RELEASE_OUTPUT=%s/dist\n' "$ASM_RELEASE_ROOT" >> "$GITHUB_ENV"
+      - name: Check installation boundaries between users
+        run: |
+          sudo env PYTHONPATH=tests python3 -m unittest -v \
+            test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
+            test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor \
+            test_bootstrap.BootstrapUserFlowTests.test_readonly_home_allows_non_root_install_and_exact_rerun
+      - name: Bind the qualified release manifest
+        id: handoff
+        run: |
+          set -euo pipefail
+          test "$(stat -c %s "$ASM_RELEASE_OUTPUT/release.json")" -le 1048576
+          ASM_MANIFEST_SHA256=$(sha256sum "$ASM_RELEASE_OUTPUT/release.json" | cut -d ' ' -f1)
+          printf 'manifest_sha256=%s\n' "$ASM_MANIFEST_SHA256" >> "$GITHUB_OUTPUT"
+      - name: Retain only the qualified publication bytes
+        id: release_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qualified-release-${{ github.sha }}
+          path: |
+            ${{ env.ASM_RELEASE_OUTPUT }}/asm-*
+            ${{ env.ASM_RELEASE_OUTPUT }}/hello-*
+            ${{ env.ASM_RELEASE_OUTPUT }}/math-*
+            ${{ env.ASM_RELEASE_OUTPUT }}/SHA256SUMS
+            ${{ env.ASM_RELEASE_OUTPUT }}/release.json
+            ${{ env.ASM_RELEASE_OUTPUT }}/install.sh
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Sign and publish qualified bytes
+    if: github.ref == 'refs/heads/main' && github.repository == 'stubbi/asm'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the version tag
+        run: |
+          set -euo pipefail
+          ASM_VERSION=$(python3 -c 'import json; print(json.load(open("cli/commands.json"))["version"])')
+          git fetch --tags origin
+          if git show-ref --verify --quiet "refs/tags/v$ASM_VERSION"; then
+            echo "This version tag already exists. Select a new immutable version." >&2
+            exit 1
+          fi
+      - name: Receive only this run's qualified release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: dist
+          merge-multiple: true
+      - name: Validate the handoff without executing artifacts
+        env:
+          ASM_MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+          ASM_TRUSTED: ${{ inputs.trusted_distribution }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ASM_TRUSTED_FLAG=''
+          if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
+          python3 tools/release.py --commit "$GITHUB_SHA" --validate-release dist \
+            --manifest-sha256 "$ASM_MANIFEST_SHA256" $ASM_TRUSTED_FLAG
       - name: Install the provenance verifier
         shell: bash
         run: |
@@ -173,31 +279,6 @@ jobs:
           chmod 755 "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin/gh"
           "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin/gh" version
           printf '%s\n' "$ASM_GH_ROOT/gh_2.103.3_linux_amd64/bin" >> "$GITHUB_PATH"
-      - name: Receive the native macOS qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: native-macos-${{ github.sha }}
-          path: native-input
-      - name: Receive the native ARM64 qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: native-arm64-${{ github.sha }}
-          path: native-arm64-input
-      - name: Check and build the release
-        env:
-          ASM_TRUSTED: ${{ inputs.trusted_distribution }}
-        run: |
-          ASM_TRUSTED_FLAG=''
-          if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
-          make check
-          python3 tools/release.py --commit "$GITHUB_SHA" --output dist --native-input native-input --native-input-for aarch64-linux native-arm64-input --hello-target x86_64-linux --hello-target aarch64-linux --hello-target riscv64-linux $ASM_TRUSTED_FLAG
-          test "$(stat -c %s dist/release.json)" -le 1048576
-      - name: Check installation boundaries between users
-        run: |
-          sudo env PYTHONPATH=tests python3 -m unittest -v \
-            test_self_update.SelfUpdateTests.test_cross_uid_writable_ancestor_attack_stops_before_any_tool \
-            test_bootstrap.BootstrapUserFlowTests.test_other_uid_can_rename_unsafe_home_but_installer_rejects_that_ancestor \
-            test_bootstrap.BootstrapUserFlowTests.test_readonly_home_allows_non_root_install_and_exact_rerun
       - name: Attest the build
         id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4

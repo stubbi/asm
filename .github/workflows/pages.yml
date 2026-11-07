@@ -18,16 +18,46 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Check whether this source already passed
+        id: source
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ASM_REUSE=false
+          # Only scheduled refreshes can reuse the latest exact-source push check.
+          # API errors and all other results retain the full check below.
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            ASM_EXPECTED=$(printf '%s\tmain\tpush\tcompleted\tsuccess\t.github/workflows/ci.yml\t%s' "$GITHUB_SHA" "$GITHUB_REPOSITORY")
+            if ASM_RESULT=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&branch=main&event=push&per_page=1" \
+              --jq 'if (.workflow_runs | length) == 1 then .workflow_runs[0] | [.head_sha,.head_branch,.event,.status,.conclusion,.path,.repository.full_name] | @tsv else "" end') &&
+              [ "$ASM_RESULT" = "$ASM_EXPECTED" ]; then
+              ASM_REUSE=true
+            fi
+          fi
+          printf 'reuse=%s\n' "$ASM_REUSE" >> "$GITHUB_OUTPUT"
       - name: Install cross-architecture verification tools
+        if: steps.source.outputs.reuse != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user
       - name: Check the site and registry
+        if: steps.source.outputs.reuse != 'true'
         run: make check
+      - name: Check the refreshed site
+        if: steps.source.outputs.reuse == 'true'
+        run: |
+          PYTHONPATH=tests python3 -m unittest -v test_site test_site_dependencies
+          node --test tests/site.test.cjs
       - name: Build and check published artifacts
         run: python3 tools/build_site.py --output .pages --verify-artifacts --downloads
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
