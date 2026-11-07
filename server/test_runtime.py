@@ -11,8 +11,10 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import secrets
 import socket
+import stat
 import subprocess
 import sys
 import termios
@@ -28,6 +30,43 @@ from local_postgres import Database, LocalPostgres
 sys.path.insert(0, str(HERE.parent / "tools"))
 import registry
 import registry_admin
+
+
+def redact_diagnostic_text(text, secret=None):
+    if isinstance(secret, str) and secret:
+        text = text.replace(secret, "[redacted]")
+    return re.sub(r"postgres(?:ql)?://[^\s\"']+", "[redacted]", text)
+
+
+def diagnostic_file(path, limit, *, tail=False, secret=None):
+    """Read only a bounded regular-file excerpt; never follow a log symlink."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                return {"unavailable": "not a regular file"}
+            if tail:
+                source.seek(max(0, metadata.st_size - limit))
+            data = source.read(limit + 1)
+        truncated = len(data) > limit or (tail and metadata.st_size > limit)
+        if tail and truncated:
+            # Discard a partial first line before redaction. A truncated URI or
+            # password must not leave its trailing characters in the excerpt.
+            data = data.partition(b"\n")[2]
+        text = data[:limit].decode("utf-8", "replace")
+        return {"text": redact_diagnostic_text(text, secret), "truncated": truncated}
+    except OSError as error:
+        return {"unavailable": type(error).__name__}
+
+
+def cgroup_snapshot(root=Path("/sys/fs/cgroup")):
+    try:
+        return {name: diagnostic_file(root / name, 4096) for name in
+                ("cpu.stat", "cpu.max", "memory.current", "memory.max", "memory.peak", "memory.events",
+                 "pids.current", "pids.max", "pids.events")}
+    except Exception as error:
+        return {"unavailable": type(error).__name__}
 
 
 def free_port():
@@ -85,6 +124,11 @@ class RuntimeTests(unittest.TestCase):
         cls.base = Path(cls.temp.name)
         cls.cluster = TlsPostgres(cls.base)
         cls.addClassCleanup(cls.cluster.close)
+        cls.concurrent_wave = None
+        cls.failure_diagnostics = None
+        # Later server cleanups run first. Capture before cluster.close removes
+        # the owned PostgreSQL log and before the outer temporary directory ends.
+        cls.addClassCleanup(cls.retain_diagnostics)
         cls.cluster.start()
         cls.prefix = "asm_proto_" + secrets.token_hex(6)
         cls.dbname = cls.prefix
@@ -145,6 +189,22 @@ class RuntimeTests(unittest.TestCase):
             except OSError:
                 time.sleep(0.02)
         raise AssertionError("Runtime did not become live within five seconds.")
+
+    @classmethod
+    def retain_diagnostics(cls):
+        try:
+            pg_base = getattr(cls.cluster, "base", None)
+            secret = getattr(cls.cluster, "password", None)
+            cls.failure_diagnostics = {
+                "logs": {"server": diagnostic_file(cls.base / "server.log", 16384, tail=True, secret=secret),
+                         "postgres": (diagnostic_file(pg_base / "postgres.log", 16384, tail=True, secret=secret)
+                                      if pg_base else {"unavailable": "fixture did not initialize"})},
+                "concurrent_wave": cls.concurrent_wave,
+                "cgroup_before_cleanup": cgroup_snapshot(),
+            }
+        except Exception as error:
+            # Diagnostic collection must not replace the original test outcome.
+            cls.failure_diagnostics = {"unavailable": type(error).__name__}
 
     @classmethod
     def url(cls, role, label, *, host="localhost", extra="", hostaddr="127.0.0.1"):
@@ -259,8 +319,31 @@ class RuntimeTests(unittest.TestCase):
 
     def test_concurrent_exports_keep_independent_response_ownership(self):
         paths = list(self.exports) * 2
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as clients:
-            responses = list(clients.map(self.raw_request, paths))
+        wave = {"requests": [{"path": path, "unavailable": "request did not start"} for path in paths],
+                "cgroup_before": cgroup_snapshot()}
+        type(self).concurrent_wave = wave
+        wave_started = time.monotonic()
+
+        def measured_request(item):
+            index, path = item
+            started = time.monotonic()
+            record = {"path": path, "started_seconds": round(started - wave_started, 6)}
+            try:
+                response = self.raw_request(path)
+                record["status"] = response[0]
+                return response
+            except Exception as error:
+                record["error"] = type(error).__name__
+                raise
+            finally:
+                record["seconds"] = round(time.monotonic() - started, 6)
+                wave["requests"][index] = record
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as clients:
+                responses = list(clients.map(measured_request, enumerate(paths)))
+        finally:
+            wave["cgroup_after"] = cgroup_snapshot()
         for path, (code, _, body) in zip(paths, responses):
             with self.subTest(path=path):
                 self.assertEqual(code, 200)

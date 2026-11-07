@@ -25,12 +25,28 @@ Before a release, check these controls:
 2. Keep recovery codes outside the repository.
 3. Review collaborators, installed applications, and active credentials.
 4. Require pull requests for changes to `main`.
-5. Require the `Test the release contract` check from GitHub Actions.
+5. Require the qualification checks below from GitHub Actions, plus the existing CodeQL rule.
 6. Keep force pushes and branch deletion disabled for `main`.
 7. Review any rule bypass permissions.
 8. Enable private vulnerability reporting.
 9. Check the [security reporting route](../SECURITY.md).
 10. Check release immutability before publishing a new version.
+
+| Required check | Coverage |
+| --- | --- |
+| `Test the release contract` | Linux x86-64, Linux ARM64, and Apple Silicon CLI and release checks. |
+| `Test the assembly server reference` | Native server, catalog, and hosted registry checks. |
+| `Test distribution trust` | Native Unix and Windows verifier suites. |
+| `Check the native Intel macOS CLI` | Exact-source Intel macOS qualification. |
+| `Test MCP image qualification` | Native AMD64 and ARM64 MCP images, real clients, and agent contracts. |
+| `Test assembly server images` | Native AMD64 and ARM64 server images. |
+| `Test registry operator image` | Isolated registry operator image and publication policy. |
+
+Aggregate checks require successful results from every prerequisite job.
+A failed, cancelled, skipped, or missing prerequisite cannot qualify the aggregate.
+Keep these workflows active for every pull request.
+The unqualified RISC-V server experiment runs only when requested through the workflow's manual input.
+RISC-V package builds remain part of the release checks.
 
 [Branch protections][branch-protection] and [private vulnerability reporting][private-reporting] are GitHub settings.
 Adding policy files does not enable them.
@@ -72,8 +88,10 @@ Do not weaken a check to obtain a passing result.
 10. Investigate each failed step before a retry.
 
 The workflow checks out its triggering commit.
-It runs the test suite and builds the release from that source.
-It requests artifact attestations before it publishes the release.
+Read-only jobs run the test suite and build the release from that source.
+A separate publication job receives the same run's exact artifacts.
+It checks their source, profile, manifest digest, sizes, and checksums before requesting attestations.
+It does not build or execute those artifacts.
 A workflow attempt alone does not establish a successful publication.
 
 The [release builder](../tools/release.py) compares two clean CLI builds and two clean builds for each requested hello target.
@@ -82,7 +100,9 @@ Native ARM64 Linux and Apple Silicon macOS jobs supply exact-commit executables 
 The final builder consumes those bytes after it checks their source, target, version, digest, and native test results.
 A missing or mismatched native input stops the build.
 
-Linux ARM64 qualification runs the full CLI suite as root on a disposable, read-only runner.
+Linux qualification runs the full CLI suite against the final executable and rejects changed bytes after testing.
+The release workflow requires this qualification for the selected distribution profile.
+Linux x86-64 and ARM64 qualification run as root on disposable runners with read-only repository permissions.
 The unchanged suite includes cross-user permission checks.
 Private, root-owned source snapshots stay below `/tmp`.
 This is a test-runner requirement.
@@ -119,6 +139,9 @@ A correction to published artifact bytes requires a new version.
 10. Check the deployed registry and download links after the [Pages workflow][pages-workflow] finishes.
 
 The Pages workflow downloads and validates declared artifacts before deployment.
+Scheduled refreshes can reuse the latest successful main-push Check run for the exact source commit.
+Missing, failed, or unavailable qualification causes a full `make check` run.
+Site tests and live artifact checks still run for every refresh.
 General package commands check registry digests but do not verify GitHub attestations.
 Asm's bootstrap installer and `asm self update` verify CLI release provenance before installation.
 The registry specification defines the [publication and artifact checks](specs/registry.md).
@@ -176,6 +199,10 @@ Lean or Kraken results need an explicit theorem, trusted assumptions, and a conn
 No proof result applies to an unsupported target by implication.
 Keep `not-run`, `unsupported`, `error`, and `fail` distinct from `pass`.
 Use the [published experiment record](evidence.md) as an example of a bounded performance claim.
+
+Image qualification retains small logs, reports, and artifact identities for 90 days, including failures.
+Large image and source transfer archives retain their three-day limit.
+Workflow artifact retention remains subject to the repository's configured maximum.
 
 ## Respond to an incident
 

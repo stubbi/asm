@@ -1,10 +1,13 @@
 # Assembly server image qualification
 
-Status: build and qualification implementation, 5 November 2026.
+Status: native default checks and a manual RISC-V experiment, 7 November 2026.
 
 This path builds the canonical-export assembly runtime for Linux AMD64, ARM64, and RISC-V64.
 An entry in the build matrix is not a supported-target claim.
 Each architecture must compile its actual port and pass the complete runtime suite.
+Pull requests and main-branch pushes run the native AMD64 and ARM64 checks.
+RISC-V server-image qualification runs only when explicitly selected for a manual experiment.
+RISC-V package and selected-target CLI checks remain separate requirements.
 Earlier canonical-export jobs passed natively on AMD64 and ARM64 but failed under RISC-V user emulation.
 The [retained results](#canonical-export-results) do not qualify the integrated source.
 Earlier foundation-image results do not qualify this additional routing and database behavior.
@@ -14,11 +17,11 @@ An assembly image check does not qualify the separate MCP adapter or native CLI.
 
 ## Architecture and execution
 
-| Image platform | Runner | Required execution |
-| --- | --- | --- |
-| `linux/amd64` | `ubuntu-24.04` | Native x86-64 |
-| `linux/arm64` | `ubuntu-24.04-arm` | Native AArch64 |
-| `linux/riscv64` | `ubuntu-24.04` with pinned QEMU user emulation | Emulated RISC-V64 |
+| Image platform | Runner | Required execution | Scheduling |
+| --- | --- | --- | --- |
+| `linux/amd64` | `ubuntu-24.04` | Native x86-64 | Default |
+| `linux/arm64` | `ubuntu-24.04-arm` | Native AArch64 | Default |
+| `linux/riscv64` | `ubuntu-24.04` with pinned QEMU user emulation | Emulated RISC-V64 | Manual experiment |
 
 RISC-V emulation uses the runner's Linux kernel.
 It does not establish behavior on RISC-V hardware or another kernel.
@@ -72,6 +75,7 @@ HTTP ingress TLS remains a separate deployment requirement.
 
 The qualification stage extends the exact runtime filesystem with Python, OpenSSL tools, PostgreSQL tools, and the owned fixture.
 Only that stage includes canonical migration SQL, registry validators, the operator helper, and accepted manifest records.
+PostgreSQL fixture tools use the image's target architecture, including RISC-V emulation.
 Those fixture inputs do not add an application backend or operator credential to the runtime.
 The harness compares the runtime layer prefix and executable hashes.
 It also compares hashes for every shared library reported by the runtime loader.
@@ -171,7 +175,46 @@ Primary sources:
 - [PostgreSQL source checksum](https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2.sha256).
 - [RISC-V psABI, section 10.1](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/#_file_header), version 2.0-rc0 dated 4 November 2026; checked 5 November 2026.
 
+## Dependency cache
+
+CI exports only the Dockerfile's `dependencies` stage through a local BuildKit cache.
+The exported cache contains no Asm application, runtime-image, or qualification layers.
+The source revision is declared and checked after dependency compilation.
+CI checks the revision before it builds dependencies.
+The Dockerfile checks it again before application compilation.
+Each run builds the application for its current source revision and runs the complete qualification suite.
+A cache miss runs the unchanged dependency recipe.
+
+The cache key includes Linux architecture, the complete Dockerfile hash, the BuildKit image digest, and a cache version.
+The workflow uses BuildKit 0.34.2 at its pinned image digest and pinned GitHub-owned cache actions.
+Only successful target qualification on a default-branch push saves a cache.
+Pull requests and manual runs use the restore action without a save step.
+Default pushes do not fill a RISC-V cache, so the manual experiment can require a complete cold dependency build.
+Restore-only steps do not remove cache-write capability from the job token.
+GitHub scopes pull-request caches to their merge ref; those entries cannot be restored by the default branch.
+No broad restore key selects another recipe or architecture.
+
+Cached Debian build packages can outlive updates in Debian's repositories.
+To refresh them, increment the workflow's `asm-server-dependencies-v1` cache version or change the Dockerfile recipe.
+The next default-branch push rebuilds dependencies before saving the new cache.
+The runtime stage installs Debian packages outside the exported dependency cache.
+
+The cache is a build input, not qualification evidence.
+It does not replace archive digest checks, target checks, runtime tests, or exact-image publication checks.
+The first cache fill still requires a cold dependency build.
+No RISC-V speedup is established by the cache design alone.
+
+Docker documents [ARG cache invalidation](https://docs.docker.com/reference/dockerfile/#impact-on-build-caching) and the [local cache backend](https://docs.docker.com/build/cache/backends/local/).
+GitHub documents [cache scope and access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+These primary sources were checked on 7 November 2026.
+
 ## Run and retain evidence
+
+The workflow's boolean `experimental_riscv64` input defaults to false.
+For a complete RISC-V server-image experiment, enable that input when starting the workflow manually.
+That manual run includes the native jobs and the unchanged fully emulated RISC-V fixture.
+The selected experiment requires all sixteen checks, with the existing deadlines and container limits.
+It cannot publish an image or an index.
 
 Use a healthy Linux Docker host with enough space for two source builds and PostgreSQL tools.
 Use a native host for AMD64 or ARM64 qualification.
@@ -206,12 +249,16 @@ Include `tools/registry.py`, `tools/registry_admin.py`, and the accepted records
 
 The workflow retains build logs and runtime logs after successful or failed checks.
 Successful jobs also retain the exact runtime image archive, its checksum, and qualification JSON.
-Evidence retention is three days; release evidence needs durable retention before production use.
+Small logs, reports, and digests retain a 90-day limit after successful or failed checks.
+Large image transfer archives retain a three-day limit.
+Repository retention settings can impose a lower maximum.
+Release evidence needs durable retention before production use.
 
 ## Publication and limits
 
 Pull requests and manual runs have read-only repository permissions and publish nothing.
-After a main-branch push, publication waits for every architecture qualification job to pass.
+After a main-branch push, publication waits for both native architecture qualification jobs to pass.
+Only AMD64 and ARM64 images enter this publication path.
 The publication job loads the tested archive and compares its image ID with the qualification report.
 It publishes an architecture-specific source-and-run tag and records the registry digest.
 Each run attempt has a distinct tag, so a later dependency rebuild does not replace an earlier tag.
@@ -219,14 +266,16 @@ Deployment configuration must use the recorded digest.
 It also creates build provenance for that exact digest.
 The qualification image is never published.
 
-The combined-index job waits for all three child publications and their provenance steps.
+The combined-index job waits for both native child publications and their provenance steps.
 It reads each child back from the registry through its digest.
 It compares its image configuration digest with the tested image ID.
 It also checks the child's Linux architecture and source revision.
-Only then does it create an index from those three exact child digests.
+Only then does it create an index from those two exact child digests.
 The resulting index must contain exactly those platforms and digests.
 The job reads the index again through its immutable digest and records that result.
 The combined index also receives provenance.
+RISC-V publication requires fresh complete qualification and an explicit change to this publication policy.
+Historical RISC-V failures remain failed results; moving the experiment does not qualify those images.
 
 These images still contain an incomplete registry implementation.
 Canonical HTTP image checks, operator deployment, service discovery, metrics, capacity, and recovery remain unqualified.

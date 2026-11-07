@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: verifier-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     strategy:
@@ -24,9 +28,19 @@ jobs:
           go-version-file: verifier/go.mod
           cache-dependency-path: verifier/go.sum
       - name: Check signatures, freshness, rotation, and publication
-        run: make verifier-test
-      - name: Check the native caller and installation failure paths
-        run: make test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/verifier-evidence
+          make verifier-test 2>&1 | tee build/verifier-evidence/tests.log
+      - name: Retain native verifier results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-verifier-${{ matrix.runner }}-${{ github.sha }}
+          path: build/verifier-evidence/
+          if-no-files-found: error
+          retention-days: 90
 
   windows:
     name: Verify native Windows ${{ matrix.target }}
@@ -81,4 +95,20 @@ jobs:
             build/windows-verifier-checks/*
             build/windows-verifier-evidence/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
+
+  required:
+    name: Test distribution trust
+    needs: [verify, windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require every verifier target
+        env:
+          UNIX_RESULT: ${{ needs.verify.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+        run: |
+          test "$UNIX_RESULT" = success
+          test "$WINDOWS_RESULT" = success

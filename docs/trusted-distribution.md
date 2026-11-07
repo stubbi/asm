@@ -151,6 +151,17 @@ make trusted-cli
 The normal source build retains the existing external-verifier route during migration.
 The release builder accepts `--trusted-distribution` for both native qualification and the final release.
 
+Release build and qualification jobs have read-only repository permissions.
+The final clean x86 executable runs the complete native suite, including cross-UID checks, before its bytes enter the release.
+ARM64 and macOS retain their separate native qualification jobs.
+The same final-byte check applies when the verifier is bundled.
+
+The signing job receives only the current run's immutable artifact ID.
+It checks the build job's manifest digest, source commit, version, profile, native receipts, and every asset before signing.
+It does not rebuild the release or execute downloaded artifacts.
+Local builds require `--qualify-x86` to produce the x86 receipt required by this publication gate.
+That option requires root and a protected source snapshot for the unchanged cross-UID tests.
+
 Keep the dependency versions and checksums in `verifier/go.mod` and `verifier/go.sum`.
 Review dependency changes and retain their license notices with distributed source.
 The helper uses Apache-2.0 and other compatible third-party components; Asm's adapter remains AGPL-3.0-or-later.

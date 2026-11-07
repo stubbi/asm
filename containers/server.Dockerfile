@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS build
+FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS dependencies
 
-ARG ASM_SOURCE_REVISION
 ARG TARGETARCH
-RUN printf '%s\n' "$ASM_SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$' \
-    && test "$ASM_SOURCE_REVISION" != 0000000000000000000000000000000000000000 \
-    && case "$TARGETARCH" in amd64|arm64|riscv64) ;; *) exit 1 ;; esac
+RUN case "$TARGETARCH" in amd64|arm64|riscv64) ;; *) exit 1 ;; esac
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes \
        bison build-essential bzip2 ca-certificates curl flex libssl-dev perl pkg-config \
@@ -38,13 +35,16 @@ RUN ./configure --prefix=/opt/asm/postgres --with-openssl \
     && mkdir -p /build/notices/postgresql \
     && cp COPYRIGHT /build/notices/postgresql/COPYRIGHT
 
+FROM dependencies AS build
+ARG ASM_SOURCE_REVISION
+RUN printf '%s\n' "$ASM_SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$' \
+    && test "$ASM_SOURCE_REVISION" != 0000000000000000000000000000000000000000
 COPY server /source/server
 WORKDIR /source/server
 RUN make all MHD_PREFIX=/opt/asm/mhd PG_PREFIX=/opt/asm/postgres \
       BUILD=/build/server SOURCE_REVISION="$ASM_SOURCE_REVISION"
 
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
-ARG ASM_SOURCE_REVISION
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes libssl3t64 \
     && rm -rf /var/lib/apt/lists/* \
@@ -55,6 +55,7 @@ COPY --from=build /opt/asm/postgres/lib/libpq.so* /opt/asm/postgres/lib/
 COPY --from=build --chmod=0555 /build/server/asm-hub /usr/local/bin/asm-hub
 COPY --from=build /build/notices /usr/share/licenses/asm-hub/dependencies
 COPY LICENSE /usr/share/licenses/asm-hub/LICENSE
+ARG ASM_SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/stubbi/asm" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.revision=${ASM_SOURCE_REVISION}

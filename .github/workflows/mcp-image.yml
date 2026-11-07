@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mcp-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   qualify:
     strategy:
@@ -23,21 +27,46 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install hash-pinned SDK and run the complete adapter checks
+      - name: Record the qualification environment
         run: |
-          python3 -m venv .asm/mcp-venv
-          .asm/mcp-venv/bin/python -m pip install --require-hashes -r requirements-mcp.txt
-          make agent-test PYTHON=.asm/mcp-venv/bin/python
+          set -euo pipefail
+          mkdir -p mcp-image-evidence
+          {
+            uname -a
+            docker version
+          } > mcp-image-evidence/environment.txt
+      - name: Check native adapter contracts
+        env:
+          PIP_CONFIG_FILE: /dev/null
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+        run: |
+          set -euo pipefail
+          {
+            python3 -m venv .asm/mcp-venv
+            .asm/mcp-venv/bin/python -m pip install --require-hashes -r requirements-mcp.txt
+            make agent-test PYTHON=.asm/mcp-venv/bin/python
+          } 2>&1 | tee mcp-image-evidence/host-tests.log
       - name: Build the native image from the recorded public revision
-        run: docker build --file containers/mcp.Dockerfile --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --tag asm-mcp:qualification .
+        run: |
+          set -euo pipefail
+          docker build --file containers/mcp.Dockerfile --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" \
+            --tag asm-mcp:qualification . 2>&1 | tee mcp-image-evidence/build.log
       - name: Exercise the exact image without credentials or a writable root filesystem
         env:
           ASM_EXPECT_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          bash -euo pipefail <<'ASM_IMAGE_CHECK' 2>&1 | tee mcp-image-evidence/runtime-tests.log
           test "$(docker image inspect asm-mcp:qualification --format '{{.Architecture}}')" = "$ASM_EXPECT_ARCH"
           docker network create --internal asm-mcp-qualification
-          trap 'docker logs asm-mcp-test; docker rm -f asm-mcp-test asm-catalog-fixture; docker network rm asm-mcp-qualification' EXIT
+          trap '
+            ASM_TEST_STATUS=$?
+            docker logs asm-mcp-test > mcp-image-evidence/container.log 2>&1 || true
+            docker inspect asm-mcp-test > mcp-image-evidence/container.json 2>mcp-image-evidence/inspect.log || true
+            docker rm -f asm-mcp-test asm-catalog-fixture >/dev/null 2>&1 || true
+            docker network rm asm-mcp-qualification >/dev/null 2>&1 || true
+            exit "$ASM_TEST_STATUS"
+          ' EXIT
           docker run --detach --name asm-mcp-test --read-only --cap-drop ALL \
             --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 \
             --network asm-mcp-qualification asm-mcp:qualification
@@ -112,6 +141,33 @@ jobs:
           docker image inspect asm-mcp:qualification --format '{{json .}}' > mcp-image-${{ matrix.arch }}.json
           docker save --output mcp-image-${{ matrix.arch }}.tar asm-mcp:qualification
           sha256sum mcp-image-${{ matrix.arch }}.tar > mcp-image-${{ matrix.arch }}.sha256
+          ASM_IMAGE_CHECK
+      - name: Record the qualification outcome
+        if: always()
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_QUALIFICATION_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p mcp-image-evidence
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = {"schema": 1, "scope": "mcp-image-workflow", "source_revision": os.environ["GITHUB_SHA"],
+                    "architecture": os.environ["ASM_ARCH"], "job_status_before_evidence": os.environ["ASM_QUALIFICATION_STATUS"],
+                    "run_id": os.environ["GITHUB_RUN_ID"], "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]}
+          Path("mcp-image-evidence/outcome.json").write_text(json.dumps(result, indent=2) + "\n")
+          PY
+      - name: Retain successful and failed MCP evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mcp-image-evidence-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            mcp-image-evidence/
+            mcp-image-${{ matrix.arch }}.json
+            mcp-image-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mcp-image-qualification-${{ matrix.arch }}-${{ github.sha }}
@@ -121,6 +177,19 @@ jobs:
             mcp-image-${{ matrix.arch }}.sha256
           if-no-files-found: error
           retention-days: 3
+
+  required:
+    name: Test MCP image qualification
+    needs: qualify
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require both MCP image targets
+        env:
+          QUALIFY_RESULT: ${{ needs.qualify.result }}
+        run: test "$QUALIFY_RESULT" = success
 
   publish:
     needs: qualify
@@ -169,9 +238,21 @@ jobs:
           case "$ASM_REF" in ghcr.io/stubbi/asm-mcp@sha256:*) ;; *) exit 1 ;; esac
           printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$ASM_REF" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$ASM_REF" > registry-digest.txt
       - name: Attest public source and image identity
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ghcr.io/stubbi/asm-mcp
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
+      - name: Retain the publication identity
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mcp-image-digest-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            registry-digest.txt
+            mcp-image-${{ matrix.arch }}.json
+            mcp-image-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 90

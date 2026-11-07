@@ -5,13 +5,18 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      experimental_riscv64:
+        description: Include the fully emulated RISC-V server image experiment
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: server-images-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   qualify:
@@ -19,10 +24,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { runner: ubuntu-24.04, arch: amd64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04-arm, arch: arm64, execution: native, minutes: 45 }
-          - { runner: ubuntu-24.04, arch: riscv64, execution: emulated, minutes: 90 }
+        include: ${{ fromJSON(
+          github.event_name == 'workflow_dispatch' && inputs.experimental_riscv64
+          && '[{"runner":"ubuntu-24.04","arch":"amd64","execution":"native","minutes":45},{"runner":"ubuntu-24.04-arm","arch":"arm64","execution":"native","minutes":45},{"runner":"ubuntu-24.04","arch":"riscv64","execution":"emulated","minutes":90}]'
+          || '[{"runner":"ubuntu-24.04","arch":"amd64","execution":"native","minutes":45},{"runner":"ubuntu-24.04-arm","arch":"arm64","execution":"native","minutes":45}]'
+          ) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.minutes }}
     steps:
@@ -30,7 +36,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the qualification harness
-        run: python3 tools/test_server_image.py --self-test
+        run: |
+          set -euo pipefail
+          mkdir -p server-image-evidence
+          python3 tools/test_server_image.py --self-test 2>&1 | tee server-image-evidence/harness-tests.log
       - name: Install the pinned Ubuntu RISC-V user emulator
         if: matrix.arch == 'riscv64'
         shell: bash
@@ -73,16 +82,49 @@ jobs:
               sha256sum /usr/bin/qemu-riscv64-static
             fi
           } | tee server-image-evidence/environment.txt
+      - name: Restore the exact dependency recipe cache
+        id: dependencies-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/asm-server-dependencies
+          key: asm-server-dependencies-v1-linux-${{ matrix.arch }}-buildkit-c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe-${{ hashFiles('containers/server.Dockerfile') }}
+      - name: Build the pinned dependencies without application cache
+        shell: bash
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_CACHE_HIT: ${{ steps.dependencies-cache.outputs.cache-hit }}
+          ASM_CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$GITHUB_SHA" != 0000000000000000000000000000000000000000
+          ASM_CACHE="$RUNNER_TEMP/asm-server-dependencies"
+          ASM_CACHE_OPTIONS=(--progress plain)
+          if [ "$ASM_CACHE_HIT" = true ]; then
+            ASM_CACHE_OPTIONS+=(--cache-from "type=local,src=$ASM_CACHE")
+          else
+            rm -rf -- "$ASM_CACHE"
+            if [ "$ASM_CACHE_WRITE" = true ]; then
+              ASM_CACHE_OPTIONS+=(--cache-to "type=local,dest=$ASM_CACHE,mode=max")
+            fi
+          fi
+          docker buildx create --name asm-server-build --driver docker-container \
+            --driver-opt image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe \
+            --bootstrap 2>&1 | tee server-image-evidence/builder.log
+          docker buildx build --builder asm-server-build --platform "linux/$ASM_ARCH" \
+            --file containers/server.Dockerfile --target dependencies --output type=cacheonly \
+            "${ASM_CACHE_OPTIONS[@]}" . \
+            2>&1 | tee server-image-evidence/build-dependencies.log
       - name: Build the target runtime and its derived qualification image
         shell: bash
         env:
           ASM_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+          docker buildx build --builder asm-server-build --load --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target runtime \
             --tag "asm-server:runtime-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-runtime.log
-          docker build --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
+          docker buildx build --builder asm-server-build --load --platform "linux/$ASM_ARCH" --file containers/server.Dockerfile \
             --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target qualification \
             --tag "asm-server:qualification-$ASM_ARCH" . 2>&1 | tee server-image-evidence/build-qualification.log
       - name: Run the actual HTTP, PostgreSQL, TLS, and security suite
@@ -107,14 +149,48 @@ jobs:
           docker image inspect "asm-server:runtime-$ASM_ARCH" --format '{{json .}}' > server-image-evidence/image.json
           docker save --output server-image-evidence/runtime.tar "asm-server:runtime-$ASM_ARCH"
           (cd server-image-evidence && sha256sum runtime.tar > runtime.sha256)
+      - name: Save dependencies only after successful default-branch qualification
+        if: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && steps.dependencies-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/asm-server-dependencies
+          key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}
       - name: Retain successful and failed qualification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
+          name: server-image-evidence-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            server-image-evidence/*.txt
+            server-image-evidence/*.log
+            server-image-evidence/*.json
+            server-image-evidence/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the qualified image for publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
           name: server-image-${{ matrix.arch }}-${{ github.sha }}
-          path: server-image-evidence/
+          path: |
+            server-image-evidence/runtime.tar
+            server-image-evidence/runtime.sha256
+            server-image-evidence/qualification.json
+            server-image-evidence/image.json
           if-no-files-found: error
           retention-days: 3
+
+  required:
+    name: Test assembly server images
+    needs: qualify
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require every server image target
+        env:
+          QUALIFY_RESULT: ${{ needs.qualify.result }}
+        run: test "$QUALIFY_RESULT" = success
 
   publish:
     needs: qualify
@@ -122,7 +198,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64, riscv64]
+        arch: [amd64, arm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -177,7 +253,7 @@ jobs:
             registry-digest.txt
             qualification.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   publish-index:
     needs: publish
@@ -224,4 +300,4 @@ jobs:
             index-report.json
             index-digest.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
