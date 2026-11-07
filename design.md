@@ -192,6 +192,12 @@ Reveal the field only after its submit handler is ready; retain a native Browse 
 Use a short native transition to connect the homepage search area with the inner-page header.
 The shared gray surface changes height; the search field changes size and position.
 Keep the wordmark and navigation stable while the remaining content fades.
+Give the gray surface and search field 480 milliseconds with gentle acceleration and deceleration.
+Let the gray surface and search snapshots fill the interpolated height so their edges move together.
+Cross-fade the search contents within 160 milliseconds to limit overlapping text during the longer movement.
+Keep the homepage introduction above the surface; reveal it after the moving field passes its text.
+Keep other shared elements at 220 milliseconds and the page content fade within 280 milliseconds.
+This timing follows the owner's request for more perceptible header movement; it is not a measured usability optimum.
 Do not intercept ordinary links, replace browser history, or wait for an animation before navigating.
 Disable navigation motion for reduced-motion preferences.
 Skip the transition when the outgoing search area has scrolled above the viewport.
