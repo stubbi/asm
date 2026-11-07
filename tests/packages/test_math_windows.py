@@ -29,7 +29,7 @@ class WindowsMathTests(unittest.TestCase):
                 self.assertEqual(manifest["package"], {"name": "math", "version": windows.VERSION})
                 self.assertEqual(manifest["target"][target], {"source": f"targets/{target}/src/main.s",
                                                              "test": f"targets/{target}/tests/main.s"})
-                self.assertEqual((package / "LICENSE").read_bytes(), (windows.ROOT / "LICENSES/MIT.txt").read_bytes())
+                self.assertEqual((package / "LICENSE").read_bytes(), (windows.ROOT / "examples/math/LICENSE").read_bytes())
 
     def test_main_and_callable_assembly_abi_tests_build_for_each_windows_target(self):
         # A wrong target, missing callable source, or broken import/unwind contract must fail.

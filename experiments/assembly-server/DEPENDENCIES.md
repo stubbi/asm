@@ -7,8 +7,8 @@ It installs files below the package's `build` directory.
 Use a C compiler, GNU make, binutils, Perl, tar, bzip2, curl, and `sha256sum`.
 Use Python 3.11 or later for package preparation and the tests.
 For RISC-V native libraries, use RV64GC and LP64D throughout; the freestanding RV64I/LP64 example is a different profile.
-Install a source-built Asm CLI with native library build support before building the server.
-The published Asm 0.5.0 CLI does not support this manifest extension.
+Install a matching Asm CLI with native library build support before building the server.
+The [target gates](https://github.com/stubbi/asm/blob/main/docs/native-linking.md#target-coverage) separate CLI hosts from experimental server ports.
 Run PostgreSQL tests as an ordinary user, without `sudo`.
 The [PostgreSQL documentation](https://www.postgresql.org/docs/16/app-initdb.html) requires an unprivileged server owner.
 

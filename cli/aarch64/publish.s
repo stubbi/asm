@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 ASM contributors
- * See LICENSE and LICENSING.md for the terms and scope.
+ * See LICENSE and README.md#license for the terms and scope.
  */
 .global cmd_publish, validate_source_package
 
@@ -10,7 +10,7 @@
 .equ PUB_TARGET_MANIFEST_MAX, 8190
 .equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
 
-/* Prepare a local registry submission. No upload, login, network or shell.
+/* Prepare a local release record. No upload, login, network or shell.
  * Snapshot each artifact before hashing/validation. Required arguments are
  * explicit; the JSON record never asserts a remote commit or owner was verified.
  * pub_* names own all module state. Returning helpers preserve Asm AArch64 callee
@@ -2154,28 +2154,28 @@ pub_json_hash: .asciz ",\"sha256\":"
 pub_json_url: .asciz ",\"url\":"
 pub_json_bytes: .asciz ",\"bytes\":"
 pub_json_suffix: .asciz "],\"yanked\":false}\n"
-pub_prepared_text: .asciz "Prepared submission: "
-pub_review_text: .asciz "\nOpen a registry pull request with this record. Nothing was uploaded.\n"
+pub_prepared_text: .asciz "Prepared record: "
+pub_review_text: .asciz "\nNothing was uploaded. Hosted publication is unavailable pending service qualification.\n"
 pub_report_prefix: .asciz "{\"prepared\":true,\"uploaded\":false,\"output\":"
 pub_report_suffix: .asciz "}\n"
 pub_error_arguments: .asciz "invalid publish arguments; use asm publish --help"
 pub_error_metadata: .asciz "invalid publication metadata"
 pub_error_artifact: .asciz "artifact validation or hashing failed"
 pub_error_project: .asciz "source package is incomplete or does not match publication metadata"
-pub_error_output: .asciz "cannot create submission; parent must exist and output must be new"
+pub_error_output: .asciz "cannot create record; parent must exist and output must be new"
 pub_help:
     .ascii "Usage: asm publish --name owner/name --version X.Y.Z --summary TEXT\n"
     .ascii "  --license SPDX --repository https://github.com/owner/repo\n"
     .ascii "  --commit FULL_COMMIT_ID [--source-path PATH]\n"
     .ascii "  --artifact TARGET KIND FILE URL [--artifact ...] --output FILE [--json]\n\n"
-    .ascii "Prepare a local submission for a reviewed registry pull request.\n"
+    .ascii "Prepare a local release record.\n"
     .ascii "No artifact or metadata is uploaded. No name is reserved.\n"
-    .ascii "Upload the exact artifacts to their public GitHub release URLs, then\n"
-    .ascii "open a pull request with the generated record. Source-path defaults to .\n"
+    .ascii "Hosted publication is unavailable pending service qualification.\n"
+    .ascii "Source-path defaults to .\n"
     .ascii "Supports up to six target/kind artifacts. Source is normalized USTAR gzip.\n"
     .ascii "The source manifest must match name, version and each declared target.\n"
-    .ascii "The repository commit is pinned in metadata; its remote existence and\n"
-    .asciz "namespace ownership remain publication-review checks. Output is never replaced.\n"
+    .ascii "The source commit and namespace ownership require separate verification.\n"
+    .asciz "Output is never replaced.\n"
 .balign 8
 pub_options:
     .quad pub_name_option, pub_name, 1

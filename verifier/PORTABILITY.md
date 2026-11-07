@@ -4,8 +4,7 @@ This adapter remains gated development code.
 The production root is empty, and trusted distribution remains disabled.
 The native CLI keeps package selection and replacement logic in assembly.
 
-The user outcome is retained verification history and understandable failures on each qualified host.
-This follows the foundation's requirements to preserve files and earn trust with evidence.
+The adapter retains verification history and reports failures on each qualified host.
 Cross-compilation establishes build compatibility; native tests establish only the behavior that they exercise.
 
 ## Windows files and state

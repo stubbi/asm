@@ -109,7 +109,7 @@ A successful cross build does not establish native execution.
 The platform implementations come from repository commit `48bc44d5490b332dfa87fa60ffa91296d9423cbe`.
 The assembly includes now use paths relative to this project root.
 The previous checkout's AArch64 Linux, RISC-V64 Linux, and Apple Silicon startup tests remain in their target directories.
-The Intel macOS implementation has no manifest test; its package checks exercise output and failures.
+The Intel macOS manifest selects a startup test; its package checks exercise output and failures.
 
 The root manifest declares version `0.6.0`.
 Its Linux source archives contain all seven implementations.

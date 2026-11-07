@@ -24,7 +24,7 @@ RUN ./configure --prefix=/opt/asm/postgres --with-openssl \
 COPY tools/operator_source.py tools/operator_entrypoint.py tools/prepare_operator.py \
      tools/registry_admin.py tools/registry.py tools/test_operator_image.py /source/tools/
 COPY server/catalog/schema.sql server/catalog/reader-guard.sql server/catalog/read-exports.sql /source/server/catalog/
-COPY LICENSE LICENSING.md /source/
+COPY LICENSE README.md /source/
 # This generated context contains only a verified complete HEAD bundle and its manifest.
 COPY .operator-source/source.bundle .operator-source/source.json /source/
 RUN python3 /source/tools/operator_source.py restore --bundle /source/source.bundle \
@@ -46,9 +46,9 @@ COPY --from=build /source/tools/operator_entrypoint.py /source/tools/prepare_ope
      /source/tools/registry_admin.py /source/tools/registry.py /app/tools/
 COPY --from=build /source/server/catalog /app/server/catalog
 COPY --from=build --chmod=0444 /source/source.json /app/SOURCE.json
-COPY --from=build /source/LICENSE /source/LICENSING.md /app/
+COPY --from=build /source/LICENSE /source/README.md /app/
 COPY --from=build /build/postgresql-16.15/COPYRIGHT /usr/share/licenses/asm-operator/postgresql/COPYRIGHT
-COPY LICENSE LICENSING.md /usr/share/licenses/asm-operator/
+COPY LICENSE README.md /usr/share/licenses/asm-operator/
 LABEL org.opencontainers.image.source="https://github.com/stubbi/asm" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.revision=${ASM_SOURCE_REVISION} \

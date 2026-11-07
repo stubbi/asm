@@ -3,11 +3,11 @@
 Status: incomplete implementation, 5 November 2026.
 
 This directory contains the assembly runtime path for hosted Asm work.
+It reads the canonical catalog; the [earlier experiment](../experiments/assembly-server/README.md) tests prototype search against a frozen fixture schema.
 It is not a production registry or a deployable replacement for the static catalog.
 It must not activate either private deployment stage.
 
 The consumer outcome is exact compatibility feeds from the retained canonical catalog.
-The governing principles are dependable reuse and evidence that states its limits.
 Source implementation, target execution, deployment, and recovery remain separate acceptance results.
 
 ## Implemented scope
@@ -124,7 +124,7 @@ The Makefile selects the assembly port from the host architecture.
 If you set `TARGET`, use the matching `x86_64-linux`, `aarch64-linux`, or `riscv64-linux` value.
 This build does not cross-compile.
 Use Python 3.11 or later and an OpenSSL command for the integration fixture.
-The build-time C program checks ABI constants only.
+The separate build-time C program checks ABI constants and linked library versions.
 It is not linked into the application.
 Application routing, configuration policy, connection lifecycle, and deadlines are assembly.
 
@@ -181,7 +181,7 @@ It tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, which co
 This result covers the stated TLS, configuration, readiness, identity, and idle-shutdown cases.
 It does not qualify deployment compatibility, catalog behavior, saturation, or recovery.
 
-The legacy `guard.sql` retains its provenance notice and checksum for the separate reference.
+The [experiment guard](../experiments/assembly-server/guard.sql) retains the prototype checks and their provenance notice.
 The runtime and reference guards compare temporary-schema prefixes literally.
 The retained migration bytes and checksum remain unchanged.
 The runtime includes `catalog/reader-guard.sql` and reads the complete canonical ledger.
@@ -252,4 +252,4 @@ No cluster resource, credential, DNS record, public route, or release artifact w
 - [Hosted registry acceptance](../docs/hosted-registry.md).
 
 The external API documentation was checked on 5 November 2026.
-New source and tests use AGPL-3.0-or-later under the repository's [license scope](../LICENSING.md).
+New source and tests use AGPL-3.0-or-later under the repository's [license scope](../README.md#license).

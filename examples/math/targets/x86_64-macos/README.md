@@ -40,7 +40,8 @@ These commands require Apple's Command Line Tools and macOS 15 or later.
 The Command Line Tools supply Apple clang and the macOS SDK.
 The demo uses libSystem for output.
 On Apple Silicon, execution also requires Rosetta.
-The current Asm CLI does not provide an Intel macOS host build.
+Published releases do not include an Intel macOS CLI.
+The [Intel CLI source port](../../../../docs/intel-macos-port.md) has a separate build and qualification path.
 
 1. Open this target directory.
 2. Create the output directory.

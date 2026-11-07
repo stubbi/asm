@@ -7,7 +7,6 @@ It is a target, not an amount received or a forecast.
 ## Purpose and boundaries
 
 Sponsors fund paid maintenance, infrastructure, security work, and public evidence.
-This follows the brand principles of dependable reuse, resource care, and trust through evidence.
 Recognition and bounded briefings are the benefits.
 Sponsorship does not change package ranking, publication rules, security checks, or technical conclusions.
 Commissioned engineering and support need separate agreements.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 ASM contributors
- * See LICENSES/MIT.txt for the complete permission and warranty notice.
+ * See examples/hello/LICENSE for the complete permission and warranty notice.
  * These strings form the permissively licensed starter files.
  */
 .section .rodata

@@ -10,6 +10,29 @@ The existing private deployment preparation supplies isolated PostgreSQL, read-o
 It is not a running service.
 Production qualification requires actual data persistence, TLS, failure, recovery, and external client evidence.
 
+## Publication boundary
+
+The hosted registry is the intended publication service.
+`registry/` retains compatibility records and bootstrap input; it is not a package-submission queue.
+The static Pages build continues to serve retained records during migration.
+Its continued operation does not establish hosted publication.
+
+The existing [catalog operator](../server/catalog/README.md#operator-procedure) imports accepted Git snapshots through separate PostgreSQL credentials.
+It supports migration, precise grants, explicit namespace assertions, status, reviewed plans, and idempotent imports.
+The database checks the operator identity and commits the records and all four exports atomically.
+
+This is a credentialed operator import, not authenticated public package publication.
+Namespace bindings remain operator assertions about numeric GitHub identities.
+The importer does not verify those identities or fetch artifact bytes.
+No public write endpoint or self-service publisher workflow is implemented.
+Local `asm publish` prepares a record and uploads nothing.
+Its released pull-request instructions describe the former intake route.
+
+Public publication remains unavailable until publisher authorization, artifact checks, immutable storage, lifecycle operations, and recovery pass their acceptance gates.
+The [architecture gates](architecture-gates.md) retain those requirements.
+The operator procedure can qualify catalog imports without claiming that public publication exists.
+No deployment or publisher credential is required for local packaging or an offline import plan.
+
 ## Component and target scope
 
 Server deployment targets, MCP adapter targets, CLI hosts, and package targets have separate qualification requirements.
@@ -93,11 +116,6 @@ Use the private repository's reviewed Git and signed OCI/Flux process.
 Do not activate resources through manual cluster or DNS mutations.
 Keep internal and public activation separate.
 Never interpret manifest validation as runtime qualification.
-
-The owner temporarily waived the Entire approval gate for this rollout on 5 November 2026.
-This waiver is not a reviewer approval or a successful Entire check.
-CI, immutable images, least privilege, capacity, TLS, backups, restore, and failure checks remain required.
-No global change to review tooling is authorized by this waiver.
 
 Public publication, authenticated metadata, account recovery, revocation, and isolated build/proof workers retain their architecture gates.
 Serving a read-only registry does not establish those capabilities.

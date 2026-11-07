@@ -27,6 +27,8 @@ They do not establish production API parity or a performance advantage.
 
 This historical run used an unpublished behavioral reference for its schema and administrative fixture commands.
 The current [self-contained tests](RESULTS.md) use the included migration and require no external reference checkout.
+The [initial record](evidence/initial-results.json) identifies these inputs and results.
+The [initial test output](evidence/initial-test-output.txt) retains the complete 13-test result.
 
 The ELF inspection found position-independent code, a non-executable stack, read-only relocations, and immediate symbol binding.
 Its direct runtime dependencies are libmicrohttpd, libpq, and libc.

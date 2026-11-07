@@ -115,13 +115,15 @@ A correction to published artifact bytes requires a new version.
 6. Run the documented first-project flow in a fresh directory on a supported host.
 7. Record the command, exit status, and expected output.
 8. Review the generated registry manifests against the published bytes.
-9. Submit registry changes through a pull request.
+9. Retain the reviewed manifests in the compatibility snapshot.
 10. Check the deployed registry and download links after the [Pages workflow][pages-workflow] finishes.
 
 The Pages workflow downloads and validates declared artifacts before deployment.
 General package commands check registry digests but do not verify GitHub attestations.
 Asm's bootstrap installer and `asm self update` verify CLI release provenance before installation.
 The registry specification defines the [publication and artifact checks](specs/registry.md).
+This procedure records Asm's own release in the compatibility feeds.
+It is separate from the planned [hosted publication service](hosted-registry.md#publication-boundary).
 
 Keep the release record, checksums, source commit, target list, and workflow links available.
 Do not describe a local build as a published release.

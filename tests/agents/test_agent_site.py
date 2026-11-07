@@ -3,7 +3,6 @@
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,8 +11,10 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 import build_site
 import registry
+from site_fixtures import reference_repo
 
 
 class AgentSiteTests(unittest.TestCase):
@@ -21,17 +22,7 @@ class AgentSiteTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="asm-agent-site-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.repo = self.root / "repo"
-        self.repo.mkdir()
-        for relative in ("site", "cli", "skills/asm-build"):
-            shutil.copytree(ROOT / relative, self.repo / relative)
-        # Record only a source-reference fixture, without changing repository history.
-        for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
-                          ("commit", "-qm", "Record source reference fixture")):
-            subprocess.run(["git", "-C", str(self.repo), "-c", "core.hooksPath=/dev/null",
-                            "-c", "commit.gpgSign=false", "-c", "user.name=asm site test fixture",
-                            "-c", "user.email=fixture@example.invalid", *arguments],
-                           check=True, capture_output=True, timeout=10)
+        self.repo = reference_repo(ROOT, self.root / "repo")
         self.output = self.root / "output"
 
     def build(self):

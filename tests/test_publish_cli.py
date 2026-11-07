@@ -428,11 +428,15 @@ class NativePublishTests(unittest.TestCase):
         env["GZIP"] = "--invalid-option"
         result = self.cli(env=env)
         self.assertIn("Nothing was uploaded", result.stdout)
+        self.assertIn("Hosted publication is unavailable", result.stdout)
+        self.assertNotIn("pull request", result.stdout)
         self.assertFalse((self.work / "NEVER-CREATED.tar.gz").exists())
 
     def test_help_and_missing_argument_errors_are_explicit(self):
         result = self.cli(["publish", "--help"])
-        self.assertIn("pull request", result.stdout)
+        self.assertIn("Prepare a local release record", result.stdout)
+        self.assertIn("Hosted publication is unavailable", result.stdout)
+        self.assertNotIn("pull request", result.stdout)
         self.assertIn("No artifact or metadata is uploaded", result.stdout)
         self.cli(["publish"], code=2)
         self.cli(self.arguments() + ["--name", "owner/duplicate"], code=2)

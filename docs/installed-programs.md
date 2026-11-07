@@ -4,7 +4,6 @@ Asm 0.5.0 adds installed-program inventory, upgrades, and uninstall on all three
 Published 0.4.0 binaries do not include them.
 
 Asm records executable installations so people can inspect and maintain the programs they deliberately installed.
-This follows the brand principles of dependable reuse, inspectable evidence, and keeping people in control.
 
 ## Commands
 

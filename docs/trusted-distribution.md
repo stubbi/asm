@@ -1,13 +1,12 @@
 # Provision Asm distribution trust
 
 Status: gated implementation; production trust is not provisioned.
-The published 0.5.0 installer still requires GitHub CLI.
+Published CLI installers still require GitHub CLI.
 The default release and Pages workflows retain that path during migration.
 
 ## Intended result and activation conditions
 
 The intended result is installation and manual updates without a separately installed provenance verifier.
-This serves the foundation's principles: serve the person, earn trust with evidence, and make reuse dependable.
 
 Acceptance requires these results:
 

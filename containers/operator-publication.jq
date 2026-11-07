@@ -6,7 +6,7 @@ def nonempty: if type == "string" then length > 0 else false end;
 def hash: if type == "string" then test("^[0-9a-f]{64}$") else false end;
 def digest: if type == "string" then test("^sha256:[0-9a-f]{64}$") else false end;
 def source_files: [
-  "LICENSE", "LICENSING.md", "tools/registry.py", "tools/registry_admin.py",
+  "LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py",
   "tools/operator_entrypoint.py", "tools/prepare_operator.py",
   "server/catalog/schema.sql", "server/catalog/reader-guard.sql", "server/catalog/read-exports.sql"
 ];

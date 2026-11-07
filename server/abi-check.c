@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
- * Build-time assertions only. This file is not linked into the server. */
+ * Build-time ABI and linked-library assertions. Not linked into the server. */
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <netinet/in.h>

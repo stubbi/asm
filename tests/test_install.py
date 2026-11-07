@@ -14,7 +14,7 @@ class InstallTests(unittest.TestCase):
             destination = Path(temporary) / "bin/asm"
             destination.parent.mkdir()
             destination.write_text("another asm command")
-            args = ["sh", "cli/install.sh", "install", "build/asm", str(destination), "0"]
+            args = ["sh", "tools/install.sh", "install", "build/asm", str(destination), "0"]
             result = subprocess.run(args, cwd=ROOT, capture_output=True)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(destination.read_text(), "another asm command")
@@ -37,7 +37,7 @@ class InstallTests(unittest.TestCase):
             protected.write_text("keep this")
             destination = Path(temporary) / "asm"
             destination.symlink_to(protected)
-            args = ["sh", "cli/install.sh", "install", "build/asm", str(destination), "0"]
+            args = ["sh", "tools/install.sh", "install", "build/asm", str(destination), "0"]
             result = subprocess.run(args, cwd=ROOT, capture_output=True)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(protected.read_text(), "keep this")

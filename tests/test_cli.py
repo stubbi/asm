@@ -122,7 +122,7 @@ class NativeCliTests(unittest.TestCase):
         self.assertIn("AGPL-3.0-or-later", self.cli("help").stdout)
         self.cli("license", "unexpected", code=2)
         project = self.project()
-        notice = (ROOT / "LICENSES/MIT.txt").read_text()
+        notice = (ROOT / "examples/hello/LICENSE").read_text()
         for relative in ("src/main.s", "tests/main.s"):
             source = (project / relative).read_text()
             self.assertIn("SPDX-License-Identifier: MIT", source)

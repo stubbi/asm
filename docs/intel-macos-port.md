@@ -3,8 +3,7 @@
 Status: native Intel qualification passed for integrated source `295c693`.
 No Intel release is declared.
 
-The user outcome is the current CLI workflow on an Intel Mac, including package management and native library linking.
-The foundation requires dependable reuse and independent evidence for each target.
+The source port provides the CLI workflow on an Intel Mac, including package management and native library linking.
 This port retains assembly package logic and the existing transport and cryptography boundary.
 
 The target is `x86_64-macos`, macOS 15+, Mach-O, Apple System V AMD64 LP64.
@@ -13,21 +12,11 @@ Darwin libSystem adapters preserve the shared Linux-shaped internal syscall and 
 They align every external call and implement the native argument and error conventions.
 Build-time Python prepares assembler syntax and platform constants; it is not a runtime command backend.
 
-Implementation steps:
-
-1. Add an observable x86-64 build and first-project test; retain its initial failure.
-2. Add source preparation and assembly Darwin adapters, with checked SDK layouts and error normalization.
-3. Add bounded Mach-O validation, publication dispatch, installed-program and safe-update qualification.
-4. Reuse the shared command tests with target-correct fixtures, including native library builds and failure preservation.
-5. Add native Intel CI qualification and exact-source, exact-artifact evidence. Keep Rosetta results explicitly separate.
-6. Supply the implementation commit and integration contract to the release workstream through normal progress.
-
 Review focus includes ACL allow entries, ownership-disabled APFS, displaced running images, wrong-CPU executables,
 descriptor-relative operations, untrusted digest environments, failed children, and inventory alias protection.
 Existing immutable releases and declared host metadata remain unchanged until their owning release gates pass.
 
-Shared release, bootstrap, feed, and host-declaration integration belongs to the distribution session.
-This branch supplies `tools/macos_x86_64.py`, `cli/macos/x86_64/`, target tests, and a standalone build entry point.
+The implementation uses `tools/macos_x86_64.py`, `cli/macos/x86_64/`, target tests, and a standalone build entry point.
 Native Intel CI must test the actual final x86-64 bytes; assembling or running under Rosetta alone is insufficient.
 
 Platform references, checked 5 November 2026:
@@ -37,8 +26,6 @@ Platform references, checked 5 November 2026:
 - The selected Xcode Command Line Tools SDK headers, asserted by the target ABI tests.
 
 Developer ID signing and notarization remain unavailable. Ad-hoc signatures and publisher provenance have separate meanings.
-
-Evidence and failed attempts will be recorded after execution, with source and artifact digests.
 
 ## Build and qualification commands
 
@@ -53,7 +40,7 @@ make -f cli/macos/x86_64/Makefile test
 The second command atomically selects the Intel test executable as `build/asm`.
 Do not run another architecture's suite against that alias concurrently.
 A plain source build uses fixed `/usr/local/bin/gh` for the existing manual-update provenance protocol.
-A release must supply the Intel bootstrap/verifier mapping through the distribution workstream.
+A release needs a qualified Intel installer and verifier mapping.
 
 Native qualification materializes two clean snapshots from one committed revision:
 
@@ -153,11 +140,9 @@ Independent agent review found no blocking integration defect.
 Its fixture-fidelity advisory restored native ARM64 Linux entry-source fixtures; final qualification counts include the added suffix test.
 Agent review remains advisory.
 
-This source PR has no merge dependency on distribution PR #29.
-Root Makefile selection, admitted registry targets, compatible feeds, installer/verifier mapping, and release fan-in remain distribution work.
+Root Makefile selection, registry targets, compatible feeds, installer/verifier mapping, and release fan-in need separate integration.
 Published clients' legacy macOS feed must exclude unknown Intel rows.
 After 0.6.0 is published, Intel release activation requires a new version and fresh exact-byte release evidence.
-The coordinator owns merging; distribution owners own activation and signed publication.
 
 The distribution review found the original qualifier used unrestricted `git archive`.
 Git replacement objects or local export attributes could change the input without changing its recorded commit.

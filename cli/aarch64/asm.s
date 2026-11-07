@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 ASM contributors
- * See LICENSE and LICENSING.md for the terms and scope.
+ * See LICENSE and README.md#license for the terms and scope.
  */
 .include "cli/aarch64/platform.inc"
 .global _start
@@ -2735,7 +2735,7 @@ help_text:
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
     .ascii "  lock             Check every locked archive and source file\n"
     .ascii "  sync             Fetch and extract exact locked source artifacts\n"
-    .ascii "  publish          Prepare a release record for review; do not upload\n"
+    .ascii "  publish          Prepare a local release record; do not upload\n"
     .ascii "  doctor           Check required tools\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"

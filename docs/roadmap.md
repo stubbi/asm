@@ -27,9 +27,9 @@ The code now contains:
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
 - Local installation inventory, upgrades, and uninstall for recorded executables.
 - Native source-archive validation, extraction, and cache comparison.
-- Native preparation of publication records for reviewed pull requests.
+- Native preparation of local publication records without uploading files.
 - Immutable registry metadata, source archive checks, ELF and Mach-O checks, and deterministic index generation.
-- Package pages with real records, version history, target details, and check status.
+- Package records with version history, target details, and check status.
 - Download counts from GitHub release assets, with unavailable values marked explicitly.
 - GNU assembly examples for x86-64, AArch64, and RISC-V Linux.
 

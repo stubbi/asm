@@ -6,9 +6,8 @@ MCP means Model Context Protocol, a standard connection between an AI applicatio
 
 The skill and adapter are available in this source checkout.
 The hosted deployment remains under qualification.
-No public MCP endpoint is established by this change.
+No public MCP endpoint is qualified.
 The static site build includes `llms.txt`, `agents.md`, and the maintained skill.
-Those URLs become available when that site build is published.
 
 ## Use the skill
 
@@ -154,7 +153,7 @@ A pending catalog worker remains bounded and can outlive that response.
 Deployment routing can expose only `/mcp`; health and status routes remain operator interfaces.
 
 The prepared hosted endpoint is `https://api.asm.build/mcp`.
-It is not active or qualified by this source change.
+It remains under qualification.
 The existing website remains on GitHub Pages during qualification.
 See [the hosted registry contract](hosted-registry.md) for deployment and recovery gates.
 Protected operations would require the MCP authorization contract before implementation.
@@ -167,7 +166,7 @@ The client can inspect their input and output schemas.
 
 | Tool | Use |
 | --- | --- |
-| `asm_list_targets` | Inspect four catalog targets, three native CLI hosts, explicit dimensions, tools, and limits. |
+| `asm_list_targets` | Inspect four planning targets, three native CLI hosts, explicit dimensions, tools, and limits. |
 | `asm_search_packages` | Search active releases, with optional target and version-specific SPDX license filters. |
 | `asm_inspect_package` | Inspect an exact `owner/name`, version, artifacts, evidence, and yank status. |
 | `asm_plan_project` | Check behavior, acceptance cases, target dimensions, resource priorities, and optimization budgets. |
@@ -191,6 +190,8 @@ Optional features also require an explicit detection, fallback, and testing plan
 A ready plan means supplied planning fields are complete; it does not certify the feature plan or program.
 
 The tools never download package artifacts, read arbitrary workspace files, execute code, install, or publish.
+Target filters accept the four POSIX planning targets.
+The underlying registry also accepts two Windows artifact labels; these do not extend the MCP planning contract.
 The AI uses its authorized workspace tools for assembly development and native CLI operations.
 The [skill references](../skills/asm-build/references/requirements.md) define the behavior and routine contracts.
 
@@ -262,5 +263,6 @@ Their presence in a workflow does not establish a successful build or runtime re
 They tested PR merge revision `b06b5eb37e68a90381241a53c48a6b9cb6b84fde`, containing source head `fd977e5`.
 The image checks cover source identity, protocol compatibility, catalog failure and recovery, resource bounds, and idle shutdown.
 They do not establish public HTTPS availability or registry recovery.
-The [research record](agent-integration-research.md) explains the selected skill and MCP patterns.
+The adapter uses the [official Python SDK](https://github.com/modelcontextprotocol/python-sdk) instead of a separate protocol implementation.
+The [pinned SDK release](https://pypi.org/project/mcp/2.3.0/) and [transport specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports) define its protocol baseline.
 The [hosted registry contract](hosted-registry.md) records service scope and remaining gates.
