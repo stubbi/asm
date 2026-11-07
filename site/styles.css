@@ -56,6 +56,7 @@
 }
 * { box-sizing: border-box; }
 html { background: var(--surface); scroll-behavior: smooth; scroll-padding-top: var(--space-6); }
+html.masthead-ready { scroll-padding-top: calc(var(--header-height) + var(--space-6)); }
 body { margin: 0; background: var(--paper); color: var(--ink); font: var(--text-base)/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: inherit; text-decoration: none; text-underline-offset: .2em; }
 button, input, select { font: inherit; color: inherit; }
@@ -78,12 +79,16 @@ pre[tabindex]:focus-visible { outline-offset: -4px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 /* Shared navigation. It wraps instead of hiding links or shrinking text. */
-.site-header { position: relative; z-index: 0; border-bottom: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.site-header { position: relative; top: 0; z-index: 20; border-bottom: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.masthead-ready .site-header { position: sticky; }
 .masthead-surface { display: none; }
-.masthead-ready .masthead-surface { display: block; position: absolute; z-index: -1; inset: 0 0 auto; height: var(--masthead-height); background: var(--surface); pointer-events: none; view-transition-name: masthead-surface; }
-.masthead-ready .site-header, .masthead-ready .search-hero { background: transparent; }
+.masthead-ready .masthead-surface { display: block; position: absolute; z-index: 0; inset: 0 0 auto; height: var(--masthead-height); background: var(--surface); pointer-events: none; view-transition-name: masthead-surface; }
+.masthead-ready .search-hero { background: transparent; }
 body > main { position: relative; z-index: 1; }
 .registry-home .site-header { border-bottom-color: transparent; }
+.header-scrolled .registry-home .site-header { border-bottom-color: var(--rule); }
+.search-docked .registry-home .site-header { height: var(--header-rest-height); border-bottom-color: transparent; }
+.search-docked .registry-home .site-header::before { content: ""; position: absolute; z-index: -1; inset: 0 0 auto; height: var(--header-height); border-bottom: 1px solid var(--rule); background: var(--surface); }
 .header-inner { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); min-height: 5rem; padding-block: var(--space-4); }
 .site-header .wordmark { view-transition-name: site-brand; }
 .header-inner nav { view-transition-name: site-navigation; }
@@ -91,6 +96,7 @@ body > main { position: relative; z-index: 1; }
 .header-search { flex: 1 1 14rem; min-width: min(100%,14rem); max-width: 30rem; margin: 0; }
 .header-search-fallback { display: inline-flex; align-items: center; min-height: var(--control-height); color: var(--muted); font-size: var(--text-sm); text-decoration: underline; }
 .registry-home .header-search, .registry-home .header-search-fallback { display: none; }
+.search-docked .registry-home .header-search { display: block; }
 .wordmark { display: inline-flex; flex: none; align-items: center; min-height: var(--control-height); }
 .wordmark img { display: block; width: auto; height: 1.25rem; }
 .header-inner nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-1); margin-left: auto; }
@@ -134,6 +140,7 @@ body > main { position: relative; z-index: 1; }
 .hero-browse { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-1); margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-sm); }
 .hero-browse a { display: inline-flex; align-items: center; min-height: var(--control-height); color: var(--ink); text-decoration: underline; }
 .search-box { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: .375rem; padding-left: var(--space-4); border: 1px solid var(--rule-strong); border-radius: var(--radius-panel); background: var(--white); }
+.compact-search-label, .compact-search-icon { display: none; }
 .search-box:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 4px; }
 .search-box > svg { flex: none; width: 1.25rem; height: 1.25rem; color: var(--muted); }
 .search-box input { flex: 1 1 10ch; min-width: 0; width: auto; height: 3rem; border: 0; padding: var(--space-2) 0; border-radius: var(--radius-control); background: transparent; color: var(--ink); font-size: var(--text-lg); }
@@ -149,6 +156,9 @@ body > main { position: relative; z-index: 1; }
 .hero-browse { view-transition-name: search-browse; }
 .header-search .search-box { gap: var(--space-2); min-height: var(--control-height); padding: 0 0 0 var(--space-3); border-radius: var(--radius-control); }
 .header-search label { display: inline-flex; align-items: center; min-height: var(--control-height); font-size: var(--text-sm); font-weight: 500; }
+.header-search .compact-search-label { display: inline-flex; align-items: center; min-height: var(--control-height); font-size: var(--text-sm); font-weight: 500; }
+.header-search .search-box > svg, .header-search .search-submit-label { display: none; }
+.header-search .compact-search-icon { display: block; }
 .header-search input { height: var(--control-height); font-size: var(--text-sm); }
 .header-search button { display: inline-flex; align-items: center; justify-content: center; width: var(--control-height); min-height: var(--control-height); padding: var(--space-2); border: 0; border-radius: calc(var(--radius-control) - 1px); background: transparent; color: var(--ink); }
 .header-search button:not(:disabled):hover { background: var(--accent-soft); }
@@ -531,6 +541,18 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
 ::view-transition-new(root) { animation: 200ms ease-out 80ms both page-in; }
 @keyframes page-out { to { opacity: 0; } }
 @keyframes page-in { from { opacity: 0; } }
+/* Scroll moves the existing field; the page itself stays visible and interactive. */
+.scroll-transition { view-transition-name: none; }
+.scroll-transition :is(.masthead-surface,.package-search-form,.hero-browse) { view-transition-name: none; }
+.scroll-transition::view-transition { pointer-events: none; }
+html.header-static { scroll-padding-top: var(--space-6); }
+.header-static .site-header { position: relative; }
+.header-static.search-docked .registry-home .site-header { height: auto; }
+.header-static.search-docked .registry-home .site-header::before { display: none; }
+@media (max-width: 38.75rem) and (max-height: 24rem) {
+  .masthead-ready .site-header { position: relative; }
+  html.masthead-ready { scroll-padding-top: var(--space-6); }
+}
 @media (prefers-reduced-motion: reduce) {
   @view-transition { navigation: none; }
   html { scroll-behavior: auto; }
