@@ -99,7 +99,7 @@ class RegistryExploreTests(unittest.TestCase):
 
     def test_dashboard_uses_native_cards_and_correct_first_or_latest_publication_signal(self):
         html = self.render()
-        self.assertIn('name="description" content="Find packages by activity, purpose, and dependencies."', html)
+        self.assertIn('name="description" content="Compare assembly packages by release activity, purpose, architecture, and direct dependencies.', html)
         self.assertIn('class="discovery-groups"', html)
         self.assertEqual(html.count('class="discovery-group"'), 7)
         self.assertIn('class="discovery-item"', html)
@@ -109,6 +109,22 @@ class RegistryExploreTests(unittest.TestCase):
         self.assertIn("Last 30 days", html)
         self.assertIn("incomplete", html.lower())
         self.assertIn("≥ 2", html)
+
+    def test_search_metadata_identifies_the_keyword_architecture_and_metric_scope(self):
+        keyword = self.render("keywords/math").split("</head>", 1)[0]
+        categories = self.render("categories").split("</head>", 1)[0]
+        architecture = self.render("architectures/aarch64").split("</head>", 1)[0]
+        downloaded = self.render("downloaded").split("</head>", 1)[0]
+        self.assertIn("<title>Assembly packages tagged math", keyword)
+        self.assertIn('declared keyword &quot;math&quot;', keyword)
+        self.assertIn("<title>Assembly package categories", categories)
+        self.assertIn("purpose categories", categories)
+        self.assertIn("<title>ARM64 (aarch64) assembly packages", architecture)
+        self.assertIn("operating systems", architecture)
+        self.assertIn("artifact formats", architecture)
+        self.assertIn("<title>Package downloads since collection began", downloaded)
+        self.assertIn("collection coverage", downloaded)
+        self.assertNotIn("<title>Most downloaded packages", downloaded)
 
     def test_dashboard_group_headers_keep_headings_routes_and_scope_above_rows(self):
         page = HierarchyParser()

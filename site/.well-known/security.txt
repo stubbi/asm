@@ -1,0 +1,5 @@
+Contact: https://github.com/stubbi/asm/security/advisories/new
+Expires: 2027-10-01T00:00:00Z
+Canonical: https://asm.build/.well-known/security.txt
+Policy: https://github.com/stubbi/asm/blob/main/SECURITY.md
+Preferred-Languages: en

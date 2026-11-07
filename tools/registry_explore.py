@@ -184,7 +184,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
     titles = {"explore": "Explore packages", "categories": "Categories", "keywords": "Keywords", "architectures": "Architectures",
               "depended-on": "Most depended on", "downloaded": "Most downloaded packages"}
     title = (architecture_map[architecture]["name"] + " packages" if architecture else
-             keywords[keyword]["name"] if keyword else titles[kind])
+             "Packages tagged " + keywords[keyword]["name"] if keyword else titles[kind])
     captions = {"explore": "Find packages by activity, purpose, and dependencies.",
                 "categories": "Purpose categories, ranked by active package membership.",
                 "keywords": "Declared keywords, ranked by active package membership.",
@@ -193,6 +193,28 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                 "downloaded": "Since collection started · Asm completed transfers"}
     caption = ("Latest active releases with matching architecture artifacts." if architecture else
                "Active packages with this declared keyword." if keyword else captions[kind])
+    page_titles = {"explore": "Explore assembly packages", "categories": "Assembly package categories",
+                   "keywords": "Assembly package keywords", "architectures": "Assembly packages by architecture",
+                   "depended-on": "Assembly packages by direct dependents",
+                   "downloaded": "Package downloads since collection began"}
+    descriptions = {
+        "explore": "Compare assembly packages by release activity, purpose, architecture, and direct dependencies. Missing measurements and declaration coverage remain explicit.",
+        "categories": "Browse purpose categories for active assembly packages. Category counts describe distinct package membership rather than popularity or compatibility.",
+        "keywords": "Browse declared keywords attached to active assembly packages. Keyword counts describe package membership rather than search activity.",
+        "architectures": "Browse active assembly packages by the architecture of their declared artifacts. Operating systems and artifact formats remain explicit.",
+        "depended-on": "Inspect assembly packages referenced by declared direct dependencies of active releases. Missing declarations remain unavailable and partial counts remain observed minima.",
+        "downloaded": "Inspect Asm completed transfers since collection began. Rankings retain collection coverage and exclude unknown earlier or external-host activity.",
+    }
+    if architecture:
+        label = architecture_map[architecture]["name"]
+        page_title = label + " assembly packages"
+        description = "Find active assembly packages with declared " + label + " artifacts. Compare operating systems, artifact formats, and exact versions before use."
+    elif keyword:
+        label = keywords[keyword]["name"]
+        page_title = "Assembly packages tagged " + label
+        description = 'Browse active assembly packages with the declared keyword "' + label + '". Keyword membership does not establish target compatibility or package quality.'
+    else:
+        page_title, description = page_titles[kind], descriptions[kind]
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(caption) + '</p></header>'
     body += '<nav class="package-section-nav" aria-label="Explore packages">' + ''.join(
         package_pages._anchor(label, prefix + target, attrs=' aria-current="page"' if selected == kind else '')
@@ -277,7 +299,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
         body += _package_cards(prefix, names, active, signals) if names else '<p class="package-empty">No positive completed transfers are available for this observation period.</p>'
         body += '<p class="package-note">These cumulative observations cover configured Asm delivery sources since collection began. Unreported earlier or external transfers are outside this metric. Transfers do not measure people or installations.</p>'
     body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("How counts work", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
-    return package_pages._page(route, title, caption, body, package_pages._chrome(stage), active_nav="Explore", scripts=False)
+    return package_pages._page(route, page_title, description, body, package_pages._chrome(stage), active_nav="Explore", scripts=False)
 
 
 def write_explore(stage: Path, index: dict, snapshot: dict, metadata: dict, retained: dict) -> list[str]:

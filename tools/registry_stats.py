@@ -87,7 +87,8 @@ def stats_page(stage: Path, index: dict, snapshot: dict, observation: dict | Non
     body += _ranking(index, transfers)
     body += '<p class="package-note">' + package_pages._anchor("Most downloaded in the last 30 days", "../browse/popular/") + '</p>'
     body += package_activity.render_registry_activity(data["activity"], "../discovery/", "../registry/v1/stats.json")
-    return package_pages._page("stats/", "Stats", "Registered assembly packages, retained releases, and scoped Asm transfer activity.",
+    return package_pages._page("stats/", "Assembly registry statistics",
+                               "Inspect registered packages, retained releases, and Asm transfer observations. Counts retain collection scope, coverage limits, and daily activity when available.",
                                body, package_pages._chrome(stage), active_nav="Stats", scripts=False)
 
 

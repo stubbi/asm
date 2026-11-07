@@ -86,6 +86,16 @@ class RegistryStatsTests(unittest.TestCase):
         self.assertIn("../browse/popular/", [link["href"] for link in page.links])
         self.assertIn("../registry/v1/stats.json", [link["href"] for link in page.links])
 
+    def test_search_metadata_names_registry_facts_and_limits_instead_of_inventing_activity(self):
+        html = self.module().stats_page(self.stage, self.index, self.snapshot, None, self.records)
+        head = html.split("</head>", 1)[0]
+        self.assertIn("<title>Assembly registry statistics", head)
+        self.assertIn("registered packages", head)
+        self.assertIn("retained releases", head)
+        self.assertIn("collection scope", head)
+        self.assertIn("when available", head)
+        self.assertNotIn("real-time", head)
+
     def test_since_collection_totals_are_separate_from_rolling_chart(self):
         module = self.module()
         observation = self.observation()
