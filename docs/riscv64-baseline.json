@@ -1,0 +1,720 @@
+{
+  "artifact": {
+    "bytes": 319856,
+    "path": "build/riscv64/baseline-asm-aarch64-macos",
+    "sha256": "105c3b64426a4accfe071f98c78ba7caf3ad2565ee6f2d9498a13f2b25039edb"
+  },
+  "baseline_source_files": [
+    {
+      "bytes": 51158,
+      "path": "cli/aarch64/archive.s",
+      "sha256": "05100384675a472c1468339916ce17ae33d4766448c241c99080987c08fd3efa"
+    },
+    {
+      "bytes": 55633,
+      "path": "cli/aarch64/asm.s",
+      "sha256": "63ec0ee6ea008262abf360898eb44172cd787b6854e418f67019fcc0fa22b89f"
+    },
+    {
+      "bytes": 41356,
+      "path": "cli/aarch64/dependencies.s",
+      "sha256": "a766d49eaecb392231dd32d3923d1ea2e1565239074d334cb62ab1a63a8724fd"
+    },
+    {
+      "bytes": 8248,
+      "path": "cli/aarch64/elf.s",
+      "sha256": "72032fd8f7c811d664091ccbcbf1f0055121eceaf4821dc6224527388d55b320"
+    },
+    {
+      "bytes": 11695,
+      "path": "cli/aarch64/native_link.s",
+      "sha256": "97e61169a0c9969671aa36037738187d7bac3ce566cf836233d4cf39acb0cb24"
+    },
+    {
+      "bytes": 2499,
+      "path": "cli/aarch64/platform.inc",
+      "sha256": "845d2f3e229337d9549cda58ad583c4da6b142920583866fb1f65c20912f686b"
+    },
+    {
+      "bytes": 5082,
+      "path": "cli/aarch64/platform.s",
+      "sha256": "9fe367b1fa7706c446ac26e8c4c7c9adaa792cd40060af731bf037c33945a4ae"
+    },
+    {
+      "bytes": 60597,
+      "path": "cli/aarch64/programs.s",
+      "sha256": "45e6c4dbdf79de97064ad4fd48299512033750d9592c3600a8d099d65b670b7e"
+    },
+    {
+      "bytes": 46315,
+      "path": "cli/aarch64/publish.s",
+      "sha256": "d1dce6875ee4b5678995afa7c40456cc3cfd4eafc0bf6fd46d9ab892c70fe46c"
+    },
+    {
+      "bytes": 90128,
+      "path": "cli/aarch64/registry.s",
+      "sha256": "aaeb69e5e8105b1ddb7c29988d1cec5e0efd53bdf71ba1810754ba91c294734a"
+    },
+    {
+      "bytes": 41194,
+      "path": "cli/aarch64/resolution_manifest.s",
+      "sha256": "25440f9a94f2328d04d05e8bbbb4e7c8627637fee4cd9fbf7b836957103cbc8e"
+    },
+    {
+      "bytes": 50345,
+      "path": "cli/aarch64/resolver.s",
+      "sha256": "542046e3dc0c402feb96e53f8a434990c8223f5f21352f1a3744cdc1e1f4af61"
+    },
+    {
+      "bytes": 21180,
+      "path": "cli/aarch64/resolver_graph.s",
+      "sha256": "f98095b3a42a61885f819e7217996a39f02145ad4efae28228b7b50af38de167"
+    },
+    {
+      "bytes": 34947,
+      "path": "cli/aarch64/self_update.s",
+      "sha256": "a9294a2f864a277905189e8a40dae4e857459cc3719e813744d0006ad24039a6"
+    },
+    {
+      "bytes": 49075,
+      "path": "cli/aarch64/self_update_metadata.s",
+      "sha256": "4b15a4a933ceaac0888e72c22d0465b5395fe88e497dfbdecba18ef3952149b5"
+    },
+    {
+      "bytes": 3814,
+      "path": "cli/aarch64/self_update_trust.s",
+      "sha256": "1e5638bbb6419b1c45ada17f30716416a17042c754f5cd1fbfde27afd5950009"
+    },
+    {
+      "bytes": 24466,
+      "path": "cli/aarch64/self_update_verify.s",
+      "sha256": "10eb1b3f5e38c5d04b95d87c88ab80e4f2ade7071874ebab73304e6386bab693"
+    },
+    {
+      "bytes": 4114,
+      "path": "cli/aarch64/templates.s",
+      "sha256": "8b82cd47b7b9a1909560da84b2b4f91077ab18fefd97b7ba447a75bcba7987ab"
+    },
+    {
+      "bytes": 33936,
+      "path": "cli/archive.s",
+      "sha256": "2b84d0b2c3bc23b48dd2a629ce47ba6705a08aaa530070e0bd375c713ba1eab6"
+    },
+    {
+      "bytes": 44609,
+      "path": "cli/asm.s",
+      "sha256": "404444ad4205bcc28bf3cd74fd6824835e76314cda36b24a70c722465e508334"
+    },
+    {
+      "bytes": 772,
+      "path": "cli/commands.json",
+      "sha256": "fe0743fe2186dcab9b3631d3bcabd2bd5c2480afaef5c0c7eca082393b5cd45b"
+    },
+    {
+      "bytes": 30700,
+      "path": "cli/dependencies.s",
+      "sha256": "02f59bf5aa536a684e61e2434edf7c1a7b4043caa5b66ebd5b9758d0fb183650"
+    },
+    {
+      "bytes": 5220,
+      "path": "cli/elf.s",
+      "sha256": "52312e6f405c8c1abee9678a86b9bec880dfb43957131ab19a9779de9fab2e72"
+    },
+    {
+      "bytes": 8209,
+      "path": "cli/macos/macho.s",
+      "sha256": "eaf9c99f7fc1c6f3a84a1b901e10bacc95525cc9db2cca7995d0022dae98e3af"
+    },
+    {
+      "bytes": 14839,
+      "path": "cli/macos/platform.s",
+      "sha256": "c8756ff71eada432c6aae1ec6ede40ad268c131d33d123151500c3d1be6576c0"
+    },
+    {
+      "bytes": 556,
+      "path": "cli/macos/publish.s",
+      "sha256": "31cd31b066a7023738baa5377c85c8740d22ace9f2c2a90129aed0d2ae43e704"
+    },
+    {
+      "bytes": 10297,
+      "path": "cli/native_link.s",
+      "sha256": "288853479b030a9c95029b3fbd3eea75385ebd4bd889a983d9565f7d343997b9"
+    },
+    {
+      "bytes": 66316,
+      "path": "cli/programs.s",
+      "sha256": "1c2ffb1df1455e1f8f18bd765e4a361c6e965a4822c646f0b7c16c992d3ab9b2"
+    },
+    {
+      "bytes": 33281,
+      "path": "cli/publish.s",
+      "sha256": "5cd0aa34b16e4f04415691a42644fa0c5836b33101c00ed5393d5bd941204f6e"
+    },
+    {
+      "bytes": 62880,
+      "path": "cli/registry.s",
+      "sha256": "a4a5bfa40a8c10eeed3d3921ac503f889a975911074e1def5b88bfa363c14c80"
+    },
+    {
+      "bytes": 25305,
+      "path": "cli/resolution_manifest.s",
+      "sha256": "6946b55975fea55db18718f78885c7f3b69c9bf7834dc36698275c7c3065ff95"
+    },
+    {
+      "bytes": 35682,
+      "path": "cli/resolver.s",
+      "sha256": "f3c65f227b765718dc4b3867e4e33d57c08892665c1403f88374be8160d3a295"
+    },
+    {
+      "bytes": 18773,
+      "path": "cli/resolver_graph.s",
+      "sha256": "dc04497ce8c8900d7f135cdea1e6e9ae0a84d7e55afed1a69371b804ded4a6ec"
+    },
+    {
+      "bytes": 26923,
+      "path": "cli/self_update.s",
+      "sha256": "4b1dd43bc4c179b7d982360ebc358080c97d3acb3e6f58cb4f1d2fca95a99958"
+    },
+    {
+      "bytes": 29837,
+      "path": "cli/self_update_metadata.s",
+      "sha256": "c4f80ff5fbf2d718cf4661f14e25d5650abf58e2c4f8becab35356e2a283d1b9"
+    },
+    {
+      "bytes": 4081,
+      "path": "cli/self_update_trust.s",
+      "sha256": "82bb93315d2fd8a21be1c6aaf421ae9928f1a86041ef9cb55c4631aed3a97281"
+    },
+    {
+      "bytes": 20094,
+      "path": "cli/self_update_verify.s",
+      "sha256": "dbf07d7739389adba34f72495e7e426a54bb2c40f5ed06ad75664da8054e8442"
+    },
+    {
+      "bytes": 4131,
+      "path": "cli/templates.s",
+      "sha256": "d418e9b35373c462d4bd663d5caa583236d8fd4b62a61d698a45ebbe31bca4f2"
+    },
+    {
+      "bytes": 7077,
+      "path": "tools/macos.py",
+      "sha256": "504ffec1dbffd588b0d035ed03cbc29e4076917d6724fb7e77d06257488f12be"
+    },
+    {
+      "bytes": 52858,
+      "path": "tools/registry.py",
+      "sha256": "f3d0e9d82f422838c02bead3f912136257fb64118d031d86d3700d287a7efec3"
+    }
+  ],
+  "baseline_source_manifest_sha256": "aef0c75589ef7658c5102806e239ef3993baa55acbeb21d427774a946f8ce0e5",
+  "captured_utc": "2026-11-04T23:50:30Z",
+  "failed_checks_retained": [
+    {
+      "result": "unknown command; resolve exited2 before implementation",
+      "stage": "initial observable resolver test",
+      "test": "NativeResolutionManifestTests.test_versioned_feature_manifest_builds_and_runs"
+    },
+    {
+      "result": "build rejected native-link manifest before implementation",
+      "stage": "initial observable native-link test",
+      "test": "NativeLinkTests.test_c_abi_build_and_run_have_real_libc_output"
+    },
+    {
+      "failed_subtests": 32,
+      "result": "missing native-link field validation; corrected by native-link registry integration",
+      "stage": "registry negative baseline",
+      "tests": 5
+    },
+    {
+      "result": "project build has unknown fields; corrected by allowing and validating native-link scalars in resolution build metadata",
+      "stage": "combined registry schema red check",
+      "test": "NativeLinkArchiveTests.test_resolution_metadata_preserves_native_library_contract"
+    },
+    {
+      "result": "forward RM_SIZE in zerofill rejected; resolution parser definitions moved before dependent buffers",
+      "stage": "Mac assembly integration"
+    },
+    {
+      "result": "forward RM native-field constants in address expressions rejected; resolution definitions moved before caller code",
+      "stage": "Mac/x86 assembly integration"
+    },
+    {
+      "failed": 1,
+      "log": "build/riscv64/baseline-macos-test.log",
+      "result": "command catalog missing resolve; parent added resolve without changing0.5.0 version or hosts",
+      "stage": "first full native Mac make test",
+      "test": "InstalledProgramTests.test_help_and_status_expose_the_same_management_commands",
+      "tests": 269
+    }
+  ],
+  "inputs": [
+    {
+      "bytes": 47187,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/asm.s",
+      "sha256": "9e845ddc40693f4293434ae81d1fd35ce310f558df55bdaa090b8d210e39b0d8"
+    },
+    {
+      "bytes": 62563,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/aarch64/asm.s",
+      "sha256": "c553d58b2d18845f5815e3c31b8ee8391d6a75d0a7f85d4afd4c6d15cea43a58"
+    },
+    {
+      "bytes": 36460,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/publish.s",
+      "sha256": "494ee564111bc4935192def8c9fe3cf53a69a7f4064656a146550b6f1a2541d7"
+    },
+    {
+      "bytes": 53253,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/aarch64/publish.s",
+      "sha256": "72d3e95b26e04369d6272c75a3e23941642e4de577c979803d5008493bb532ae"
+    },
+    {
+      "bytes": 62880,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/registry.s",
+      "sha256": "a4a5bfa40a8c10eeed3d3921ac503f889a975911074e1def5b88bfa363c14c80"
+    },
+    {
+      "bytes": 90128,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/aarch64/registry.s",
+      "sha256": "aaeb69e5e8105b1ddb7c29988d1cec5e0efd53bdf71ba1810754ba91c294734a"
+    },
+    {
+      "bytes": 30555,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/dependencies.s",
+      "sha256": "c713523f2bf6b094ee88f8a0bfaedb4796380353a84f5b5c150d8cddfd7d6630"
+    },
+    {
+      "bytes": 41189,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/aarch64/dependencies.s",
+      "sha256": "d21b209177a5934a042acaeb9aa9d3778a2a3c6f64c6716e5f89700cd336e1e4"
+    },
+    {
+      "bytes": 41752,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "tools/registry.py",
+      "sha256": "29293df503bb8c67f33744ab81d7a00177d509fa1be5c56bebae49a6d24a03bb"
+    },
+    {
+      "bytes": 66316,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/programs.s",
+      "sha256": "1c2ffb1df1455e1f8f18bd765e4a361c6e965a4822c646f0b7c16c992d3ab9b2"
+    },
+    {
+      "bytes": 60597,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/aarch64/programs.s",
+      "sha256": "45e6c4dbdf79de97064ad4fd48299512033750d9592c3600a8d099d65b670b7e"
+    },
+    {
+      "bytes": 550,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "tests/macos/test_common.py",
+      "sha256": "41abd9694e984cda79ea5db4d4b7a978759d036a1f718cc42aeddfa8eb6df6c9"
+    },
+    {
+      "bytes": 42904,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/asm.s",
+      "sha256": "264ecd471b24331ba37a1ddef652ceed74a1f004ae96a7465a7861d1e5570584"
+    },
+    {
+      "bytes": 53893,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/asm.s",
+      "sha256": "f7a69555fb815275415ffdcd1a0ddaf6e61349ae5f74efd337f505953aa8ed21"
+    },
+    {
+      "bytes": 32922,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/publish.s",
+      "sha256": "91283826bd50bb9a592e9f5395e50503a2977663dabd400a6d72b388bd3d74c4"
+    },
+    {
+      "bytes": 45992,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/publish.s",
+      "sha256": "49ff60d84b04fd4695a6a9a4b5a9a43d5e2b20a90ab1e6a4de4cef452d6a4a5a"
+    },
+    {
+      "bytes": 61829,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/registry.s",
+      "sha256": "765be8362436c1b440e609f7d48b42faeb49fa86c0b69e9ed8841bfea138636a"
+    },
+    {
+      "bytes": 88995,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/registry.s",
+      "sha256": "3f4eda74ac2ed7e20a1c8754145ec9517d7311d2c4b63c8de208febedc88ef55"
+    },
+    {
+      "bytes": 30700,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/dependencies.s",
+      "sha256": "02f59bf5aa536a684e61e2434edf7c1a7b4043caa5b66ebd5b9758d0fb183650"
+    },
+    {
+      "bytes": 41356,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/dependencies.s",
+      "sha256": "a766d49eaecb392231dd32d3923d1ea2e1565239074d334cb62ab1a63a8724fd"
+    },
+    {
+      "bytes": 51762,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "tools/registry.py",
+      "sha256": "34e2e716da7130a1726f5eae2bebc45a70f13cb2eb480035fa226c8c4d5bf1ae"
+    },
+    {
+      "bytes": 23994,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/resolution_manifest.s",
+      "sha256": "8be00fe6ab19a55be9d353577d73ec5a69b8c9a3a0b840af570b9622c1c27581"
+    },
+    {
+      "bytes": 39920,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/resolution_manifest.s",
+      "sha256": "20574d68a902a92e992530852ca44b6564f87cb643d82702e56c1d2122e5d2db"
+    },
+    {
+      "bytes": 35671,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/resolver.s",
+      "sha256": "b4da24d6d7775df014ddc512bb383f12f47e0c863b689337935089166367f113"
+    },
+    {
+      "bytes": 50334,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/resolver.s",
+      "sha256": "da2a43fac4a7f4d21d90b70db8e9daf76bd1e912eca5d6d324812bb7908677d2"
+    },
+    {
+      "bytes": 18773,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/resolver_graph.s",
+      "sha256": "dc04497ce8c8900d7f135cdea1e6e9ae0a84d7e55afed1a69371b804ded4a6ec"
+    },
+    {
+      "bytes": 21180,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "cli/aarch64/resolver_graph.s",
+      "sha256": "f98095b3a42a61885f819e7217996a39f02145ad4efae28228b7b50af38de167"
+    },
+    {
+      "bytes": 5421,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "tests/test_resolution_manifest.py",
+      "sha256": "79fc8e2eb836d3c7ee047bf0101617934526d5a938284122d3a36632d9f79f0c"
+    },
+    {
+      "bytes": 26062,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "tests/test_resolver_cli.py",
+      "sha256": "854bda4f96db17df7d03d9aec625a3be8e4b2d8178712e33a4dbb4e4a1e6e719"
+    },
+    {
+      "bytes": 11205,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "tests/macos/test_resolution_manifest_macos.py",
+      "sha256": "296abac7b5475080f8b7d6489f6ac1f15eadf66778371b8e2b46d70571432236"
+    },
+    {
+      "bytes": 44679,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "tests/registry/test_registry.py",
+      "sha256": "5bda718ed40a446e7b13688a3fd60e3cee47d0be1897f6c9cc116c3a0855b56c"
+    },
+    {
+      "bytes": 49190,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/asm.s",
+      "sha256": "f65a60b64ad9f3dedd51ce49cb06433137584e25038b2b43b7714130ea37c792"
+    },
+    {
+      "bytes": 64544,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/aarch64/asm.s",
+      "sha256": "72497f27e8d2b353182931f0dbb63cbd4e13be1efa9e4965a610963ec6c5d5ab"
+    },
+    {
+      "bytes": 37689,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/publish.s",
+      "sha256": "1b102893f0e3057303074c2244c3e34deda2d1a223cb62d7332384dd729b59cd"
+    },
+    {
+      "bytes": 54464,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/aarch64/publish.s",
+      "sha256": "ed621985082dad9201fe8437ac4a47e0b81213880987679a19eabc1698cbbb89"
+    },
+    {
+      "bytes": 62880,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/registry.s",
+      "sha256": "a4a5bfa40a8c10eeed3d3921ac503f889a975911074e1def5b88bfa363c14c80"
+    },
+    {
+      "bytes": 90128,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/aarch64/registry.s",
+      "sha256": "aaeb69e5e8105b1ddb7c29988d1cec5e0efd53bdf71ba1810754ba91c294734a"
+    },
+    {
+      "bytes": 30555,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/dependencies.s",
+      "sha256": "c713523f2bf6b094ee88f8a0bfaedb4796380353a84f5b5c150d8cddfd7d6630"
+    },
+    {
+      "bytes": 41189,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/aarch64/dependencies.s",
+      "sha256": "d21b209177a5934a042acaeb9aa9d3778a2a3c6f64c6716e5f89700cd336e1e4"
+    },
+    {
+      "bytes": 42803,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tools/registry.py",
+      "sha256": "b9138b25e05df6d62478ef9ec10015637f77f6805388db7c9330bc8cb1403ee3"
+    },
+    {
+      "bytes": 10297,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/native_link.s",
+      "sha256": "288853479b030a9c95029b3fbd3eea75385ebd4bd889a983d9565f7d343997b9"
+    },
+    {
+      "bytes": 11695,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "cli/aarch64/native_link.s",
+      "sha256": "97e61169a0c9969671aa36037738187d7bac3ce566cf836233d4cf39acb0cb24"
+    },
+    {
+      "bytes": 10248,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tests/test_native_link.py",
+      "sha256": "a98d62ccf66f40e19cd766c390af93faab18dec01416ec4063d0398d06541aba"
+    },
+    {
+      "bytes": 570,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tests/macos/test_linked_projects.py",
+      "sha256": "21dd75d87942beeb1e7d1bad01b5fcfd2150cfbdc431903b128c53714606c5a7"
+    },
+    {
+      "bytes": 3943,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tests/registry/test_native_link.py",
+      "sha256": "61dc70dc25f8c781d09c4f64ce0e273e54c8a6109a529646a672360427ad0970"
+    },
+    {
+      "bytes": 15541,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tests/test_publish_cli.py",
+      "sha256": "8ec8fb290235bc1211696f72406ac073445c6840858375391f7ca79cfd24994c"
+    },
+    {
+      "bytes": 15323,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tests/test_registry_cli.py",
+      "sha256": "d688981f625b9c03dba104dc67483cd1f47e911bc1e06ea75d32a842892e5d4a"
+    },
+    {
+      "bytes": 8150,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "dependency-resolution",
+      "path": "docs/specs/dependencies.md",
+      "sha256": "4b46385be08eb96049603132e61095417c798a7029e01de722056e45214b1018"
+    },
+    {
+      "bytes": 8950,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "docs/native-linking.md",
+      "sha256": "e534b8a2e164365245af9d92acc1b3c49c44d772b5cdc6997f5989270cf141fb"
+    },
+    {
+      "bytes": 7230,
+      "checkout_revision": "452a798e0a62c2a7c0c6c436e15db316fda76959",
+      "origin": "native-link",
+      "path": "tools/macos.py",
+      "sha256": "538b0ab9e3245955139cf0ab1ea22c3020c06bad3f9bdeedab116faa86bebc80"
+    },
+    {
+      "bytes": 757,
+      "checkout_revision": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "origin": "origin-main",
+      "path": "cli/commands.json",
+      "sha256": "9b56e0d5ad4ee1971bf59deac394ce1b0642a804437101cd2c263135a7c72100"
+    }
+  ],
+  "integration_commit": "351c709",
+  "limits": [
+    "Linux baseline execution was not performed; both Linux results are cross-assembly only.",
+    "RISC-V implementation/runtime qualification belongs to the parent workstream.",
+    "No release, installer, deployed site, or distribution qualification claim follows from these baseline checks.",
+    "The source integration remains uncommitted; input and final file hashes identify the exact bytes.",
+    "Initial red-check binary hashes were not captured; they are negative development checks, not release qualification."
+  ],
+  "native_runtime": {
+    "isa": "AArch64",
+    "kernel": "24.6.0",
+    "mode": "native",
+    "os": "macOS",
+    "python": "3.14.6",
+    "toolchain": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+    "version": "15.6.1"
+  },
+  "passed_checks": [
+    {
+      "command": "make test",
+      "exit_code": 0,
+      "log": "build/riscv64/baseline-macos-final-test.log",
+      "tests": 269
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/registry -p 'test_*.py' -v",
+      "exit_code": 0,
+      "log": "build/riscv64/baseline-registry-test.log",
+      "tests": 57
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/macos -p 'test_common.py' -k ResolverCliTests -v",
+      "exit_code": 0,
+      "log": "build/riscv64/baseline-resolver-final-test.log",
+      "tests": 30
+    },
+    {
+      "artifact_sha256": "ea15e4b74b201e59b7c398ef776132b3f8432083d49ecec35a11162170a2885e",
+      "command": "/usr/bin/clang -target x86_64-linux-gnu -c -x assembler -o build/riscv64/baseline-x86_64.o cli/asm.s",
+      "exit_code": 0,
+      "mode": "cross-assembly only"
+    },
+    {
+      "artifact_sha256": "f177b2f49103b4f31fe799b9e739954c263ad002928ac711b7addaf1f4627a96",
+      "command": "/usr/bin/clang -target aarch64-linux-gnu -c -x assembler -o build/riscv64/baseline-aarch64.o cli/aarch64/asm.s",
+      "exit_code": 0,
+      "mode": "cross-assembly only"
+    },
+    {
+      "command": "/usr/bin/codesign --verify --strict build/riscv64/baseline-asm-aarch64-macos",
+      "exit_code": 0
+    },
+    {
+      "command": "public version/help/status JSON compared with cli/commands.json",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "path_labels": "Local checkout prefixes use role labels. Original local logs and input snapshots retain their recorded hashes.",
+  "schema": 1,
+  "scope": "reconcile origin/main installed-program protections, unpublished dependency resolver, and unpublished native-library assembly before the RISC-V port",
+  "source_bytes_unchanged_since_capture": {
+    "<native-link-checkout>/cli/aarch64/asm.s": true,
+    "<native-link-checkout>/cli/aarch64/dependencies.s": true,
+    "<native-link-checkout>/cli/aarch64/native_link.s": true,
+    "<native-link-checkout>/cli/aarch64/publish.s": true,
+    "<native-link-checkout>/cli/aarch64/registry.s": true,
+    "<native-link-checkout>/cli/asm.s": true,
+    "<native-link-checkout>/cli/dependencies.s": true,
+    "<native-link-checkout>/cli/native_link.s": true,
+    "<native-link-checkout>/cli/publish.s": true,
+    "<native-link-checkout>/cli/registry.s": true,
+    "<native-link-checkout>/docs/native-linking.md": true,
+    "<native-link-checkout>/tests/macos/test_linked_projects.py": true,
+    "<native-link-checkout>/tests/registry/test_native_link.py": true,
+    "<native-link-checkout>/tests/test_native_link.py": true,
+    "<native-link-checkout>/tests/test_publish_cli.py": true,
+    "<native-link-checkout>/tests/test_registry_cli.py": true,
+    "<native-link-checkout>/tools/macos.py": true,
+    "<native-link-checkout>/tools/registry.py": true,
+    "<resolver-checkout>/cli/aarch64/asm.s": true,
+    "<resolver-checkout>/cli/aarch64/dependencies.s": true,
+    "<resolver-checkout>/cli/aarch64/publish.s": true,
+    "<resolver-checkout>/cli/aarch64/registry.s": true,
+    "<resolver-checkout>/cli/aarch64/resolution_manifest.s": true,
+    "<resolver-checkout>/cli/aarch64/resolver.s": true,
+    "<resolver-checkout>/cli/aarch64/resolver_graph.s": true,
+    "<resolver-checkout>/cli/asm.s": true,
+    "<resolver-checkout>/cli/dependencies.s": true,
+    "<resolver-checkout>/cli/publish.s": true,
+    "<resolver-checkout>/cli/registry.s": true,
+    "<resolver-checkout>/cli/resolution_manifest.s": true,
+    "<resolver-checkout>/cli/resolver.s": true,
+    "<resolver-checkout>/cli/resolver_graph.s": true,
+    "<resolver-checkout>/docs/specs/dependencies.md": true,
+    "<resolver-checkout>/tests/macos/test_resolution_manifest_macos.py": true,
+    "<resolver-checkout>/tests/registry/test_registry.py": true,
+    "<resolver-checkout>/tests/test_resolution_manifest.py": true,
+    "<resolver-checkout>/tests/test_resolver_cli.py": true,
+    "<resolver-checkout>/tools/registry.py": true
+  },
+  "source_policy": "Checkout revisions identify their base. Per-file digests identify the imported dirty source bytes. Original checkouts were not modified.",
+  "tradeoffs": [
+    "Add24 trailing metadata bytes to retain existing dependency/feature offsets; derive every candidate stride/allocation from RM_SIZE.",
+    "Reuse fixed system compilers and existing mature transport/hash adapters; native libraries remain explicit external dependencies.",
+    "Retain current registry/program inventory modules byte-for-byte from origin/main rather than importing stale0.4.0 versions.",
+    "Keep catalog/site integration and new-host release declarations outside this baseline."
+  ]
+}

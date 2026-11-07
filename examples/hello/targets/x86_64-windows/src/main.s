@@ -9,10 +9,12 @@
 
 .text
 .ifndef HELLO_TEST
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 # Process entry. No arguments are used. ExitProcess receives status 0 or 1.
 # Clobbers volatile Win64 registers; allocates 40 bytes including shadow space.
+_start:
 mainCRTStartup:
     sub rsp, 40
     .seh_stackalloc 40

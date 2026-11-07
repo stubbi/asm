@@ -1,0 +1,116 @@
+name: RISC-V user-mode diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulated:
+    name: Check the RISC-V CLI through Linux user-mode emulation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare protected checkout and initial failure evidence
+        id: setup
+        env:
+          ASM_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p build
+          python3 - <<'PYTHON'
+          from datetime import datetime, timezone
+          import json
+          import os
+          from pathlib import Path
+
+          checks = ("artifact", "runtime", "toolchain", "make_test", "focused_tests", "artifact_binding")
+          report = {
+              "schema": 2,
+              "qualification_scope": "native-cli-behavior",
+              "target": "riscv64-linux",
+              "execution_mode": "emulated",
+              "scope": "runtime not reached",
+              "outcome": "fail",
+              "native_qualified": False,
+              "release_qualified": False,
+              "started_at": datetime.now(timezone.utc).isoformat(),
+              "head_commit": os.environ["ASM_CI_HEAD_SHA"],
+              "checkout_commit": os.environ["GITHUB_SHA"],
+              "run_url": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "checks": {name: {"outcome": "not-run"} for name in checks},
+              "release_gates": {name: "not-run" for name in
+                                ("registry", "verifier", "site", "release", "published_install")},
+          }
+          Path("build/riscv64-qualification.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          PYTHON
+          echo "evidence=$GITHUB_WORKSPACE/build/riscv64-qualification.json" >> "$GITHUB_OUTPUT"
+          sudo cp -a "$GITHUB_WORKSPACE" /tmp/asm-riscv64-ci
+          sudo chown -R root:root /tmp/asm-riscv64-ci
+          echo "evidence=/tmp/asm-riscv64-ci/build/riscv64-qualification.json" >> "$GITHUB_OUTPUT"
+      - name: Install the cross-toolchain and explicit RISC-V execution handler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-riscv64-linux-gnu binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support
+          dpkg-query -W binutils-riscv64-linux-gnu binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user qemu-user-binfmt binfmt-support > /tmp/asm-riscv64-packages.txt
+          sudo update-binfmts --enable qemu-riscv64
+          test -f /proc/sys/fs/binfmt_misc/qemu-riscv64
+          grep -qx enabled /proc/sys/fs/binfmt_misc/qemu-riscv64
+      - name: Select fixed cross-tool paths in this disposable runner
+        run: |
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-as /usr/bin/as
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-ld /usr/bin/ld
+          sudo ln -sfn /usr/bin/riscv64-linux-gnu-gcc /usr/bin/cc
+      - name: Expose the target loader without changing the guest filesystem root
+        run: |
+          sudo python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+
+          target_libraries = Path("/usr/riscv64-linux-gnu/lib")
+          runtime_libraries = Path("/lib/riscv64-linux-gnu")
+          runtime_libraries.mkdir(exist_ok=True)
+          if not runtime_libraries.is_dir():
+              raise SystemExit("Target runtime library path must be a directory")
+          links = {
+              Path("/lib/ld-linux-riscv64-lp64d.so.1"): target_libraries / "ld-linux-riscv64-lp64d.so.1",
+          }
+          for source in sorted(target_libraries.iterdir()):
+              if ".so." in source.name and source.is_file():
+                  links[runtime_libraries / source.name] = source
+          for destination, source in links.items():
+              print(f"Target runtime path: {destination}; source: {source}", flush=True)
+              expected = source.resolve(strict=True)
+              if destination.exists() or destination.is_symlink():
+                  print(f"Existing path: {destination}; link: {destination.is_symlink()}; resolved: {destination.resolve()}", flush=True)
+                  if destination.resolve(strict=True) != expected:
+                      raise SystemExit(f"Refusing unrelated target runtime path: {destination}")
+              else:
+                  os.symlink(source, destination)
+              if destination.resolve(strict=True) != expected:
+                  raise SystemExit(f"Target runtime link differs: {destination}")
+          if not Path("/lib/riscv64-linux-gnu/libc.so.6").is_file():
+              raise SystemExit("Target libc is missing at its standard runtime path")
+          PYTHON
+      - name: Build and run the complete CLI contract
+        working-directory: /tmp/asm-riscv64-ci
+        run: |
+          python3 tools/riscv64.py --check
+          sudo make ARCH=riscv64 build/asm-riscv64-linux
+          sudo env QEMU_LD_PREFIX=/ python3 tools/riscv64_test.py --asm build/asm-riscv64-linux --execution-mode emulated --evidence build/riscv64-qualification.json
+      - name: Retain exact bytes, tool versions, and failed or passed evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: riscv64-emulated-${{ github.sha }}
+          path: |
+            /tmp/asm-riscv64-ci/build/asm-riscv64-linux
+            ${{ steps.setup.outputs.evidence }}
+            /tmp/asm-riscv64-ci/build/riscv64-qualification-logs/*
+            /tmp/asm-riscv64-packages.txt
+          if-no-files-found: error
+          retention-days: 14

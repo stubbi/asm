@@ -79,6 +79,44 @@
         "Emulated output does not qualify physical hardware or native performance.",
         "No Linux kernel minimum is established by this reference."
       ]
+    },
+    {
+      "id": "x86_64-windows",
+      "isa": "x86_64",
+      "os": "windows",
+      "abi": "Microsoft x64",
+      "minimum_os": "Not specified; qualify the selected Windows version and runtime",
+      "required_cpu_features": [],
+      "native_cli": false,
+      "build_tools": ["LLVM clang --target=x86_64-pc-windows-msvc", "LLVM lld-link /machine:x64", "The selected package's import libraries and documented dependencies"],
+      "execution_evidence": "The registry accepts this target in docs/specs/registry.md. docs/windows-qualification.md records candidate native tests and failed CLI results. Reviewed 2026-11-05; Asm 0.6.0 has no published Windows CLI.",
+      "limits": [
+        "The reference object format is little-endian x86-64 COFF; its executable format is PE32+.",
+        "Microsoft x64 calling conventions require shadow space and call-site stack alignment; System V AMD64 conventions do not apply.",
+        "Native qualification applies only to its recorded source, artifacts, host, and cases.",
+        "Catalog PE validation does not validate imported functions, instructions, Authenticode signatures, or runtime compatibility.",
+        "The empty optional-feature list applies to the reference guidance; it does not qualify a selected package or machine.",
+        "No Windows minimum is established by this reference. Declare the selected package's minimum OS separately."
+      ]
+    },
+    {
+      "id": "aarch64-windows",
+      "isa": "aarch64",
+      "os": "windows",
+      "abi": "Microsoft ARM64",
+      "minimum_os": "Not specified; qualify the selected Windows version and runtime",
+      "required_cpu_features": [],
+      "native_cli": false,
+      "build_tools": ["LLVM clang --target=aarch64-pc-windows-msvc", "LLVM lld-link /machine:arm64", "The selected package's import libraries and documented dependencies"],
+      "execution_evidence": "The registry accepts this target in docs/specs/registry.md. docs/windows-qualification.md records candidate native tests and failed CLI results. Reviewed 2026-11-05; Asm 0.6.0 has no published Windows CLI.",
+      "limits": [
+        "The reference object format is little-endian ARM64 COFF; its executable format is PE32+.",
+        "Windows ARM64 reserves x18 and requires its platform calling conventions and stack alignment; Linux conventions do not apply.",
+        "Native qualification applies only to its recorded source, artifacts, host, and cases.",
+        "Catalog PE validation does not validate imported functions, instructions, Authenticode signatures, or runtime compatibility.",
+        "The empty optional-feature list applies to the reference guidance; it does not qualify a selected package or machine.",
+        "No Windows minimum is established by this reference. Declare the selected package's minimum OS separately."
+      ]
     }
   ]
 }

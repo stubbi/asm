@@ -1,0 +1,6 @@
+**
+!candidate/
+!candidate/**
+!package-source/
+!package-source/**
+!input-manifest.json

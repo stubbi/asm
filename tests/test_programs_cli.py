@@ -15,7 +15,7 @@ import tempfile
 import time
 import unittest
 
-from host import IS_ARM64, IS_MACOS, OTHER_TARGET, TARGET, program, MAC_ARCH
+from host import IS_ARM64, IS_RISCV64, IS_MACOS, CLI_ASM_FLAGS, OTHER_TARGET, TARGET, program, MAC_ARCH
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -45,6 +45,11 @@ class InstalledProgramTests(unittest.TestCase):
                         "bl _open\nadd sp, sp, #16\n"
                         f"mov x0, #{73 + number}\nbl _exit\n"
                         '.data\nmarker: .asciz "PACKAGE_EXECUTED"')
+            elif IS_RISCV64:
+                body = ("li a0, -100\nla a1, marker\nli a2, 577\nli a3, 384\n"
+                        "li a7, 56\necall\n"
+                        f"li a0, {73 + number}\nli a7, 93\necall\n"
+                        '.section .rodata\nmarker: .asciz "PACKAGE_EXECUTED"')
             elif IS_ARM64:
                 body = ("mov x0, #-100\nadrp x1, marker\nadd x1, x1, :lo12:marker\n"
                         "mov x2, #577\nmov x3, #384\nmov x8, #56\nsvc #0\n"
@@ -130,14 +135,17 @@ class InstalledProgramTests(unittest.TestCase):
                            cwd=ROOT, check=True, capture_output=True, timeout=30)
             text = source.read_text()
         else:
-            directory = "cli/aarch64" if IS_ARM64 else "cli"
+            directory = "cli/riscv64" if IS_RISCV64 else "cli/aarch64" if IS_ARM64 else "cli"
             module = ROOT / directory / "programs.s"
             text = module.read_text()
         if fault == "inventory":
             start = text.index("program_commit_state:\n")
             end = text.index("\nprogram_list:", start)
             commit = text[start:end]
-            if IS_ARM64:
+            if IS_RISCV64:
+                operation = "    RV_CALL rv_renameat\n"
+                replacement = "    li a2, -1\n" + operation
+            elif IS_ARM64:
                 operation = "    ARM_CALL arm_renameat\n"
                 replacement = "    mov x2, #-1\n" + operation
             else:
@@ -147,7 +155,14 @@ class InstalledProgramTests(unittest.TestCase):
             text = text[:start] + commit.replace(operation, replacement) + text[end:]
         else:
             self.assertIn(fault, ("probe_error", "probe_stop"))
-            if IS_ARM64:
+            if IS_RISCV64:
+                operation = "    P_SET 1, program_probe_active\n"
+                if fault == "probe_error":
+                    injected = "    j program_probe_error\n"
+                else:
+                    injected = ("    RV_SAVE t0\n    RV_CALL rv_getpid\n    mv a0, t0\n"
+                                f"    li a1, {int(signal.SIGSTOP)}\n    RV_CALL rv_kill\n    RV_RESTORE t0\n")
+            elif IS_ARM64:
                 operation = "    P_SET 1, program_probe_active\n"
                 if fault == "probe_error":
                     injected = "    b program_probe_error\n"
@@ -179,7 +194,7 @@ class InstalledProgramTests(unittest.TestCase):
             self.assertEqual(main.count(include), 1)
             source.write_text(main.replace(include, f'.include "{modified_module}"'))
             obj = self.work / "inventory-failure.o"
-            subprocess.run(["/usr/bin/as", *([] if IS_ARM64 else ["--64"]), "--fatal-warnings",
+            subprocess.run(["/usr/bin/as", *CLI_ASM_FLAGS, "--fatal-warnings",
                             "-o", str(obj), str(source)], cwd=ROOT, check=True,
                            capture_output=True, timeout=30)
             command = ["/usr/bin/ld", "-z", "noexecstack", "-o", str(binary), str(obj)]

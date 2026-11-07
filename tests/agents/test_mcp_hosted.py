@@ -170,7 +170,7 @@ class HostedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(tools.tools), 6)
                     result = await client.call_tool("asm_list_targets", {})
                     self.assertFalse(result.is_error)
-                    self.assertEqual(len(result.structured_content["targets"]), 4)
+                    self.assertEqual({item["id"] for item in result.structured_content["targets"]}, set(registry.TARGETS))
 
     async def test_unrecorded_revision_is_visible(self):
         async with self.running_server(["--catalog", str(self.catalog)], revision=None) as url:

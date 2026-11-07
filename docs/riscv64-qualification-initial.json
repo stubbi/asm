@@ -1,0 +1,403 @@
+{
+  "checks": {
+    "artifact": {
+      "error": "[Errno 2] No such file or directory: '<port-worktree>/build/asm-riscv64-linux'",
+      "outcome": "fail"
+    },
+    "artifact_binding": {
+      "outcome": "not-run"
+    },
+    "focused_tests": {
+      "outcome": "not-run"
+    },
+    "make_test": {
+      "outcome": "not-run"
+    },
+    "runtime": {
+      "outcome": "not-run"
+    },
+    "toolchain": {
+      "outcome": "not-run"
+    }
+  },
+  "cli_candidate_check": {
+    "artifact": {
+      "abi": "LP64",
+      "bytes": 602992,
+      "elf_flags": 0,
+      "elf_machine": 243,
+      "isa": "RV64IM",
+      "os": "Linux",
+      "path": "<port-worktree>/build/asm-riscv64-linux",
+      "required_cpu_features": [
+        "M"
+      ],
+      "sha256": "74deda0209bfbb30a51a7f1351e5e19f78cc0a5886c1c9401750bddb9a2ac863"
+    },
+    "checks": {
+      "artifact": {
+        "outcome": "pass"
+      },
+      "artifact_binding": {
+        "outcome": "not-run"
+      },
+      "focused_tests": {
+        "outcome": "not-run"
+      },
+      "make_test": {
+        "outcome": "not-run"
+      },
+      "runtime": {
+        "error": "RISC-V Linux qualification requires a Linux runtime",
+        "outcome": "fail"
+      },
+      "toolchain": {
+        "outcome": "not-run"
+      }
+    },
+    "complete_local_record": "build/riscv64-qualification-local.json (ignored local artifact; source digest manifest)",
+    "execution_mode": "emulated",
+    "finished_at": "2026-11-05T00:03:50.081639+00:00",
+    "host": {
+      "machine": "arm64",
+      "python": "3.14.6",
+      "release": "24.6.0",
+      "system": "Darwin"
+    },
+    "native_qualified": false,
+    "outcome": "fail",
+    "release_gates": {
+      "published_install": "not-run",
+      "registry": "not-run",
+      "release": "not-run",
+      "site": "not-run",
+      "verifier": "not-run"
+    },
+    "release_qualified": false,
+    "source": {
+      "clean": false,
+      "commit": "1f1530db38eb7326ba149addf3f0b45f2f3ac026",
+      "manifest_sha256": "5d6f49d4131024cb89467884473a242e4924de92becf88989800842a9464463a",
+      "status": [
+        " M Makefile",
+        " M cli/aarch64/asm.s",
+        " M cli/aarch64/dependencies.s",
+        " M cli/aarch64/publish.s",
+        " M cli/asm.s",
+        " M cli/commands.json",
+        " M cli/dependencies.s",
+        " M cli/publish.s",
+        " M tests/host.py",
+        " M tests/macos/test_common.py",
+        " M tests/registry/test_registry.py",
+        " M tests/test_archive_cli.py",
+        " M tests/test_dependencies_cli.py",
+        " M tests/test_programs_cli.py",
+        " M tests/test_publish_cli.py",
+        " M tests/test_self_update.py",
+        " M tests/test_self_update_metadata.py",
+        " M tools/macos.py",
+        " M tools/registry.py",
+        "?? .github/workflows/riscv64-port.yml",
+        "?? cli/aarch64/native_link.s",
+        "?? cli/aarch64/resolution_manifest.s",
+        "?? cli/aarch64/resolver.s",
+        "?? cli/aarch64/resolver_graph.s",
+        "?? cli/native_link.s",
+        "?? cli/resolution_manifest.s",
+        "?? cli/resolver.s",
+        "?? cli/resolver_graph.s",
+        "?? cli/riscv64/",
+        "?? docs/native-linking.md",
+        "?? docs/riscv64-qualification-initial.json",
+        "?? docs/riscv64-qualification.md",
+        "?? docs/specs/dependencies.md",
+        "?? tests/macos/test_linked_projects.py",
+        "?? tests/macos/test_resolution_manifest_macos.py",
+        "?? tests/registry/test_native_link.py",
+        "?? tests/riscv64/",
+        "?? tests/test_native_link.py",
+        "?? tests/test_resolution_manifest.py",
+        "?? tests/test_resolver_cli.py",
+        "?? tools/riscv64.py",
+        "?? tools/riscv64_test.py"
+      ]
+    },
+    "started_at": "2026-11-05T00:03:50.002651+00:00",
+    "target": "riscv64-linux"
+  },
+  "cross_assembly_attempts": [
+    {
+      "exit_code": 1,
+      "outcome": "fail",
+      "reason": "Explicit @progbits GNU-stack note type conflicted with the generated module section type. The harness declarations were corrected; the failure is retained.",
+      "scope": "Native archive and metadata harnesses"
+    },
+    {
+      "commands": [
+        "riscv64-elf-as -march=rv64im -mabi=lp64 --fatal-warnings -o build/riscv64-archive-harness.o tests/riscv64/archive_harness.s",
+        "riscv64-elf-as -march=rv64im -mabi=lp64 --fatal-warnings -o build/riscv64-metadata-harness.o tests/riscv64/self_update_metadata_harness.s"
+      ],
+      "objects": {
+        "build/riscv64-archive-harness.o": "e6dc8cae270a1f2d4284a5e984a134f900714e339386c487b299e8fedce177fb",
+        "build/riscv64-metadata-harness.o": "883e9b591cfb67f03b53617636f99ec021b30d07c1fbbbbfc9e0f38bcae3a511"
+      },
+      "outcome": "pass",
+      "scope": "Native archive and metadata harnesses after section correction"
+    },
+    {
+      "exit_code": 1,
+      "outcome": "fail",
+      "reason": "The new platform.s assembly-driver helper references CLI-only globals. The isolated harnesses cannot link until that helper is separated or guarded.",
+      "scope": "Native archive and metadata harness linking",
+      "warnings": [
+        "The task-local bare-metal linker ignores -z relro and -z now; Linux linker qualification remains not-run."
+      ]
+    },
+    {
+      "check": "Cross-assembly with the task-local verified GNU assembler. Standalone fixtures use rv64i/lp64; the public-C main uses rv64gc/lp64d.",
+      "execution": "not-run",
+      "outcome": "pass",
+      "scope": "Exit, argc, illegal-instruction, undefined-symbol and public-C main fixtures"
+    },
+    {
+      "artifacts": {
+        "build/riscv64-archive-harness": {
+          "bytes": 63352,
+          "sha256": "9a5851568a690207013f071b2bc76ee31b96b0817c2368b5bff6d3460ddefa03"
+        },
+        "build/riscv64-metadata-harness": {
+          "bytes": 69256,
+          "sha256": "b38445ae774ff6f5511e60a181697549abb32bf6ccaac12562cb7e98bbc5d93a"
+        }
+      },
+      "execution": "not-run",
+      "limit": "The bare-metal linker ignores relro and now. Linux linker and runtime qualification remain not-run.",
+      "outcome": "pass",
+      "recorded_at": "2026-11-05T00:03:05.217934+00:00",
+      "results": [
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "-march=rv64im",
+            "-mabi=lp64",
+            "--fatal-warnings",
+            "-o",
+            "build/riscv64-archive-harness.o",
+            "tests/riscv64/archive_harness.s"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": ""
+        },
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "-z",
+            "noexecstack",
+            "-z",
+            "relro",
+            "-z",
+            "now",
+            "--build-id=none",
+            "-o",
+            "build/riscv64-archive-harness",
+            "build/riscv64-archive-harness.o"
+          ],
+          "exit_code": 0,
+          "stderr": "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
+          "stdout": ""
+        },
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
+            "-h",
+            "-l",
+            "-A",
+            "build/riscv64-archive-harness"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - System V\n  ABI Version:                       0\n  Type:                              EXEC (Executable file)\n  Machine:                           RISC-V\n  Version:                           0x1\n  Entry point address:               0x10120\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          62776 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         4\n  Size of section headers:           64 (bytes)\n  Number of section headers:         9\n  Section header string table index: 8\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  RISCV_ATTRIBUT 0x000000000000e02d 0x0000000000000000 0x0000000000000000\n                 0x0000000000000028 0x0000000000000000  R      0x1\n  LOAD           0x0000000000000000 0x0000000000010000 0x0000000000010000\n                 0x000000000000dc88 0x000000000000dc88  R E    0x1000\n  LOAD           0x000000000000e000 0x000000000001e000 0x000000000001e000\n                 0x000000000000002d 0x0000000004132438  RW     0x1000\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n\n Section to Segment mapping:\n  Segment Sections...\n   00     .riscv.attributes \n   01     .text .rodata \n   02     .data .bss \n   03     \nAttribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p1_m2p0_zmmul1p0\"\n"
+        },
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "-march=rv64im",
+            "-mabi=lp64",
+            "--fatal-warnings",
+            "-o",
+            "build/riscv64-metadata-harness.o",
+            "tests/riscv64/self_update_metadata_harness.s"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": ""
+        },
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "-z",
+            "noexecstack",
+            "-z",
+            "relro",
+            "-z",
+            "now",
+            "--build-id=none",
+            "-o",
+            "build/riscv64-metadata-harness",
+            "build/riscv64-metadata-harness.o"
+          ],
+          "exit_code": 0,
+          "stderr": "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z relro ignored\n<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld: warning: -z now ignored\n",
+          "stdout": ""
+        },
+        {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-readelf",
+            "-h",
+            "-l",
+            "-A",
+            "build/riscv64-metadata-harness"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - System V\n  ABI Version:                       0\n  Type:                              EXEC (Executable file)\n  Machine:                           RISC-V\n  Version:                           0x1\n  Entry point address:               0x10120\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          68680 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         4\n  Size of section headers:           64 (bytes)\n  Number of section headers:         9\n  Section header string table index: 8\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  RISCV_ATTRIBUT 0x000000000000f2fb 0x0000000000000000 0x0000000000000000\n                 0x0000000000000028 0x0000000000000000  R      0x1\n  LOAD           0x0000000000000000 0x0000000000010000 0x0000000000010000\n                 0x000000000000f2bb 0x000000000000f2bb  R E    0x1000\n  LOAD           0x000000000000f2bb 0x00000000000202bb 0x00000000000202bb\n                 0x0000000000000040 0x0000000000180945  RW     0x1000\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n\n Section to Segment mapping:\n  Segment Sections...\n   00     .riscv.attributes \n   01     .text .rodata \n   02     .data .bss \n   03     \nAttribute Section: riscv\nFile Attributes\n  Tag_RISCV_arch: \"rv64i2p1_m2p0_zmmul1p0\"\n"
+        }
+      ],
+      "scope": "Archive and metadata harnesses after separation of CLI build driver"
+    }
+  ],
+  "execution_mode": "emulated",
+  "finished_at": "2026-11-04T23:57:02.306458+00:00",
+  "fixture_sources": {
+    "tests/riscv64/archive_harness.s": "fda5b04eb2d73bc27ab7b3f99567e03750a46bc58fbb8acaf9320a94b2fd281f",
+    "tests/riscv64/self_update_metadata_harness.s": "47a8d8adf8035c68e5a83d01ceac5f62aa53ffe4eabb241a34a12aae757c0abb",
+    "tests/riscv64/test_native.py": "cfbc7288298bdd46858af1543ba552192a4968387abc271be21943971b11c121",
+    "tests/riscv64/test_runner.py": "4185f132b9a1189444c26d00400b629b85b1c34201238c1791047b720afd0436"
+  },
+  "host": {
+    "machine": "arm64",
+    "python": "3.14.6",
+    "release": "24.6.0",
+    "system": "Darwin"
+  },
+  "latest_local_cli_cross_build": {
+    "abi": "LP64",
+    "artifact": "build/asm-riscv64-linux",
+    "assembler": "GNU Binutils2.47.20260726,riscv64-elf",
+    "bytes": 602992,
+    "commands": [
+      "python3 tools/riscv64.py",
+      "riscv64-elf-as -march=rv64im -mabi=lp64 -mno-relax --fatal-warnings -o build/riscv64/asm.o cli/riscv64/asm.s",
+      "riscv64-elf-ld -z noexecstack --build-id=none -o build/asm-riscv64-linux build/riscv64/asm.o"
+    ],
+    "host_limit": "AppleClang lacks RISC-V backend; task-local GNU bare-metal linker does not qualify Linux RELRO/BIND_NOW. Actual Linux runtime remains unrun.",
+    "isa": "RV64IM",
+    "mode": "cross-assembly and static linking on macOS arm64",
+    "runtime": "not-run",
+    "sha256": "f23df3b0f59a7bccc9e42a0c868a6d96857c17bc3fad48510bdceec9418a3d00",
+    "source_base": "351c709ae89c362c309b462832280306c1ecaec6",
+    "status": "pass"
+  },
+  "local_path_redaction": {
+    "applied": true,
+    "raw_record": {
+      "path": "build/riscv64/ci/initial-evidence-unredacted.json",
+      "retention": "Ignored local file; negative results remain in both records.",
+      "sha256": "7caca08c708a1e5b6b3e233af6dbd92e1a42e0bc49b966af13d4c5ee74591e93"
+    },
+    "scope": "Local checkout and task-local toolchain prefixes in paths, errors, commands, and tracebacks."
+  },
+  "local_toolchain": {
+    "bottle_bytes": 7674145,
+    "bottle_sha256": "acac25b80fedf3dd292f6e972e83451b12148fd436117837d52c34dbd9f58719",
+    "bottle_url": "https://ghcr.io/v2/homebrew/core/riscv64-elf-binutils/blobs/sha256:acac25b80fedf3dd292f6e972e83451b12148fd436117837d52c34dbd9f58719",
+    "execution_limit": "Cross-binutils on macOS does not provide a Linux runtime.",
+    "execution_outcome": "not-run",
+    "formula_version": "2.47",
+    "initial_unrelocated_invocation": {
+      "exit_code": 134,
+      "outcome": "fail",
+      "reason": "dyld could not locate ZSTD_compress through the unrelocated Homebrew prefix."
+    },
+    "required_environment": {
+      "DYLD_LIBRARY_PATH": "/opt/homebrew/opt/zstd/lib"
+    },
+    "source": "https://formulae.brew.sh/api/formula/riscv64-elf-binutils.json",
+    "source_archive_sha256": "3068128c75cda9f898ccb4211d360246e8e195ffcc9dfb655b23ae23a54800e8",
+    "source_url": "https://ftpmirror.gnu.org/binutils/binutils-2.47.tar.bz2",
+    "task_local_total_bytes": 42484797,
+    "tools": {
+      "riscv64-elf-as": {
+        "sha256": "1a7d1428b89565f6c946ae4bd2b6d693f7693a5aab5a889abe4da986b0e7348f",
+        "version_result": {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-as",
+            "--version"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": "GNU assembler (GNU Binutils) 2.47.20260726\nCopyright (C) 2026 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or later.\nThis program has absolutely no warranty.\nThis assembler was configured for a target of `riscv64-elf'.\n"
+        }
+      },
+      "riscv64-elf-ld": {
+        "sha256": "1d5bebec2dfe7de88c1905702d35c55b26abf94b1f2d9749922af2c580e5d9da",
+        "version_result": {
+          "command": [
+            "<task-toolchain>/riscv64-elf-binutils/2.47/bin/riscv64-elf-ld",
+            "--version"
+          ],
+          "exit_code": 0,
+          "stderr": "",
+          "stdout": "GNU ld (GNU Binutils) 2.47.20260726\nCopyright (C) 2026 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.\n"
+        }
+      }
+    }
+  },
+  "native_qualified": false,
+  "outcome": "fail",
+  "qualifier_regressions": [
+    {
+      "corrective_check": "test_nonload_attributes_need_no_memory_allocation first failed, then passed after limiting the memory-size rule to PT_LOAD.",
+      "current_runner_tests": 3,
+      "outcome": "fail",
+      "reason": "Initial qualifier incorrectly required p_filesz <= p_memsz for non-load PT_RISCV_ATTRIBUTES."
+    },
+    {
+      "check": "The actual candidate attribute string was rejected before the correction.",
+      "correction": "Allow the Zmmul attribute only as an optional alias alongside extension M. Other additional extensions remain rejected.",
+      "outcome": "fail",
+      "reason": "The initial strict architecture expression rejected GNU Binutils 2.47 canonical rv64i2p1_m2p0_zmmul1p0 attributes."
+    }
+  ],
+  "recorded_at": "2026-11-04T23:58:56.453447+00:00",
+  "release_gates": {
+    "published_install": "not-run",
+    "registry": "not-run",
+    "release": "not-run",
+    "site": "not-run",
+    "verifier": "not-run"
+  },
+  "release_qualified": false,
+  "required_tests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/riscv64",
+      "-p",
+      "test_*.py",
+      "-v"
+    ],
+    "exit_code": 1,
+    "stderr": "setUpClass (test_native.Riscv64CliTests) ... ERROR\ntest_absent_artifact_is_a_failure_with_unrun_gates (test_runner.QualificationRunnerTests.test_absent_artifact_is_a_failure_with_unrun_gates) ... ok\ntest_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds (test_runner.QualificationRunnerTests.test_container_gate_rejects_wrong_abi_interpreter_stack_and_bounds) ... ok\n\n======================================================================\nERROR: setUpClass (test_native.Riscv64CliTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<port-worktree>/tests/riscv64/test_native.py\", line 22, in setUpClass\n    raise AssertionError(f\"Required RISC-V CLI is absent: {ASM}\")\nAssertionError: Required RISC-V CLI is absent: <port-worktree>/build/asm-riscv64-linux\n\n----------------------------------------------------------------------\nRan 2 tests in 0.054s\n\nFAILED (errors=1)\n",
+    "stdout": ""
+  },
+  "schema": 1,
+  "scope": "Initial missing-artifact regression and local toolchain availability; not a runtime qualification.",
+  "started_at": "2026-11-04T23:57:02.306192+00:00",
+  "target": "riscv64-linux"
+}

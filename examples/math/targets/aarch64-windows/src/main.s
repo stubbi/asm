@@ -10,10 +10,12 @@
 
 .text
 .ifndef MATH_IO_TEST
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 // Process entry. No arguments are used. ExitProcess receives status 0 or 1.
 // Stack: 16 bytes; preserves x29/x30 and keeps SP 16-byte aligned.
+_start:
 mainCRTStartup:
     stp x29, x30, [sp, #-16]!
     .seh_save_fplr_x 16

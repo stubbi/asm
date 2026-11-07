@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -57,10 +58,11 @@ class VerifierBuildSelectionTests(unittest.TestCase):
         self.assertIn(f"../{target}", shlex.split(build))
         self.assertIn(f"{target}.LICENSES.txt", shlex.split(notices))
 
-    def test_current_targets_select_explicit_build_and_notice_platforms(self):
+    def test_source_targets_select_explicit_build_and_notice_platforms(self):
         for operating_system, architecture, suffix, go_os, go_architecture in (
             ("Linux", "x86_64", "x86_64-linux", "linux", "amd64"),
             ("Linux", "aarch64", "aarch64-linux", "linux", "arm64"),
+            ("Linux", "riscv64", "riscv64-linux", "linux", "riscv64"),
             ("Darwin", "aarch64", "aarch64-macos", "darwin", "arm64"),
         ):
             with self.subTest(target=suffix):
@@ -70,7 +72,7 @@ class VerifierBuildSelectionTests(unittest.TestCase):
                 self.assert_target_environment(result, target, go_os, go_architecture)
 
     def test_explicit_linux_targets_cross_build_from_the_native_mac_configuration(self):
-        for architecture, go_architecture in (("x86_64", "amd64"), ("aarch64", "arm64")):
+        for architecture, go_architecture in (("x86_64", "amd64"), ("aarch64", "arm64"), ("riscv64", "riscv64")):
             with self.subTest(architecture=architecture):
                 target = f"build/asm-verify-{architecture}-linux"
                 self.assert_target_environment(self.dry_run(target), target, "linux", go_architecture)
@@ -78,7 +80,7 @@ class VerifierBuildSelectionTests(unittest.TestCase):
     def test_unknown_cli_platforms_fail_before_any_build_recipe(self):
         for operating_system, architecture in (
             ("FreeBSD", "aarch64"), ("Windows_NT", "x86_64"),
-            ("Linux", "riscv64"), ("Darwin", "x86_64"),
+            ("Linux", "mips64"), ("Darwin", "x86_64"),
         ):
             with self.subTest(operating_system=operating_system, architecture=architecture):
                 result = self.dry_run(f"build/asm-verify-{architecture}-linux",
@@ -88,7 +90,7 @@ class VerifierBuildSelectionTests(unittest.TestCase):
                 self.assertNotEqual(result.stderr, "")
 
     def test_unintegrated_verifier_targets_have_no_build_rule(self):
-        for target in ("riscv64-linux", "x86_64-macos", "x86_64-windows",
+        for target in ("x86_64-macos", "x86_64-windows",
                        "aarch64-windows", "x86_64-freebsd"):
             with self.subTest(target=target):
                 result = self.dry_run(f"build/asm-verify-{target}")
@@ -124,6 +126,51 @@ class VerifierBuildSelectionTests(unittest.TestCase):
             result = self.dry_run(target, operating_system="Linux", architecture="x86_64",
                                   directory=directory, force=False)
             self.assert_target_environment(result, target, "linux", "amd64")
+
+    def test_internal_source_change_rebuilds_an_existing_verifier(self):
+        with tempfile.TemporaryDirectory(prefix="asm-verifier-input-") as temporary:
+            directory = Path(temporary)
+            inputs = {
+                "Makefile": (ROOT / "Makefile").read_bytes(),
+                "verifier/main.go": b"package main\n",
+                "verifier/internal/securefs/files_windows.go": b"original adapter bytes\n",
+                "verifier/go.mod": b"module fixture\n",
+                "verifier/go.sum": b"",
+                "verifier/trust/asm-root.json": b"{}\n",
+                # Keep the real make recipes and filesystem effects. This
+                # controlled compiler avoids a Go dependency in this gate.
+                "compiler.py": b"from pathlib import Path\nimport sys\n"
+                    b"assert sys.argv[1] == 'build'\n"
+                    b"Path(sys.argv[sys.argv.index('-o') + 1]).write_bytes(\n"
+                    b"    Path('internal/securefs/files_windows.go').read_bytes())\n",
+                "tools/verifier_notices.py": b"from pathlib import Path\nimport sys\n"
+                    b"Path(sys.argv[-1]).write_text('fixture notices\\n')\n",
+            }
+            for name, data in inputs.items():
+                path = directory / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                os.utime(path, (1_700_000_000, 1_700_000_000))
+            target = "build/asm-verify-x86_64-linux"
+            arguments = ["make", "--no-print-directory", "HOST_OS=Linux", "ARCH=x86_64",
+                         f"GO={sys.executable} {directory / 'compiler.py'}",
+                         f"PYTHON={sys.executable}", "TRUSTED_DISTRIBUTION=0", target]
+            environment = dict(os.environ)
+            for name in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEOVERRIDES"):
+                environment.pop(name, None)
+            def build():
+                result = subprocess.run(arguments, cwd=directory, env=environment,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+            build()
+            artifact = directory / target
+            self.assertEqual(artifact.read_bytes(), b"original adapter bytes\n")
+            os.utime(artifact, (1_700_000_010, 1_700_000_010))
+            source = directory / "verifier/internal/securefs/files_windows.go"
+            source.write_bytes(b"changed adapter bytes\n")
+            os.utime(source, (1_700_000_020, 1_700_000_020))
+            build()
+            self.assertEqual(artifact.read_bytes(), b"changed adapter bytes\n")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
  * See LICENSE and LICENSING.md for the terms and scope.
  */
 .include "cli/aarch64/platform.inc"
+.include "cli/aarch64/resolution_manifest.s"
 .global _start
 .global next_arg, streq, strlen, copy_string, out, write_cstr, write_all
 .global die, exit_ok, exit_code, spawn_wait, unsigned_decimal
@@ -397,6 +398,9 @@ common_option:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lopt_locked
+    mov x9, x19
+    ARM_CALL native_link_option
+    cbnz w9, .Lopt_yes
     mov x0, x19
     ARM_ADDR x1, opt_no_run
     ARM_CALL streq
@@ -1040,10 +1044,6 @@ init_rollback:
  * Scratch: x0-x7/x9 and platform scratch. Preserves x19-x24. Stack:64 saved
  * bytes plus ARM_CALL frames and bounded callees; SP remains 16-byte aligned. */
 read_manifest:
-    ARM_ADDR x16, manifest_host_found
-    strb wzr, [x16]
-    ARM_ADDR x16, project_target_mask
-    str xzr, [x16]
     ARM_SAVE x21
     ARM_SAVE x22
     ARM_SAVE x23
@@ -1129,525 +1129,53 @@ read_manifest:
     strb w10, [x16]
     mov x0, x21
     ARM_CALL arm_close
-    ARM_ADDR x16, manifest_buffer
-    mov x21, x16
-    eor w22, w22, w22
-    tst w22, w22
-    eor w23, w23, w23
-    tst w23, w23
-    eor w24, w24, w24
-    tst w24, w24
-.Lmanifest_line:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 9
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 13
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    ARM_IMM w11, 35
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_comment
-    and w10, w9, #255
-    ARM_IMM w11, 91
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_section
-    mov x0, x21
-    eor w3, w3, w3
-    tst w3, w3
-.Lmanifest_key:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 97
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo .Lmanifest_key_end
-    and w10, w9, #255
-    ARM_IMM w11, 122
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.hi .Lmanifest_key_end
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_IMM w11, 32
-    cmp w3, w11
-    b.hi manifest_error
-    b .Lmanifest_key
-.Lmanifest_key_end:
-    tst w3, w3
-    b.eq manifest_error
-    ARM_ADDR x16, key_buffer
-    mov x1, x16
-    eor w2, w2, w2
-    tst w2, w2
-.Lmanifest_key_copy:
-    mov x16, x0
-    add x16, x16, x2
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    mov x16, x1
-    add x16, x16, x2
-    strb w10, [x16]
-    ARM_IMM w11, 1
-    adds w2, w2, w11
-    cmp w2, w3
-    b.lo .Lmanifest_key_copy
-    ARM_IMM w10, 0
-    mov x16, x1
-    add x16, x16, x2
-    strb w10, [x16]
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    ARM_IMM w11, 61
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne manifest_error
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    ARM_IMM w11, 34
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne manifest_error
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_name
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_name
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_version
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_version
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_source
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_source
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x1, key_test
-    ARM_CALL streq
-    cbnz w9, .Lfield_test
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, key_target
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lfield_target
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, key_link
-    ARM_CALL streq
-    cbnz w9, .Lfield_link
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, key_libraries
-    ARM_CALL streq
-    cbnz w9, .Lfield_libraries
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, key_check
-    ARM_CALL streq
-    cbnz w9, .Lfield_check
-    b manifest_error
-.Lfield_name:
-    ARM_IMM w11, 1
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_name
-    mov x0, x16
-    ARM_IMM w10, 64
-    mov w1, w10
-    ARM_IMM w10, 1
-    mov w2, w10
-    b .Lfield_read
-.Lfield_version:
-    ARM_IMM w11, 1
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_version
-    mov x0, x16
-    ARM_IMM w10, 63
-    mov w1, w10
-    ARM_IMM w10, 2
-    mov w2, w10
-    b .Lfield_read
-.Lfield_source:
-    ARM_IMM w11, 2
-    cmp w22, w11
-    b.lo manifest_error
-    ARM_ADDR x16, package_source
-    mov x0, x16
-    ARM_IMM w10, 255
-    mov w1, w10
-    ARM_IMM w10, 4
-    mov w2, w10
-    b .Lfield_read
-.Lfield_test:
-    cmp w22, #2
-    b.lo manifest_error
-    ARM_ADDR x0, package_test
-    mov w1, #255
-    mov w2, #128
-    b .Lfield_read
-.Lfield_target:
-    ARM_IMM w11, 2
-    cmp w22, w11
-    b.ne manifest_error
-    ARM_ADDR x16, package_target
-    mov x0, x16
-    ARM_IMM w10, 63
-    mov w1, w10
-    ARM_IMM w10, 8
-    mov w2, w10
-    b .Lfield_read
-.Lfield_link:
-    cmp w22, #2
-    b.lo manifest_error
-    ARM_ADDR x0, package_link
-    mov w1, #255
-    mov w2, #16
-    b .Lfield_read
-.Lfield_libraries:
-    cmp w22, #2
-    b.lo manifest_error
-    ARM_ADDR x0, package_libraries
-    mov w1, #255
-    mov w2, #32
-    b .Lfield_read
-.Lfield_check:
-    cmp w22, #2
-    b.lo manifest_error
-    ARM_ADDR x0, package_check
-    mov w1, #255
-    mov w2, #64
-.Lfield_read:
-    tst w23, w2
-    b.ne manifest_error
-    orr w23, w23, w2
-    tst w23, w23
-    eor w3, w3, w3
-    tst w3, w3
-.Lfield_chars:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 34
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lfield_end
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 127
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 92
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq manifest_error
-    cmp w3, w1
-    b.hs manifest_error
-    and w10, w9, #255
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    b .Lfield_chars
-.Lfield_end:
-    tst w3, w3
-    b.eq manifest_error
-    ARM_IMM w10, 0
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lline_end
-.Lmanifest_section:
-    ARM_CALL manifest_finish_build
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    eor w3, w3, w3
-    tst w3, w3
-.Lsection_chars:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 93
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lsection_end
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.lo manifest_error
-    and w10, w9, #255
-    ARM_IMM w11, 126
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.hi manifest_error
-    ARM_IMM w11, 31
-    cmp w3, w11
-    b.hs manifest_error
-    and w10, w9, #255
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM w11, 1
-    adds w3, w3, w11
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lsection_chars
-.Lsection_end:
-    ARM_IMM w10, 0
-    mov x16, x0
-    add x16, x16, x3
-    strb w10, [x16]
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    ARM_ADDR x16, section_package
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.ne .Lsection_package
-    ARM_ADDR x16, key_buffer
-    mov x0, x16
-    ARM_ADDR x16, section_build
-    mov x1, x16
-    ARM_CALL streq
-    tst w9, w9
-    b.eq .Lsection_target
-    mov w10, #510
-    tst w24, w10
-    b.ne manifest_error
-    orr w24, w24, #2
-    mov w22, #2
-    ARM_CALL manifest_start_build
-    b .Lline_end
-.Lsection_target:
-    tst w24, #2
-    b.ne manifest_error
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_x86
-    ARM_CALL streq
-    mov w2, #4
-    ARM_ADDR x1, target_x86
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_arm
-    ARM_CALL streq
-    mov w2, #8
-    ARM_ADDR x1, target_arm
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_riscv
-    ARM_CALL streq
-    mov w2, #16
-    ARM_ADDR x1, target_riscv
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_macos
-    ARM_CALL streq
-    mov w2, #32
-    ARM_ADDR x1, target_macos
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_macos_x86
-    ARM_CALL streq
-    mov w2, #64
-    ARM_ADDR x1, target_macos_x86
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_windows_x86
-    ARM_CALL streq
-    mov w2, #128
-    ARM_ADDR x1, target_windows_x86
-    cbnz w9, .Lsection_target_known
-    ARM_ADDR x0, key_buffer
-    ARM_ADDR x1, section_target_windows_arm
-    ARM_CALL streq
-    mov w2, #256
-    ARM_ADDR x1, target_windows_arm
-    cbnz w9, .Lsection_target_known
-    b manifest_error
-.Lsection_target_known:
-    tst w24, w2
-    b.ne manifest_error
-    orr w24, w24, w2
-    ARM_ADDR x0, package_target
+    ARM_ADDR x0, rm_root_original
+    ARM_ADDR x1, manifest_buffer
     ARM_CALL copy_string
-    mov w22, #3
-    ARM_CALL manifest_start_build
-    b .Lline_end
-.Lsection_package:
-    ARM_IMM w11, 1
-    tst w24, w11
-    b.ne manifest_error
-    ARM_IMM w11, 1
-    orr w24, w24, w11
-    tst w24, w24
-    ARM_IMM w10, 1
-    mov w22, w10
-.Lline_end:
-    ARM_CALL skip_horizontal
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 35
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_comment
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lmanifest_skip
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    b manifest_error
-.Lmanifest_skip:
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b .Lmanifest_line
-.Lmanifest_comment:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    and w11, w9, #255
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    tst w10, w11
-    b.eq .Lmanifest_finish
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    and w10, w9, #255
-    ARM_IMM w11, 10
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne .Lmanifest_comment
-    b .Lmanifest_line
-.Lmanifest_finish:
-    ARM_CALL manifest_finish_build
-    and w10, w23, #3
-    cmp w10, #3
-    b.ne manifest_error
-    ARM_ADDR x16, package_name
-    mov x0, x16
-    ARM_CALL valid_name
-    tst w9, w9
-    b.eq manifest_error
-    ARM_ADDR x16, package_version
-    mov x0, x16
-    ARM_CALL valid_version
-    tst w9, w9
-    b.eq manifest_error
-    mov w10, #510
-    tst w24, w10
-    b.eq manifest_error
-    ARM_ADDR x16, manifest_host_found
-    ldrb w10, [x16]
-    cbz w10, manifest_no_host
+    ARM_ADDR x0, manifest_buffer
+    ARM_ADDR x1, rm_root_metadata
+    ARM_ADDR x16, project_requested_target
+    ldr x2, [x16]
+    ARM_CALL rm_parse_manifest
+    cmp w9, #2
+    b.eq manifest_no_host
+    cbnz w9, manifest_error
+    ARM_ADDR x0, package_name
+    ARM_ADDR x16, rm_root_metadata + 24
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x0, package_version
+    ARM_ADDR x16, rm_root_metadata + 32
+    ldr x1, [x16]
+    ARM_CALL copy_string
     ARM_ADDR x0, package_source
-    ARM_ADDR x1, selected_source
-    ARM_CALL copy_string
-    ARM_ADDR x0, package_test
-    ARM_ADDR x1, selected_test
+    ARM_ADDR x16, rm_root_metadata + 40
+    ldr x1, [x16]
     ARM_CALL copy_string
     ARM_ADDR x0, package_target
-    ARM_ADDR x1, selected_target
+    ARM_ADDR x16, rm_root_metadata + 48
+    ldr x1, [x16]
     ARM_CALL copy_string
     ARM_ADDR x0, package_link
-    ARM_ADDR x1, selected_link
+    ARM_ADDR x16, rm_root_metadata + RM_LINK
+    ldr x1, [x16]
     ARM_CALL copy_string
     ARM_ADDR x0, package_libraries
-    ARM_ADDR x1, selected_libraries
+    ARM_ADDR x16, rm_root_metadata + RM_LIBRARIES
+    ldr x1, [x16]
     ARM_CALL copy_string
     ARM_ADDR x0, package_check
-    ARM_ADDR x1, selected_check
+    ARM_ADDR x16, rm_root_metadata + RM_CHECK
+    ldr x1, [x16]
     ARM_CALL copy_string
-    and w10, w24, #508
+    ARM_ADDR x0, package_test
+    ARM_ADDR x16, rm_root_metadata + RM_TEST
+    ldr x1, [x16]
+    ARM_CALL copy_string
+    ARM_ADDR x16, rm_root_metadata + RM_TARGET_MASK
+    ldr x9, [x16]
     ARM_ADDR x16, project_target_mask
-    str w10, [x16]
+    str x9, [x16]
     ARM_CALL native_link_check_options
     ARM_RESTORE x24
     ARM_RESTORE x23
@@ -1667,115 +1195,6 @@ manifest_no_host:
     ARM_ADDR x0, err_manifest_host
     mov w1, #2
     b die
-
-/* Input: w23=previous fields; package_target is set for a target table.
- * Output: preserves package name/version bits; clears per-build fields.
- * Owned source/native buffers are empty; test defaults to tests/main.s.
- * Capacities include NUL: source/test/native=256. Scratch:x0/x1/x3/x9 and
- * platform scratch; updates w23, preserves other x19-x24. Stack:ARM_CALL
- * frames only, aligned to 16 bytes. No syscalls or external ABI calls. */
-manifest_start_build:
-    and w23, w23, #3
-    ARM_ADDR x16, package_source
-    strb wzr, [x16]
-    ARM_ADDR x16, package_link
-    strb wzr, [x16]
-    ARM_ADDR x16, package_libraries
-    strb wzr, [x16]
-    ARM_ADDR x16, package_check
-    strb wzr, [x16]
-    ARM_ADDR x0, package_test
-    ARM_ADDR x1, test_source
-    ARM_CALL copy_string
-    ret
-
-/* Input: w22=section, w23=field bits, bounded package_* work buffers.
- * Output: validates every build table, including inactive targets. Copies a
- * selected table into selected_*; legacy target support is checked after parsing.
- * Invalid fields, paths, or native-link metadata exit 1 before file changes.
- * Matching owned capacities include NUL: target=64; source/test/native=256.
- * Copies do not overlap. Scratch:x0-x7/x9 and platform scratch. Preserves
- * x19-x24. Stack:ARM_CALL frames plus bounded callees; aligned to 16 bytes.
- * No syscalls or external ABI calls. */
-manifest_finish_build:
-    cmp w22, #2
-    b.lo .Lmanifest_build_done
-    tst w23, #4
-    b.eq manifest_error
-    cmp w22, #2
-    b.ne .Lmanifest_validate_paths
-    tst w23, #8
-    b.eq manifest_error
-.Lmanifest_validate_paths:
-    ARM_ADDR x0, package_source
-    ARM_CALL valid_source
-    cbz w9, manifest_error
-    ARM_ADDR x0, package_test
-    ARM_CALL valid_source
-    cbz w9, manifest_error
-    ARM_ADDR x0, package_link
-    ARM_ADDR x1, package_libraries
-    ARM_ADDR x2, package_check
-    ARM_CALL native_link_validate
-    cbz w9, manifest_error
-    ARM_ADDR x0, package_target
-    ARM_CALL project_target_matches
-    cbz w9, .Lmanifest_build_done
-.Lmanifest_select_build:
-    ARM_ADDR x0, selected_source
-    ARM_ADDR x1, package_source
-    ARM_CALL copy_string
-    ARM_ADDR x0, selected_test
-    ARM_ADDR x1, package_test
-    ARM_CALL copy_string
-    ARM_ADDR x0, selected_target
-    ARM_ADDR x1, package_target
-    ARM_CALL copy_string
-    ARM_ADDR x0, selected_link
-    ARM_ADDR x1, package_link
-    ARM_CALL copy_string
-    ARM_ADDR x0, selected_libraries
-    ARM_ADDR x1, package_libraries
-    ARM_CALL copy_string
-    ARM_ADDR x0, selected_check
-    ARM_ADDR x1, package_check
-    ARM_CALL copy_string
-    ARM_ADDR x16, manifest_host_found
-    mov w10, #1
-    strb w10, [x16]
-.Lmanifest_build_done:
-    ret
-
-/* Input/output: x21 is the bounded manifest parser cursor. Advances over SP,
- * TAB and CR. Scratch: x9. This parser helper intentionally updates x21. */
-skip_horizontal:
-    mov x16, x21
-    ldrb w10, [x16]
-    bfi x9, x10, #0, #8
-    and w10, w9, #255
-    ARM_IMM w11, 32
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lhorizontal_next
-    and w10, w9, #255
-    ARM_IMM w11, 9
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.eq .Lhorizontal_next
-    and w10, w9, #255
-    ARM_IMM w11, 13
-    lsl w10, w10, #24
-    lsl w11, w11, #24
-    cmp w10, w11
-    b.ne .Lhorizontal_end
-.Lhorizontal_next:
-    ARM_IMM x11, 1
-    adds x21, x21, x11
-    b skip_horizontal
-.Lhorizontal_end:
-    ret
 
 /* Input: x0=project name. Output: w9=1 for [a-z][a-z0-9-]{0,63}, else zero.
  * Scratch: x9/x3. Registry namespace validation is a separate stricter rule. */
@@ -1935,8 +1354,9 @@ valid_version:
     b .Linvalid
 
 /* Input: x0=source path already bounded to 255 chars. Output: w9=1 for a
- * relative path with no empty/. /.., option, or response-file segments, else zero.
- * This validates syntax; assembly and included files remain trusted local input. */
+ * relative path with no empty/. /.., option-like, or @-leading segments.
+ * The @ restriction prevents compiler/assembler response-file expansion. This
+ * validates syntax; assembly and included files remain trusted local input. */
 valid_source:
     mov x16, x0
     ldrb w10, [x16]
@@ -1960,8 +1380,8 @@ valid_source:
     lsl w11, w11, #24
     cmp w10, w11
     b.eq .Linvalid
-    and w10, w9, #255
-    cmp w10, #64
+    ldrb w10, [x16]
+    cmp w10, #'@'
     b.eq .Linvalid
     mov w2, w3
 .Lsource_loop:
@@ -2574,6 +1994,7 @@ commands:
     .quad command_clean, cmd_clean, command_target, cmd_targets
     .quad command_targets, cmd_targets, command_status, cmd_status
     .quad command_add, cmd_add, command_remove, cmd_remove
+    .quad command_resolve, cmd_resolve
     .quad command_search, cmd_search, command_publish, cmd_publish
     .quad command_info, cmd_info, command_versions, cmd_versions
     .quad command_fetch, cmd_fetch
@@ -2598,6 +2019,7 @@ command_target: .asciz "target"
 command_targets: .asciz "targets"
 command_status: .asciz "status"
 command_add: .asciz "add"
+command_resolve: .asciz "resolve"
 command_remove: .asciz "remove"
 command_search: .asciz "search"
 command_info: .asciz "info"
@@ -2730,6 +2152,7 @@ help_text:
     .ascii "  installed        List recorded installed programs\n"
     .ascii "  upgrade <pkg[@v]> Upgrade a recorded program\n"
     .ascii "  uninstall <pkg>  Uninstall an unchanged recorded program\n"
+    .ascii "  resolve          Resolve declared dependency ranges and features\n"
     .ascii "  add <pkg@v>      Add an exact source dependency and lock its digest\n"
     .ascii "  update <pkg@v>   Update a direct dependency to an exact version\n"
     .ascii "  remove <pkg>     Remove a lock selection; retain cache files\n"
@@ -2755,9 +2178,9 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"resolve\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss
@@ -2776,7 +2199,6 @@ number_buffer: .skip 32
 stage_dir: .skip 64
 stage_object: .skip 96
 stage_binary: .skip 96
-key_buffer: .skip 64
 package_name: .skip 65
 package_version: .skip 64
 package_source: .skip 256
@@ -2789,6 +2211,9 @@ selected_link: .skip 256
 selected_libraries: .skip 256
 selected_check: .skip 256
 manifest_buffer: .skip 8192
+rm_root_original: .skip 8192
+.balign 8
+rm_root_metadata: .skip RM_SIZE
 manifest_host_found: .skip 1
 json_mode: .skip 1
 allow_locked: .skip 1
@@ -2815,6 +2240,7 @@ made_test: .skip 1
 .include "cli/aarch64/elf.s"
 .include "cli/aarch64/archive.s"
 .include "cli/aarch64/dependencies.s"
+.include "cli/aarch64/resolver.s"
 .include "cli/aarch64/publish.s"
 .include "cli/aarch64/self_update.s"
 .include "cli/aarch64/self_update_verify.s"

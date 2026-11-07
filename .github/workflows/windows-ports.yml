@@ -1,0 +1,261 @@
+name: Native Windows ports
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ports-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Test ${{ matrix.target }} ${{ matrix.scope }} on Windows
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [cli, packages]
+        platform: [x64, arm64]
+        include:
+          - platform: x64
+            target: x86_64-windows
+            arch: x86_64
+            machine: x64
+            runner: windows-2025
+            prepare: tools/windows_x64.py
+          - platform: arm64
+            target: aarch64-windows
+            arch: aarch64
+            machine: arm64
+            runner: windows-11-arm
+            prepare: tools/windows_arm64.py
+    runs-on: ${{ matrix.runner }}
+    # The expanded CLI suite invokes the source installer about fifty times.
+    # Native fifth-run PowerShell installation took 27.172s/39.939636s.
+    timeout-minutes: ${{ matrix.scope == 'cli' && 60 || 25 }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Locate the installed LLVM and Windows SDK
+        env:
+          ASM_MACHINE: ${{ matrix.machine }}
+          ASM_SCOPE: ${{ matrix.scope }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $llvm = 'C:\Program Files\LLVM\bin'
+          $gzip = 'C:\Program Files\Git\usr\bin\gzip.exe'
+          $sdkVersion = $null
+          $msvcVersion = $null
+          $tools = @("$llvm\clang.exe", "$llvm\lld-link.exe")
+          if ($env:ASM_SCOPE -eq 'cli') { $tools += @($gzip, "$env:SystemRoot\System32\curl.exe") }
+          foreach ($tool in $tools) {
+            if (!(Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Required tool is absent: $tool" }
+          }
+          if ($env:ASM_SCOPE -eq 'cli') {
+          $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10\Lib'
+          $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory |
+            Where-Object { Test-Path -LiteralPath "$($_.FullName)\um\$env:ASM_MACHINE\kernel32.lib" } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (!$sdk) { throw "The Windows SDK import libraries are absent for $env:ASM_MACHINE" }
+          $msvc = Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*' -Directory |
+            Where-Object { Test-Path -LiteralPath "$($_.FullName)\lib\$env:ASM_MACHINE\libcmt.lib" } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (!$msvc) { throw "The MSVC runtime import libraries are absent for $env:ASM_MACHINE" }
+          $sdkVersion = $sdk.Name
+          $msvcVersion = $msvc.Name
+          "LIB=$($msvc.FullName)\lib\$env:ASM_MACHINE;$($sdk.FullName)\um\$env:ASM_MACHINE;$($sdk.FullName)\ucrt\$env:ASM_MACHINE" >> $env:GITHUB_ENV
+          $sdkInclude = "C:\Program Files (x86)\Windows Kits\10\Include\$($sdk.Name)"
+          "INCLUDE=$($msvc.FullName)\include;$sdkInclude\ucrt;$sdkInclude\shared;$sdkInclude\um" >> $env:GITHUB_ENV
+          }
+          "$llvm" >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force -Path build\windows-evidence | Out-Null
+          $metadata = @{
+            source_commit = (git rev-parse HEAD)
+            runner_architecture = $env:RUNNER_ARCH
+            image_os = $env:ImageOS
+            image_version = $env:ImageVersion
+            windows_sdk = $sdkVersion
+            msvc_runtime = $msvcVersion
+            llvm = (& "$llvm\clang.exe" --version | Out-String)
+          }
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content build\windows-evidence\build-environment.json -Encoding utf8
+          git diff --exit-code
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (git status --porcelain --untracked-files=normal) { throw 'The source checkout is not clean.' }
+      - name: Check the evidence refusal gates
+        if: matrix.scope == 'cli'
+        env:
+          ASM_WINDOWS_TARGET: ${{ matrix.target }}
+        run: |
+          python -m unittest discover -s tests/windows -p test_evidence_driver.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build the native PE executable from assembly
+        if: matrix.scope == 'cli'
+        env:
+          ASM_ARCH: ${{ matrix.arch }}
+          ASM_MACHINE: ${{ matrix.machine }}
+          ASM_TARGET: ${{ matrix.target }}
+          ASM_PREPARE: ${{ matrix.prepare }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = "build/windows/$env:ASM_ARCH"
+          python $env:ASM_PREPARE --output "$directory/asm.s"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & 'C:\Program Files\LLVM\bin\clang.exe' "--target=$env:ASM_ARCH-pc-windows-msvc" -c "$directory/asm.s" -o "$directory/asm.obj"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & 'C:\Program Files\LLVM\bin\lld-link.exe' "/machine:$env:ASM_MACHINE" /entry:_start /subsystem:console /nodefaultlib /nxcompat /dynamicbase /Brepro "/out:build/asm-$env:ASM_TARGET.exe" "$directory/asm.obj" kernel32.lib ntdll.lib advapi32.lib bcrypt.lib shell32.lib
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-FileHash -Algorithm SHA256 "$directory/asm.s", "$directory/asm.obj", "build/asm-$env:ASM_TARGET.exe" |
+            Select-Object Path, Hash | ConvertTo-Json | Set-Content build\windows-evidence\build-hashes.json -Encoding utf8
+      - name: Run the native command contract
+        if: matrix.scope == 'cli'
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_test.py --asm "build/asm-$env:ASM_TARGET.exe" --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-evidence/runtime.json --toolchain-bin 'C:\Program Files\LLVM\bin'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Collect isolated x64 adapter diagnostics
+        if: always() && matrix.scope == 'cli' && matrix.platform == 'x64'
+        run: |
+          python cli/windows/x86_64/native_diagnostics.py --toolchain-bin 'C:\Program Files\LLVM\bin' --evidence build/windows-evidence/x64-adapter-diagnostics.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Measure replacement of owned suspended image copies
+        if: always() && matrix.scope == 'cli'
+        timeout-minutes: 3
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_unmap_probe.py --asm "build/asm-$env:ASM_TARGET.exe" --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --toolchain-bin 'C:\Program Files\LLVM\bin' --evidence build/windows-evidence/primary-unmap-probe.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Run the independent native reference-package contract
+        if: matrix.scope == 'packages'
+        env:
+          ASM_TARGET: ${{ matrix.target }}
+        run: |
+          python tools/windows_test.py --packages-only --target $env:ASM_TARGET --source-commit $env:GITHUB_SHA --evidence build/windows-evidence/packages.json --toolchain-bin 'C:\Program Files\LLVM\bin'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain native bytes and all available results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-windows-${{ matrix.scope }}-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            build/windows-evidence/*
+            build/windows/${{ matrix.arch }}/asm.s
+            build/asm-${{ matrix.target }}.exe
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true
+
+  linux-packages:
+    name: Check Linux reference packages with QEMU
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record the Linux test host
+        shell: bash
+        run: |
+          mkdir -p build/linux-package-evidence
+          git rev-parse HEAD > build/linux-package-evidence/source-commit.txt
+          {
+            uname -a
+            python3 --version
+          } > build/linux-package-evidence/host.txt
+      - name: Install GNU cross tools and QEMU
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user qemu-system-misc
+          {
+            aarch64-linux-gnu-as --version
+            riscv64-linux-gnu-as --version
+            qemu-aarch64 --version
+            qemu-riscv64 --version
+            qemu-system-riscv64 --version
+          } > build/linux-package-evidence/tools.txt
+      - name: Run the actual reference-package suite
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 - <<'PY' 2>&1 | tee build/linux-package-evidence/tests.log
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import unittest
+          from tools.windows_test import EvidenceResult
+
+          suite = unittest.TestLoader().discover("tests/packages", pattern="test_*.py")
+          result = unittest.TextTestRunner(verbosity=2, resultclass=EvidenceResult).run(suite)
+          required = {
+              "test_math_aarch64.MathAarch64Tests.test_linux_demo_and_unsigned_abi_cases",
+              "test_math_riscv64.MathRiscv64ArchiveTests.test_source_archive_has_a_usable_riscv_project",
+              "test_math_riscv64.MathRiscv64NativeTests.test_binaries_match_the_declared_target_and_have_no_executable_stack",
+              "test_math_riscv64.MathRiscv64NativeTests.test_demo_prints_the_computed_example",
+              "test_math_riscv64.MathRiscv64NativeTests.test_unsigned_boundaries_one_bit_inputs_and_calling_convention",
+              "test_math_riscv64.MathRiscv64NativeTests.test_unwritable_stdout_returns_failure_and_reports_the_problem",
+              "test_math_riscv64.MathRiscv64NativeTests.test_machine_mode_callable_cases_with_semihosting",
+              "test_math_riscv64.MathRiscv64NativeTests.test_write_loop_handles_injected_short_interrupted_zero_and_error_results",
+          }
+          passed = {record["test"] for record in result.records if record["outcome"] == "pass"}
+          missing = sorted(required - passed)
+          accepted = bool(result.testsRun and result.wasSuccessful() and not result.expectedFailures and not missing)
+          inputs = list(Path("tests/packages").glob("*.py"))
+          inputs += [path for path in Path("examples").rglob("*") if path.is_file()]
+          report = {
+              "scope": "Linux reference packages; ARM64 and RISC-V execute under QEMU",
+              "source_commit": os.environ["GITHUB_SHA"],
+              "host": platform.platform(),
+              "execution": {"aarch64-linux": "QEMU user mode", "riscv64-linux": "QEMU user mode",
+                            "riscv64-machine": "QEMU system semihosting"},
+              "native_arm64_or_riscv64_qualification": False,
+              "inputs_sha256": {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(inputs)},
+              "tests_run": result.testsRun, "tests": result.records,
+              "required_linux_cases_not_passed": missing,
+              "outcome": "pass" if accepted else "fail",
+          }
+          Path("build/linux-package-evidence/results.json").write_text(json.dumps(report, indent=2) + "\n")
+          raise SystemExit(0 if accepted else 1)
+          PY
+      - name: Retain Linux reference-package results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-reference-packages-${{ github.sha }}
+          path: build/linux-package-evidence/*
+          if-no-files-found: error
+          retention-days: 14
+
+  qualification:
+    name: Require Windows scopes and Linux reference packages
+    needs: [native, linux-packages]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every Windows scope and Linux package result
+        env:
+          ASM_NATIVE_RESULT: ${{ needs.native.result }}
+          ASM_LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
+        run: |
+          test "$ASM_NATIVE_RESULT" = success
+          test "$ASM_LINUX_PACKAGES_RESULT" = success

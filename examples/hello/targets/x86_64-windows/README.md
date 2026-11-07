@@ -8,6 +8,9 @@ The assembler include path points to the project root.
 This package targets Windows x86-64 and the Microsoft x64 ABI.
 An ABI defines function calls, register use, and stack layout.
 This implementation belongs to the 0.6.0 source project.
+The `_start` entry alias is an unpublished addition.
+Its publication requires a new package version.
+Both `_start` and `mainCRTStartup` select the same assembly routine.
 Native Windows qualification remains required.
 The program requires no C runtime.
 The source uses LLVM's assembler with Intel syntax.

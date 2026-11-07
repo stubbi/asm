@@ -19,11 +19,13 @@
 .endm
 
 .text
+.global _start
 .global mainCRTStartup
 .seh_proc mainCRTStartup
 // Input: none. Output: ExitProcess(0) when value and ABI checks pass; otherwise 1.
 // Saves changed nonvolatile GP and low 64-bit vector lanes with unwind metadata.
 // Stack: 192 bytes, 16-byte aligned. No buffers or external resources are owned.
+_start:
 mainCRTStartup:
     stp x29, x30, [sp, #-TEST_FRAME]!
     .seh_save_fplr_x TEST_FRAME

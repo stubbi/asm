@@ -193,3 +193,7 @@ The source-only hosted handoff is `codex/server-runtime-ports`, commits `e3fabf0
 It contains no image, installer, or release changes.
 The native-package workflow separately exercises current Linux x86-64 and ARM64 CLI builds and both server suites.
 The hosted image workflow owns native x86-64/ARM64 and explicitly emulated RISC-V image qualification.
+
+The [shared coverage record](target-coverage.md) retains the cross-session port acceptance conditions.
+The [earlier native-linking record](native-linking-evidence.json) retains its stated source, artifacts, failed attempts, and unrun gates.
+Later results apply only to the exact bytes in their qualification records.

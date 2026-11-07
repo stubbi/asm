@@ -520,7 +520,8 @@ def project_builds(project: object) -> dict[str, dict]:
             require(len(names) <= 8 and all(re.fullmatch(r"[a-z][a-z0-9_-]{0,30}", item) for item in names),
                     "build libraries must contain up to eight names separated by one space")
         if "check" in build:
-            require(portable_path(build["check"]).endswith(".c"), "build check must be a C file")
+            checker = portable_path(build["check"])
+            require(checker.endswith(".c"), "build check must be a C file")
     return builds
 
 
@@ -615,6 +616,7 @@ def validate_resolution_syntax(data: bytes) -> None:
     inline = rf"\{{{space}{item}(?:{space},{space}{item})*{space}\}}"
     values = {"package": quoted, "build": quoted, "resolution": quoted,
               "dependencies": rf"(?:{quoted}|{inline})", "features": array}
+    values.update({"target." + target: quoted for target in PROJECT_TARGETS})
     section = None
     for line in data.decode("ascii").splitlines():
         in_string = False
@@ -640,10 +642,9 @@ def validate_resolution_syntax(data: bytes) -> None:
 def validate_resolution_project(data: bytes, project: dict) -> None:
     """Check source-bound dependency and feature declarations without resolving."""
     validate_resolution_syntax(data)
-    exact_keys(project, {"package", "build", "resolution", "dependencies", "features"},
-               {"package", "build", "resolution"}, "resolution project")
-    exact_keys(project["package"], {"name", "version"}, {"name", "version"}, "project package")
-    exact_keys(project["build"], {"source", "target"}, {"source", "target"}, "project build")
+    exact_keys(project, {"package", "build", "target", "resolution", "dependencies", "features"},
+               {"package", "resolution"}, "resolution project")
+    project_builds(project)
     resolution = exact_keys(project["resolution"], {"schema"}, {"schema"}, "resolution")
     require(resolution["schema"] == "1", "unsupported resolution schema")
     dependencies = project.get("dependencies", {})

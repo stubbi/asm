@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import unittest
 
-from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, exit_source, program
+from host import IS_MACOS, TARGET, OTHER_TARGET, IS_ARM64, IS_RISCV64, exit_source, program
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM = ROOT / "build/asm"
@@ -57,6 +57,10 @@ class DependencyCliTests(unittest.TestCase):
                     # Fixture versions must not depend on the current example release.
                     data = (f'[package]\nname = "{name}"\nversion = "{version}"\n\n'
                             f'[build]\nsource = "src/main.s"\ntarget = "{target}"\n').encode()
+                elif IS_RISCV64 and relative == "src/min.s":
+                    data = b".global asm_u64_min\n.text\nasm_u64_min:\n    bgeu a1, a0, 1f\n    mv a0, a1\n1:  ret\n"
+                elif IS_RISCV64 and relative in {"src/main.s", "tests/main.s"}:
+                    data = exit_source(0).encode()
                 elif IS_MACOS and not IS_ARM64 and relative == "src/min.s":
                     data = (b".intel_syntax noprefix\n.global asm_u64_min\n.text\nasm_u64_min:\n"
                             b"mov rax, rdi\ncmp rdi, rsi\ncmova rax, rsi\nret\n")
@@ -95,6 +99,10 @@ class DependencyCliTests(unittest.TestCase):
                 'mov edi, 12\nmov esi, 37\ncall asm_u64_min\ncmp rax, 12\n'
                 'jne failure\nxor edi, edi\nmov eax, 60\nsyscall\n'
                 'failure:\nmov edi, 99\nmov eax, 60\nsyscall\n')
+        if IS_RISCV64:
+            body = ("li a0, 12\nli a1, 37\ncall asm_u64_min\nli t0, 12\n"
+                    "bne a0, t0, failure\nli a0, 0\nli a7, 93\necall\n"
+                    "failure:\nli a0, 99\nli a7, 93\necall\n")
         if IS_MACOS:
             body = body.replace("mov x8, #93\nsvc #0", "bl _exit") if IS_ARM64 else body.replace("mov eax, 60\nsyscall", "call _exit")
         (project / "src/main.s").write_text(

@@ -22,7 +22,7 @@ The development host does not determine the deployment target.
 
 ## Check target support
 
-The native Asm CLI supports three hosts in the current alpha release:
+The published Asm 0.6.0 CLI supports three native hosts:
 
 | Target | Native host | Required build tools |
 | --- | --- | --- |
@@ -30,9 +30,13 @@ The native Asm CLI supports three hosts in the current alpha release:
 | `aarch64-linux` | Linux ARM64 | GNU Binutils assembler and linker |
 | `aarch64-macos` | Apple Silicon, macOS 15 or later | Xcode Command Line Tools |
 
-The catalog accepts those three targets and `riscv64-linux`.
+The catalog accepts six target labels:
+`x86_64-linux`, `aarch64-linux`, `aarch64-macos`, `riscv64-linux`, `x86_64-windows`, and `aarch64-windows`.
 Catalog target support does not mean native CLI support.
 RISC-V development needs the documented cross tools.
+Windows development needs the selected package's external tools and independent target qualification.
+Asm 0.6.0 does not publish a Windows CLI.
+The [Windows qualification record](https://github.com/stubbi/asm/blob/main/docs/windows-qualification.md) separates candidate tests, failed results, and release gates.
 Asm 0.6.0 selects its native host by default and supports explicit standalone Linux cross builds.
 The [project contract](https://github.com/stubbi/asm/blob/main/docs/multi-target-projects.md) defines the required GNU or LLVM tools.
 Emulated execution does not establish physical-target performance.
@@ -41,6 +45,7 @@ The current catalog does not encode optional instruction-set features or complet
 An unknown feature requirement is unknown, not an empty requirement.
 Read the selected release's source, interface, and target documentation before using optional instructions.
 Use the skill's [target reference](https://asm.build/skills/asm-build/references/targets.json) for declared conventions and qualification limits.
+The MCP package-search and inspection filters accept these six catalog labels.
 
 ## Inspect reuse
 

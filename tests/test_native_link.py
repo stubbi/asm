@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from host import IS_ARM64, IS_MACOS, TARGET, MAC_ARCH, exit_source
+from host import IS_ARM64, IS_RISCV64, IS_MACOS, TARGET, MAC_ARCH, exit_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,12 +29,14 @@ def main_source():
                 'adrp x0, message@PAGE\nadd x0, x0, message@PAGEOFF\nbl _puts\n'
                 'mov w0, #0\nldp x29, x30, [sp], #16\nret\n'
                 '.data\nmessage: .asciz "native linked"\n')
-    if TARGET == "riscv64-linux":
+    if IS_RISCV64:
         return ('.attribute arch, "rv64gc"\n.attribute stack_align, 16\n'
-                '.global main\n.text\nmain:\naddi sp, sp, -16\nsd ra, 8(sp)\n'
-                'la a0, message\ncall puts\nli a0, 0\nld ra, 8(sp)\n'
-                'addi sp, sp, 16\nret\n.section .rodata\n'
-                'message: .asciz "native linked"\n.section .note.GNU-stack,"",@progbits\n')
+                '.global main\n.text\nmain:\n'
+                'addi sp, sp, -16\nsd ra, 8(sp)\nsd s0, 0(sp)\nmv s0, sp\n'
+                'la a0, message\ncall puts\nli a0, 0\n'
+                'ld s0, 0(sp)\nld ra, 8(sp)\naddi sp, sp, 16\nret\n'
+                '.section .rodata\nmessage: .asciz "native linked"\n'
+                '.section .note.GNU-stack,"",@progbits\n')
     if IS_ARM64:
         return ('.global main\n.text\nmain:\n'
                 'stp x29, x30, [sp, #-16]!\nmov x29, sp\n'
@@ -78,6 +80,9 @@ class NativeLinkTests(unittest.TestCase):
             return
         self.assertEqual(data[:6], b"\x7fELF\x02\x01", "Expected little-endian ELF64")
         self.assertEqual(struct.unpack_from("<H", data, 16)[0], 3, "ELF must use ET_DYN")
+        if IS_RISCV64:
+            self.assertEqual(struct.unpack_from("<H", data, 18)[0], 243, "ELF must declare EM_RISCV")
+            self.assertEqual(struct.unpack_from("<I", data, 48)[0], 5, "C-linked ELF must declare RVC and LP64D")
         offset = struct.unpack_from("<Q", data, 32)[0]
         size, count = struct.unpack_from("<HH", data, 54)
         self.assertEqual(size, 56, "Unexpected ELF64 program-header size")
@@ -103,6 +108,15 @@ class NativeLinkTests(unittest.TestCase):
                 immediate |= (tag == 24 or (tag == 30 and bool(value & 8))
                               or (tag == 0x6FFFFFFB and bool(value & 1)))
         self.assertTrue(immediate, "ELF lacks immediate binding")
+
+    def test_resolution_metadata_and_native_link_fields_share_the_build_manifest(self):
+        self.manifest.write_text(self.manifest.read_text() +
+                                 '[resolution]\nschema = "1"\n[features]\ndefault = ["fast"]\nfast = []\n')
+        index = self.work / "index.tsv"
+        index.write_text("# asm-registry-v1\n")
+        self.cli("resolve", "--index", str(index))
+        self.assertTrue((self.work / "asm.lock").is_file())
+        self.assertEqual(self.cli("run", "--locked").stdout, "native linked\n")
 
     def test_response_file_checker_is_rejected_before_compilation(self):
         self.cli("build")
@@ -147,7 +161,7 @@ class NativeLinkTests(unittest.TestCase):
                        check=True, capture_output=True, timeout=20)
         assembly = main_source()
         call = ("bl _native_value" if IS_ARM64 else "call _native_value") if IS_MACOS else ("bl native_value" if IS_ARM64 else "call native_value")
-        marker = "li a0, 0" if TARGET == "riscv64-linux" else ("mov w0, #0" if IS_ARM64 else "xor eax, eax")
+        marker = "li a0, 0" if IS_RISCV64 else ("mov w0, #0" if IS_ARM64 else "xor eax, eax")
         assembly = assembly.replace(marker, call + "\n" + marker)
         (self.work / "main.s").write_text(assembly)
         self.manifest.write_text(self.base + 'link = "c"\nlibraries = "asmfixture"\ncheck = "check.c"\n')
@@ -257,6 +271,19 @@ class NativeLinkTests(unittest.TestCase):
         self.manifest.write_text(self.base + 'link = "c"\ncheck = ".c"\n')
         self.cli("build")
         self.assertFalse((self.work / "checker-executed").exists())
+
+    def test_response_file_checker_is_rejected_before_compilation(self):
+        self.cli("build")
+        before = (self.work / "build/app").read_bytes()
+        (self.work / "literal.c").write_text("-x c /dev/null\n")
+        for name in ["@literal.c", "nested/@literal.c"]:
+            checker = self.work / name
+            checker.parent.mkdir(exist_ok=True)
+            checker.write_text('_Static_assert(sizeof(void *) == 8, "LP64");\n')
+            self.manifest.write_text(self.base + f'link = "c"\ncheck = "{name}"\n')
+            result = self.cli("build", success=False)
+            self.assertIn("invalid or missing asm.toml", result.stderr)
+            self.assertEqual((self.work / "build/app").read_bytes(), before)
 
     def test_compiler_ignores_ambient_tool_and_include_configuration(self):
         poisoned = self.work / "poisoned"

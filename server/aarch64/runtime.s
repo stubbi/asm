@@ -22,6 +22,8 @@
 .equ STAT_MODE, 16
 .equ STAT_UID, 24
 .equ DB_DEADLINE_MS, 2000
+.equ DB_ADMISSION_LIMIT, 8
+.equ DB_ADMISSION_TRIES, 16
 .equ MAX_REPLY, 16384
 .equ MAX_TSV, 1048576
 .equ MAX_JSON, 4194304
@@ -119,6 +121,8 @@ sleep_interval: .quad 0, 100000000
 db_config: .zero CONFIG_LIMIT + 2
 .balign 4
 stop_requested: .zero 4
+.balign 4
+database_admitted: .zero 4
 
 
 .section .text
@@ -453,12 +457,49 @@ wait_database:
     ldp x29, x30, [sp], #64
     ret
 
+/* No inputs; w0=1 owns one slot, or 0 owns none. At most 16 CAS attempts.
+ * Changes x0/x9-x12 and flags; preserves x19-x29. Stack none, no calls.
+ * The aligned process counter stays in [0, DB_ADMISSION_LIMIT]. ARMv8-A
+ * exclusive operations require no optional LSE extension or wait queue. */
+database_try_admit:
+    ADDR x9, database_admitted
+    mov w12, #DB_ADMISSION_TRIES
+.Ladmit_retry:
+    ldaxr w10, [x9]
+    cmp w10, #DB_ADMISSION_LIMIT
+    b.hs .Ladmit_no
+    add w11, w10, #1
+    stlxr w10, w11, [x9]
+    cbz w10, .Ladmit_yes
+    subs w12, w12, #1
+    b.ne .Ladmit_retry
+.Ladmit_no:
+    clrex
+    mov w0, #0
+    ret
+.Ladmit_yes:
+    mov w0, #1
+    ret
+
+/* Requires one unreleased slot. No inputs/output. Changes x9-x11 only;
+ * preserves x0 and callee-saved registers. Stack none; no external calls.
+ * Retry only the exclusive decrement until the owned slot is released. */
+database_release_admission:
+    ADDR x9, database_admitted
+.Lrelease_retry:
+    ldaxr w10, [x9]
+    sub w10, w10, #1
+    stlxr w11, w10, [x9]
+    cbnz w11, .Lrelease_retry
+    ret
+
 /* x0=fixed SQL or NULL for guard only, w1=count, x2=parameters,
  * w3=positive byte bound <=MAX_JSON. x0=owned PGresult or NULL; caller clears.
- * Frame 80 saves x19-x24; local bound/phase occupy offsets 64/72.
+ * Frame 80 saves x19-x24; local bound/admission/phase occupy 64/68/72.
  * One TLS connection sends BEGIN READ ONLY, guard, then optional fixed SQL.
  * Every command drains; all I/O shares one absolute two-second deadline.
- * PQfinish closes the transaction; an accepted PGresult remains owned. */
+ * Owns one shared slot from before connection creation through PQfinish,
+ * including null connection creation. An accepted PGresult remains owned. */
 database_query:
     stp x29, x30, [sp, #-80]!
     mov x29, sp
@@ -471,6 +512,7 @@ database_query:
     mov x23, #0
     mov x24, #0
     str w3, [sp, #64]
+    str wzr, [sp, #68]
     str wzr, [sp, #72]
     cmp w3, #0
     b.le .Ldb_failed
@@ -480,6 +522,10 @@ database_query:
     cmp x0, #0
     b.lt .Ldb_failed
     add x22, x0, #DB_DEADLINE_MS
+    bl database_try_admit
+    cbz w0, .Ldb_failed
+    mov w8, #1
+    str w8, [sp, #68]
     ADDR x0, db_keys
     ADDR x1, db_values
     mov w2, #1
@@ -664,6 +710,10 @@ database_query:
 .Ldb_null:
     mov x0, #0
 .Ldb_return:
+    ldr w8, [sp, #68]
+    cbz w8, .Ldb_return_done
+    bl database_release_admission
+.Ldb_return_done:
     ldp x23, x24, [sp, #48]
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
