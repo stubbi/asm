@@ -453,42 +453,22 @@ class DiscoveryPageTests(unittest.TestCase):
         import discovery
         self.snapshot = discovery.delivery_snapshot(self.records)
 
-    def test_native_architecture_directory_keeps_heading_routes_and_distinct_package_counts(self):
+    def test_architecture_browsing_remains_in_explore_without_homepage_panels(self):
+        import registry_explore
         before = deepcopy(self.index)
-        original = (self.stage / "index.html").read_text()
-        self.module.write_architecture_browse(self.stage, self.index)
-        html = (self.stage / "index.html").read_text()
+        home = (self.stage / "index.html").read_text()
+        self.assertNotIn("architecture-browse:start", home)
+        self.assertNotIn("discovery-directory", home)
+        html = registry_explore.explore_page(self.stage, self.index, self.snapshot, None, None, "architectures")
         self.assertEqual(self.index, before)
-        self.module.write_architecture_browse(self.stage, self.index)
-        self.assertEqual((self.stage / "index.html").read_text(), html)
-        for marker, part in (("<!-- architecture-browse:start -->", 0), ("<!-- architecture-browse:end -->", 1)):
-            self.assertEqual(original.split(marker)[part], html.split(marker)[part])
-        page = HierarchyParser()
-        page.feed(html)
-        def within(element, parent): return id(parent) in element["ancestors"]
-        def has_class(element, name): return name in element["attrs"].get("class", "").split()
-        directories = [item for item in page.elements if item["tag"] == "nav" and item["attrs"].get("aria-label") == "Browse packages by architecture"]
-        self.assertEqual(len(directories), 1)
-        directory = directories[0]
-        self.assertTrue(has_class(directory, "discovery-directory"))
-        heading = page.elements_by_id[directory["attrs"]["aria-labelledby"]]
-        self.assertEqual(heading["tag"], "h3")
-        self.assertEqual("".join(heading["text"]), "Browse by architecture")
-        self.assertTrue(within(heading, directory))
-        actions = [item for item in page.elements if within(item, directory) and item["tag"] == "a"]
-        view_all = [item for item in actions if item["attrs"].get("aria-label") == "View all architectures"]
-        self.assertEqual([item["attrs"]["href"] for item in view_all], ["browse/architectures/"])
-        expected = {"aarch64": ("ARM64", 2), "x86_64": ("x86-64", 3), "riscv64": ("RISC-V64", 1)}
-        rows = [item for item in actions if has_class(item, "discovery-directory-link")]
-        self.assertEqual(len(rows), len(expected))
-        for row in rows:
-            key = row["attrs"]["href"].split("/")[-2]
-            label, count = expected[key]
-            descendants = [item for item in page.elements if within(item, row)]
-            self.assertEqual(["".join(item["text"]) for item in descendants if item["tag"] == "code"], [key])
-            self.assertIn(label, "".join(row["accessible_text"]))
-            self.assertIn(str(count) + (" package" if count == 1 else " packages"), "".join(row["accessible_text"]))
-            self.assertEqual(sum(has_class(item, "discovery-directory-arrow") and item["attrs"].get("aria-hidden") == "true" for item in descendants), 1)
+        page = Page(html)
+        self.assertIn("Architectures", "".join(page.text))
+        expected = {"aarch64", "x86_64", "riscv64"}
+        self.assertTrue(all(any("browse/architectures/" + key + "/" in href for href in page.links) for key in expected))
+        for key in expected:
+            detail = registry_explore.explore_page(self.stage, self.index, self.snapshot, None, None, "architectures/" + key)
+            self.assertIn("stubbi/", detail)
+            self.assertIn(key, detail)
         self.assertEqual(len(page.ids), len(set(page.ids)))
 
     def write_categories(self, value):

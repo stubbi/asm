@@ -71,10 +71,12 @@ function browser({ hero = false, observer = true, action = "../index.html", form
 test("header search uses the existing private fragment format and preserves Unicode and spaces", () => {
   const { searchDestination } = navigation();
   assert.equal(searchDestination("../index.html", " asm & あ 🛠 ", "https://asm.build/stats/"),
-    "https://asm.build/index.html#search?q=+asm+%26+%E3%81%82+%F0%9F%9B%A0+&all=1");
+    "https://asm.build/#search?q=+asm+%26+%E3%81%82+%F0%9F%9B%A0+&all=1");
   assert.equal(searchDestination("/", "", "https://asm.build/blog/articles/entry/"), "https://asm.build/#search?all=1");
   assert.equal(searchDestination("../../index.html", "hello", "https://example.org/project/blog/articles/"),
-    "https://example.org/project/index.html#search?q=hello&all=1");
+    "https://example.org/project/#search?q=hello&all=1");
+  assert.equal(searchDestination("/index.html", "hello", "https://asm.build/stats"),
+    "https://asm.build/#search?q=hello&all=1");
   const maximum = searchDestination("index.html", "あ".repeat(512), "http://127.0.0.1:8765/");
   assert.equal(new URLSearchParams(new URL(maximum).hash.slice(8)).get("q"), "あ".repeat(512));
   assert.equal(new URL(maximum).search, "");
@@ -99,10 +101,10 @@ test("native submission is installed before the enhanced form replaces its fallb
   assert.ok(page.events.indexOf("submit listener") < page.events.indexOf("form shown"));
   page.input.value = "hello & math";
   page.submit();
-  assert.deepEqual(page.assignments, ["https://asm.build/index.html#search?q=hello+%26+math&all=1"]);
+  assert.deepEqual(page.assignments, ["https://asm.build/#search?q=hello+%26+math&all=1"]);
   page.input.value = "";
   page.submit();
-  assert.equal(page.assignments[1], "https://asm.build/index.html#search?all=1");
+  assert.equal(page.assignments[1], "https://asm.build/#search?all=1");
 });
 
 test("invalid search input retains its value and recovers through native validity feedback", () => {

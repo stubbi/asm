@@ -26,6 +26,7 @@ import registry_stats
 import release_blog
 import site_docs
 import repository_stars
+import site_routes
 from release import materialize, output_path, publish_directory, resolve_commit
 
 
@@ -303,7 +304,6 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         stage = Path(temporary) / "site"
         materialize(registry.collect_files(repo / "site"), stage)
         package_pages.write_catalog_stats(stage, index)
-        package_pages.write_architecture_browse(stage, index)
         (stage / "skills").mkdir(exist_ok=True)
         materialize(registry.collect_files(repo / "skills/asm-build"), stage / "skills/asm-build")
         # Source references use a recorded commit, never an uncommitted file.
@@ -367,6 +367,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
             content = registry.read_regular(stage, relative, MAX_HTML_BYTES).decode("utf-8")
             # Cached HTML must not keep an expired numeric observation visible.
             registry.write_atomic(page, repository_stars.render_header(content, repository_stars.unknown_snapshot()).encode("utf-8"))
+        site_routes.PageRoutes.from_directory(stage).export(stage)
         publish_directory(stage, output)
     return build
 

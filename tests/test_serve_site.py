@@ -18,6 +18,7 @@ import time
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from urllib.parse import urljoin
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -102,10 +103,116 @@ class LocalSiteTests(unittest.TestCase):
         page = SiteParser()
         page.feed(body.decode("utf-8"))
         scripts = [element for element in page.elements if element["tag"] == "script"]
-        prefix = "../" * len([part for part in route.split("/") if part])
-        self.assertEqual([element["attrs"] for element in scripts],
-                         [{"src": prefix + "navigation.js"}, {"src": prefix + "repository-stars.js", "defer": None}])
+        attributes = [dict(element["attrs"]) for element in scripts]
+        for attrs in attributes:
+            if "src" in attrs:
+                attrs["src"] = urljoin("https://asm.build" + route, attrs["src"])
+        self.assertEqual(attributes, [{"src": "https://asm.build/navigation.js"},
+                                     {"src": "https://asm.build/repository-stars.js", "defer": None}])
         self.assertTrue(all(not "".join(element["text"]).strip() for element in scripts))
+
+    def test_clean_pages_resolve_before_directory_redirects_and_preserve_legacy_urls(self):
+        originals = {}
+        for filename, canonical in (("guide.html", "/guide"), ("docs/index.html", "/docs"),
+                                    ("packages/index.html", "/packages"),
+                                    ("packages/stubbi/math/index.html", "/packages/stubbi/math"),
+                                    ("packages/stubbi/math/0.1.0/index.html", "/packages/stubbi/math/0.1.0")):
+            page = self.site / filename
+            page.parent.mkdir(parents=True, exist_ok=True)
+            legacy = "/" + filename.removesuffix("index.html") if filename.endswith("/index.html") else "/" + filename
+            page.write_text('<!doctype html><head><link rel="canonical" href="https://asm.build' + legacy +
+                            '"></head><main><h1>' + canonical + '</h1><a href="/extra.txt">Public text</a></main>')
+            originals[page] = page.read_bytes()
+        source = self.site / "reference/asm.s"
+        source.parent.mkdir()
+        source.write_bytes(b'.ascii "guide.html packages/stubbi/math/"\n')
+        self.start_server(self.index, self.service)
+        for canonical, legacy in (("/guide", "/guide.html"), ("/docs", "/docs/"), ("/packages", "/packages/"),
+                                  ("/packages/stubbi/math", "/packages/stubbi/math/"),
+                                  ("/packages/stubbi/math/0.1.0", "/packages/stubbi/math/0.1.0/")):
+            for route in (canonical, canonical + "?q=private-search", legacy):
+                with self.subTest(route=route):
+                    status, headers, body = self.request(route)
+                    self.assertEqual(status, 200)
+                    self.assertNotIn("Location", headers)
+                    self.assertEqual(headers.get("Content-Type", headers.get("Content-type")), "text/html; charset=utf-8")
+                    page = SiteParser()
+                    page.feed(body.decode())
+                    self.assertEqual(page.canonicals, ["https://asm.build" + canonical])
+                    self.assertIn((canonical + "</h1>").encode(), body)
+                    head_status, head_headers, head_body = self.request(route, method="HEAD")
+                    self.assertEqual(head_status, 200)
+                    self.assertEqual(head_body, b"")
+                    self.assertEqual(head_headers["Content-Length"], str(len(body)))
+        for page, original in originals.items():
+            self.assertEqual(page.read_bytes(), original)
+        self.assertEqual(self.request("/extra.txt")[2], b"A staged public file.")
+        self.assertEqual(self.request("/reference/asm.s")[2], source.read_bytes())
+        self.assertEqual(self.request("/missing-clean-page")[0], 404)
+
+    def test_clean_dynamic_pages_keep_live_data_and_resolvable_canonical_links(self):
+        routes = ("/explore", "/stats", "/discovery", "/browse/popular", "/browse/new", "/browse/updated",
+                  "/browse/categories", "/browse/keywords", "/browse/architectures", "/browse/architectures/x86_64")
+        for route in routes + ("/packages/stubbi/math",):
+            directory = self.site / route.lstrip("/")
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "index.html").write_text('<link rel="canonical" href="https://asm.build' + route + '/"><h1>Old staged page</h1>')
+        self.record_deliveries(2)
+        self.service.refresh()
+        self.start_server(self.index, self.service)
+        for route in routes:
+            with self.subTest(route=route):
+                status, headers, body = self.request(route)
+                self.assertEqual(status, 200)
+                self.assertNotIn("Location", headers)
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertNotIn(b"Old staged page", body)
+                page = SiteParser()
+                page.feed(body.decode())
+                self.assertEqual(page.canonicals, ["https://asm.build" + route])
+                scripts = [element["attrs"]["src"] for element in page.elements if element["tag"] == "script"]
+                expected_scripts = ["/navigation.js", "/repository-stars.js"]
+                if route in {"/discovery", "/browse/popular", "/browse/new", "/browse/updated"}:
+                    expected_scripts.extend(["/app.js", "/package-page.js"])
+                self.assertEqual(scripts, expected_scripts)
+                if route == "/browse/popular":
+                    links = [element["attrs"].get("href") for element in page.elements if element["tag"] == "a"]
+                    self.assertIn("https://asm.build/packages/stubbi/math", [urljoin(page.canonicals[0], link) for link in links])
+                    self.assertIn("2 downloads", accessible_text(body))
+                head_status, head_headers, head_body = self.request(route, method="HEAD")
+                self.assertEqual(head_status, 200)
+                self.assertEqual(head_body, b"")
+                self.assertEqual(head_headers["Content-Length"], str(len(body)))
+        self.assertEqual(json.loads(self.request("/registry/v1/downloads.json")[2])["packages"]["stubbi/math"]["total"], 2)
+
+    def test_clean_exact_version_pins_live_counts_and_activity_and_confines_alias_reads(self):
+        self.record_deliveries(2)
+        self.service.refresh()
+        directory = self.site / "packages/stubbi/math/0.1.0"
+        directory.mkdir(parents=True)
+        page = directory / "index.html"
+        markup = ('<link rel="canonical" href="https://asm.build/packages/stubbi/math/0.1.0/">'
+                  '<p class="package-note" data-downloads-name="stubbi/math" data-downloads-version="0.1.0">Old total</p>'
+                  '<!-- package-activity:start stubbi/math 0.1.0 -->Old graph<!-- package-activity:end -->')
+        page.write_text(markup)
+        self.start_server(self.index, self.service)
+        with patch.object(self.service.store, "snapshot", side_effect=AssertionError("HTTP must use the cached cutoff.")):
+            for route in ("/packages/stubbi/math/0.1.0", "/packages/stubbi/math/0.1.0/", "/packages/stubbi/%6dath/0.1.0"):
+                status, headers, body = self.request(route)
+                self.assertEqual(status, 200)
+                self.assertNotIn("Location", headers)
+                self.assertIn("Asm downloads: ≥ 2", accessible_text(body))
+                self.assertIn("≥ 2 downloads", accessible_text(body))
+                self.assertIn(b'"/registry/v1/activity/stubbi/math/0.1.0.json"', body)
+                self.assertNotIn(b"Old graph", body)
+        self.assertEqual(page.read_text(), markup)
+        page.write_bytes(b"x" * (4 * 1024 * 1024 + 1))
+        self.assertEqual(self.request("/packages/stubbi/math/0.1.0")[0], 503)
+        page.unlink()
+        page.symlink_to(self.root / "secret.txt")
+        status, _, body = self.request("/packages/stubbi/math/0.1.0")
+        self.assertIn(status, (400, 403, 404, 503))
+        self.assertNotIn(b"Outside the public site.", body)
 
     def test_json_aliases_use_one_cached_refresh_and_do_not_mutate_public_files(self):
         original = (self.site / "index.html").read_bytes()
@@ -247,7 +354,11 @@ class LocalSiteTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertIn('≥ 2 downloads', accessible_text(body))
         self.assertIn(b'stubbi/math@0.1.0', body)
-        self.assertIn(b'../../../../registry/v1/activity/stubbi/math/0.1.0.json', body)
+        parsed = SiteParser()
+        parsed.feed(body.decode())
+        links = [element["attrs"].get("href") for element in parsed.elements if element["tag"] == "a"]
+        self.assertIn("https://asm.build/registry/v1/activity/stubbi/math/0.1.0.json",
+                      [urljoin("https://asm.build/packages/stubbi/math/0.1.0/", link) for link in links])
         self.assertIn(b'Daily counts and coverage', body)
         self.assertNotIn(b'Stale graph', body)
         self.assertNotIn(b'<script', body)
@@ -437,6 +548,21 @@ class LocalSiteTests(unittest.TestCase):
         status, _, body = self.request("/nested/missing/")
         self.assertEqual(status, 404)
         self.assertIn(b"Missing fixture", body)
+
+    def test_second_decode_invalid_paths_return_400_without_tracebacks_or_query_logs(self):
+        output = io.StringIO()
+        with redirect_stderr(output):
+            for path in ("/%252e%252e/secret.txt?q=private-route-search", "/%252e/extra.txt"):
+                for method in ("GET", "HEAD"):
+                    with self.subTest(path=path, method=method):
+                        status, headers, body = self.request(path, method=method)
+                        self.assertEqual(status, 400)
+                        self.assertLess(int(headers["Content-Length"]), 1024)
+                        self.assertNotIn(b"Outside the public site.", body)
+                        self.assertNotIn(b"private-route-search", body)
+                        if method == "HEAD":
+                            self.assertEqual(body, b"")
+        self.assertEqual(output.getvalue(), "")
 
     def test_requests_do_not_log_raw_queries_and_head_does_not_send_json(self):
         output = io.StringIO()
