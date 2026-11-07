@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: intel-macos-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   intel-macos:
     name: Check the native Intel macOS CLI
@@ -22,14 +25,28 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install llvm lld
       - name: Check exact-source snapshot binding
-        run: python3 -m unittest discover -s tests/registry -p test_intel_qualification_source.py -v
+        run: |
+          set -euo pipefail
+          mkdir -p native-intel-checks
+          python3 -m unittest discover -s tests/registry -p test_intel_qualification_source.py -v \
+            2>&1 | tee native-intel-checks/source-tests.log
       - name: Build twice and test exact native Intel bytes
         run: python3 tools/qualify_macos_x86_64.py --commit "$GITHUB_SHA" --output native-intel
-      - name: Retain the artifact, actual results, and failures
+      - name: Retain qualification results and failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
+          name: native-intel-evidence-${{ github.sha }}
+          path: |
+            native-intel-checks/*.log
+            native-intel/*.log
+            native-intel/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the qualified executable
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
           name: native-intel-${{ github.sha }}
-          path: native-intel/*
+          path: native-intel/asm-*
           if-no-files-found: error
           retention-days: 7

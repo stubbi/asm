@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: server-images-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   qualify:
@@ -30,7 +30,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the qualification harness
-        run: python3 tools/test_server_image.py --self-test
+        run: |
+          set -euo pipefail
+          mkdir -p server-image-evidence
+          python3 tools/test_server_image.py --self-test 2>&1 | tee server-image-evidence/harness-tests.log
       - name: Install the pinned Ubuntu RISC-V user emulator
         if: matrix.arch == 'riscv64'
         shell: bash
@@ -111,10 +114,38 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
+          name: server-image-evidence-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            server-image-evidence/*.txt
+            server-image-evidence/*.log
+            server-image-evidence/*.json
+            server-image-evidence/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the qualified image for publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
           name: server-image-${{ matrix.arch }}-${{ github.sha }}
-          path: server-image-evidence/
+          path: |
+            server-image-evidence/runtime.tar
+            server-image-evidence/runtime.sha256
+            server-image-evidence/qualification.json
+            server-image-evidence/image.json
           if-no-files-found: error
           retention-days: 3
+
+  required:
+    name: Test assembly server images
+    needs: qualify
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require every server image target
+        env:
+          QUALIFY_RESULT: ${{ needs.qualify.result }}
+        run: test "$QUALIFY_RESULT" = success
 
   publish:
     needs: qualify
@@ -177,7 +208,7 @@ jobs:
             registry-digest.txt
             qualification.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   publish-index:
     needs: publish
@@ -224,4 +255,4 @@ jobs:
             index-report.json
             index-digest.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

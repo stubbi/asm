@@ -139,6 +139,25 @@ def native_test_result(output: bytes, suite: str = "tests/macos") -> dict:
             "output_sha256": hashlib.sha256(output).hexdigest()}
 
 
+def qualify_native_tests(snapshot: Path, env: dict[str, str], target: str, binary: bytes) -> dict:
+    """Test the final clean executable and reject any mutation by the suite."""
+    output = command(["make", "test"], snapshot, env, 300, include_stderr=True)
+    tests = native_test_result(output, "tests/macos" if target == "aarch64-macos" else "tests")
+    registry.require(binary == read_binary(snapshot / "build/asm", target),
+                     "native tests changed the qualified executable")
+    return tests
+
+
+def require_native_tests(tests: dict, suite: str) -> None:
+    registry.require(isinstance(tests, dict) and tests.get("status") == "pass" and
+                     tests.get("command") == ["make", "test"] and tests.get("suite") == suite and
+                     type(tests.get("tests_run")) is int and tests["tests_run"] > 0 and
+                     type(tests.get("skipped")) is int and tests["skipped"] == 0 and
+                     type(tests.get("exit_code")) is int and tests["exit_code"] == 0 and
+                     isinstance(tests.get("output_sha256"), str) and registry.HEX64.fullmatch(tests["output_sha256"]),
+                     "native test evidence is missing, skipped, or failed")
+
+
 def cli_build_targets(commands: dict, host: str) -> list[str]:
     """Check a snapshot against its recorded build contract without weakening either form."""
     mode = commands.get("build_mode")
@@ -191,10 +210,7 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
         binary = read_binary(first / "build/asm", target)
         registry.require(binary == read_binary(second / "build/asm", target),
                          "the two clean native CLI builds do not match")
-        test_output = command(["make", "test"], first, env, 300, include_stderr=True)
-        tests = native_test_result(test_output, "tests/macos" if macos else "tests")
-        registry.require(binary == read_binary(first / "build/asm", target),
-                         "native tests changed the qualified executable")
+        tests = qualify_native_tests(first, env, target, binary)
         actual = command([str(first / "build/asm"), "version"], first, env, 15)
         registry.require(actual == f"asm {version} ({target})\n".encode("ascii"),
                          "the native CLI reports an unexpected version or host")
@@ -269,13 +285,7 @@ def read_native_release(directory: Path, commit: str, version: str, target: str 
                      "result": {"host": target, "targets": build_targets}, "exit_code": 0} and
                      type(evidence["targets_check"]["exit_code"]) is int, "native target evidence did not pass")
     tests = evidence.get("tests")
-    registry.require(isinstance(tests, dict) and tests.get("status") == "pass" and
-                     tests.get("command") == ["make", "test"] and tests.get("suite") == ("tests/macos" if macos else "tests") and
-                     type(tests.get("tests_run")) is int and tests["tests_run"] > 0 and
-                     type(tests.get("skipped")) is int and tests["skipped"] == 0 and
-                     type(tests.get("exit_code")) is int and tests["exit_code"] == 0 and
-                     isinstance(tests.get("output_sha256"), str) and registry.HEX64.fullmatch(tests["output_sha256"]),
-                     "native test evidence is missing, skipped, or failed")
+    require_native_tests(tests, "tests/macos" if macos else "tests")
     host = evidence.get("platform")
     if macos:
         registry.require(isinstance(host, dict) and host.get("system") == "Darwin" and host.get("machine") == "arm64" and
@@ -414,7 +424,7 @@ def require_mit_example(files: dict[str, tuple[bytes, int]], name: str) -> None:
 def build_release(repo: Path, output: Path, reference: str = "HEAD", version: str | None = None,
                   repository: str = "https://github.com/stubbi/asm",
                   hello_targets: list[str] | None = None, native_input: Path | None = None, trusted: bool = False,
-                  native_inputs: dict[str, Path] | None = None) -> dict:
+                  native_inputs: dict[str, Path] | None = None, qualify_x86: bool = False) -> dict:
     registry.repository_url(repository)
     output = output_path(output)
     commit = resolve_commit(repo, reference)
@@ -430,6 +440,9 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     registry.require(version == source_version, "release version differs from the source CLI version")
     registry.require(platform.system() == "Linux" and platform.machine().lower() in {"x86_64", "amd64"},
                      "the release builder currently requires Linux x86_64")
+    if qualify_x86:
+        registry.require(os.getuid() == 0 and os.geteuid() == 0,
+                         "native x86 qualification requires root for the full cross-UID test suite")
     targets = sorted(set(hello_targets or ["x86_64-linux"]))
     registry.require(all(target in HELLO_TARGETS for target in targets), "unsupported hello target")
     cli_hosts = commands.get("hosts", ["x86_64-linux"])
@@ -466,6 +479,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         tools["python"] = platform.python_version()
         cli = build_cli(first, env)
         registry.require(cli == build_cli(second, env), "the two clean CLI builds do not match")
+        x86_tests = qualify_native_tests(first, env, "x86_64-linux", cli) if qualify_x86 else None
         # Older fixture/release sources expose only version; retain their format.
         cli_version_output = command([str(first / "build/asm"), "version"], first, env, 15)
         registry.require(cli_version_output == f"asm {version} (x86_64-linux)\n".encode("ascii"),
@@ -496,6 +510,9 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         builds = {"asm": {"target": "x86_64-linux", "command": ["make", "build/asm", "ARCH=x86_64", "AS=as", "LD=ld"],
                            "reproducibility": "Two clean builds produced identical bytes.",
                            "version_check": {"status": "pass", "stdout": cli_version_output.decode("ascii"), "exit_code": 0}}, "hello": {}}
+        if x86_tests is not None:
+            builds["asm"].update(tests=x86_tests, asset={"file": f"asm-{version}-x86_64-linux",
+                "bytes": len(cli), "sha256": hashlib.sha256(cli).hexdigest()})
         for target in targets:
             source_path, assembler, linker, _, emulator_name = HELLO_TARGETS[target]
             emulator = target_runner(emulator_name, env)
@@ -616,6 +633,89 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     return release
 
 
+def validate_release(directory: Path, commit: str, version: str, manifest_sha256: str, *,
+                     trusted: bool = False, repository: str = "https://github.com/stubbi/asm",
+                     cli_hosts: list[str] | None = None, trust_root_sha256: str | None = None) -> dict:
+    """Check same-run handoff bytes before signing; never execute artifact input."""
+    registry.require(directory.is_dir() and not directory.is_symlink(), "release input must be a regular directory")
+    registry.require(isinstance(manifest_sha256, str) and registry.HEX64.fullmatch(manifest_sha256),
+                     "expected release manifest digest is invalid")
+    def read(name: str, maximum: int) -> bytes:
+        path = directory / name
+        registry.require(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= maximum,
+                         f"release file is missing, linked, or too large: {name}")
+        return path.read_bytes()
+    metadata = read("release.json", 1 << 20)
+    registry.require(hashlib.sha256(metadata).hexdigest() == manifest_sha256, "release manifest digest differs")
+    result = registry.strict_json(metadata)
+    registry.require(isinstance(result, dict) and type(result.get("schema")) is int and result["schema"] == 1 and
+                     result.get("project") == "asm" and result.get("repository") == repository and
+                     result.get("source_commit") == commit and result.get("version") == version and
+                     result.get("tag") == "v" + version, "release identity differs from the workflow")
+    distribution = result.get("distribution")
+    registry.require((isinstance(distribution, dict) and distribution.get("profile") == "asm-tuf-v1") if trusted
+                     else distribution is None, "release distribution profile differs from the workflow")
+    hosts = result.get("cli_hosts")
+    registry.require(isinstance(hosts, list) and "x86_64-linux" in hosts and
+                     all(isinstance(host, str) and host in {"x86_64-linux", *NATIVE_CLI_TARGETS} for host in hosts) and
+                     len(hosts) == len(set(hosts)) and (cli_hosts is None or hosts == cli_hosts),
+                     "release CLI hosts differ from the source contract")
+    assets = result.get("assets")
+    registry.require(isinstance(assets, list) and 0 < len(assets) <= 64, "release asset list is invalid")
+    checksums = {"release.json": manifest_sha256}
+    by_name = {}
+    for asset in assets:
+        registry.require(isinstance(asset, dict) and set(asset) == {"file", "bytes", "sha256"}, "release asset is invalid")
+        name = asset["file"]
+        registry.require(isinstance(name, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", name) and
+                         name not in checksums and name != "SHA256SUMS", "release asset name is invalid or duplicate")
+        registry.require(type(asset["bytes"]) is int and 0 < asset["bytes"] <= registry.MAX_ARTIFACT_BYTES and
+                         isinstance(asset["sha256"], str) and registry.HEX64.fullmatch(asset["sha256"]),
+                         "release asset bounds or digest are invalid")
+        data = read(name, registry.MAX_ARTIFACT_BYTES)
+        registry.require(len(data) == asset["bytes"] and hashlib.sha256(data).hexdigest() == asset["sha256"],
+                         f"release asset bytes differ: {name}")
+        checksums[name] = asset["sha256"]
+        by_name[name] = asset
+    expected = "".join(f"{digest}  {name}\n" for name, digest in sorted(checksums.items())).encode("ascii")
+    registry.require(read("SHA256SUMS", 1 << 20) == expected, "release checksums differ")
+    registry.require({path.name for path in directory.iterdir()} == set(checksums) | {"SHA256SUMS"},
+                     "release input contains unexpected files")
+    builds = result.get("builds")
+    registry.require(isinstance(builds, dict), "release has no native qualification")
+    target_builds = builds.get("asm_targets")
+    for host in hosts:
+        receipt = builds.get("asm") if host == "x86_64-linux" else (
+            target_builds.get(host) if isinstance(target_builds, dict) else None)
+        registry.require(isinstance(receipt, dict), f"release has no native qualification for {host}")
+        require_native_tests(receipt.get("tests"), "tests/macos" if host == "aarch64-macos" else "tests")
+        name = f"asm-{version}-{host}"
+        registry.require(name in by_name and receipt.get("asset") == by_name[name],
+                         f"native qualification covers different bytes for {host}")
+    if trusted:
+        root = distribution.get("root_sha256")
+        registry.require(isinstance(root, str) and registry.HEX64.fullmatch(root) and
+                         (trust_root_sha256 is None or root == trust_root_sha256), "release trust root differs")
+        verifiers = distribution.get("verifiers")
+        registry.require(isinstance(verifiers, list) and len(verifiers) == len(hosts), "release verifier list differs")
+        selected = set()
+        for verifier in verifiers:
+            registry.require(isinstance(verifier, dict) and set(verifier) == {"target", "url", "bytes", "sha256"},
+                             "release verifier entry is invalid")
+            host = verifier["target"]
+            registry.require(isinstance(host, str) and host in hosts and host not in selected, "release verifier target differs")
+            selected.add(host)
+            name = f"asm-verify-{version}-{host}"
+            registry.require(verifier["url"] == f"{repository}/releases/download/v{version}/{name}" and
+                             by_name.get(name) == {"file": name, "bytes": verifier["bytes"], "sha256": verifier["sha256"]} and
+                             name + ".LICENSES.txt" in by_name, "release verifier bytes or notices differ")
+        registry.require("install.sh" in by_name, "trusted release installer is missing")
+    else:
+        registry.require(not any(name.startswith("asm-verify-") or name == "install.sh" for name in by_name),
+                         "external-verifier release includes trusted-profile assets")
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path("."))
@@ -629,8 +729,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--native-input-for", nargs=2, action="append", default=[], metavar=("TARGET", "DIRECTORY"),
                         help="repeat for exact-commit native Linux ARM64 and macOS qualification input")
     parser.add_argument("--trusted-distribution", action="store_true", help="require the provisioned root and bundle the verifier")
+    parser.add_argument("--qualify-x86", action="store_true", help="run every native test on the final clean x86 executable; requires root")
+    parser.add_argument("--validate-release", type=Path, help="validate a same-run handoff without building or executing artifacts")
+    parser.add_argument("--manifest-sha256", help="expected handoff release.json digest from the read-only build job")
     args = parser.parse_args(argv)
     try:
+        if args.validate_release is not None:
+            commit = resolve_commit(args.repo, args.commit)
+            source = registry.git_files(args.repo, commit, ".", ["cli/commands.json", "verifier/trust/asm-root.json"])
+            commands = registry.strict_json(source["cli/commands.json"][0])
+            validate_release(args.validate_release, commit, commands["version"], args.manifest_sha256,
+                             trusted=args.trusted_distribution, repository=args.repository,
+                             cli_hosts=commands.get("hosts", ["x86_64-linux"]),
+                             trust_root_sha256=hashlib.sha256(source["verifier/trust/asm-root.json"][0]).hexdigest()
+                             if args.trusted_distribution else None)
+            print("Validated the same-run release bytes and native x86 qualification. No artifact was executed.")
+            return 0
         if args.native_target:
             registry.require(args.native_input is None and not args.native_input_for and args.version is None and args.hello_target is None,
                              "native qualification cannot override the source version or consume another build")
@@ -644,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
             registry.require(target not in inputs, f"duplicate native input for {target}")
             inputs[target] = Path(directory)
         release = build_release(args.repo, args.output, args.commit, args.version, args.repository,
-                                args.hello_target, args.native_input, args.trusted_distribution, inputs)
+                                args.hello_target, args.native_input, args.trusted_distribution, inputs, args.qualify_x86)
         print(f"Built Asm {release['version']} from {release['source_commit']}.")
         print(f"Wrote {len(release['assets'])} artifacts, checksums, release metadata, and proposed registry records to {args.output}.")
         print("No files were uploaded. Review the records before publication.")

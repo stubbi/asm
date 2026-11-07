@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: operator-image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   qualify:
@@ -84,10 +84,39 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
+          name: operator-image-evidence-amd64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/asm-operator-image-evidence/*.txt
+            ${{ runner.temp }}/asm-operator-image-evidence/*.log
+            ${{ runner.temp }}/asm-operator-image-evidence/*.json
+            ${{ runner.temp }}/asm-operator-image-evidence/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the qualified image and source transfer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
           name: operator-image-amd64-${{ github.sha }}
-          path: ${{ runner.temp }}/asm-operator-image-evidence/
+          path: |
+            ${{ runner.temp }}/asm-operator-image-evidence/runtime.tar
+            ${{ runner.temp }}/asm-operator-image-evidence/runtime.sha256
+            ${{ runner.temp }}/asm-operator-image-evidence/qualification.json
+            ${{ runner.temp }}/asm-operator-image-evidence/image.json
+            ${{ runner.temp }}/asm-operator-image-evidence/source.bundle
           if-no-files-found: error
           retention-days: 3
+
+  required:
+    name: Test registry operator image
+    needs: qualify
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require native operator qualification
+        env:
+          QUALIFY_RESULT: ${{ needs.qualify.result }}
+        run: test "$QUALIFY_RESULT" = success
 
   publish:
     needs: qualify
@@ -150,4 +179,4 @@ jobs:
             image.json
             loaded-image.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

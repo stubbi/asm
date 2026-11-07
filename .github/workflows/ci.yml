@@ -53,8 +53,20 @@ jobs:
         with:
           name: native-arm64-${{ github.sha }}
           path: native-arm64-input
-      - name: Build release files
-        run: python3 tools/release.py --output dist --native-input native-input --native-input-for aarch64-linux native-arm64-input
+      - name: Build and qualify the final x86 release bytes
+        run: |
+          set -euo pipefail
+          ASM_RELEASE_ROOT=$(sudo mktemp -d /tmp/asm-release-x86.XXXXXXXX)
+          test -d "$GITHUB_WORKSPACE/.git"
+          test ! -L "$GITHUB_WORKSPACE/.git"
+          sudo mkdir "$ASM_RELEASE_ROOT/repo"
+          sudo cp -R "$GITHUB_WORKSPACE/.git" "$ASM_RELEASE_ROOT/repo/.git"
+          sudo env -i PATH="$PATH" HOME=/root LANG=C.UTF-8 \
+            python3 tools/release.py --repo "$ASM_RELEASE_ROOT/repo" --commit "$GITHUB_SHA" \
+            --output "$ASM_RELEASE_ROOT/dist" --qualify-x86 \
+            --native-input "$GITHUB_WORKSPACE/native-input" \
+            --native-input-for aarch64-linux "$GITHUB_WORKSPACE/native-arm64-input"
+          sudo rm -rf -- "$ASM_RELEASE_ROOT/repo"
 
   arm64:
     name: Check the native ARM64 CLI
