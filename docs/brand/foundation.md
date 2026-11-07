@@ -114,7 +114,7 @@ They do not require adding slogans to commands, errors, or technical specificati
 
 ## What is true today
 
-The [README status section](../../README.md#status) describes the current alpha and supported hosts.
+The [README status section](../../README.md#status) describes the current release and supported hosts.
 The [security model](../specs/security.md) defines implemented checks, trust boundaries, and missing capabilities.
 The [roadmap](../roadmap.md) describes work that remains.
 Use those sources for current capability claims rather than maintaining a second feature table here.
