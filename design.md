@@ -436,6 +436,8 @@ The statistics are registered packages, retained releases, release-file selectio
 Derive them from the complete accepted catalog, independently of typed results or download reporting.
 Published HTML supplies the values without JavaScript; accepted catalog refreshes update them.
 Do not substitute physical digest-object totals for declared file selections or package targets for CLI host support.
+At widths of 38.75 rem or less, show these four statistics in two equal columns and two rows.
+Keep their order, left alignment, and shared row and column gaps; let labels wrap within each cell.
 
 [PyPI's hero stylesheet](https://github.com/pypi/warehouse/blob/a7d67c06417ffeb18d6cb79b8c5caf9c69896b99/warehouse/static/sass/blocks/_homepage-banner.scss) and [statistics band](https://github.com/pypi/warehouse/blob/a7d67c06417ffeb18d6cb79b8c5caf9c69896b99/warehouse/static/sass/blocks/_statistics-bar.scss) inform the full-width composition.
 [Crates.io's actions](https://github.com/rust-lang/crates.io/blob/35c0e8733f7be0dd031f670e3c139500e79a9e01/svelte/src/lib/components/frontpage/HeroButtons.svelte) and [discovery layout](https://github.com/rust-lang/crates.io/blob/35c0e8733f7be0dd031f670e3c139500e79a9e01/svelte/src/lib/components/frontpage/CrateLists.svelte) inform the useful middle.

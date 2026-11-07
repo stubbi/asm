@@ -490,7 +490,7 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
   .search-hero { padding-block: var(--space-6) var(--space-8); }
   .search-hero h1 { font-size: 2rem; }
   .registry-description { max-width: 30rem; margin-inline: auto; }
-  .catalog-stats-inner { grid-template-columns: repeat(auto-fit,minmax(min(100%,8rem),1fr)); gap: var(--space-3) var(--space-4); }
+  .catalog-stats-inner { grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3) var(--space-4); }
   .catalog-stats-inner > div { justify-content: flex-start; }
   .discovery-heading { gap: var(--space-2); }
   .discovery-heading h2 { font-size: var(--text-title); }
