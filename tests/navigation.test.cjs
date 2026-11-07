@@ -526,6 +526,34 @@ test("an oversized expanded search returns to the hero and stays there until res
   assert.deepEqual(page.assignments, []);
 });
 
+test("resize immediately restores the docked field while an earlier transition is awaiting completion", async () => {
+  const page = browser({ hero: true, transitions: true });
+  const field = page.heroInput;
+  field.value = "resize あ";
+  field.focus();
+  field.setSelectionRange(1, 4, "backward");
+  page.scroll(220);
+  page.flushFrame();
+  const transition = page.transitionRuns[0];
+  try {
+    await transition.updateCallbackDone;
+    assert.equal(page.heroBox.parentNode, page.search);
+    // Its DOM update is complete, but the animation's finished promise is still pending.
+    page.listeners.resize({ type: "resize" });
+    assert.equal(page.heroBox.parentNode, page.search, "Resize must restore the current layout without waiting for animation completion.");
+    assert.equal(page.document.activeElement, field);
+    assert.equal(field.value, "resize あ");
+    assert.deepEqual([field.selectionStart, field.selectionEnd, field.selectionDirection], [1, 4, "backward"]);
+    assert.equal(field.form, page.heroForm);
+    assert.equal(page.heroForm.getAttribute("role"), "presentation");
+    assert.deepEqual(page.assignments, []);
+    assert.deepEqual(page.networkRequests, []);
+  } finally {
+    for (const pending of page.transitionRuns) pending.finish();
+    await Promise.resolve();
+  }
+});
+
 test("rapid directions skip an active optional transition and finish at the latest requested position", async () => {
   const page = browser({ hero: true, transitions: true });
   page.scroll(220);

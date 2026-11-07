@@ -137,7 +137,7 @@
       const threshold = docked ? lastHeaderHeight + 32 : restingHeight + 16;
       const next = window.scrollY > 0 && !shortScreen && !root.classList.contains("header-static") && slot.getBoundingClientRect().top <= threshold;
       if (motion) {
-        if (motion.target === next) return;
+        if (motion.target === next && (animate || next === docked)) return;
         const previous = motion;
         motion = null;
         previous.transition?.skipTransition();
