@@ -470,7 +470,7 @@ class SearchDiscoveryTests(unittest.TestCase):
             raise ValueError("Malformed optional upstream metadata")
         candidate = Path(self.temporary.name) / "failed-metrics-site"
         state = Path(self.temporary.name) / "failed-metrics.sqlite3"
-        build_site.build_site(ROOT, ROOT / "registry", candidate, downloads=True,
+        build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate, downloads=True,
                               discovery_state=state, publication_state=Path(self.temporary.name) / "publication-adapter.sqlite3",
                               metrics_fetcher=unavailable)
         snapshot = registry.strict_json((candidate / "registry/v1/discovery.json").read_bytes())
