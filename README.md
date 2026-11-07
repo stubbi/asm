@@ -2,7 +2,7 @@
 
 **A home for assembly.**
 
-Asm is a package registry and command-line tool for assembly projects.
+Asm is the package registry and command-line tool for assembly projects.
 Create and test projects, inspect packages, and download exact artifacts.
 
 [Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md) · [Sponsor Asm](https://asm.build/sponsors.html)
@@ -17,6 +17,7 @@ Asm 0.6.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 
 ### Install the command
 
 Install [GitHub CLI 2.93.0 or later](https://cli.github.com/) before running the installer.
+The installer uses it to check the CLI release's signed build provenance.
 
 | System | Required tools |
 | --- | --- |
@@ -57,11 +58,9 @@ On Debian or Ubuntu, the `binutils` package supplies the assembler and linker.
 Run these commands from the directory that will contain your new project:
 
 ```sh
-asm doctor &&
 asm new hello &&
 cd hello &&
-asm run &&
-asm test
+asm run
 ```
 
 The program prints:
@@ -74,6 +73,7 @@ The project contains `asm.toml`, `src/main.s`, and `tests/main.s`.
 Assembly source is text; `asm build` assembles and links it into the executable `build/app`.
 `asm run` also runs that executable.
 `asm test` builds and runs `tests/main.s`; a zero exit code passes the test.
+If a build fails, use `asm doctor` to check the required tools.
 
 ### Update Asm
 
@@ -89,28 +89,32 @@ For an installation managed by another package manager, use that manager to upda
 
 ### Describe a project
 
-`asm.toml` names the project, its source file, and its target:
+`asm.toml` names the project and declares its target implementations:
 
 ```toml
 [package]
 name = "hello"
 version = "0.1.0"
 
-[build]
-source = "src/main.s"
-target = "x86_64-linux"
+[target.x86_64-linux]
+source = "targets/x86_64-linux/src/main.s"
+test = "targets/x86_64-linux/tests/main.s"
+
+[target.aarch64-macos]
+source = "targets/aarch64-macos/src/main.s"
+test = "targets/aarch64-macos/tests/main.s"
 ```
 
-`asm new` sets the target for your machine.
-Linux ARM64 uses `aarch64-linux`; Apple Silicon macOS uses `aarch64-macos`.
-
-Asm 0.6.0 also accepts one project with several `[target.<id>]` implementations.
 Each target has its own source, test, and optional native-library fields.
 The [hello](examples/hello/README.md) and [math](examples/math/README.md) projects keep these inputs under `targets/<id>/`.
-`asm build --target riscv64-linux` builds a separate Linux artifact.
+Asm selects the host target by default.
+For cross builds, install the tools listed in the [multi-target project contract](docs/multi-target-projects.md).
+From either reference project, `asm build --target riscv64-linux` builds a separate Linux artifact.
 `asm test --target riscv64-linux --no-run` builds its test without executing it.
 Target-specific dependency selections share one v2 lock.
-See the [multi-target project contract](docs/multi-target-projects.md) for tools, commands, and platform limits.
+
+`asm new` creates a single-target `[build]` manifest for your host.
+This form remains supported.
 
 ### Find a package
 
@@ -148,7 +152,9 @@ Commit `asm.lock` with your project.
 
 ### Install a program
 
-On Linux x86-64 or ARM64:
+Program management works on all three CLI hosts.
+A package must provide a matching executable.
+For `hello` 0.6.0, use Linux x86-64 or ARM64:
 
 ```sh
 asm install stubbi/hello@0.6.0
@@ -172,19 +178,18 @@ asm uninstall stubbi/hello
 Use `owner/name@version` to select an exact version.
 `update` and `remove` continue to manage project source dependencies.
 
-Published 0.4.0 binaries do not include these management commands.
 Updating Asm does not adopt earlier installations; programs without an inventory record remain unmanaged.
 See the [installed-program contract](docs/installed-programs.md) for file checks, recovery, and limits.
 
 ## Status
 
-Asm is an early alpha.
+The current published version is [Asm 0.6.0](https://github.com/stubbi/asm/releases/tag/v0.6.0).
 
 | Area | Available today |
 | --- | --- |
 | Native CLI | Linux x86-64, Linux ARM64, and Apple Silicon macOS 15+. |
 | Projects | Create, inspect, build, run, test, and clean; select native or standalone Linux implementations. |
-| Packages | Search, inspect versions, download source, install executables, list installations, upgrade, and uninstall. |
+| Packages | Search, inspect versions, download artifacts, install executables, list installations, upgrade, and uninstall. |
 | Dependencies | Exact direct source dependencies, with target-specific selections in a shared lock file. |
 | Registry | Package search, target filters, release records, and verification results. |
 | Publication | Local record preparation; hosted publication remains under qualification. |
