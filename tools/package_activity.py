@@ -145,7 +145,7 @@ def _render_activity(activity, metric_href, data_href, *, registry_scope=False) 
     The caller binds the payload to the selected package and exact version.
     This renderer performs no collection, network access, or script execution.
     """
-    links = [value for value in (_link("How counts work", metric_href), _link("Activity data (JSON)", data_href)) if value]
+    links = [value for value in (_link("Discovery data and coverage", metric_href), _link("Activity data (JSON)", data_href)) if value]
     body = '<section id="activity" class="package-section package-activity"><h2 class="package-activity-heading">Download activity</h2>'
     try:
         data = _validated(activity, registry_scope=registry_scope)

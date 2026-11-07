@@ -183,15 +183,16 @@ body > main { position: relative; z-index: 1; }
 .catalog-stats dd { order: -1; margin: 0; color: var(--ink); font: var(--text-title)/1.5 var(--mono); font-variant-numeric: tabular-nums; }
 
 /* Three real discovery routes, with compact selection cards. */
-.browse-all, .discovery-more { display: inline-flex; align-items: center; min-height: var(--control-height); border: 1px solid transparent; border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); background: transparent; color: var(--accent); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; }
-.browse-all:hover, .discovery-more:hover { background: var(--accent-soft); color: var(--accent-hover); }
+.browse-all { display: inline-flex; align-items: center; min-height: var(--control-height); border: 1px solid transparent; border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); background: transparent; color: var(--accent); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; }
+.browse-all:hover { background: var(--accent-soft); color: var(--accent-hover); }
 .discovery-groups { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: var(--space-6); }
 .discovery-group { min-width: 0; border: 1px solid var(--rule); border-radius: var(--radius-panel); background: var(--paper); container-type: inline-size; }
 .discovery-group-header { border-bottom: 1px solid var(--rule); border-radius: calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0; padding: var(--space-3) var(--space-4); background: var(--stats-surface); }
 .discovery-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
 .discovery-group :is(h2,h3) { margin: 0; font-size: var(--text-base); font-weight: 600; line-height: 1.5; }
 .discovery-group-caption { margin: 0; color: var(--muted); font-size: var(--text-xs); }
-.discovery-group .discovery-more { padding-inline: 0; font-size: var(--text-xs); }
+.discovery-heading-link { display: inline-flex; align-items: center; min-height: var(--control-height); border-radius: var(--radius-control); color: inherit; text-decoration: underline; text-underline-offset: .18em; }
+.discovery-heading-link:hover { color: var(--accent-hover); }
 .discovery-group .discovery-items { gap: var(--space-1); padding: var(--space-2); }
 .discovery-group .discovery-item { min-height: 0; border-color: transparent; border-radius: var(--radius-control); padding: var(--space-3); gap: var(--space-1) var(--space-3); }
 .discovery-group .discovery-item:hover { border-color: transparent; background: var(--surface); }

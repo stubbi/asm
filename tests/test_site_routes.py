@@ -48,6 +48,28 @@ class SiteRoutesTests(unittest.TestCase):
         self.module = importlib.import_module("site_routes")
         return self.module.PageRoutes.from_directory(self.stage)
 
+    def test_architecture_page_spelling_preserves_machine_ids_and_all_legacy_urls(self):
+        legacy = "browse/architectures/x86_64/index.html"
+        self.write(legacy, '<link rel="canonical" href="https://asm.build/browse/architectures/x86_64/">'
+                   '<a href="../../../index.html#search?architecture=x86_64&amp;all=1">Search</a>'
+                   '<a href="../../../registry/v1/x86_64.json">Record</a><code>x86_64</code>')
+        routes = self.routes(); routes.export(self.stage)
+        content = (self.stage / legacy).read_text()
+        self.assertIn('href="https://asm.build/browse/architectures/x86-64"', content)
+        self.assertIn('#search?architecture=x86_64&amp;all=1', content)
+        self.assertIn('registry/v1/x86_64.json', content)
+        self.assertIn('<code>x86_64</code>', content)
+        self.assertEqual((self.stage / 'browse/architectures/x86-64.html').read_text(), content)
+        self.assertEqual((self.stage / 'browse/architectures/x86_64.html').read_text(), content)
+        for spelling in ('x86_64', 'x86-64'):
+            for suffix in ('', '/', '.html', '/index.html'):
+                with self.subTest(spelling=spelling, suffix=suffix):
+                    self.assertEqual(routes.canonical_path('/browse/architectures/' + spelling + suffix),
+                                     '/browse/architectures/x86-64')
+                    self.assertEqual(routes.file_for('/browse/architectures/' + spelling + suffix), Path(legacy))
+        self.routes().export(self.stage)
+        self.assertEqual((self.stage / legacy).read_text(), content)
+
     def test_native_clean_pages_and_legacy_aliases_share_working_content(self):
         routes = self.routes()
         routes.export(self.stage)

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from xml.etree import ElementTree
 from urllib.parse import urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,14 @@ class Page(HTMLParser):
 
 
 class PackagePageTests(unittest.TestCase):
+    def test_repeated_readme_architecture_links_have_destination_specific_names(self):
+        module = importlib.import_module("package_pages")
+        source = self.records[0]["source"]
+        rendered = module._inline('[ARM64](examples/hello-aarch64) and [ARM64](cli/aarch64/asm.s)', source, "README.md")
+        self.assertIn('ARM64<span class="sr-only"> hello example</span>', rendered)
+        self.assertIn('ARM64<span class="sr-only"> CLI source</span>', rendered)
+        self.assertNotEqual(Page(rendered).links[0], Page(rendered).links[1])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -202,10 +211,126 @@ class PackagePageTests(unittest.TestCase):
             if version: self.assertIn("stubbi/math " + version, description)
             descriptions.append(description)
             title = next("".join(item["text"]) for item in page.elements if item["tag"] == "title")
-            self.assertEqual(title, "stubbi/math" + ("@" + version if version else "") + " | Asm")
+            self.assertEqual(title, "stubbi/math" + ("@" + version if version else "") + " assembly package | Asm")
             self.assertEqual([item["content"] for item in page.metadata if item.get("property") == "og:site_name"], ["Asm"])
         self.assertEqual(len(set(descriptions)), 3)
         self.assertEqual(self.records, original)
+
+    def test_technical_readme_metadata_identifies_only_the_available_exact_source_document(self):
+        self.generate()
+        old = self.schema(self.read("packages/stubbi/math/0.2.0"))
+        document = old["hasPart"]
+        self.assertEqual(document["@type"], "TechArticle")
+        self.assertEqual(document["url"], "https://asm.build/packages/stubbi/math/0.2.0#readme")
+        self.assertIn("stubbi/math@0.2.0", document["headline"])
+        self.assertEqual(document["isBasedOn"], "https://github.com/stubbi/asm/blob/" + self.old_commit + "/examples/math/README.md")
+        self.assertEqual(document["about"]["@id"], old["mainEntity"]["@id"])
+        for invented in ("author", "publisher", "datePublished", "dateModified", "aggregateRating", "offers"):
+            self.assertNotIn(invented, document)
+        self.records[0]["source"]["commit"] = "d" * 40
+        self.generate()
+        self.assertNotIn("hasPart", self.schema(self.read("packages/stubbi/math/0.2.0")))
+
+    def test_markdown_disclosures_render_only_balanced_attribute_free_blocks_outside_fences(self):
+        module = importlib.import_module("package_pages")
+        source = self.records[0]["source"]
+        text = ('# Installation\n\n<details>\n<summary>Set **PATH**</summary>\n\n'
+                'Keep this explanation.\n\n```sh\nexport PATH="$HOME/.local/bin:$PATH"\n```\n\n</details>\n\n'
+                '```html\n<details>\n<summary>Literal code</summary>\n</details>\n```\n')
+        rendered = module._markdown(text, source, "README.md")
+        tree = ElementTree.fromstring("<div>" + rendered + "</div>")
+        disclosures = tree.findall(".//details")
+        self.assertEqual(len(disclosures), 1)
+        self.assertEqual(disclosures[0][0].tag, "summary")
+        self.assertEqual("".join(disclosures[0][0].itertext()), "Set PATH")
+        self.assertIn('export PATH="$HOME/.local/bin:$PATH"', "".join(disclosures[0].itertext()))
+        self.assertIn("&lt;summary&gt;Literal code&lt;/summary&gt;", rendered)
+        self.assertNotIn("open", disclosures[0].attrib)
+        for unsafe in ('<details open>\n<summary>Open</summary>\nBody\n</details>',
+                       '    <details>\n    <summary>Code example</summary>\n    </details>',
+                       '<details onclick="bad">\n<summary>Bad</summary>\nBody\n</details>',
+                       '<details>\n<summary onclick="bad">Bad</summary>\nBody\n</details>',
+                       '<details>\n<summary>Unclosed</summary>\nBody',
+                       '<details>\nBody before summary\n<summary>Late</summary>\n</details>',
+                       '<details>\n<summary>Outer</summary>\n<details>\n<summary>Inner</summary>\n</details>\n</details>'):
+            with self.subTest(markup=unsafe):
+                fragment = module._markdown(unsafe, source, "README.md")
+                self.assertEqual(ElementTree.fromstring("<div>" + fragment + "</div>").findall(".//details"), [])
+                self.assertIn("&lt;details", fragment)
+
+    def test_readme_sections_follow_heading_hierarchy_and_close_inside_disclosures(self):
+        module = importlib.import_module("package_pages")
+        text = ('# Guide\n\nIntro.\n\n## Setup\n\nSetup body.\n\n<details>\n<summary>Advanced</summary>\n\n'
+                '## Options\n\nOption body.\n\n</details>\n\n## Usage\n\nUsage body.\n\n# Other\n\nOther body.\n')
+        rendered = module._markdown(text, self.records[0]["source"], "README.md")
+        tree = ElementTree.fromstring("<div>" + rendered + "</div>")
+        sections = tree.findall("section")
+        self.assertEqual([item.attrib["aria-labelledby"] for item in sections], ["readme-guide", "readme-other"])
+        self.assertEqual(sections[0].find("h3").attrib["id"], "readme-guide")
+        self.assertEqual([item.attrib["aria-labelledby"] for item in sections[0].findall("section")], ["readme-setup", "readme-usage"])
+        disclosure = sections[0].find("section/details")
+        self.assertEqual(disclosure.find("section").attrib["aria-labelledby"], "readme-options")
+        self.assertEqual(disclosure[0].tag, "summary")
+        self.assertIn("Other body.", "".join(sections[1].itertext()))
+
+    def test_disclosure_content_is_escaped_and_cannot_add_scripts_events_images_or_unsafe_links(self):
+        module = importlib.import_module("package_pages")
+        text = ('<details>\n<summary><img src=x onerror="bad">Details</summary>\n\n'
+                '<script>bad()</script>\n\n[Bad](javascript:alert) ![Remote](https://example.com/a.png)\n\n</details>\n')
+        rendered = module._markdown(text, self.records[0]["source"], "README.md")
+        page = SiteParser(); page.feed(rendered)
+        self.assertEqual(sum(item["tag"] == "details" for item in page.elements), 1)
+        self.assertFalse(any(item["tag"] in {"script", "img", "iframe", "style"} for item in page.elements))
+        self.assertFalse(any(key.startswith("on") for item in page.elements for key in item["attrs"]))
+        self.assertFalse(any(item["attrs"].get("href", "").startswith("javascript:") for item in page.elements))
+        self.assertIn("&lt;script&gt;bad()&lt;/script&gt;", rendered)
+
+    def test_maximum_hostile_disclosure_input_remains_bounded_and_literal(self):
+        script = '''import sys
+sys.path.insert(0, sys.argv[1])
+import package_pages
+source = {"repository": "https://github.com/stubbi/asm", "commit": "a" * 40, "path": "."}
+for fragment in ("<details>\\n", "<summary>", "<details>\\n<summary>label</summary>\\n"):
+    text = fragment * (package_pages.MAX_README_BYTES // len(fragment))
+    result = package_pages._markdown(text, source, "README.md")
+    assert '<details class=' not in result and '&lt;' in result
+'''
+        result = subprocess.run([sys.executable, "-c", script, str(ROOT / "tools")],
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+
+    def test_artifact_cards_have_unique_target_specific_names_and_download_labels(self):
+        self.records[0]["artifacts"].append({**self.records[0]["artifacts"][0], "target": "aarch64-linux",
+            "url": self.records[0]["artifacts"][0]["url"].replace("x86_64-linux", "aarch64-linux")})
+        self.generate({("stubbi/math", "0.2.0")})
+        page = HierarchyParser(); page.feed(self.read("packages/stubbi/math/0.2.0"))
+        cards = [item for item in page.elements if item["tag"] == "article" and "package-artifact" in item["attrs"].get("class", "").split()]
+        self.assertEqual(len(cards), 2)
+        names = []
+        for card in cards:
+            name = card["attrs"]["aria-labelledby"]
+            heading = next(item for item in page.elements if item["attrs"].get("id") == name)
+            text = "".join(heading["text"])
+            self.assertIn("Source archive", text)
+            self.assertIn(card["attrs"]["data-artifact-target"], text)
+            names.append(name)
+        self.assertEqual(len(set(names)), 2)
+        downloads = [item for item in page.elements if item["tag"] == "a" and "".join(item["text"]).startswith("Download source")]
+        self.assertEqual(sorted(item["attrs"]["aria-label"] for item in downloads),
+                         ["Download source archive for aarch64-linux", "Download source archive for x86_64-linux"])
+
+    def test_static_discovery_and_missing_pages_omit_package_scripts_but_catalog_return_links_keep_them(self):
+        import discovery
+        self.generate()
+        routes = self.module.write_discovery_pages(self.stage, self.index, discovery.delivery_snapshot(self.records))
+        for route in routes:
+            page = Page(self.read(route.rstrip("/")))
+            self.assertTrue(all(url.endswith(("navigation.js", "repository-stars.js")) for url in page.scripts))
+        missing = Page((self.stage / "404.html").read_text())
+        self.assertTrue(all(url.endswith(("navigation.js", "repository-stars.js")) for url in missing.scripts))
+        for route in ("packages", "packages/stubbi"):
+            page = Page(self.read(route))
+            self.assertTrue(any(url.endswith("package-page.js") for url in page.scripts))
 
     def test_breadcrumb_schema_describes_visible_hierarchy_and_retains_native_links(self):
         self.generate()

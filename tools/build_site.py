@@ -27,6 +27,8 @@ import release_blog
 import site_docs
 import repository_stars
 import site_routes
+import site_assets
+import site_info
 from release import materialize, output_path, publish_directory, resolve_commit
 
 
@@ -163,7 +165,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <meta name="description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta property="og:site_name" content="Asm">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="CLI source reference | Asm">
+    <meta property="og:title" content="Assembly CLI source files and digests | Asm">
     <meta property="og:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta property="og:url" content="https://asm.build/reference/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
@@ -172,7 +174,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <meta property="og:image:height" content="640">
     <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="CLI source reference | Asm">
+    <meta name="twitter:title" content="Assembly CLI source files and digests | Asm">
     <meta name="twitter:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
     <meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
@@ -182,7 +184,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <link rel="stylesheet" href="../styles.css">
     <script src="../navigation.js"></script>
     <script src="../repository-stars.js" defer></script>
-    <title>CLI source reference | Asm</title>
+    <title>Assembly CLI source files and digests | Asm</title>
   </head>
   <body class="reference-page">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -199,7 +201,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
         </form>
         <a class="header-search-fallback" data-header-search-fallback href="../packages/">Browse packages</a>
         <nav aria-label="Main navigation">
-          <a href="../explore/">Explore</a>
+          <a href="../explore/" aria-label="Explore assembly packages">Explore</a>
           <a href="../stats/">Stats</a>
           <a href="../blog/">Blog</a>
           <a href="../docs/" aria-current="page">Docs</a>
@@ -225,9 +227,9 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
         </div>
         <div class="footer-navs">
           <nav aria-label="Learn"><h2>Learn</h2><a href="../docs/">Docs</a><a href="../guide.html">Guide</a><a href="https://github.com/stubbi/asm#install-the-command">Install Asm</a><a href="../reference/">CLI source</a><a href="../agents.md">For AI agents</a></nav>
-          <nav aria-label="Registry"><h2>Registry</h2><a href="../explore/">Explore</a><a href="../packages/">All packages</a><a href="../browse/new/">New packages</a><a href="../browse/popular/">Most downloaded</a><a href="../stats/">Statistics</a></nav>
-          <nav aria-label="Project"><h2>Project</h2><a href="../guide.html#why">Why Asm</a><a href="../blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="../sponsors.html">Sponsorship</a></nav>
-          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/stubbi/asm#status">Supported hosts</a></nav>
+          <nav aria-label="Registry"><h2>Registry</h2><a href="../explore/" aria-label="Explore assembly packages">Explore</a><a href="../packages/">All packages</a><a href="../browse/new/">New packages</a><a href="../browse/popular/">Most downloaded</a><a href="../stats/">Statistics</a></nav>
+          <nav aria-label="Project"><h2>Project</h2><a href="../about/">About Asm</a><a href="../blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="../sponsors.html">Sponsorship</a></nav>
+          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="../contact/">Contact</a><a href="../privacy/">Privacy</a></nav>
         </div>
       </div>
       <div class="footer-support">
@@ -351,6 +353,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         routes.extend(release_blog.write_release_blog(repo, stage, index, snapshot, release_dates=cli_dates,
                                                      include_drafts=include_blog_drafts))
         routes.extend(site_docs.write_docs(repo, stage))
+        routes.extend(site_info.write_info(repo, stage))
         extend_sitemap(stage, routes)
         installer = bootstrap.write_bootstrap(
             stage, records, checked,
@@ -372,8 +375,10 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
             relative = page.relative_to(stage).as_posix()
             content = registry.read_regular(stage, relative, MAX_HTML_BYTES).decode("utf-8")
             # Cached HTML must not keep an expired numeric observation visible.
-            registry.write_atomic(page, repository_stars.render_header(content, repository_stars.unknown_snapshot()).encode("utf-8"))
+            content = repository_stars.render_header(content, repository_stars.unknown_snapshot())
+            registry.write_atomic(page, site_assets.with_content_policy(content).encode("utf-8"))
         site_routes.PageRoutes.from_directory(stage).export(stage)
+        site_assets.minify_scripts(stage)
         # Pages must include .well-known without publishing arbitrary hidden
         # source files. Keep this allowlist narrower than the upload action.
         public_hidden = {".nojekyll", ".well-known", ".well-known/security.txt"}

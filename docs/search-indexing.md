@@ -1,7 +1,7 @@
 # Search indexing
 
 Asm publishes a [sitemap](https://asm.build/sitemap.xml) and [crawl rules](https://asm.build/robots.txt).
-The sitemap contained 60 unique HTML page URLs when checked on 7 November 2026.
+The sitemap contained 60 unique HTML page URLs before the 8 November 2026 audit changes.
 It includes packages, exact versions, documentation, blog releases, Explore, statistics, browse directories, sponsorship, and the CLI source reference.
 Each page declares its preferred URL with a canonical link.
 Public page URLs have no extension or trailing slash; the homepage uses `/`.
@@ -11,6 +11,42 @@ These files help search engines discover the site.
 They do not confirm submission, crawling, or indexing.
 Search engines decide which pages to index.
 See the [Google technical requirements](https://developers.google.com/search/docs/essentials/technical).
+
+## Audit findings and useful fixes
+
+The 8 November review uses Squirrelscan 0.0.172 with a fresh, full, offline crawl.
+Keep the original report and failed checks beside subsequent results.
+Its warning count includes repeated checks across pages, rather than distinct defects.
+Do not disable checks or change the crawl scope to imply an improvement.
+
+Give titles useful package, version, and task context.
+Keep descriptions concise without removing exact release facts from the page or its structured data.
+Use destination-specific link names and native links in discovery headings.
+Keep informational project, contact, and privacy pages separate from the search task.
+The footer links to them without adding navigation rows.
+
+Render only the explicitly supported, attribute-free README disclosure syntax.
+Other source HTML remains escaped.
+Group recorded README sections by their headings without editing published source bytes.
+Describe actual technical documentation with article metadata while retaining each package's separate source identity.
+Do not invent publication dates or authors for these source snapshots.
+
+The build minifies first-party scripts with the pinned, vendored Terser browser bundle and Node.js.
+Readable sources, upstream notices, and its license remain available in the repository.
+Node.js 18 or later is already required by the site gate and is also required for standalone site builds.
+No npm installation or build-time network request is needed.
+The site gate exercises the shipped minified scripts through the existing behavior tests.
+
+Short directories and technical identifiers do not become defects solely through word-count or keyword-density thresholds.
+Google specifies no preferred word count, fixed title maximum, or fixed description maximum.
+Keep useful content instead of adding filler for those thresholds.
+See [people-first content](https://developers.google.com/search/docs/fundamentals/creating-helpful-content),
+[title links](https://developers.google.com/search/docs/appearance/title-link), and
+[snippets](https://developers.google.com/search/docs/appearance/snippet), reviewed on 8 November 2026.
+
+The public architecture page uses `/browse/architectures/x86-64`.
+Its earlier underscore addresses remain working aliases.
+Registry identifiers, targets, filters, and private search fragments retain literal `x86_64` values.
 
 ## Page intent and keyword hypotheses
 

@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 """
 from html.parser import HTMLParser
 import importlib
+import json
 from pathlib import Path
 import re
 import sys
@@ -18,15 +19,24 @@ sys.path.insert(0, str(ROOT / "tools"))
 class Page(HTMLParser):
     def __init__(self, content):
         super().__init__()
-        self.links, self.tags, self.text = [], [], []
+        self.links, self.tags, self.text, self.structured = [], [], [], []
+        self.json_text = None
         self.feed(content)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         self.tags.append((tag, attrs))
         if tag == "a": self.links.append(attrs)
+        if tag == "script" and attrs.get("type") == "application/ld+json": self.json_text = ""
 
-    def handle_data(self, text): self.text.append(text)
+    def handle_data(self, text):
+        self.text.append(text)
+        if self.json_text is not None: self.json_text += text
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.json_text is not None:
+            self.structured.append(json.loads(self.json_text))
+            self.json_text = None
 
 
 class DocsTests(unittest.TestCase):
@@ -60,13 +70,37 @@ class DocsTests(unittest.TestCase):
         self.assertEqual(sum(tag == "h1" for tag, _ in page.tags), 1)
         self.assertEqual(sum(tag == "header" and attrs.get("class") == "site-header" for tag, attrs in page.tags), 1)
         self.assertEqual(sum(tag == "footer" for tag, _ in page.tags), 1)
-        self.assertEqual([attrs for tag, attrs in page.tags if tag == "script"],
+        self.assertEqual([attrs for tag, attrs in page.tags if tag == "script" and attrs.get("type") != "application/ld+json"],
                          [{"src": "../navigation.js"}, {"src": "../repository-stars.js", "defer": None}])
+        self.assertEqual([attrs for tag, attrs in page.tags if tag == "script" and "src" not in attrs],
+                         [{"type": "application/ld+json"}])
         self.assertIn(("link", {"rel": "canonical", "href": "https://asm.build/docs/"}), page.tags)
         self.assertIn(("meta", {"property": "og:url", "content": "https://asm.build/docs/"}), page.tags)
         self.assertTrue(any(tag == "main" and attrs.get("id") == "main" for tag, attrs in page.tags))
         self.assertEqual([link["href"] for link in page.links if link.get("aria-current") == "page"], ["../docs/"])
         self.assertEqual((self.stage / "index.html").read_text(), self.initial)
+
+    def test_directory_schema_describes_actual_document_links_without_inventing_an_article(self):
+        _, content = self.generate()
+        schema = Page(content).structured[0]
+        self.assertEqual(schema["@type"], "CollectionPage")
+        self.assertEqual(schema["url"], "https://asm.build/docs")
+        self.assertEqual(schema["name"], "Documentation")
+        for invented in ("author", "datePublished", "dateModified", "aggregateRating"):
+            self.assertNotIn(invented, schema)
+
+    def test_guide_metadata_identifies_the_real_walkthrough_without_invented_dates_or_authors(self):
+        content = (ROOT / "site/guide.html").read_text()
+        page = Page(content)
+        self.assertEqual(len(page.structured), 1)
+        schema = page.structured[0]
+        self.assertEqual(schema["@type"], "TechArticle")
+        self.assertEqual(schema["url"], "https://asm.build/guide")
+        self.assertEqual(schema["headline"], "Build with Asm")
+        for invented in ("author", "datePublished", "dateModified", "aggregateRating"):
+            self.assertNotIn(invented, schema)
+        head = content.split("</head>", 1)[0]
+        self.assertIn("Assembly package walkthrough and evidence | Asm", head)
 
     def test_task_links_use_the_current_documents_and_real_repository_anchors(self):
         _, content = self.generate()

@@ -27,6 +27,15 @@ The browser renders counts as text and hides expired observations when refresh f
 Session storage contains public repository metadata and a bounded retry deadline, without visitor identifiers.
 These counts do not establish package suitability or safety.
 
+The static site build embeds a Content Security Policy before resources in each published HTML page.
+It restricts scripts and assets to the same origin, with the GitHub API permitted for the fixed repository observation.
+Inline styles remain permitted for existing charts and interface styles; inline executable scripts and event handlers are rejected during the build.
+This document policy does not provide HSTS or framing protection, which require response headers unavailable through the current GitHub Pages configuration.
+Fresh discovery and statistics responses from the local preview server do not inherit this build-only document policy.
+The [CSP specification](https://www.w3.org/TR/CSP3/#meta-element) defines delivery through HTML and its limits.
+[Chrome's transition guidance](https://developer.chrome.com/docs/web-platform/view-transitions/cross-document) requires the retained early head script.
+These primary references were reviewed on 8 November 2026.
+
 Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate Asm processes; they do not constrain other processes running as the same user.
 
 Asm 0.5.0 records installed executables in a bounded local inventory, including explicit output paths.

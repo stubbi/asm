@@ -39,8 +39,9 @@ def record_route(record: dict) -> str:
     return f"registry/v1/packages/{record['name']}/{record['version']}.json"
 
 
-def _anchor(label: str, href: str, *, package: bool = False, attrs: str = "") -> str:
-    return f'<a href="{escape(href, quote=True)}"' + (' data-package-link' if package else '') + attrs + f'>{escape(label)}</a>'
+def _anchor(label: str, href: str, *, package: bool = False, attrs: str = "", accessible_suffix: str = "") -> str:
+    text = escape(label) + ('<span class="sr-only"> ' + escape(accessible_suffix) + '</span>' if accessible_suffix else '')
+    return f'<a href="{escape(href, quote=True)}"' + (' data-package-link' if package else '') + attrs + '>' + text + '</a>'
 
 
 def _breadcrumbs(trail: list[tuple[str, str | None]], *, back_search: str | None = None) -> str:
@@ -62,7 +63,10 @@ def _release_description(name: str, record: dict | None, *, exact: bool = False)
     targets = ", ".join(sorted({artifact["target"] for artifact in record["artifacts"]}))
     identity = name + (" " + record["version"] if exact else "")
     state = "Yanked release. " if record["yanked"] else ""
-    return f'{identity}: {state}{record["summary"]} License: {record["license"]}. Recorded targets: {targets}.'
+    description = f'{identity}: {state}{record["summary"]} License: {record["license"]}. Recorded targets: {targets}.'
+    if len(description) <= 160:
+        return description
+    return f'{identity}: {state}{record["summary"]} {record["license"]}. Targets: {targets}.'
 
 
 def _json_ld(value: dict | None) -> str:
@@ -82,7 +86,7 @@ def _source_url(record: dict) -> str:
     return url + ("/" + quote(source["path"], safe="/") if source["path"] != "." else "")
 
 
-def _package_schema(route: str, name: str, description: str, selected: dict | None) -> dict:
+def _package_schema(route: str, name: str, description: str, selected: dict | None, readme_url: str | None = None) -> dict:
     """Describe the visible page and exact recorded source, without trust claims."""
     canonical = SITE + route.rstrip("/")
     page = {"@context": "https://schema.org", "@type": "WebPage", "@id": canonical + "#webpage",
@@ -98,6 +102,10 @@ def _package_schema(route: str, name: str, description: str, selected: dict | No
             "license": "https://spdx.org/licenses/" + selected["license"] + ".html",
             "creativeWorkStatus": "Yanked release" if selected["yanked"] else "Active release",
             "subjectOf": {"@type": "CreativeWork", "url": SITE + record_route(selected), "encodingFormat": "application/json"}}
+        if readme_url:
+            page["hasPart"] = {"@type": "TechArticle", "@id": canonical + "#readme", "url": canonical + "#readme",
+                               "headline": name + "@" + selected["version"] + " source README",
+                               "isBasedOn": readme_url, "about": {"@id": version_url + "#source"}}
     return page
 
 
@@ -247,7 +255,12 @@ def _inline(text: str, source: dict, readme_name: str) -> str:
             result.append("<code>" + escape(code) + "</code>")
         elif label is not None:
             href = _safe_readme_link(target, source, readme_name)
-            result.append(_anchor(label, href) if href else escape(match.group()))
+            attrs = ' aria-label="Asm website"' if href in {SITE, SITE.rstrip("/")} and label.lower() == "website" else ''
+            purpose = ""
+            if label in {"ARM64", "x86-64"}:
+                if target in {"examples/hello", "examples/hello-aarch64"}: purpose = "hello example"
+                elif target in {"cli/asm.s", "cli/aarch64/asm.s"}: purpose = "CLI source"
+            result.append(_anchor(label, href, attrs=attrs, accessible_suffix=purpose) if href else escape(match.group()))
         else:
             tag, value = ("strong", strong) if strong is not None else ("em", emphasis)
             result.append(f"<{tag}>" + escape(value) + f"</{tag}>")
@@ -256,17 +269,64 @@ def _inline(text: str, source: dict, readme_name: str) -> str:
     return "".join(result)
 
 
+def _disclosures(lines: list[str]) -> dict[int, tuple[str, str]]:
+    """Recognize complete attribute-free, non-nested disclosures outside code."""
+    result, candidate, fence = {}, None, None
+    for index, line in enumerate(lines):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip(): fence = None
+            continue
+        if marker:
+            if candidate and candidate["summary"] is None: candidate["invalid"] = True
+            fence = (marker[1][0], len(marker[1])); continue
+        stripped, markup = line.strip(), re.match(r"^ {0,3}<", line) is not None
+        summary = re.fullmatch(r"<summary>(.+)</summary>", stripped) if markup else None
+        if markup and stripped == "<details>":
+            if candidate:
+                candidate["invalid"] = True; candidate["depth"] += 1
+            else:
+                candidate = {"start": index, "summary": None, "invalid": False, "depth": 1}
+        elif markup and stripped == "</details>" and candidate:
+            candidate["depth"] -= 1
+            if candidate["depth"]: continue
+            if candidate["summary"] is not None and not candidate["invalid"]:
+                result[candidate["start"]] = ("open", "")
+                result[candidate["summary"]] = ("summary", candidate["label"])
+                result[index] = ("close", "")
+            candidate = None
+        elif summary and candidate:
+            if candidate["summary"] is not None or not summary[1].strip(): candidate["invalid"] = True
+            candidate["summary"], candidate["label"] = index, summary[1]
+        elif candidate and stripped and candidate["summary"] is None:
+            candidate["invalid"] = True
+    return result
+
+
 def _markdown(text: str, source: dict, readme_name: str, *, heading_offset=2) -> str:
     """Render a small Markdown subset; unsupported constructs remain literal text."""
     registry.require(type(heading_offset) is int and 0 <= heading_offset <= 5, "invalid Markdown heading offset")
     lines, result, index, heading_ids = text.splitlines(), [], 0, set()
     section_title, table_number = "Source documentation", 0
+    disclosures, sections, disclosure_floor = _disclosures(lines), [], 0
+    def close_sections(level=0):
+        while len(sections) > disclosure_floor and sections[-1] >= level:
+            result.append("</section>"); sections.pop()
     def cells(line): return line.strip().strip("|").split("|")
     def table_rule(line):
         return "|" in line and all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells(line))
     while index < len(lines):
         line = lines[index]
         if not line.strip():
+            index += 1; continue
+        if index in disclosures:
+            kind, label = disclosures[index]
+            if kind == "open":
+                result.append('<details class="readme-disclosure">'); disclosure_floor = len(sections)
+            elif kind == "summary":
+                result.append("<summary>" + _inline(label, source, readme_name) + "</summary>")
+            else:
+                close_sections(); result.append("</details>"); disclosure_floor = 0
             index += 1; continue
         fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if fence:
@@ -286,6 +346,8 @@ def _markdown(text: str, source: dict, readme_name: str, *, heading_offset=2) ->
                 suffix += 1
             heading_ids.add(identifier)
             section_title = heading[2]
+            close_sections(level)
+            result.append('<section aria-labelledby="' + identifier + '">'); sections.append(level)
             result.append(f'<h{level} id="{identifier}">{_inline(heading[2], source, readme_name)}</h{level}>')
             index += 1; continue
         if index + 1 < len(lines) and "|" in line and table_rule(lines[index + 1]):
@@ -308,9 +370,11 @@ def _markdown(text: str, source: dict, readme_name: str, *, heading_offset=2) ->
             result.append(f"<{tag}>" + "".join(items) + f"</{tag}>"); continue
         paragraph = [line]; index += 1
         while index < len(lines) and lines[index].strip() and not re.match(r"^(?:#{1,6}\s| {0,3}(?:`{3,}|~{3,})|\s*[-*+]\s|\s*\d+\.\s)", lines[index]):
+            if index in disclosures: break
             if index + 1 < len(lines) and table_rule(lines[index + 1]): break
             paragraph.append(lines[index]); index += 1
         result.append("<p>" + _inline("\n".join(paragraph), source, readme_name) + "</p>")
+    close_sections()
     return "\n".join(result)
 
 
@@ -320,7 +384,8 @@ def _readme(repo: Path, record: dict | None, cache: dict) -> str:
         return '<p class="package-note">Select an exact release from the version history to read its source documentation.</p>'
     source = record["source"]
     key = (source["repository"], source["commit"], source["path"])
-    if key in cache: return cache[key]
+    if key in cache: return cache[key]["html"]
+    url = None
     try:
         origin = registry.git_output(repo, "config", "--get", "remote.origin.url").decode().strip()
         registry.require(origin in {REPOSITORY, REPOSITORY + ".git", "git@github.com:stubbi/asm.git"}, "local repository origin does not match")
@@ -342,11 +407,12 @@ def _readme(repo: Path, record: dict | None, cache: dict) -> str:
         registry.require(len(content) <= MAX_README_BYTES, "README exceeds the content bound")
         text = content.decode("utf-8")
         registry.require(len(text.splitlines()) <= 4096 and all(ord(c) >= 32 or c in "\n\r\t" for c in text), "README contains unsupported content")
+        registry.require(bool(text.strip()), "README is empty")
         url = f"{source['repository']}/blob/{source['commit']}/{root}{filename}"
         result = ('<p class="package-note">Source snapshot: ' + _anchor(filename, url) + ' at commit <code>' + escape(source["commit"]) + '</code>. This is source documentation, not artifact verification.</p><div class="package-readme-content">' + _markdown(text, source, filename) + '</div>')
     except (registry.RegistryError, ValueError, UnicodeError, KeyError, OSError):
-        result = fallback
-    cache[key] = result
+        result, url = fallback, None
+    cache[key] = {"html": result, "url": url}
     return result
 
 
@@ -612,7 +678,8 @@ def _artifacts(record: dict, indexed: dict, prefix: str, *, delivery=False, depe
                 destination = prefix + artifact_delivery.route(record, item).lstrip("/")
             else:
                 destination = item["url"]
-            action = _anchor("Download " + label.lower(), destination)
+            action = _anchor("Download " + label.lower(), destination,
+                             attrs=' aria-label="Download ' + label.lower() + ' for ' + escape(target, quote=True) + '"')
         else:
             action = '<code>' + escape(item["url"]) + '</code>'
             if not record["yanked"]:
@@ -626,7 +693,7 @@ def _artifacts(record: dict, indexed: dict, prefix: str, *, delivery=False, depe
         if kind == "source":
             metadata = (dependency_sources or {}).get((record["name"], record["version"], target, item["sha256"]))
             declarations = _dependency_markup(metadata, prefix, package_names)
-        cards.append(f'<article class="package-artifact" id="artifact-{identifier}" data-artifact-kind="{kind}" data-artifact-target="{target}" data-artifact-architecture="{architecture or ""}"><header><h3>{label}</h3><code>{escape(filename)}</code></header>{data}<p class="package-digest"><span>SHA-256</span><code>{item["sha256"]}</code></p><p class="package-artifact-action">{action}</p>{command}{declarations}</article>')
+        cards.append(f'<article class="package-artifact" id="artifact-{identifier}" aria-labelledby="artifact-heading-{identifier}" data-artifact-kind="{kind}" data-artifact-target="{target}" data-artifact-architecture="{architecture or ""}"><header><h3 id="artifact-heading-{identifier}">{label} <span class="sr-only">for {escape(target)}</span></h3><code>{escape(filename)}</code></header>{data}<p class="package-digest"><span>SHA-256</span><code>{item["sha256"]}</code></p><p class="package-artifact-action">{action}</p>{command}{declarations}</article>')
     status = f'<p id="artifact-filter-status" role="status" aria-live="polite">{len(cards)} release files shown.</p>'
     empty = '<p class="package-artifact-empty" hidden role="status">No files match. Clear the file filters.</p>'
     return status + '<div class="package-artifacts">' + "".join(cards) + '</div>' + empty
@@ -682,7 +749,7 @@ def _package_body(repo: Path, route: str, name: str, records: list[dict], select
         source += '<p>' + _anchor("Release record (JSON)", prefix + record_route(selected)) + '</p>'
     else:
         source += '<p>Select an exact release to inspect its source and record.</p>'
-    source += '<p class="package-note" data-downloads-name="' + escape(name, quote=True) + '" data-downloads-version="' + (escape(selected["version"], quote=True) if selected and exact else '') + '">' + counts_html(counts, name, selected["version"] if selected and exact else None) + '</p><p class="package-note">The namespace is a package name prefix, not an authenticated publisher profile.</p></section>'
+    source += '<p class="package-note" data-downloads-name="' + escape(name, quote=True) + '" data-downloads-version="' + (escape(selected["version"], quote=True) if selected and exact else '') + '">' + counts_html(counts, name, selected["version"] if selected and exact else None) + '</p><p class="package-note">' + _anchor(owner, prefix + 'packages/' + owner + '/') + ' is a package namespace, not an authenticated publisher profile.</p></section>'
     if publications:
         entry = next((item for item in publications.get("packages", []) if item["name"] == name), {})
         if entry.get("publication_source") == "github-release":
@@ -729,12 +796,14 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
     routes, cache = [], {}
     def write(route, title, description, body, missing=False, *, package=None, record=None):
         destination = stage / route if route.endswith(".html") else stage / route / "index.html"
-        schema = _package_schema(route, package, description, record) if package else None
+        source = record["source"] if record else {}
+        readme_url = cache.get((source.get("repository"), source.get("commit"), source.get("path")), {}).get("url")
+        schema = _package_schema(route, package, description, record, readme_url) if package else None
         if schema is not None and record is not None and route == package_route(package):
             schema["keywords"] = topics[package]["keywords"]
         metadata_url = "../" * route.count("/") + record_route(record) if record else None
         registry.write_atomic(destination, _page(route, title, description, body, chrome, missing=missing,
-                                               structured_data=schema, metadata_url=metadata_url).encode())
+                                               structured_data=schema, metadata_url=metadata_url, scripts=not missing).encode())
         routes.append(route)
     def listing(names, route):
         prefix = "../" * route.count("/")
@@ -756,15 +825,15 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
         selected = next((record for record in releases if not record["yanked"]), None)
         registry.require(indexed[name]["latest"] == (selected["version"] if selected else None), "index latest release differs")
         route = package_route(name)
-        write(route, name, _release_description(name, selected), _package_body(repo, route, name, releases, selected, matches, counts, False, cache, delivery=delivery,
+        write(route, name + " assembly package", _release_description(name, selected), _package_body(repo, route, name, releases, selected, matches, counts, False, cache, delivery=delivery,
               activity=(activities or {}).get((name, None)), publications=publications,
               dependency_sources=dependency_sources, package_names=set(indexed), topics=topics.get(name)), package=name, record=selected)
         for record in releases:
             route = package_route(name, record["version"])
-            write(route, name + "@" + record["version"], _release_description(name, record, exact=True), _package_body(repo, route, name, releases, record, matches, counts, True, cache, delivery=delivery,
+            write(route, name + "@" + record["version"] + " assembly package", _release_description(name, record, exact=True), _package_body(repo, route, name, releases, record, matches, counts, True, cache, delivery=delivery,
                   activity=(activities or {}).get((name, record["version"])), publications=publications,
                   dependency_sources=dependency_sources, package_names=set(indexed)), package=name, record=record)
-    write("packages/", "Assembly packages", "Browse the Asm assembly package catalog. Compare package purposes, exact releases, licenses, and declared targets, then inspect source and release evidence.", '<header class="package-heading"><h1>Assembly packages</h1><p>Inspect package records, targets, and release evidence.</p></header>' + listing(grouped, "packages/"))
+    write("packages/", "Assembly package catalog and releases", "Browse the Asm assembly package catalog. Compare package purposes, exact releases, licenses, and declared targets, then inspect source and release evidence.", '<header class="package-heading"><h1>Assembly packages</h1><p>Inspect package records, targets, and release evidence.</p></header>' + listing(grouped, "packages/"))
     for owner in sorted({name.split("/")[0] for name in grouped}):
         route = "packages/" + owner + "/"
         write(route, owner + " assembly packages", "Browse assembly packages in the " + owner + " namespace. Inspect exact versions, licenses, targets, and source records. A namespace is a package name prefix.", _breadcrumbs([("Packages", "../../packages/"), (owner, None)]) + '<header class="package-heading"><h1>' + escape(owner) + '</h1><p>This namespace is a package name prefix, not an authenticated publisher profile.</p></header>' + listing([name for name in grouped if name.split("/")[0] == owner], route))
@@ -878,7 +947,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
                     "updated": "Package release activity, newest publication first.", "metrics": "The sources, coverage, and limits behind Popular and New packages."}
     description = "Assembly packages by purpose." if category else descriptions[kind]
     navigation = '<nav class="package-section-nav" aria-label="Browse packages">' + "".join(
-        _anchor(label, prefix + target, attrs=' aria-current="page"' if selected == kind else '')
+        _anchor(label, prefix + target, attrs=(' aria-current="page"' if selected == kind else '') + (' aria-label="Explore assembly packages"' if label == "Explore" else ''))
         for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"), ("Most downloaded", "browse/popular/", "popular"),
                                         ("New", "browse/new/", "new"), ("Recently updated", "browse/updated/", "updated"))) + '</nav>'
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(description) + '</p></header>' + navigation
@@ -887,7 +956,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
         body += '<p class="package-note">Observed ' + _discovery_date(observed) + ' at ' + escape(observed[11:19]) + ' UTC.'
         if snapshot.get("stale"):
             body += ' This observation is stale. A refresh is pending or failed.'
-        body += ' ' + _anchor("About these numbers", prefix + "discovery/") + '</p>'
+        body += ' ' + _anchor("Discovery data and coverage", prefix + "discovery/") + '</p>'
     elif kind == "popular":
         body += '<p class="package-note">Download data is unavailable. Browse all packages or try again after a refresh.</p>'
     if kind == "popular" and snapshot.get("collection_started_at"):
@@ -948,16 +1017,16 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
         else:
             message = ("Download measurements are unavailable." if observed is None else "No completed downloads were recorded for this observation period.") if kind == "popular" else "No packages have publication data for this feed yet."
             body += '<p class="package-empty">' + message + ' ' + _anchor("Browse all packages", prefix + 'packages/') + '.</p>'
-    meta_titles = {"popular": "Most downloaded assembly packages", "new": "New assembly packages",
+    meta_titles = {"popular": "Most downloaded assembly packages", "new": "New packages in the assembly registry",
                    "updated": "Recently updated assembly packages", "metrics": "Package discovery data and coverage"}
     meta_descriptions = {
         "popular": "Explore assembly packages by observed Asm downloads during the last 30 days. Check the reporting cutoff, coverage, targets, and exact releases.",
         "new": "Discover new assembly packages in Asm, ordered by their first recorded GitHub release. Inspect each package's purpose, targets, and exact versions.",
         "updated": "Browse recently updated assembly packages by their latest recorded publication. Inspect release versions, targets, source, and available evidence.",
         "metrics": "Understand Asm package discovery: completed download transfers, publication dates, observation windows, missing data, and ranking limits."}
-    meta_title = category["name"] + " assembly packages" if category else meta_titles[kind]
+    meta_title = category["name"] + " packages for assembly projects" if category else meta_titles[kind]
     meta_description = ("Browse assembly packages in the " + category["name"] + " category. Compare purposes and declared targets, then inspect exact versions, source, and release evidence.") if category else meta_descriptions[kind]
-    return _page(route, meta_title, meta_description, body, _chrome(stage), active_nav="Stats" if kind == "metrics" else "Explore")
+    return _page(route, meta_title, meta_description, body, _chrome(stage), active_nav="Stats" if kind == "metrics" else "Explore", scripts=False)
 
 
 def write_discovery_pages(stage: Path, index: dict, snapshot: dict) -> list[str]:

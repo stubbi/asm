@@ -34,7 +34,7 @@ def _ranking(index: dict, transfers: dict) -> str:
     entries = sorted(((name, item["total"]) for name, item in transfers["packages"].items()
                       if item["total"] is not None and item["total"] > 0), key=lambda item: (-item[1], item[0]))
     body = ('<section class="package-section" aria-labelledby="registry-ranking-heading">'
-            '<h2 id="registry-ranking-heading">Most downloaded since collection began</h2>'
+            '<h2 id="registry-ranking-heading">' + package_pages._anchor("Most downloaded since collection began", "../browse/downloaded/", attrs=' class="discovery-heading-link"') + '</h2>'
             '<p class="package-note">Ranked by observed completed transfers across all retained versions. '
             'Missing reports can affect relative order.</p>')
     if not entries:
@@ -83,12 +83,12 @@ def stats_page(stage: Path, index: dict, snapshot: dict, observation: dict | Non
              '<p class="package-note">Package targets describe registered artifacts, not supported CLI hosts. Release files count declared selections, not distinct stored objects.</p>'
              '</details>'
              '<p class="package-note">' + package_pages._anchor("Statistics data (JSON)", "../registry/v1/stats.json")
-             + ' · ' + package_pages._anchor("How counts work", "../discovery/") + '</p>')
+             + ' · ' + package_pages._anchor("Discovery data and coverage", "../discovery/") + '</p>')
     body += _ranking(index, transfers)
     body += '<p class="package-note">' + package_pages._anchor("Most downloaded in the last 30 days", "../browse/popular/") + '</p>'
     body += package_activity.render_registry_activity(data["activity"], "../discovery/", "../registry/v1/stats.json")
     return package_pages._page("stats/", "Assembly registry statistics",
-                               "Inspect registered packages, retained releases, and Asm transfer observations. Counts retain collection scope, coverage limits, and daily activity when available.",
+                               "Inspect registered packages, retained releases, and observed Asm downloads. Review collection scope, coverage, and daily activity when available.",
                                body, package_pages._chrome(stage), active_nav="Stats", scripts=False)
 
 

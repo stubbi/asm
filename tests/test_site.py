@@ -307,6 +307,14 @@ class SiteTests(unittest.TestCase):
         for name, page in self.pages.items():
             data = [item for item in page.elements if item["tag"] == "script"
                     and item["attrs"].get("type") == "application/ld+json"]
+            if name == "guide.html":
+                self.assertEqual(len(data), 1)
+                self.assertEqual(data[0]["attrs"], {"type": "application/ld+json"})
+                guide = json.loads("".join(data[0]["text"]))
+                self.assertEqual(guide["@type"], "TechArticle")
+                self.assertEqual(guide["headline"], "Build with Asm")
+                self.assertFalse({"author", "datePublished", "dateModified", "aggregateRating"} & guide.keys())
+                continue
             if name != "index.html":
                 self.assertEqual(data, [])
                 continue
@@ -405,6 +413,7 @@ class SearchDiscoveryTests(unittest.TestCase):
         owners = {name.split("/")[0] for name in names}
         cls.expected_html = {path.relative_to(SITE).as_posix() for path in SITE.rglob("*.html")}
         cls.expected_html.update({"reference/index.html", "packages/index.html", "404.html",
+                                  "about/index.html", "contact/index.html", "privacy/index.html",
                                   "browse/popular/index.html", "browse/new/index.html", "browse/updated/index.html",
                                   "discovery/index.html", "browse/categories/developer-tools/index.html",
                                   "browse/categories/examples/index.html", "browse/categories/math/index.html"})
@@ -425,6 +434,7 @@ class SearchDiscoveryTests(unittest.TestCase):
                                  for tag in package.get("keywords", []))
         cls.expected_html.update(path[:-len("/index.html")] + ".html"
                                  for path in list(cls.expected_html) if path.endswith("/index.html"))
+        cls.expected_html.add("browse/architectures/x86-64.html")
         repo = Path(cls.temporary.name) / "repo"
         repo.mkdir()
         shutil.copytree(SITE, repo / "site")
@@ -619,6 +629,8 @@ Unpublished body sentinel.
     @staticmethod
     def canonical_url(path):
         path = path[:-len("index.html")] if path.endswith("index.html") else path[:-len(".html")]
+        if path.rstrip("/") == "browse/architectures/x86_64":
+            path = "browse/architectures/x86-64"
         return "https://asm.build/" + path.rstrip("/")
 
     def link_urls(self, page, elements=None):
