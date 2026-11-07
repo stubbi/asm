@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 from copy import deepcopy
 from html.parser import HTMLParser
 import importlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -29,10 +30,10 @@ class Page(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "a": self.links.append(attrs.get("href", ""))
-        if tag == "script": self.scripts.append(attrs.get("src", ""))
+        if tag == "script" and "src" in attrs: self.scripts.append(attrs["src"])
         if tag == "script": self.script_attributes.append(attrs)
         if tag == "form": self.forms.append(attrs)
-        if tag in ("script", "img"): self.assets.append(attrs.get("src", ""))
+        if tag in ("script", "img") and "src" in attrs: self.assets.append(attrs["src"])
         if tag == "link" and attrs.get("rel") in ("stylesheet", "icon"): self.assets.append(attrs.get("href", ""))
         if "id" in attrs: self.ids.append(attrs["id"])
 
@@ -92,6 +93,88 @@ class PackagePageTests(unittest.TestCase):
             "dependencies": dependencies or [], "features": features or {}}}]}
 
     def read(self, route): return (self.stage / route / "index.html").read_text()
+
+    def schema(self, content):
+        page = SiteParser(); page.feed(content)
+        data = [item for item in page.elements if item["tag"] == "script"
+                and item["attrs"].get("type") == "application/ld+json"]
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["attrs"], {"type": "application/ld+json"})
+        return json.loads("".join(data[0]["text"]))
+
+    def test_structured_data_bound_includes_script_escape_expansion(self):
+        module = importlib.import_module("package_pages")
+        value = {"description": "<" * (22 * 1024)}
+        self.assertLess(len(json.dumps(value)), 128 * 1024)
+        with self.assertRaisesRegex(registry.RegistryError, "structured data exceeds"):
+            module._json_ld(value)
+
+    def test_structured_source_uses_exact_version_license_commit_and_clean_identity(self):
+        original = deepcopy(self.records)
+        self.generate()
+        for version, license_id, commit in (("0.2.0", "MIT", self.old_commit), ("0.10.0", "AGPL-3.0-or-later", self.new_commit)):
+            html = self.read("packages/stubbi/math/" + version)
+            schema = self.schema(html)
+            canonical = "https://asm.build/packages/stubbi/math/" + version
+            self.assertEqual(schema["url"], canonical)
+            self.assertEqual(schema["@id"], canonical + "#webpage")
+            source = schema["mainEntity"]
+            self.assertEqual(source["@type"], "SoftwareSourceCode")
+            self.assertEqual(source["@id"], canonical + "#source")
+            self.assertEqual(source["version"], version)
+            self.assertEqual(source["license"], "https://spdx.org/licenses/" + license_id + ".html")
+            self.assertEqual(source["url"], "https://github.com/stubbi/asm/tree/" + commit + "/examples/math")
+            self.assertEqual(source["codeRepository"], "https://github.com/stubbi/asm")
+            self.assertIn({"@type": "PropertyValue", "propertyID": "Git commit", "value": commit}, source["identifier"])
+            record_url = "https://asm.build/registry/v1/packages/stubbi/math/" + version + ".json"
+            self.assertEqual(source["subjectOf"]["url"], record_url)
+            page = SiteParser(); page.feed(html)
+            links = [item["attrs"] for item in page.elements if item["tag"] == "link" and item["attrs"].get("rel") == "describedby"]
+            self.assertEqual(len(links), 1)
+            self.assertEqual(urljoin(canonical + "/", links[0]["href"]), record_url)
+            self.assertEqual(links[0]["type"], "application/json")
+            for unsupported in ("author", "publisher", "datePublished", "programmingLanguage", "targetProduct", "aggregateRating", "offers", "softwareVersion"):
+                self.assertNotIn(unsupported, source)
+        overview = self.schema(self.read("packages/stubbi/math"))
+        self.assertEqual(overview["mainEntity"]["@id"], "https://asm.build/packages/stubbi/math/0.10.0#source")
+        self.assertEqual(self.records, original)
+
+    def test_structured_data_does_not_execute_hostile_metadata_or_invent_an_active_release(self):
+        hostile = '</script><img src=x onerror=alert(1)><!-- & "quoted"'
+        self.records[1]["summary"] = hostile
+        self.generate()
+        html = self.read("packages/stubbi/math")
+        self.assertEqual(self.schema(html)["mainEntity"]["description"], hostile)
+        page = SiteParser(); page.feed(html)
+        self.assertEqual([item for item in page.elements if item["tag"] == "img" and item["attrs"].get("src") == "x"], [])
+        self.assertIn('\\u003c/script\\u003e', html)
+        for record in self.records:
+            record.update(yanked=True, yank_reason="Retained fixture.")
+        self.generate()
+        inactive = self.read("packages/stubbi/math")
+        self.assertNotIn("mainEntity", self.schema(inactive))
+        self.assertNotIn('rel="describedby"', inactive)
+        exact = self.schema(self.read("packages/stubbi/math/0.10.0"))
+        self.assertEqual(exact["mainEntity"]["creativeWorkStatus"], "Yanked release")
+        self.assertNotIn("contentUrl", json.dumps(exact))
+
+    def test_current_topic_links_are_native_and_do_not_relabel_historical_versions(self):
+        root = self.stage / "registry/v1"
+        root.mkdir(parents=True)
+        (root / "discovery-metadata.json").write_text(json.dumps({"schema": 1, "packages": [{"name": "stubbi/math", "keywords": ["integers", "math"]}]}))
+        (root / "categories.json").write_text(json.dumps({"schema": 1, "categories": [{"id": "math", "name": "Math", "packages": ["stubbi/math"]}]}))
+        self.generate()
+        overview = self.read("packages/stubbi/math")
+        self.assertIn("Browse related", overview)
+        links = {urljoin("https://asm.build/packages/stubbi/math/", href) for href in Page(overview).links}
+        self.assertTrue({"https://asm.build/browse/categories/math/", "https://asm.build/browse/keywords/math/",
+                         "https://asm.build/browse/keywords/integers/", "https://asm.build/browse/architectures/aarch64/"} <= links)
+        self.assertNotIn("https://asm.build/browse/architectures/x86_64/", links)
+        self.assertEqual(self.schema(overview)["keywords"], ["integers", "math"])
+        for version in ("0.2.0", "0.10.0"):
+            exact = self.read("packages/stubbi/math/" + version)
+            self.assertNotIn("Browse related", exact)
+            self.assertNotIn("keywords", self.schema(exact))
 
     def test_search_metadata_uses_each_exact_record_without_changing_its_bytes(self):
         original = deepcopy(self.records)
@@ -441,6 +524,10 @@ class PackagePageTests(unittest.TestCase):
         page = self.read("packages/stubbi/math")
         parsed = Page(page)
         self.assertEqual(sorted(parsed.scripts), ["../../../app.js", "../../../navigation.js", "../../../package-page.js", "../../../repository-stars.js"])
+        self.assertEqual(len(parsed.script_attributes), 5)
+        self.assertEqual([attrs for attrs in parsed.script_attributes if "src" not in attrs],
+                         [{"type": "application/ld+json"}])
+        self.assertEqual(self.schema(page)["mainEntity"]["version"], "0.10.0")
         self.assertFalse(any(url.startswith("javascript:") or "private" in url for url in parsed.links))
         self.assertNotIn('<img src="https://example.com', page)
         self.assertIn("&lt;script&gt;", page)

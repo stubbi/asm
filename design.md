@@ -707,6 +707,10 @@ Choose the first available root file in this order: `README.md`, `README`, and `
 Retain release commit history in the deployment checkout so these source snapshots remain available.
 Label this as a source snapshot, separately from artifact verification.
 Never substitute the working tree or choose an arbitrary nested readme.
+Give active package overviews native category, keyword, and architecture links in the existing source sidebar.
+Label these as current package classification; omit them from exact historical release pages.
+Keep structured source metadata bound to the selected record's version, license, repository, and exact source commit.
+Keep target-specific dependency declarations with their checked source artifact rather than flattening them into package-wide requirements.
 Missing commits, external repositories, absent files, invalid UTF-8, and oversized text produce useful documentation fallbacks.
 The rest of the release page remains available.
 Bound readme input and render only the supported Markdown subset.
@@ -909,6 +913,10 @@ The motivation may include working assumptions about AI-assisted assembly, resou
 Render package descriptions as text. Do not insert registry strings through `innerHTML`. Validate download URL schemes and origins before making links. The first registry uses HTTPS GitHub release assets. An invalid record must not become a download action.
 
 Derive search counts from the records currently displayed. Search runs locally. No search query is sent to analytics or a third-party search service.
+Search includes the latest active license and reviewed current keywords and categories.
+Optional topic data must not block base search or replace a focused control.
+Identify incomplete topic coverage when a source fails.
+Local search titles describe the current view without changing canonical or social metadata.
 
 `registry/v1/downloads.json` contains Asm-owned delivery observations with their cutoff and coverage.
 A missing count is unavailable; an observed zero applies only to its stated coverage.

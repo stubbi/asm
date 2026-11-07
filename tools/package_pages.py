@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from html import escape, unescape
+import json
 from pathlib import Path
 import re
 from urllib.parse import quote, unquote, urlsplit
 
 import registry
 import target_metadata
+import discovery_metadata
 from count_format import compact_count, count_html
 
 
@@ -63,6 +65,59 @@ def _release_description(name: str, record: dict | None, *, exact: bool = False)
     return f'{identity}: {state}{record["summary"]} License: {record["license"]}. Recorded targets: {targets}.'
 
 
+def _json_ld(value: dict | None) -> str:
+    """Serialize data without allowing a source string to terminate its script."""
+    if value is None:
+        return ""
+    encoded = json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+    for character, replacement in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026")):
+        encoded = encoded.replace(character, replacement)
+    registry.require(len(encoded) <= 128 * 1024, "page structured data exceeds its bound")
+    return '<script type="application/ld+json">' + encoded + '</script>'
+
+
+def _source_url(record: dict) -> str:
+    source = record["source"]
+    url = source["repository"] + "/tree/" + source["commit"]
+    return url + ("/" + quote(source["path"], safe="/") if source["path"] != "." else "")
+
+
+def _package_schema(route: str, name: str, description: str, selected: dict | None) -> dict:
+    """Describe the visible page and exact recorded source, without trust claims."""
+    canonical = SITE + route.rstrip("/")
+    page = {"@context": "https://schema.org", "@type": "WebPage", "@id": canonical + "#webpage",
+            "url": canonical, "name": name, "description": description, "inLanguage": "en"}
+    if selected is not None:
+        version_url = SITE + package_route(name, selected["version"]).rstrip("/")
+        page["mainEntity"] = {
+            "@type": "SoftwareSourceCode", "@id": version_url + "#source", "name": name,
+            "description": selected["summary"], "version": selected["version"],
+            "identifier": [{"@type": "PropertyValue", "propertyID": "Package release", "value": name + "@" + selected["version"]},
+                           {"@type": "PropertyValue", "propertyID": "Git commit", "value": selected["source"]["commit"]}],
+            "url": _source_url(selected), "codeRepository": selected["source"]["repository"],
+            "license": "https://spdx.org/licenses/" + selected["license"] + ".html",
+            "creativeWorkStatus": "Yanked release" if selected["yanked"] else "Active release",
+            "subjectOf": {"@type": "CreativeWork", "url": SITE + record_route(selected), "encodingFormat": "application/json"}}
+    return page
+
+
+def _topic_links(topics: dict | None, prefix: str) -> str:
+    if not topics:
+        return ""
+    rows = []
+    for label, group, entries in (("Categories", "categories", topics["categories"]),
+                                  ("Keywords", "keywords", [(tag, tag) for tag in topics["keywords"]]),
+                                  ("Architectures", "architectures", topics["architectures"])):
+        if entries:
+            links = "".join('<li>' + _anchor(name, prefix + "browse/" + group + "/" + identifier + "/") + '</li>'
+                            for identifier, name in entries)
+            rows.append('<div><dt>' + label + '</dt><dd><ul>' + links + '</ul></dd></div>')
+    if not rows:
+        return ""
+    return ('<section class="package-section"><h2>Browse related</h2><dl class="package-source-facts package-topics">'
+            + "".join(rows) + '</dl><p class="package-note">Current package classification. Check each release’s declared targets.</p></section>')
+
+
 def _chrome(stage: Path) -> tuple[str, str]:
     content = registry.read_regular(stage, "index.html", 512 * 1024).decode("utf-8")
     fragments = []
@@ -90,7 +145,7 @@ def _relative_chrome(fragment: str, prefix: str, active: bool | str) -> str:
 
 
 def _page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], *, missing=False,
-          active_nav="Explore", scripts=True) -> str:
+          active_nav="Explore", scripts=True, structured_data=None, metadata_url=None) -> str:
     # A host can serve this document at any missing path. Root paths preserve
     # recovery and assets without changing the skip link's local fragment.
     prefix = "/" if missing else "../" * route.count("/")
@@ -98,6 +153,9 @@ def _page(route: str, title: str, description: str, body: str, chrome: tuple[str
     header = _relative_chrome(chrome[0], prefix, active_nav if not missing else False)
     footer = _relative_chrome(chrome[1], prefix, False)
     robots = '<meta name="robots" content="noindex">' if missing else ''
+    og_type = "article" if structured_data and structured_data.get("@type") == "BlogPosting" else "website"
+    metadata_link = ('<link rel="describedby" type="application/json" href="' + escape(metadata_url, quote=True)
+                     + '" title="Exact release metadata">') if metadata_url else ''
     script_tags = (f'<script src="{prefix}app.js" defer></script>\n'
                    f'<script src="{prefix}package-page.js" defer></script>') if scripts else ''
     return f'''<!doctype html>
@@ -108,24 +166,31 @@ def _page(route: str, title: str, description: str, body: str, chrome: tuple[str
 <meta name="theme-color" content="#f5f5f4">
 <meta name="description" content="{escape(description, quote=True)}">
 <meta property="og:site_name" content="Asm">
-<meta property="og:type" content="website">
+<meta property="og:type" content="{og_type}">
 <meta property="og:title" content="{escape(title, quote=True)} | Asm">
 <meta property="og:description" content="{escape(description, quote=True)}">
 <meta property="og:url" content="{canonical}">
 <meta property="og:image" content="https://asm.build/social-preview.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
 <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{escape(title, quote=True)} | Asm">
 <meta name="twitter:description" content="{escape(description, quote=True)}">
 <meta name="twitter:image" content="https://asm.build/social-preview.png">
+<meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
 {robots}
 <link rel="canonical" href="{canonical}">
+<link rel="alternate" type="application/atom+xml" href="{prefix}blog/atom.xml" title="Asm blog">
+{metadata_link}
 <link rel="icon" type="image/svg+xml" href="{prefix}icon.svg">
 <link rel="stylesheet" href="{prefix}styles.css">
 <link rel="stylesheet" href="{prefix}packages.css">
 <script src="{prefix}navigation.js"></script>
 <script src="{prefix}repository-stars.js" defer></script>
 {script_tags}
+{_json_ld(structured_data)}
 <title>{escape(title)} | Asm</title>
 </head>
 <body class="package-page">
@@ -566,7 +631,7 @@ def _artifacts(record: dict, indexed: dict, prefix: str, *, delivery=False, depe
 
 def _package_body(repo: Path, route: str, name: str, records: list[dict], selected: dict | None,
                   indexed_versions: dict, counts: dict, exact: bool, cache: dict, *, delivery=False,
-                  activity=None, publications=None, dependency_sources=None, package_names=frozenset()) -> str:
+                  activity=None, publications=None, dependency_sources=None, package_names=frozenset(), topics=None) -> str:
     prefix = "../" * route.count("/")
     owner = name.split("/")[0]
     trail = [("Packages", prefix + "packages/"), (owner, prefix + "packages/" + owner + "/")]
@@ -610,10 +675,7 @@ def _package_body(repo: Path, route: str, name: str, records: list[dict], select
     source = '<section id="source" class="package-section"><h2>Source</h2>'
     if selected:
         source += '<p>' + _anchor("Source repository", selected["source"]["repository"]) + '</p>' + _facts([("Source commit", selected["source"]["commit"]), ("Source path", selected["source"]["path"])], "package-source-facts")
-        source_url = selected["source"]["repository"] + "/tree/" + selected["source"]["commit"]
-        if selected["source"]["path"] != ".":
-            source_url += "/" + quote(selected["source"]["path"], safe="/")
-        source += '<p>' + _anchor("Browse source at this commit", source_url) + '</p>'
+        source += '<p>' + _anchor("Browse source at this commit", _source_url(selected)) + '</p>'
         source += '<p>' + _anchor("Release record (JSON)", prefix + record_route(selected)) + '</p>'
     else:
         source += '<p>Select an exact release to inspect its source and record.</p>'
@@ -624,6 +686,8 @@ def _package_body(repo: Path, route: str, name: str, records: list[dict], select
             values = [(label, _discovery_instant(entry[key]).strftime("%d %b %Y").lstrip("0")) for key, label in (("first_published_at", "First GitHub release"), ("last_published_at", "Latest GitHub release")) if entry.get(key)]
             if values:
                 source += '<section class="package-section"><h2>Package publication</h2>' + _facts(values, "package-source-facts") + '<p class="package-note">Package-wide history from GitHub release availability. These dates do not identify this selected version.</p></section>'
+    if not exact and selected:
+        source += _topic_links(topics, prefix)
     import package_activity
     version = selected["version"] if selected and exact else None
     activity_route = prefix + "registry/v1/activity/" + name + ("/" + version if version else "") + ".json"
@@ -647,10 +711,27 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
     indexed = {package["name"]: package for package in index["packages"]}
     registry.require(set(indexed) == set(grouped), "package records and index differ")
     dependency_sources = _dependency_sources(dependency_metadata, index)
+    classification = discovery_metadata.read_metadata(stage, index, "registry/v1/discovery-metadata.json")
+    categories = read_discovery_categories(stage, index, "registry/v1/categories.json")
+    topics = {}
+    for item in classification["packages"]:
+        if item["version"] is not None:
+            package = indexed[item["name"]]
+            selected = next(release for release in package["versions"] if release["version"] == item["version"])
+            architectures = sorted({target_metadata.architecture_for_target(artifact["target"])
+                                    for artifact in selected["artifacts"]} - {None})
+            topics[item["name"]] = {"keywords": item["keywords"],
+                "categories": [(category["id"], category["name"]) for category in categories if item["name"] in category["packages"]],
+                "architectures": [(key, target_metadata.ARCHITECTURES[key] + " (" + key + ")") for key in architectures]}
     routes, cache = [], {}
-    def write(route, title, description, body, missing=False):
+    def write(route, title, description, body, missing=False, *, package=None, record=None):
         destination = stage / route if route.endswith(".html") else stage / route / "index.html"
-        registry.write_atomic(destination, _page(route, title, description, body, chrome, missing=missing).encode())
+        schema = _package_schema(route, package, description, record) if package else None
+        if schema is not None and record is not None and route == package_route(package):
+            schema["keywords"] = topics[package]["keywords"]
+        metadata_url = "../" * route.count("/") + record_route(record) if record else None
+        registry.write_atomic(destination, _page(route, title, description, body, chrome, missing=missing,
+                                               structured_data=schema, metadata_url=metadata_url).encode())
         routes.append(route)
     def listing(names, route):
         prefix = "../" * route.count("/")
@@ -674,12 +755,12 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
         route = package_route(name)
         write(route, name, _release_description(name, selected), _package_body(repo, route, name, releases, selected, matches, counts, False, cache, delivery=delivery,
               activity=(activities or {}).get((name, None)), publications=publications,
-              dependency_sources=dependency_sources, package_names=set(indexed)))
+              dependency_sources=dependency_sources, package_names=set(indexed), topics=topics.get(name)), package=name, record=selected)
         for record in releases:
             route = package_route(name, record["version"])
             write(route, name + "@" + record["version"], _release_description(name, record, exact=True), _package_body(repo, route, name, releases, record, matches, counts, True, cache, delivery=delivery,
                   activity=(activities or {}).get((name, record["version"])), publications=publications,
-                  dependency_sources=dependency_sources, package_names=set(indexed)))
+                  dependency_sources=dependency_sources, package_names=set(indexed)), package=name, record=record)
     write("packages/", "Assembly packages", "Browse the Asm assembly package catalog. Compare package purposes, exact releases, licenses, and declared targets, then inspect source and release evidence.", '<header class="package-heading"><h1>Assembly packages</h1><p>Inspect package records, targets, and release evidence.</p></header>' + listing(grouped, "packages/"))
     for owner in sorted({name.split("/")[0] for name in grouped}):
         route = "packages/" + owner + "/"

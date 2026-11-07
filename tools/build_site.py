@@ -167,12 +167,17 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <meta property="og:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta property="og:url" content="https://asm.build/reference/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
     <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="CLI source reference | Asm">
     <meta name="twitter:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
+    <meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <link rel="canonical" href="https://asm.build/reference/">
+    <link rel="alternate" type="application/atom+xml" href="../blog/atom.xml" title="Asm blog">
     <link rel="icon" type="image/svg+xml" href="../icon.svg">
     <link rel="stylesheet" href="../styles.css">
     <script src="../navigation.js"></script>
