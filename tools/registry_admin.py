@@ -7,8 +7,6 @@ The native CLI and registry HTTP application remain assembly.
 from __future__ import annotations
 
 import argparse
-import ctypes
-import errno
 import hashlib
 import ipaddress
 import os
@@ -171,33 +169,52 @@ def prepare_import(repository: Path, commit: str, expected_revision: int):
     return plan, canonical, exports
 
 
+def verify_distribution(root: Path, commit: str, canonical_records: list[str]) -> dict:
+    """Check an operator-selected local snapshot before reading database credentials.
+
+    The receipt describes this check. It grants no publisher identity, signing
+    authority, or guarantee against later changes by the storage owner.
+    """
+    require(root.is_dir(), "Select an existing private distribution directory. Synchronize it before importing.")
+    try:
+        from registry_mirror import load_current
+        from registry_storage import LocalBlobStore
+    except ImportError:
+        raise AdminError("Install the distribution tools before using --distribution-root.") from None
+    try:
+        store = LocalBlobStore(root)
+        current = load_current(store)
+        require(current is not None, "The distribution snapshot is missing. Synchronize the selected store before importing.")
+        head, snapshot, _ = current
+        require(snapshot["source_commit"] == commit,
+                "The distribution source commit differs. Synchronize the selected commit before importing.")
+        require([registry.json_bytes(record).decode("ascii") for record in snapshot["records"]] == canonical_records,
+                "The distribution records differ from the accepted source. Restore the matching snapshot before importing.")
+        count = 0
+        for record in snapshot["records"]:
+            for artifact in record["artifacts"]:
+                registry.validate_artifact(store.get_blob(artifact["sha256"], artifact["bytes"]), record, artifact)
+                count += 1
+        latest = load_current(store)
+        require(latest is not None and latest[0] == head,
+                "The distribution head changed. Recheck the selected commit and retry.")
+        return {"snapshot_sha256": head["snapshot"], "source_commit": commit,
+                "sequence": head["sequence"], "artifact_count": count}
+    except (registry.RegistryError, OSError):
+        raise AdminError("Distribution verification failed. Synchronize an intact snapshot before importing.") from None
+
+
 def sql_text(value):
     # Hex contains no SQL, quotes, delimiters, or psql metacommands from input data.
     return "convert_from(decode('" + value.encode("utf-8").hex() + "','hex'),'UTF8')"
 
 
 def reject_extended_acl(descriptor):
-    """Inspect the opened file, not its replaceable path. Reject all extended ACLs."""
-    if sys.platform == "darwin":
-        library = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-        library.acl_get_fd_np.argtypes = (ctypes.c_int, ctypes.c_int)
-        library.acl_get_fd_np.restype = ctypes.c_void_p
-        library.acl_free.argtypes = (ctypes.c_void_p,)
-        ctypes.set_errno(0)
-        acl = library.acl_get_fd_np(descriptor, 0x100)  # macOS ACL_TYPE_EXTENDED
-        if acl:
-            library.acl_free(acl)
-            raise AdminError("Use credential files without extended ACLs.")
-        require(ctypes.get_errno() == errno.ENOENT, "Cannot inspect the credential file ACL.")
-    elif sys.platform == "linux":
-        try:
-            os.getxattr(descriptor, "system.posix_acl_access")
-        except OSError as error:
-            require(error.errno == errno.ENODATA, "Cannot inspect the credential file ACL.")
-        else:
-            raise AdminError("Use credential files without extended ACLs.")
-    else:
-        raise AdminError("Use the qualified Linux or macOS operator host.")
+    """Preserve the operator exception contract for the shared private-file policy."""
+    try:
+        registry.reject_extended_acl(descriptor)
+    except registry.RegistryError as error:
+        raise AdminError(str(error)) from None
 
 
 def open_checked(path, maximum, *, private=False):
@@ -227,7 +244,8 @@ class Connection:
     def __init__(self, path, executable, role):
         self.descriptors = []
         try:
-            require(role in {"asm_migrator", "asm_operator", "asm_reader"}, "Select one fixed catalog role.")
+            require(role in {"asm_migrator", "asm_operator", "asm_reader", "asm_publication_worker", "asm_distributor"},
+                    "Select one fixed registry role.")
             fd, body = open_checked(path, 8192, private=True)
             self.descriptors.append(fd)
             value = body.decode("ascii").removesuffix("\n")
@@ -367,6 +385,8 @@ def main(argv=None):
         item.add_argument("--expected-revision", type=int, required=True)
         if name == "import":
             item.add_argument("--plan-sha256", required=True)
+            item.add_argument("--distribution-root", type=Path,
+                              help="Check a matching local snapshot and every artifact before reading database credentials")
     for name in ("migrate", "grant", "status"):
         commands.add_parser(name)
     binding = commands.add_parser("bind-namespace")
@@ -375,12 +395,15 @@ def main(argv=None):
     binding.add_argument("--acceptance-commit", required=True)
     args = parser.parse_args(argv)
     try:
+        distribution = None
         if args.command in {"plan", "import"}:
             prepared, records, exports = prepare_import(args.repository, args.commit, args.expected_revision)
             if args.command == "plan":
                 sys.stdout.buffer.write(registry.json_bytes(prepared))
                 return 0
             require(args.plan_sha256 == prepared["plan_sha256"], "The reviewed import plan digest differs.")
+            if args.distribution_root is not None:
+                distribution = verify_distribution(args.distribution_root, args.commit, records)
         if args.command == "bind-namespace":
             registry.package_name(args.namespace + "/namespace-check")
             require(0 < args.github_id <= 2**63 - 1, "Use a positive numeric GitHub identity.")
@@ -408,7 +431,9 @@ def main(argv=None):
                     str(args.expected_revision) + "," + array + "," + ",".join(sql_text(body) for body in exports) + ");")
                 require(re.fullmatch(r"[1-9][0-9]*\n", raw), "The database returned an invalid revision.")
                 result = {"status": "imported", "revision": int(raw), "acceptance_commit": args.commit,
-                          "plan_sha256": prepared["plan_sha256"], "artifact_bytes_checked": False}
+                          "plan_sha256": prepared["plan_sha256"], "artifact_bytes_checked": distribution is not None}
+                if distribution is not None:
+                    result["distribution"] = distribution
         sys.stdout.buffer.write(registry.json_bytes(result))
         return 0
     except AdminError as error:

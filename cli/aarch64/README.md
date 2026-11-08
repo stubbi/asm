@@ -7,7 +7,8 @@ Transport, decompression, digest, and provenance checks use the same fixed exter
 
 ## Build
 
-On Linux AArch64, run `make` with GNU binutils installed.
+On Linux AArch64, install GNU Binutils and the Go SDK declared in `verifier/go.mod`.
+Run `make` for the full native CLI.
 On another supported Linux host, install the AArch64 GNU cross-binutils package and run:
 
 ```sh

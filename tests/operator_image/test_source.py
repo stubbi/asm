@@ -17,7 +17,8 @@ SCRIPT = ROOT / "tools/operator_source.py"
 sys.path.insert(0, str(ROOT / "tools"))
 import operator_source
 FILES = ("LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
-         "tools/prepare_operator.py", "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
+         "tools/prepare_operator.py", "tools/registry_mirror.py", "tools/registry_storage.py",
+         "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
          "server/catalog/read-exports.sql")
 
 
@@ -69,6 +70,8 @@ class SourceBundleTests(unittest.TestCase):
         self.assertEqual(manifest["source_revision"], self.commit)
         self.assertEqual(manifest["bundle_sha256"], hashlib.sha256((self.output / "source.bundle").read_bytes()).hexdigest())
         self.assertEqual(set(manifest["files"]), set(FILES))
+        for name in ("tools/registry_mirror.py", "tools/registry_storage.py"):
+            self.assertEqual(manifest["files"][name], hashlib.sha256((self.repo / name).read_bytes()).hexdigest())
         destination = self.base / "accepted.git"
         restored = self.restore(destination)
         self.assertEqual(restored.returncode, 0, restored.stderr.decode())
@@ -80,6 +83,20 @@ class SourceBundleTests(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertFalse((destination / "objects/info/alternates").exists())
         self.assertEqual(self.git("remote", repository=destination), b"")
+
+    def test_missing_distribution_source_refuses_packaging(self):
+        complete = self.commit
+        for name in ("tools/registry_mirror.py", "tools/registry_storage.py"):
+            with self.subTest(name=name):
+                self.git("checkout", "-q", complete)
+                self.output = self.base / (Path(name).stem + "-bundle")
+                self.git("rm", name)
+                self.git("commit", "-qm", "Remove required distribution source fixture")
+                self.commit = self.git("rev-parse", "HEAD").decode().strip()
+                refused = self.create()
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertEqual(refused.stdout, b"")
+                self.assertFalse(self.output.exists())
 
     def test_dirty_checkout_wrong_head_and_existing_output_are_refused(self):
         (self.repo / "LICENSE").write_text("Uncommitted bytes\n")

@@ -1,6 +1,6 @@
 /* Sponsorship uses the shared Asm palette, typography, controls, and spacing. */
 .sponsorship-main { min-width: 0; padding-bottom: var(--space-16); }
-.sponsorship-intro { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; gap: var(--space-16); padding-block: var(--section-space); }
+.sponsorship-intro { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; gap: var(--space-16); padding-block: var(--page-entry) var(--space-12); }
 .sponsorship-intro > *, .sponsorship-section-heading > *, .sponsor-tier > *, .sponsorship-terms-grid > *, .sponsorship-contact > * { min-width: 0; }
 .sponsorship-intro > div > p:not(.eyebrow) { max-width: 36rem; margin: var(--space-4) 0; color: var(--muted); }
 .sponsorship-intro > div > p.sponsorship-lede { color: var(--ink); font-size: var(--text-lg); }
@@ -41,7 +41,6 @@
 .contact-address a { display: inline-flex; align-items: center; min-height: var(--control-height); max-width: 100%; overflow-wrap: anywhere; }
 @media (max-width: 43.75rem) {
   .sponsorship-intro, .sponsorship-section-heading, .sponsorship-contact { grid-template-columns: minmax(0, 1fr); gap: var(--space-8); }
-  .sponsorship-intro { padding-block: var(--space-12); }
   .sponsorship-section-heading { margin-bottom: var(--space-6); }
   .sponsor-tier { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--space-6); }
 }

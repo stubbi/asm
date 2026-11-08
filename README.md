@@ -12,7 +12,7 @@ The [project purpose](docs/why-asm.md) explains our technical assumptions about 
 
 ## Quick start
 
-Asm 0.6.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
+Asm 0.7.0 supports **Linux x86-64, Linux ARM64, and Apple Silicon with macOS 15 or later**.
 
 ### Install the command
 
@@ -35,7 +35,7 @@ Then check the version:
 asm version
 ```
 
-On Apple Silicon, the output is `asm 0.6.0 (aarch64-macos)`.
+On Apple Silicon, the output is `asm 0.7.0 (aarch64-macos)`.
 
 <details>
 <summary>Set PATH for this terminal</summary>
@@ -118,6 +118,8 @@ This form remains supported.
 
 ### Find a package
 
+These examples use the public V1 catalog and retain exact 0.6.0 package versions.
+
 ```sh
 asm search hello
 asm info stubbi/hello
@@ -183,29 +185,54 @@ See the [installed-program contract](docs/installed-programs.md) for file checks
 
 ## Status
 
-The current published version is [Asm 0.6.0](https://github.com/stubbi/asm/releases/tag/v0.6.0).
+The current published prerelease is [Asm 0.7.0](https://github.com/stubbi/asm/releases/tag/v0.7.0).
 
 | Area | Available today |
 | --- | --- |
 | Native CLI | Linux x86-64, Linux ARM64, and Apple Silicon macOS 15+. |
 | Projects | Create, inspect, build, run, test, and clean; select native or standalone Linux implementations. |
 | Packages | Search, inspect versions, download artifacts, install executables, list installations, upgrade, and uninstall. |
-| Dependencies | Exact direct source dependencies, with target-specific selections in a shared lock file. |
+| Dependencies | V1 exact direct selections; signed V2 ranges, transitive graphs, optional dependencies, and features for one explicit target. |
 | Registry | Package search, target filters, release records, and verification results. |
-| Publication | Local record preparation; hosted publication remains under qualification. |
+| Publication | Local V1 records and scoped V2 publishing to configured registries. Official hosted activation remains gated. |
 | Artifact checks | Metadata, size, SHA-256, archive structure, and executable format. |
 | CLI updates | Manual updates with signed release provenance. |
 
-Asm 0.6.0 adds named target implementations, standalone Linux cross builds, and target-specific dependency locks.
-The [release notes](docs/releases/0.6.0.md) describe the commands, artifact scope, and limits.
+Asm 0.7.0 adds signed V2 distribution, native project publishing, complete dependency graphs, and additive features.
+The [release notes](docs/releases/0.7.0.md) describe the commands, artifact scope, and limits.
 
 Projects select the native host by default.
 Explicit standalone Linux builds produce separate artifacts without executing them.
 Cross-target native-library linking remains unsupported.
 Packages can provide separate artifacts for other targets, including RISC-V Linux.
 
-Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
+Self-service enrollment, account recovery, isolated public build workers, and hosted formal verification remain planned.
 The [roadmap](docs/roadmap.md) tracks that work.
+
+Published Asm 0.7.0 includes [signed V2 distribution](docs/specs/registry-v2.md), publishing from committed projects, and explicit mirror selection.
+The [release workflow](https://github.com/stubbi/asm/actions/runs/42499673815) records qualification from [the release source](https://github.com/stubbi/asm/commit/11f526c2f4264b8c33c4865ff03862857424c184).
+The public catalog retains its V1 compatibility feeds.
+V2 commands use an explicitly configured registry, trusted root, and HTTPS mirrors.
+Official hosted V2 publication is not activated.
+It requires qualified key custody, enrolled owners, deployment identities, and recovery checks.
+Its [hosting guide](docs/hosting.md#operate-signed-v2-distribution) describes the minimal components and build commands.
+Application and package logic remain assembly; maintained libraries provide transport and cryptography.
+Private registry operations and tests use suitable other languages.
+The [signed distribution evidence](docs/registry-v2-evidence.md) records the baseline artifacts and deployment gates.
+The [project and statistics evidence](docs/project-publication-evidence.md) records the subsequent source extension.
+An [explicit V2 website build](docs/hosting.md#build-the-v2-website) connects package pages, native fetch commands, and download observations without another service.
+The [website evidence](docs/v2-website-evidence.md) records its checks and limits.
+The V2 workflow resolves transitive source dependencies and complete graph locks for one explicit target.
+Native `registry resolve` selects versions; `registry sync` restores those exact selections.
+Optional dependencies remain dormant until a feature activates them.
+Use `registry resolve --features NAME[,NAME]` to select root features.
+Use `--no-default-features` to disable the root's implicit default feature.
+Incoming dependency requests combine additively for each selected package.
+New resolutions write `asm-lock-v4`, including the root selection, enabled features, and active edges.
+Feature-free `asm-lock-v3` files remain readable; feature declarations require a new resolution.
+The [dependency workflow](docs/hosting.md#resolve-and-restore-v2-dependencies) states the supported ranges, limits, and local build checks.
+The [dependency evidence](docs/v2-dependency-evidence.md) records target-specific checks and deployment limits.
+Earlier published binaries retain their original bytes and behavior.
 
 ## Prepare a release record
 
@@ -217,6 +244,8 @@ Public publisher authentication and hosted deployment remain unqualified.
 
 Use the [packaging and compatibility guide](registry/README.md) to prepare artifacts and records.
 The [hosted publication boundary](docs/hosted-registry.md#publication-boundary) states the remaining requirements.
+The [hosting guide](docs/hosting.md) covers conditional storage, byte mirrors, and asynchronous origin observations.
+The [`asm registry publish` command](docs/hosting.md#use-the-native-v2-client) accepts a committed project or prepared V2 manifests and digest-named objects.
 
 ## Build with an AI
 
@@ -237,7 +266,8 @@ The [security model](docs/specs/security.md) explains the checks, trust boundari
 
 ## Build from source
 
-Install Git, Make, and Python 3.11 or later.
+Install Git, Make, Python 3.11 or later, and the Go SDK declared in [verifier/go.mod](verifier/go.mod).
+The Go SDK must be available directly; builds disable automatic toolchain switching and ambient Go workspace configuration.
 Linux also requires GNU Binutils, curl, GNU Coreutils, and gzip.
 Apple Silicon macOS requires Xcode Command Line Tools.
 
@@ -251,9 +281,12 @@ asm version
 ```
 
 `make` selects the native implementation for your machine.
-It runs the assembler and linker to create the executable.
-It also provides test and installation commands.
-The root `asm.toml` describes the Linux x86-64 reference build.
+It builds the transport and cryptography adapter, then assembles and links the full native CLI.
+Go supplies no package selection, feature evaluation, project parsing, or installation policy.
+Make also provides test and installation commands.
+Use `make REGISTRY_V2=0` for an explicit V1-only build without the adapter or Go prerequisite.
+This minimal build cannot use `asm registry` commands.
+The root `asm.toml` describes the minimal Linux x86-64 reference build.
 The [CLI source guide](cli/README.md) explains the layout and installation helper.
 The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
 
@@ -273,7 +306,8 @@ Follow the [design guide](design.md), [writing guide](docs/writing.md), and [cod
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
 Python handles registry operations, release automation, and the separate MCP protocol adapter; JavaScript supports the website.
 The hosted registry runtime foundation uses assembly with mature protocol and database libraries.
-The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
+The native V2 client embeds the Go transport and cryptography adapter.
+The separate [self-update trust migration](docs/trusted-distribution.md) remains gated on production key provisioning and recovery qualification.
 
 On Linux, run `make check` from the repository root.
 On macOS, run `make test`.
@@ -296,6 +330,10 @@ Asm is provided without warranty.
 | Reference packages under `examples/` | Each package's included MIT license |
 | Independently published packages | The license declared by that package version |
 | Earlier published versions | The license included with that version |
+
+Executables that embed the Go adapter include dependencies under their upstream license terms.
+Each such release provides the matching `.LICENSES.txt` file.
+The adapter's own source uses AGPL-3.0-or-later.
 
 Starter assembly files contain the complete MIT notice.
 The same notice remains in [examples/hello/LICENSE](examples/hello/LICENSE) and [examples/math/LICENSE](examples/math/LICENSE).

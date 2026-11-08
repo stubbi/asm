@@ -121,13 +121,11 @@ def _summary(notes: str) -> str:
 
 
 def _blog_page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], preview: bool,
-               *, structured_data: dict | None = None) -> str:
-    html = package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False,
-                               structured_data=structured_data)
+               *, structured_data: dict | None = None, noindex=False) -> str:
     # Preview is a build-wide choice. Archives and released posts must also
     # remain unindexed when they link to unpublished articles.
-    if preview: html = html.replace("</head>", '<meta name="robots" content="noindex">\n</head>', 1)
-    return html
+    return package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False,
+                               structured_data=structured_data, noindex=preview or noindex)
 
 
 def _navigation(route: str, selected: str) -> str:
@@ -203,7 +201,8 @@ def _feed(posts: list[dict], now: datetime) -> bytes:
     return ElementTree.tostring(feed, encoding="utf-8", xml_declaration=True)
 
 
-def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *, release_dates=None, include_drafts=False) -> list[str]:
+def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *, release_dates=None, include_drafts=False,
+                       include_releases=True) -> list[str]:
     """Write articles, release posts, archives, and Atom; return public HTML routes.
 
     Only accepted stubbi/asm versions with released change-log sections qualify.
@@ -213,11 +212,13 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
     Preview drafts are visibly unpublished, unindexed, and excluded from Atom
     and the returned sitemap routes. No authored Markdown is copied to stage.
     """
-    releases, sections = _releases(index), _sections(repo)
+    registry.require(type(include_releases) is bool, "invalid release-blog selection")
+    releases, sections = _releases(index) if include_releases else {}, _sections(repo)
     registry.require(set(releases) <= sections.keys(), "an accepted Asm release lacks its change log section")
     now = datetime.now(timezone.utc)
     dates = _dates(release_dates, releases, now)
     articles = blog_posts.load_posts(repo, include_drafts=include_drafts, now=now)
+    has_published_articles = any(not post["draft"] for post in articles)
     chrome = package_pages._chrome(stage)
     # Parsed instants, rather than lexical ISO text, preserve fractional order.
     versions = sorted(releases, key=lambda version: (version in dates, datetime.fromisoformat(dates[version].replace("Z", "+00:00")) if version in dates else datetime.min.replace(tzinfo=timezone.utc), registry.version_tuple(version)), reverse=True)
@@ -297,7 +298,9 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                                 "No posts are published yet. Published articles and registered CLI release notes appear here when available.")
         elif selected == "Articles" and any(post.get("draft") for post in entries):
             page_description = "Preview repository-authored articles, including unpublished drafts. Drafts remain outside the public feed and sitemap."
-        outputs.append((route + "index.html", _blog_page(route, page_title, page_description, body, chrome, include_drafts).encode("utf-8")))
+        outputs.append((route + "index.html", _blog_page(route, page_title, page_description, body, chrome, include_drafts,
+                       noindex=selected == "Articles" and not has_published_articles).encode("utf-8")))
     outputs.append(("blog/atom.xml", _feed(posts, now)))
     for relative, data in outputs: registry.write_atomic(stage / relative, data)
-    return ["blog/", "blog/articles/", "blog/releases/"] + [post["route"] for post in posts if not post.get("draft")]
+    archives = ["blog/"] + (["blog/articles/"] if has_published_articles else []) + ["blog/releases/"]
+    return archives + [post["route"] for post in posts if not post.get("draft")]

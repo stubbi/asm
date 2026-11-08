@@ -61,6 +61,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "registry-target" {
+		return registryTarget(ctx, args[1:])
+	}
 	if len(args) == 1 && args[0] == "--version" {
 		fmt.Println("asm-verify 1")
 		return nil
@@ -140,7 +143,7 @@ func run(ctx context.Context, args []string) error {
 			return target.VerifyLengthHashes(data)
 		})
 	}
-	return errors.New("expected provenance FILE BUNDLE COMMIT, metadata STATE NAME OUTPUT, or authorize STATE NAME FILE")
+	return errors.New("expected provenance FILE BUNDLE COMMIT, metadata STATE NAME OUTPUT, authorize STATE NAME FILE, or registry-target ROOT STATE ID MIRROR TARGET OUTPUT [CA]")
 }
 
 func verifyProvenance(b *bundle.Bundle, artifact []byte, commit string, trusted root.TrustedMaterial) error {

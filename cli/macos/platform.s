@@ -58,10 +58,31 @@ MAC_SIMPLE arm_read, read
 MAC_SIMPLE arm_write, write
 
 MAC_SIMPLE arm_lseek, lseek
+.ifdef ASM_REGISTRY_V2
+/* Project batch mapping: x0=0, x1=bounded completed-file size, x2=PROT_READ(1),
+ * x6=MAP_PRIVATE(2), x4=owned FD>=3, x5=64-bit offset0. Flags match Darwin.
+ * x9=64-bit pointer or negative errno. Preserve x0-x7/x19-x29; scratch as above.
+ * Stack96 locally, plus16 call and16 errno-save bytes on the error path. */
+arm_mmap:
+    MAC_SAVE
+    mov x3, x6
+    bl _mmap
+    cmn x0, #1
+    b.eq .Lmac_project_mmap_error
+    mov x9, x0
+    MAC_RETURN
+.Lmac_project_mmap_error:
+    ARM_CALL mac_errno
+    MAC_RETURN
+/* x0=returned mapping, x1=its exact length. x9=0 or negative errno. */
+MAC_SIMPLE arm_munmap, munmap
+.endif
 MAC_SIMPLE arm_mkdir, mkdir
 MAC_SIMPLE arm_unlink, unlink
 MAC_SIMPLE arm_rmdir, rmdir
 MAC_SIMPLE arm_rename, rename
+/* link preserves an existing destination and reports Linux-contract errno. */
+MAC_SIMPLE arm_link, link
 MAC_SIMPLE arm_chmod, chmod
 MAC_SIMPLE arm_fchmod, fchmod
 MAC_SIMPLE arm_fsync, fsync

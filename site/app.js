@@ -8,6 +8,8 @@
   const targetArchitectures = new Map([["aarch64-linux", "aarch64"], ["aarch64-macos", "aarch64"],
     ["x86_64-linux", "x86_64"], ["riscv64-linux", "riscv64"],
     ["aarch64-windows", "aarch64"], ["x86_64-windows", "x86_64"]]);
+  const v2Artifacts = new WeakSet();
+  const v2Catalogs = new WeakMap();
   const maxReleaseArtifacts = 14; // The accepted registry release bound.
 
   function architectureForTarget(target) {
@@ -112,7 +114,70 @@
     }
   }
 
+  function registryPaths(version = "1") {
+    if (!["1", "2"].includes(version)) throw new RangeError("Unsupported registry version");
+    return { index: `registry/v${version}/index.json`, discovery: `registry/v${version}/discovery.json`, schema: Number(version) };
+  }
+
+  function normalizeV2Index(data) {
+    const require = (value) => { if (!value) throw new RangeError("The V2 package index is invalid."); };
+    const hex = (value, size) => typeof value === "string" && new RegExp(`^[a-f0-9]{${size}}$`).test(value);
+    const mirror = (value) => {
+      if (typeof value !== "string" || value.length > 1024 || !/^https:\/\/(?:[a-z0-9][a-z0-9.-]*|\[[0-9a-f:]+\])(?::[1-9][0-9]{0,4})?(?:\/[A-Za-z0-9._~-]+)*$/.test(value)) return false;
+      try { const url = new URL(value); return !url.username && !url.password && !value.split("/").some((part) => [".", ".."].includes(part)); }
+      catch { return false; }
+    };
+    const tuples = {
+      "x86_64-linux": ["x86_64", "linux", "sysv-amd64", "elf"],
+      "aarch64-linux": ["aarch64", "linux", "aapcs64", "elf"],
+      "riscv64-linux": ["riscv64", "linux", "lp64d", "elf"],
+      "aarch64-macos": ["aarch64", "macos", "apple-arm64", "macho"],
+      "x86_64-windows": ["x86_64", "windows", "windows-x64", "pe"],
+      "aarch64-windows": ["aarch64", "windows", "windows-arm64", "pe"]
+    };
+    require(data?.schema === 2 && hex(data.registry_id, 32) && Array.isArray(data.mirrors) && data.mirrors.length > 0 && data.mirrors.length <= 3 && data.mirrors.every(mirror) && new Set(data.mirrors).size === data.mirrors.length);
+    require(data.projection && ["version", "publication_revision", "policy_revision"].every((key) => typeof data.projection[key] === "string" && /^(0|[1-9][0-9]{0,18})$/.test(data.projection[key])));
+    require(Array.isArray(data.packages) && data.packages.length <= 4095);
+    const names = new Set(), packageIDs = new Set(), releaseIDs = new Set();
+    let releases = 0;
+    const packages = data.packages.map((pkg) => {
+      require(pkg && packagePath(pkg.name) && hex(pkg.package_id, 32) && !names.has(pkg.name) && !packageIDs.has(pkg.package_id));
+      names.add(pkg.name); packageIDs.add(pkg.package_id);
+      require(typeof pkg.summary === "string" && pkg.summary.length <= 2000 && Array.isArray(pkg.targets) && Array.isArray(pkg.versions) && pkg.versions.length > 0);
+      const versions = new Set();
+      const entries = pkg.versions.map((release) => {
+        require(release && packagePath(pkg.name, release.version) && !versions.has(release.version) && hex(release.release_id, 32) && !releaseIDs.has(release.release_id) && hex(release.manifest_sha256, 64) && hex(release.envelope_sha256, 64));
+        versions.add(release.version); releaseIDs.add(release.release_id); releases += 1;
+        require(releases <= 4095 && typeof release.yanked === "boolean" && typeof release.revoked === "boolean" && typeof release.summary === "string" && release.summary.length <= 2000 && typeof release.license === "string" && release.license.length <= 128);
+        require(Array.isArray(release.artifacts) && release.artifacts.length > 0 && release.artifacts.length <= 12);
+        const selections = new Set();
+        const artifacts = release.artifacts.map((artifact) => {
+          const tuple = artifact && Object.hasOwn(tuples, artifact.target) ? tuples[artifact.target] : null;
+          require(tuple && ["source", "executable"].includes(artifact.kind) && artifact.isa === tuple[0] && artifact.os === tuple[1] && artifact.abi === tuple[2] && artifact.format === (artifact.kind === "source" ? "tar.gz" : tuple[3]));
+          require(Array.isArray(artifact.cpu_features) && artifact.cpu_features.length === 0 && hex(artifact.sha256, 64) && Number.isSafeInteger(artifact.bytes) && artifact.bytes > 0 && artifact.bytes <= 64 * 1024 * 1024);
+          const selection = artifact.target + "." + artifact.kind;
+          require(!selections.has(selection)); selections.add(selection);
+          const expected = `${data.mirrors[0]}/blobs/sha256/${artifact.sha256}?x-asm=${data.registry_id}.${pkg.package_id}.${release.release_id}.${selection}`;
+          require(artifact.url === expected);
+          const copy = { ...artifact }; v2Artifacts.add(copy); return copy;
+        });
+        return { ...release, artifacts };
+      });
+      const active = entries.filter((release) => !release.yanked && !release.revoked).sort((left, right) => {
+        const a = left.version.split(".").map(Number), b = right.version.split(".").map(Number);
+        return b[0] - a[0] || b[1] - a[1] || b[2] - a[2];
+      });
+      require(pkg.latest === (active[0]?.version ?? null));
+      const targets = [...new Set((active[0]?.artifacts || []).map((artifact) => artifact.target))].sort();
+      require(JSON.stringify([...pkg.targets].sort()) === JSON.stringify(targets));
+      return { ...pkg, versions: entries, targets };
+    }).sort((left, right) => left.name.localeCompare(right.name));
+    v2Catalogs.set(packages, data.registry_id);
+    return packages;
+  }
+
   function normalizeIndex(data) {
+    if (data?.schema === 2) return normalizeV2Index(data);
     if (!data || data.schema !== 1 || !Array.isArray(data.packages) || data.packages.length > 10000) {
       throw new Error("Unsupported package index");
     }
@@ -131,7 +196,7 @@
 
   function latestActiveRelease(pkg) {
     if (!pkg || typeof pkg.latest !== "string" || packagePath(pkg.name, pkg.latest) === null || !Array.isArray(pkg.versions)) return null;
-    return pkg.versions.find((version) => version && version.version === pkg.latest && !version.yanked) || null;
+    return pkg.versions.find((version) => version && version.version === pkg.latest && !version.yanked && !version.revoked) || null;
   }
 
   function activeArtifacts(pkg) {
@@ -277,9 +342,9 @@
   }
 
   function validArtifact(artifact) {
-    return artifact && ["source", "executable"].includes(artifact.kind) &&
+    return Boolean(artifact && ["source", "executable"].includes(artifact.kind) &&
       typeof artifact.target === "string" && typeof artifact.sha256 === "string" &&
-      /^[a-f0-9]{64}$/.test(artifact.sha256) && githubURL(artifact.url, true);
+      /^[a-f0-9]{64}$/.test(artifact.sha256) && (v2Artifacts.has(artifact) || githubURL(artifact.url, true)));
   }
 
   function packageAnchor(name) {
@@ -443,6 +508,7 @@
       if (active.every((row) => row.downloads_30d === 0)) return "No downloads were observed in this window.";
       return "No ranked packages are listed in this snapshot.";
     }
+    if (snapshot.schema === 2) return "Publication dates are unavailable in this V2 distribution profile.";
     if (key === "updated") {
       if (active.every((row) => row.last_published_at === null)) return "Latest GitHub release dates are unavailable.";
       return "No updated packages are listed in this snapshot.";
@@ -456,7 +522,9 @@
     const maxRows = 10000;
     const clockTolerance = 5 * 60 * 1000;
     require(Number.isFinite(now));
-    require(data && data.schema === 1 && data.policy === "asm-deliveries-v1" && data.source === "asm-delivery-events");
+    const v2 = data?.schema === 2;
+    require(data && [1, 2].includes(data.schema) && data.policy === (v2 ? "asm-deliveries-v2" : "asm-deliveries-v1") && data.source === "asm-delivery-events");
+    require(v2 ? data.registry_id === v2Catalogs.get(catalog) : !v2Catalogs.has(catalog));
     require(typeof data.stale === "boolean" && (data.refresh_error === null || (typeof data.refresh_error === "string" && data.refresh_error.length <= 2048)));
     require(Array.isArray(catalog) && catalog.length <= maxRows && Array.isArray(data.packages) && data.packages.length <= maxRows);
     const date = (value) => {
@@ -476,6 +544,7 @@
     }
     const collectionStarted = date(data.collection_started_at);
     require(data.coverage && typeof data.coverage.complete === "boolean");
+    require(!v2 || data.coverage.complete === false);
     const coverageStart = date(data.coverage.start), coverageEnd = date(data.coverage.end);
     require((coverageStart === null) === (coverageEnd === null));
     if (coverageStart !== null) {
@@ -492,11 +561,13 @@
     }
     const rows = new Map();
     for (const item of data.packages) {
-      require(item && packages.has(item.name) && !rows.has(item.name) && item.publication_source === "github-release");
+      require(item && packages.has(item.name) && !rows.has(item.name) && item.publication_source === (v2 ? "asm-v2" : "github-release"));
+      if (v2) require(item.package_id === packages.get(item.name).package_id && item.first_published_at === null && item.last_published_at === null);
       const first = date(item.first_published_at), last = date(item.last_published_at);
       require(first === null || last === null || Date.parse(first) <= Date.parse(last));
       require(publicationObserved === null || [first, last].every((value) => value === null || Date.parse(value) <= Date.parse(publicationObserved) + clockTolerance));
       const count = item.downloads_30d, exact = item.downloads_30d_exact, coverage = item.downloads_30d_coverage;
+      require(!v2 || exact === false);
       require(typeof exact === "boolean" && ["complete", "lower-bound", "unavailable"].includes(coverage));
       require(count === null || (Number.isSafeInteger(count) && count >= 0));
       require(count === null ? coverage === "unavailable" && !exact : start !== null && (exact ? coverage === "complete" : coverage === "lower-bound"));
@@ -506,7 +577,7 @@
       const release = Array.isArray(pkg.versions) ? pkg.versions.find((version) => version && version.version === pkg.latest && !version.yanked) : null;
       const artifacts = release && Array.isArray(release.artifacts) ? release.artifacts : [];
       const active = artifacts.length > 0 && artifacts.length <= maxReleaseArtifacts && artifacts.every((artifact) => validArtifact(artifact) && artifact.target.length > 0 && artifact.target.length <= 128);
-      rows.set(item.name, { name: item.name, first_published_at: first, last_published_at: last,
+      rows.set(item.name, { name: item.name, package_id: v2 ? item.package_id : undefined, first_published_at: first, last_published_at: last,
         publication_source: item.publication_source, downloads_30d: count, downloads_30d_exact: exact,
         downloads_30d_coverage: coverage, package: pkg,
         targets: active ? [...new Set(artifacts.map((artifact) => artifact.target))].sort() : [] });
@@ -536,7 +607,8 @@
       return { id: category.id, name: category.name, packages: category.packages.filter((name) => rows.get(name).targets.length > 0) };
     });
     const stale = data.stale || (observed !== null && now - Date.parse(observed) > 24 * 60 * 60 * 1000);
-    return { schema: 1, source: data.source, policy: data.policy, observed_at: observed, publication_observed_at: publicationObserved, stale,
+    require(!v2 || (rows.size === packages.size && publicationObserved === null && data.categories?.length === 0 && data.feeds.new.length === 0 && data.feeds.updated.length === 0));
+    return { schema: data.schema, registry_id: v2 ? data.registry_id : undefined, source: data.source, policy: data.policy, observed_at: observed, publication_observed_at: publicationObserved, stale,
       refresh_error: data.refresh_error, window: { days: 30, start, end, basis: data.window.basis },
       collection_started_at: collectionStarted, coverage: { start: coverageStart, end: coverageEnd, complete: data.coverage.complete },
       packages: [...rows.values()], feeds, categories: normalizedCategories };
@@ -552,7 +624,7 @@
 
   // These pure functions are also used by the repository's Node checks.
   const publicAPI = { compactCount, exactCount, architectureForTarget, architectureLabel, architectureGroups,
-    githubURL, normalizeIndex, normalizeSearchTopics, catalogStats, searchResultMetadata, findPackages, packageStatus, formatBytes, validArtifact,
+    githubURL, registryPaths, normalizeIndex, normalizeSearchTopics, catalogStats, searchResultMetadata, findPackages, packageStatus, formatBytes, validArtifact,
     evidenceText, versionLicenseText, formatDownloadCount, packagePath, parseSearchState, searchStateHash, readReturnState, matchesArtifact,
     normalizeDiscovery, rejoinDiscovery, formatDiscoveryCount, formatDiscoveryDate, discoveryFreshness, discoveryEmptyMessage, discoveryCoverageMessage, discoveryFeedDate,
     packageAnchor, dependencyMetadata, mergeDependencyMetadata, mathSourcePath };
@@ -699,6 +771,8 @@
     catalogHeading.focus();
   });
 
+  const registryVersion = document.body.dataset.registryVersion || "1";
+  const paths = registryPaths(registryVersion);
   let packages = [];
   let catalogReady = false;
   let discoverySnapshot = null;
@@ -842,9 +916,9 @@
       nodes.push(element("p", "discovery-state", state));
     }
     const groups = element("div", "discovery-groups");
-    groups.append(discoveryGroup("new", "New packages", "First GitHub release"),
+    groups.append(discoveryGroup("new", "New packages", registryVersion === "2" ? "Publication dates unavailable" : "First GitHub release"),
       discoveryGroup("popular", "Most downloaded", "Last 30 days"),
-      discoveryGroup("updated", "Recently updated", "Latest GitHub release"));
+      discoveryGroup("updated", "Recently updated", registryVersion === "2" ? "Publication dates unavailable" : "Latest GitHub release"));
     nodes.push(groups);
     discovery.replaceChildren(...nodes);
   }
@@ -1066,13 +1140,16 @@
     refreshRunning = true;
     lastRefreshStarted = Date.now();
     if (initial) setRegistryStatus("Loading package records…");
-    const catalogRequest = getJSON("registry/v1/index.json").then(normalizeIndex).then((next) => {
+    const catalogRequest = getJSON(paths.index, 16 * 1024 * 1024).then((data) => {
+      if (data?.schema !== paths.schema) throw new RangeError("Unsupported package index");
+      return normalizeIndex(data);
+    }).then((next) => {
       if (initial) { updateCatalog(next); renderDiscovery(); }
       return next;
     });
-    const discoveryRequest = getJSON("registry/v1/discovery.json");
-    const topicRequest = catalogRequest.then(() => Promise.allSettled([
-      getJSON("registry/v1/discovery-metadata.json", 256 * 1024), getJSON("registry/v1/categories.json", 64 * 1024)]));
+    const discoveryRequest = getJSON(paths.discovery, 4 * 1024 * 1024);
+    const topicRequest = paths.schema === 1 ? catalogRequest.then(() => Promise.allSettled([
+      getJSON("registry/v1/discovery-metadata.json", 256 * 1024), getJSON("registry/v1/categories.json", 64 * 1024)])) : Promise.resolve([]);
     const [catalog, snapshot, topics] = await Promise.allSettled([catalogRequest, discoveryRequest, topicRequest]);
     refreshRunning = false;
     const result = { catalog, discovery: snapshot, topics, initial };

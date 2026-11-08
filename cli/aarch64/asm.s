@@ -1129,6 +1129,11 @@ read_manifest:
     strb w10, [x16]
     mov x0, x21
     ARM_CALL arm_close
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, manifest_buffer
+    ARM_CALL g3_project_dependencies
+    cbnz w9, manifest_error
+.endif
     ARM_ADDR x16, manifest_buffer
     mov x21, x16
     eor w22, w22, w22
@@ -1183,6 +1188,10 @@ read_manifest:
     lsl w11, w11, #24
     cmp w10, w11
     b.eq .Lmanifest_section
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #4
+    b.eq .Lmanifest_comment
+.endif
     mov x0, x21
     eor w3, w3, w3
     tst w3, w3
@@ -1481,6 +1490,20 @@ read_manifest:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lsection_package
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, g3_project_dependency_section
+    ARM_CALL streq
+    cbnz w9, .Lsection_graph_declarations
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, g3_project_feature_section
+    ARM_CALL streq
+    cbz w9, .Lsection_not_dependencies
+.Lsection_graph_declarations:
+    mov w22, #4
+    b .Lline_end
+.Lsection_not_dependencies:
+.endif
     ARM_ADDR x16, key_buffer
     mov x0, x16
     ARM_ADDR x16, section_build
@@ -1700,6 +1723,10 @@ manifest_start_build:
 manifest_finish_build:
     cmp w22, #2
     b.lo .Lmanifest_build_done
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #3
+    b.hi .Lmanifest_build_done
+.endif
     tst w23, #4
     b.eq manifest_error
     cmp w22, #2
@@ -2565,6 +2592,9 @@ clean_file:
 
 .section .rodata
 commands:
+.ifdef ASM_REGISTRY_V2
+    .quad command_registry_v2, cmd_registry_v2
+.endif
     .quad command_help, cmd_help, command_version, cmd_version
     .quad command_license, cmd_license
     .quad command_self, cmd_self
@@ -2583,6 +2613,9 @@ commands:
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
+.ifdef ASM_REGISTRY_V2
+command_registry_v2: .asciz "registry"
+.endif
 command_help: .asciz "help"
 command_version: .asciz "version"
 command_license: .asciz "license"
@@ -2695,10 +2728,10 @@ err_build_io: .asciz "cannot write build artifacts; build must be a real directo
 err_test: .asciz "test program failed"
 err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
-version_text: .asciz "asm 0.6.0 (aarch64-linux)\n"
-version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"host\":\"aarch64-linux\"}\n"
-license_text: .asciz "asm 0.6.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.6.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
-license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.6.0\"}\n"
+version_text: .asciz "asm 0.7.0 (aarch64-linux)\n"
+version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.7.0\",\"host\":\"aarch64-linux\"}\n"
+license_text: .asciz "asm 0.7.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.7.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.7.0\"}\n"
 targets_text: .asciz "x86_64-linux (cross; GNU target binutils)\naarch64-linux (host; GNU as + ld)\nriscv64-linux (cross; GNU target binutils)\n"
 targets_json: .asciz "{\"host\":\"aarch64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
@@ -2714,7 +2747,7 @@ test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
-    .ascii "asm 0.6.0 - build assembly projects\n\n"
+    .ascii "asm 0.7.0 - build assembly projects\n\n"
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
@@ -2736,6 +2769,9 @@ help_text:
     .ascii "  lock             Check every locked archive and source file\n"
     .ascii "  sync             Fetch and extract exact locked source artifacts\n"
     .ascii "  publish          Prepare a local release record; do not upload\n"
+.ifdef ASM_REGISTRY_V2
+    .ascii "  registry         Publish, resolve, sync, fetch, or install signed V2 packages\n"
+.endif
     .ascii "  doctor           Check required tools\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
@@ -2755,9 +2791,17 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .ascii "{\"name\":\"asm\",\"version\":\"0.7.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":["
+.ifdef ASM_REGISTRY_V2
+    .ascii "\"registry\","
+.endif
+    .asciz "\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .ascii "{\"version\":\"0.7.0\",\"implementation\":\"aarch64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":["
+.ifdef ASM_REGISTRY_V2
+    .ascii "\"registry\","
+.endif
+    .asciz "\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/aarch64/templates.s"
 
 .section .bss
@@ -2819,6 +2863,15 @@ made_test: .skip 1
 .include "cli/aarch64/self_update.s"
 .include "cli/aarch64/self_update_verify.s"
 .include "cli/aarch64/self_update_metadata.s"
+
+.ifdef ASM_REGISTRY_V2
+.include "cli/aarch64/registry_features.s"
+.include "cli/aarch64/registry_v2.s"
+.include "cli/aarch64/registry_solver.s"
+.include "cli/aarch64/project_dependencies.s"
+.include "cli/aarch64/registry_graph.s"
+.include "cli/aarch64/registry_feature_lock.s"
+.endif
 
 .include "cli/aarch64/platform.s"
 

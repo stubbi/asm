@@ -7,6 +7,15 @@ PG_INCLUDE_DIR ?= $(PG_PREFIX)/include
 PG_BINDIR ?= $(PG_PREFIX)/bin
 BUILD ?= $(abspath ../build/server)
 SOURCE_REVISION ?= $(shell git rev-parse HEAD)
+# Only reviewed profiles select a compiler definition. The raw value never
+# enters a shell command or a preprocessor definition.
+PUBLISHER_OPENSSL_PROFILE ?= 3.5.9
+override PUBLISHER_OPENSSL_DEFINE :=
+ifeq ($(PUBLISHER_OPENSSL_PROFILE),3.5.9)
+override PUBLISHER_OPENSSL_DEFINE := ASM_OPENSSL_PROFILE_3_5_9
+else ifeq ($(PUBLISHER_OPENSSL_PROFILE),3.0.22-fixture)
+override PUBLISHER_OPENSSL_DEFINE := ASM_OPENSSL_PROFILE_3_0_22_FIXTURE
+endif
 LIBRARIES := -L"$(MHD_PREFIX)/lib" -Wl,-rpath,"$(MHD_PREFIX)/lib" \
   -L"$(PG_LIB_DIR)" -Wl,-rpath,"$(PG_LIB_DIR)" -lmicrohttpd -l:libpq.so.5 -pthread
 HOST_SYSTEM := $(shell uname -s)
@@ -18,7 +27,7 @@ SOURCES_aarch64-linux := aarch64/runtime.s aarch64/config.s
 SOURCES_riscv64-linux := riscv64/runtime.s riscv64/config.s
 TARGET_FLAGS_riscv64-linux := -march=rv64gc -mabi=lp64d
 
-.PHONY: all test
+.PHONY: all test publisher publisher-test
 all:
 	@case "$(HOST_SYSTEM)/$(HOST_MACHINE)" in \
 	  Linux/x86_64|Linux/aarch64|Linux/riscv64) ;; \
@@ -47,3 +56,34 @@ test: all
 	ASM_SERVER_BINARY="$(BUILD)/asm-hub" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
 	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
 	python3 test_runtime.py
+
+# Separate source-only authority process. The reader target above is unchanged.
+publisher:
+	@test "$(HOST_SYSTEM)/$(HOST_MACHINE)" = "Linux/x86_64" || \
+	  { echo "Use native Linux x86-64 for the publisher checkpoint." >&2; exit 1; }
+	@test -n "$(PUBLISHER_OPENSSL_DEFINE)" || \
+	  { echo "Select OpenSSL profile 3.5.9 or the retained 3.0.22-fixture profile." >&2; exit 1; }
+	@printf '%s\n' '$(SOURCE_REVISION)' | LC_ALL=C grep -Eq '^[0-9a-f]{40}$$' || \
+	  { echo "SOURCE_REVISION must be an exact commit ID." >&2; exit 1; }
+	@set -eu; umask 077; \
+	  test ! -L "$(BUILD)" || { echo "BUILD must not be a symlink." >&2; exit 1; }; \
+	  mkdir -p "$(BUILD)"; \
+	  test ! -L "$(BUILD)/asm-publisher" && test ! -d "$(BUILD)/asm-publisher" || \
+	    { echo "asm-publisher must not be a symlink or directory." >&2; exit 1; }; \
+	  stage=$$(mktemp -d "$(BUILD)/.asm-publisher.XXXXXXXX"); \
+	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
+	  $(CC) -std=c11 -Wall -Wextra -Werror -D$(PUBLISHER_OPENSSL_DEFINE) \
+	    -I"$(MHD_PREFIX)/include" -I"$(PG_INCLUDE_DIR)" \
+	    -o "$$stage/abi-check" publisher/abi-check.c $(LIBRARIES) -lcrypto; \
+	  "$$stage/abi-check"; \
+	  schema_line=$$(sha384sum publisher/schema.sql); schema_hash=$${schema_line%% *}; \
+	  $(CC) -g -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack -x assembler-with-cpp \
+	    -DASM_PUBLISHER -DASM_SOURCE_REVISION='"$(SOURCE_REVISION)"' \
+	    -DASM_PUBLISHER_SCHEMA_HASH=\"$$schema_hash\" \
+	    -o "$$stage/asm-publisher" runtime.s config.s $(LIBRARIES) -lcrypto; \
+	  mv -fT -- "$$stage/asm-publisher" "$(BUILD)/asm-publisher"
+
+publisher-test: publisher
+	ASM_PUBLISHER_BINARY="$(BUILD)/asm-publisher" ASM_SERVER_SOURCE_REVISION="$(SOURCE_REVISION)" \
+	ASM_PROTO_LIBPQ="$(PG_LIB_DIR)/libpq.so.5" ASM_PROTO_PG_BINDIR="$(PG_BINDIR)" \
+	python3 publisher/test_runtime.py

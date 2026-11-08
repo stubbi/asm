@@ -131,7 +131,7 @@ class ReleaseBlogTests(unittest.TestCase):
     def test_only_accepted_releases_become_posts_and_notes_keep_historical_license(self):
         before = (self.repo / "CHANGELOG.md").read_bytes()
         routes = self.build(dates=self.dates)
-        self.assertEqual(set(routes), {"blog/", "blog/articles/", "blog/releases/", "blog/releases/0.1.0/", "blog/releases/0.2.0/"})
+        self.assertEqual(set(routes), {"blog/", "blog/releases/", "blog/releases/0.1.0/", "blog/releases/0.2.0/"})
         self.assertFalse((self.stage / "blog/releases/0.3.0").exists())
         older = self.post("0.1.0")
         newer = self.post("0.2.0")
@@ -438,6 +438,42 @@ class ReleaseBlogTests(unittest.TestCase):
         self.assertEqual(len(entries), 3)
         self.assertEqual([entry.findtext("a:id", namespaces=ATOM) for entry in entries if "/articles/" in entry.findtext("a:id", namespaces=ATOM)],
                          ["https://asm.build/blog/articles/already-published/"])
+
+    def test_empty_article_archive_keeps_native_navigation_and_restores_indexing_on_publication(self):
+        routes = self.build(dates=self.dates)
+        archive = self.stage / "blog/articles/index.html"
+        page = Page(archive.read_text())
+        self.assertEqual(page.robots, ["noindex"])
+        self.assertNotIn("blog/articles/", routes)
+        self.assertEqual(page.canonicals, ["https://asm.build/blog/articles/"])
+        self.assertEqual(page.mains, ["main"])
+        self.assertIn("No articles are published yet.", archive.read_text())
+        self.assertIn("../../blog/releases/", page.links)
+        self.assertIn("blog/releases/", routes)
+        self.assertEqual(Page((self.stage / "blog/index.html").read_text()).robots, [])
+        self.assertEqual(Page((self.stage / "blog/releases/index.html").read_text()).robots, [])
+
+        self.article("first-published")
+        routes = self.build(dates=self.dates)
+        page = Page(archive.read_text())
+        self.assertEqual(page.robots, [])
+        self.assertIn("blog/articles/", routes)
+        self.assertIn("blog/articles/first-published/", routes)
+        self.assertIn("../../blog/articles/first-published/", page.post_links)
+
+    def test_draft_only_archive_stays_unindexed_and_outside_sitemap_in_public_and_preview_builds(self):
+        self.article("unpublished", date=None, draft=True)
+        self.article("future-draft", date="2999-01-01", draft=True)
+        for preview in (False, True):
+            with self.subTest(preview=preview):
+                routes = self.build(dates=self.dates, include_drafts=preview)
+                content = (self.stage / "blog/articles/index.html").read_text()
+                self.assertEqual(Page(content).robots, ["noindex"])
+                self.assertNotIn("blog/articles/", routes)
+                self.assertNotIn("blog/articles/unpublished/", routes)
+                self.assertNotIn("blog/articles/future-draft/", routes)
+                self.assertFalse(any("/articles/" in entry.findtext("a:id", namespaces=ATOM)
+                                     for entry in self.feed().findall("a:entry", ATOM)))
 
     def test_invalid_articles_fail_before_any_release_or_archive_output(self):
         path = self.article("invalid", date="2999-01-01")

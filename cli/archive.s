@@ -1299,7 +1299,9 @@ arc_compare_file:
 
 /* Walk one directory without following links. Mode 0 compares the exact tree;
  * mode 1 removes a failed private stage. Each recursion owns its getdents buffer.
- * RDI fd, RSI prefix length in arc_scan_path, EDX mode. */
+ * RDI fd, RSI prefix length in arc_scan_path, EDX mode. Own a fresh directory
+ * descriptor per recursion; leave the caller's descriptor and cursor intact.
+ * Prefix length remains bounded by ARC_PATH; all return paths close our FD. */
 arc_walk_tree:
     push rbx
     push rbp
@@ -1311,6 +1313,19 @@ arc_walk_tree:
     mov r12, rdi
     mov r13, rsi
     mov [rsp + 4104], edx
+    mov rdi, r12
+    mov r12, -1
+    lea rsi, [rip + arc_dot]
+    mov edx, ARC_DIRECTORY
+    xor r10d, r10d
+.Larc_walk_open:
+    mov eax, 257
+    syscall
+    cmp rax, -4
+    je .Larc_walk_open
+    test rax, rax
+    js .Larc_walk_bad
+    mov r12, rax
 .Larc_walk_read:
     mov eax, 217
     mov rdi, r12
@@ -1446,6 +1461,10 @@ arc_walk_tree:
 .Larc_walk_bad:
     mov eax, 1
 .Larc_walk_return:
+    mov r13d, eax
+    mov rdi, r12
+    call arc_close
+    mov eax, r13d
     add rsp, 4120
     pop r15
     pop r14
