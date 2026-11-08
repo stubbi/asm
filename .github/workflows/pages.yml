@@ -100,3 +100,38 @@ jobs:
       - name: Publish the site
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+  verify-install:
+    name: Check the published installer (${{ matrix.target }})
+    needs: deploy
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            target: aarch64-linux
+          - runner: macos-15
+            target: aarch64-macos
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check native installer gate tests
+        run: python3 -m unittest discover -s tests/release -p test_published_install.py -v
+      - name: Install the published command and run the first project
+        run: python3 tools/check_published_install.py --expected-target "${{ matrix.target }}" --expected-site-commit "$GITHUB_SHA" --output build/published-install/evidence.json
+      - name: Retain published installation results and failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: published-install-${{ matrix.target }}-${{ github.sha }}
+          path: build/published-install/evidence.json
+          if-no-files-found: error
+          retention-days: 90

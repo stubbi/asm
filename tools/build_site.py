@@ -111,13 +111,53 @@ def _https_bytes(url: str, limit: int, hosts: set[str], *, expected_size: int | 
         return data
 
 
+def _release_asset_binding(url: str, limit: int, *, expected_size: int | None = None,
+                           opener=None, _release_cache: dict | None = None) -> tuple[str, int]:
+    """Bind an official API endpoint to the exact declared release asset."""
+    registry.require(type(limit) is int and 0 < limit <= registry.MAX_ARTIFACT_BYTES, "download limit is invalid")
+    if expected_size is not None:
+        registry.require(type(expected_size) is int and 0 < expected_size <= limit, "declared download size is invalid")
+    repository, tag, filename = registry.artifact_url(url)
+    metadata_url, _ = discovery._api(url)
+    cache = {} if _release_cache is None else _release_cache
+    if metadata_url not in cache:
+        value = registry.strict_json(_https_bytes(metadata_url, MAX_RELEASE_METADATA_BYTES,
+                                                 {"api.github.com"}, opener=opener, exact_url=metadata_url))
+        registry.require(isinstance(value, dict) and value.get("draft") is False
+                         and value.get("tag_name") == tag, "release API metadata differs from the public tag")
+        assets = value.get("assets")
+        registry.require(isinstance(assets, list) and len(assets) <= MAX_RELEASE_ASSETS
+                         and all(isinstance(asset, dict) for asset in assets), "release API assets are invalid")
+    else:
+        value = cache[metadata_url]
+    matches = [asset for asset in value["assets"] if asset.get("browser_download_url") == url]
+    registry.require(len(matches) == 1, "release API must identify one exact artifact URL")
+    asset = matches[0]
+    registry.require(asset.get("name") == filename and asset.get("state") == "uploaded",
+                     "release API asset identity differs from the artifact")
+    asset_id, size = asset.get("id"), asset.get("size")
+    registry.require(type(asset_id) is int and 0 < asset_id <= 9223372036854775807,
+                     "release API asset ID is invalid")
+    registry.require(type(size) is int and 0 < size <= limit and (expected_size is None or size == expected_size),
+                     "release API asset size differs from the artifact")
+    if metadata_url not in cache:
+        if len(cache) >= MAX_RELEASE_CACHE_ENTRIES:
+            cache.pop(next(iter(cache)))
+        cache[metadata_url] = value
+    endpoint = repository.replace("https://github.com/", "https://api.github.com/repos/") + "/releases/assets/" + str(asset_id)
+    return endpoint, size
+
+
+def release_asset_url(url: str, limit: int, *, expected_size: int,
+                      opener=None, _release_cache: dict | None = None) -> str:
+    """Resolve a build-bound installer transport without replacing its byte checks."""
+    return _release_asset_binding(url, limit, expected_size=expected_size,
+                                  opener=opener, _release_cache=_release_cache)[0]
+
+
 def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None,
                opener=None, _release_cache: dict | None = None) -> bytes:
-    """Recover a release permalink's 504 through its exact public GitHub asset.
-
-    API metadata selects a transport endpoint, never replacement registry
-    bytes or a different artifact. Callers still validate digest and format.
-    """
+    """Recover only a release permalink's 504 through its exact public GitHub asset."""
     try:
         return _https_bytes(url, limit, hosts, expected_size=expected_size, opener=opener)
     except HTTPError as error:
@@ -125,34 +165,8 @@ def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | No
             raise
         error.close()
         print("build-site: HTTP 504 for " + url + "; checking the same asset through the GitHub API.", file=sys.stderr)
-        repository, tag, filename = registry.artifact_url(url)
-        metadata_url, _ = discovery._api(url)
-        cache = {} if _release_cache is None else _release_cache
-        if metadata_url not in cache:
-            value = registry.strict_json(_https_bytes(metadata_url, MAX_RELEASE_METADATA_BYTES,
-                                                     {"api.github.com"}, opener=opener, exact_url=metadata_url))
-            registry.require(isinstance(value, dict) and value.get("draft") is False
-                             and value.get("tag_name") == tag, "release API metadata differs from the public tag")
-            assets = value.get("assets")
-            registry.require(isinstance(assets, list) and len(assets) <= MAX_RELEASE_ASSETS
-                             and all(isinstance(asset, dict) for asset in assets), "release API assets are invalid")
-        else:
-            value = cache[metadata_url]
-        matches = [asset for asset in value["assets"] if asset.get("browser_download_url") == url]
-        registry.require(len(matches) == 1, "release API must identify one exact artifact URL")
-        asset = matches[0]
-        registry.require(asset.get("name") == filename and asset.get("state") == "uploaded",
-                         "release API asset identity differs from the artifact")
-        asset_id, size = asset.get("id"), asset.get("size")
-        registry.require(type(asset_id) is int and 0 < asset_id <= 9223372036854775807,
-                         "release API asset ID is invalid")
-        registry.require(type(size) is int and 0 < size <= limit and (expected_size is None or size == expected_size),
-                         "release API asset size differs from the artifact")
-        if metadata_url not in cache:
-            if len(cache) >= MAX_RELEASE_CACHE_ENTRIES:
-                cache.pop(next(iter(cache)))
-            cache[metadata_url] = value
-        endpoint = repository.replace("https://github.com/", "https://api.github.com/repos/") + "/releases/assets/" + str(asset_id)
+        endpoint, size = _release_asset_binding(url, limit, expected_size=expected_size,
+                                              opener=opener, _release_cache=_release_cache)
         return _https_bytes(endpoint, limit, hosts, expected_size=size, opener=opener, api_asset_url=endpoint)
 
 
@@ -163,6 +177,10 @@ def _scoped_asset_reader(read):
     cache = {}
     def scoped(url, limit, hosts, *, expected_size=None):
         return read_https(url, limit, hosts, expected_size=expected_size, _release_cache=cache)
+    # The production reader always binds every advertised installer fallback.
+    # Offline fixture readers have no network resolver or implicit requests.
+    scoped.asset_resolver = lambda url, limit, *, expected_size: release_asset_url(
+        url, limit, expected_size=expected_size, _release_cache=cache)
     return scoped
 
 
@@ -448,7 +466,8 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         extend_sitemap(stage, routes)
         installer = bootstrap.write_bootstrap(
             stage, records, checked,
-            bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS))
+            bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS),
+            asset_resolver=getattr(artifact_reader, "asset_resolver", None))
         if trust_publication is not None:
             import trusted_site
             registry.require(verify and trust_verifier is not None and trust_inspector is not None,

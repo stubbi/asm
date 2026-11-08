@@ -136,6 +136,15 @@ The policy fixes the repository name and numeric identity. It also fixes the rel
 
 Each release contains the action-produced `release-attestation.sigstore.json` bundle. It is a single JSON object with a 1 MiB limit. The release job verifies every payload against this same published bundle without a GitHub account. The bundle supplies signature evidence, not replacement trust roots.
 
+The generated bootstrap can recover a transient permalink download failure through the exact public GitHub release-asset API.
+The site build binds each recovery endpoint to the original repository, tag, filename, browser URL, uploaded state, and byte size.
+The installer receives fixed numeric asset identifiers; it does not parse API metadata or accept a caller-selected endpoint.
+Recovery uses no credentials and retains the HTTPS, redirect, byte, and file limits.
+Each artifact has a total download budget of 120 seconds across its two transport attempts.
+Permission errors, missing assets, certificate failures, corrupt bytes, and failed attestations stop installation.
+API rate limits or unavailable recovery endpoints also stop installation and preserve an existing command.
+This recovery applies to the generated bootstrap. Published native clients retain their existing download behavior.
+
 The site offers the bootstrap only for checked CLI releases from 0.2.0 onward. It also downloads the required bundle before publication. A missing or malformed bundle stops the site build. These site checks establish availability and format; the installer performs signature verification. Earlier releases retain the source-build route.
 
 The native updater also downloads and verifies `release.json`, with the same size limit. Its bounded assembly parser rejects malformed JSON and duplicate keys. The signed manifest must match the version, tag, repository, source commit, and selected executable's name, size, and digest. Both the manifest and executable must satisfy the same provenance policy.

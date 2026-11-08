@@ -105,6 +105,11 @@ class MacOSBootstrapUserFlowTests(unittest.TestCase):
     run_installer = common.BootstrapUserFlowTests.run_installer
     calls = common.BootstrapUserFlowTests.calls
     assert_no_install = common.BootstrapUserFlowTests.assert_no_install
+    recovery_fixture = common.BootstrapUserFlowTests.recovery_fixture
+    test_healthy_downloads_never_use_recovery = common.BootstrapUserFlowTests.test_healthy_downloads_never_use_recovery
+    test_gateway_timeout_and_network_failure_recover_exact_artifact_and_bundle = common.BootstrapUserFlowTests.test_gateway_timeout_and_network_failure_recover_exact_artifact_and_bundle
+    test_permission_missing_and_certificate_failures_never_use_recovery = common.BootstrapUserFlowTests.test_permission_missing_and_certificate_failures_never_use_recovery
+    test_failed_or_corrupt_recovery_and_bad_signature_leave_no_installation = common.BootstrapUserFlowTests.test_failed_or_corrupt_recovery_and_bad_signature_leave_no_installation
 
     # These contracts are shared; run them through the native Darwin branch.
     test_install_verifies_then_creates_one_owned_executable_without_running_it = common.BootstrapUserFlowTests.test_install_verifies_then_creates_one_owned_executable_without_running_it
