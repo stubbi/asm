@@ -889,8 +889,11 @@ Unpublished body sentinel.
                             if not url.fragment.startswith("from="):
                                 self.assertEqual(destination, "index.html")
                             state = parse_qs(fragment[7:], keep_blank_values=True, strict_parsing=True)
-                            self.assertIn(state.get("architecture"), [["aarch64"], ["x86_64"], ["riscv64"]])
-                            self.assertEqual(state, {"architecture": state["architecture"], "all": ["1"]})
+                            if "architecture" in state:
+                                self.assertIn(state["architecture"], [["aarch64"], ["x86_64"], ["riscv64"]])
+                                self.assertEqual(state, {"architecture": state["architecture"], "all": ["1"]})
+                            else:
+                                self.assertEqual(state, {"all": ["1"]})
                         else:
                             self.assertIn(unquote(fragment), self.pages[destination].ids)
 

@@ -216,13 +216,7 @@ def _render_explore(stage: Path, index: dict, snapshot: dict | None, metadata: d
     else:
         page_title, description = page_titles[kind], descriptions[kind]
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(caption) + '</p></header>'
-    body += '<nav class="package-section-nav" aria-label="Explore packages">' + ''.join(
-        package_pages._anchor(label, prefix + target, attrs=(' aria-current="page"' if selected == kind else '')
-                              + (' aria-label="Explore assembly packages"' if label == "Explore" else ''))
-        for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"),
-            ("Categories", "browse/categories/", "categories"), ("Keywords", "browse/keywords/", "keywords"),
-            ("Architectures", "browse/architectures/", "architectures"),
-            ("Most depended on", "browse/depended-on/", "depended-on"), ("Downloads since collection", "browse/downloaded/", "downloaded"))) + '</nav>'
+    body += package_pages._browse_navigation(route, kind.split('/')[0])
     ranked_keywords = sorted(keywords.values(), key=lambda row: (-len(row["packages"]), row["id"]))
     ranked_categories = sorted(categories, key=lambda row: (-len(row["packages"]), row["id"]))
     depended = sorted((name for name, row in dependents.items() if row["count"] is not None and row["count"] > 0), key=lambda name: (-dependents[name]["count"], name))
@@ -267,7 +261,9 @@ def _render_explore(stage: Path, index: dict, snapshot: dict | None, metadata: d
         architecture_content = (_directory_cards(prefix, architectures, "architectures") if architectures else
                                 '<p class="discovery-group-note">No active packages declare a supported architecture.</p>')
         groups.append(group("architectures", "Browse by architecture", "Declared release targets", "browse/architectures/", architecture_content))
-        body += '<div class="discovery-groups">' + ''.join(groups) + '</div>' + _download_note(snapshot, prefix) + _dependency_note(metadata)
+        body += ('<div class="discovery-groups">' + ''.join(groups[:3]) + '</div>'
+                 '<div class="discovery-groups discovery-secondary">' + ''.join(groups[i] for i in (5, 6, 4, 3)) + '</div>'
+                 + _download_note(snapshot, prefix) + _dependency_note(metadata))
     elif kind in {"categories", "keywords", "architectures"}:
         rows = architectures if kind == "architectures" else ranked_categories if kind == "categories" else ranked_keywords
         empty = "No active packages declare a supported architecture." if kind == "architectures" else "No " + kind + " are declared for active packages."
