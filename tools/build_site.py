@@ -157,7 +157,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     canonical = "https://asm.build/reference"
     for position, (name, (data, _)) in enumerate(sorted(selected.items()), 1):
         digest = hashlib.sha256(data).hexdigest()
-        rows.append(f'<li><a href="{escape(name, quote=True)}">{escape(name)}</a><code>{digest}</code></li>')
+        rows.append(f'<li><a href="{escape(name, quote=True)}"><code>{escape(name)}</code></a><code>{digest}</code></li>')
         url = canonical + "/" + quote(name, safe="/")
         items.append({"@type": "ListItem", "position": position,
                       "item": {"@type": "MediaObject", "@id": url, "url": url,

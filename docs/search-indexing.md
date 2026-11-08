@@ -1,7 +1,8 @@
 # Search indexing
 
 Asm publishes a [sitemap](https://asm.build/sitemap.xml) and [crawl rules](https://asm.build/robots.txt).
-The sitemap contains 63 unique HTML page URLs after the 8 November 2026 audit changes.
+The audited catalog has 59 sitemap URLs after the 8 November 2026 content review.
+The native HTML routes remain available, including empty archives and rankings.
 It includes packages, exact versions, documentation, blog releases, Explore, statistics, browse directories, sponsorship, and the CLI source reference.
 Each page declares its preferred URL with a canonical link.
 Public page URLs have no extension or trailing slash; the homepage uses `/`.
@@ -76,7 +77,8 @@ See [Article guidance](https://developers.google.com/search/docs/appearance/stru
 
 The repository's [squirrel.toml](../squirrel.toml) keeps all default audit rules enabled and sets no crawl exclusions.
 The local waiver configuration was validated with Squirrelscan 0.0.173.
-Its reviewed waivers affect only the seven exact page-type complaints and the guide's three missing-property labels.
+Its schema waivers affect only the seven exact page-type complaints and the guide's three missing-property labels.
+The content and link waivers below cover separately reviewed findings.
 The seven page-type checks are reported as ignored and excluded from the configured score.
 All other checks remain active on those pages.
 The guide's JSON-LD validator still reports syntax errors, supported invalid-value errors, and other missing properties.
@@ -103,6 +105,46 @@ Offline audits do not check external-link availability, cloud rendering, or real
 Cloud audits do not read this local file and currently have no equivalent item-level waiver configuration.
 Do not replace these local waivers with cloud-wide rule exclusions.
 See [Squirrelscan's ignore configuration](https://docs.squirrelscan.com/configuration/ignore), reviewed on 8 November 2026.
+
+### Content and link review, 8 November 2026
+
+The configured baseline reported 66 SEO page warnings: 37 word-count checks, 26 keyword-density checks, and three contextual-link checks.
+Each affected page and each flagged keyword was reviewed against its rendered main content.
+No prose was added to meet a threshold.
+
+Four pages had no entries: Articles, thirty-day downloads, cumulative downloads, and direct dependents.
+Empty article archives and activity rankings now declare `noindex` and stay outside the sitemap.
+They retain HTTP 200, canonical links, native navigation, and their truthful unavailable states.
+The next build removes `noindex` and restores sitemap membership when eligible public entries exist.
+Draft articles do not qualify.
+Unknown observations do not become zero or ranked entries.
+Explore, statistics, catalogs, and taxonomy directories remain indexable.
+See [Google's noindex guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing), reviewed on 8 November 2026.
+
+Source filenames in the CLI index now use semantic code markup inside their existing links.
+Their text, destinations, exact commits, and digests remain unchanged.
+Namespace links name the browse action for assistive technology without adding visible text.
+
+| Reviewed check | Configuration scope | Reason and retained checks |
+| --- | --- | --- |
+| Word count | 33 exact existing task-page paths, including only six retained release-note versions | Concise search, directories, metadata, documentation links, and recorded changes complete their tasks. Future articles, versions, and taxonomy paths keep the default threshold. |
+| Keyword density | Exact flagged keyword items on bounded reviewed paths | Literal targets, artifact kinds, provider names, dates, and historical release text repeat for factual reasons. Other words and unreviewed paths remain checked. |
+| Contextual inbound links | Three exact destination URL items | The scanner excludes the page-local introduction header, source sidebar, and breadcrumbs containing the actual links. Other orphan and link checks remain active. |
+
+The word-count rule has no item-level floor in version 0.0.173.
+A path exception also skips that check if the page later becomes empty.
+Rendered-content tests therefore require actual task content, catalog metadata, native destinations, and useful empty-state recovery.
+They do not establish editorial quality or replace future content review.
+Existing title, heading, landmark, structured-data, broken-link, source-binding, and safety checks remain active.
+
+Do not replace repeated technical terms with vague synonyms or rewrite immutable release notes to reduce density.
+Do not apply a global keyword whitelist, lower thresholds, disable rules, or exclude pages from the crawl.
+Review an exception when its content or purpose changes.
+The [word-count](https://docs.squirrelscan.com/rules/content/word-count),
+[keyword-density](https://docs.squirrelscan.com/rules/content/keyword-stuffing), and
+[contextual-link](https://docs.squirrelscan.com/rules/links/no-contextual-inbound) documentation describe these heuristics.
+These sources were reviewed on 8 November 2026.
+Keep raw and configured reports from the same CLI version and full crawl scope.
 
 ## Page intent and keyword hypotheses
 
