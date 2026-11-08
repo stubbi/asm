@@ -29,9 +29,17 @@ ENTRYPOINT = ["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py"]
 MAC_CASE = "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation"
 
 
+class CheckFailure(ValueError):
+    """A fixed assertion message supplied only by this qualification harness."""
+
+
+class SmokeFailure(ValueError):
+    """A fixed smoke stage and classification, without raw tool diagnostics."""
+
+
 def need(value, message):
     if not value:
-        raise ValueError(message)
+        raise CheckFailure(message)
 
 
 def command(arguments, *, timeout=20):
@@ -74,8 +82,28 @@ def v2_image_contract(value, revision, role):
 
 def runtime_smoke(args):
     """Record actual-image smoke evidence separately from native release qualification."""
+    state = {"stage": "configuration"}
+    try:
+        return _runtime_smoke(args, state)
+    except SmokeFailure:
+        raise
+    except CheckFailure as failure:
+        raise SmokeFailure(f"stage={state['stage']} failure=contract: {failure}") from None
+    except subprocess.CalledProcessError as failure:
+        raise SmokeFailure(f"stage={state['stage']} failure=command-status actual={failure.returncode} "
+            f"stdout_bytes={len(failure.stdout or b'')} stderr_bytes={len(failure.stderr or b'')}") from None
+    except subprocess.TimeoutExpired:
+        raise SmokeFailure(f"stage={state['stage']} failure=timeout") from None
+    except OSError:
+        raise SmokeFailure(f"stage={state['stage']} failure=operating-system") from None
+    except (ValueError, KeyError, TypeError):
+        raise SmokeFailure(f"stage={state['stage']} failure=invalid-data") from None
+
+
+def _runtime_smoke(args, state):
     need(args.context and args.image and args.output, "Select an explicit Docker context, image, and new report file.")
     client = ["docker", "--context", args.context]
+    state["stage"] = "image-inspection"
     inspections = registry.strict_json(command([*client, "image", "inspect", args.image]))
     need(isinstance(inspections, list) and len(inspections) == 1, "Inspect one exact local image.")
     image_id = v2_image_contract(inspections[0], args.revision, args.smoke_kind)
@@ -86,26 +114,34 @@ def runtime_smoke(args):
             options += ["--entrypoint", entrypoint]
         result = subprocess.run([*options, image_id, *arguments], capture_output=True, timeout=30)
         need(len(result.stdout) <= 1024 * 1024 and len(result.stderr) <= 65536, "Image smoke output exceeds its bound.")
-        need(result.returncode == status, "The actual-image command returned an unexpected status.")
+        if result.returncode != status:
+            raise SmokeFailure(f"stage={state['stage']} failure=command-status expected={status} actual={result.returncode} "
+                f"stdout_bytes={len(result.stdout)} stderr_bytes={len(result.stderr)}")
         return result
 
+    state["stage"] = "source-marker"
     source = registry.strict_json(run(["/app/SOURCE.json"], entrypoint="/bin/cat").stdout)
     need(source["source_revision"] == args.revision and source["repository"] == "https://github.com/stubbi/asm",
          "The runtime source marker differs.")
+    state["stage"] = "process-policy"
     process = dict(line.split(":", 1) for line in run(["/proc/self/status"], entrypoint="/bin/cat").stdout.decode().splitlines() if ":" in line)
     need(process["Uid"].split() == ["65532"] * 4 and process["Gid"].split() == ["65532"] * 4
          and int(process["CapEff"].strip(), 16) == 0 and process["NoNewPrivs"].strip() == "1", "Unexpected runtime privileges.")
+    state["stage"] = "help"
     help_result = run(status=64 if args.smoke_kind == "publisher" else 0)
+    state["stage"] = "invalid-input"
     invalid = run(["--not-an-option"], status=64 if args.smoke_kind == "publisher" else 2)
     need(not invalid.stdout, "Invalid input emitted machine output.")
     files = {"/app/SOURCE.json"}
     if args.smoke_kind == "publisher":
         executable = "/usr/local/bin/asm-publisher"
         files.add(executable)
+        state["stage"] = "publisher-libraries"
         libraries = run([executable], entrypoint="/usr/bin/ldd").stdout.decode()
         need("not found" not in libraries and "libcrypto.so.3 => /opt/asm/openssl/lib/libcrypto.so.3" in libraries
              and "libssl.so.3 => /opt/asm/openssl/lib/libssl.so.3" in libraries, "The reviewed publisher crypto profile is unresolved.")
         files.update(re.findall(r"(?:=>\s+)?(/[^\s()]+)", libraries))
+        state["stage"] = "publisher-source"
         run(["-a", "-q", "-F", args.revision, executable], entrypoint="/bin/grep")
     else:
         selected = operator_source.FILES if args.smoke_kind == "operator" else (
@@ -113,22 +149,27 @@ def runtime_smoke(args):
         files.update("/app/" + name for name in selected)
         if args.smoke_kind == "operator":
             files.update(("/app/bin/asm-trust", "/usr/bin/kubectl", "/opt/asm/postgres/bin/psql"))
+            state["stage"] = "missing-credentials"
             refusal = run(["publisher-admin", "--connection-file", "/absent", "migrate"], status=1)
             need(not refusal.stdout, "Missing credentials emitted machine output.")
     hashes = {}
+    state["stage"] = "file-hashes"
     for line in run(sorted(files), entrypoint="/usr/bin/sha256sum").stdout.decode().splitlines():
         digest, name = line.split("  ", 1)
         need(name in files and name not in hashes and re.fullmatch(r"[0-9a-f]{64}", digest), "Invalid image file digest.")
         hashes[name] = digest
     need(set(hashes) == files, "The image digest record is incomplete.")
+    state["stage"] = "source-hashes"
     for name, digest in hashes.items():
         if name.startswith("/app/") and name != "/app/SOURCE.json" and name[5:] in source["files"]:
             need(digest == source["files"][name[5:]], "Runtime source bytes differ from the accepted source.")
+    state["stage"] = "daemon-info"
     report = {"schema": 1, "status": "pass", "scope": "v2-runtime-smoke", "role": args.smoke_kind,
         "source_revision": args.revision, "runtime_image_id": image_id, "source": source,
         "runtime_files": hashes, "help_exit_status": help_result.returncode,
         "daemon": command([*client, "info", "--format", "{{.OSType}}/{{.Architecture}}"]).decode().strip(),
         "limit": "Smoke checks do not qualify native execution, hostile-input isolation, Kubernetes deployment, or publication."}
+    state["stage"] = "write-report"
     with Path(args.output).open("x") as stream:
         json.dump(report, stream, indent=2, sort_keys=True)
         stream.write("\n")
@@ -449,6 +490,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except SmokeFailure as failure:
+        print(f"Operator image qualification failed: {failure}. Retain the complete test and build logs.", file=sys.stderr)
+        raise SystemExit(1)
     except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         print("Operator image qualification failed; retain the complete test and build logs.", file=sys.stderr)
         raise SystemExit(1)

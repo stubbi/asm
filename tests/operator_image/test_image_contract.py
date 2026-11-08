@@ -3,10 +3,14 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import copy
+import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -14,6 +18,49 @@ import test_operator_image as image
 
 
 class ImageContractTests(unittest.TestCase):
+    def smoke_fixture(self, directory, *, failed_stage, status=127, stdout=b"", stderr=b"synthetic-private-diagnostic"):
+        inspected = self.fixture()
+        inspected["Config"]["Entrypoint"] = ["/usr/local/bin/asm-publisher"]
+        inspected["Config"]["Labels"].update({"org.opencontainers.image.source": "https://github.com/stubbi/asm",
+            "org.opencontainers.image.licenses": "AGPL-3.0-or-later"})
+        source = json.dumps({"source_revision": "3" * 40, "repository": "https://github.com/stubbi/asm", "files": {}}).encode()
+        process = b"Uid:\t65532 65532 65532 65532\nGid:\t65532 65532 65532 65532\nCapEff:\t0\nNoNewPrivs:\t1\n"
+
+        def boundary(arguments, **kwargs):
+            if "inspect" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, json.dumps([inspected]).encode(), b"")
+            if arguments[-1] == "/app/SOURCE.json":
+                return subprocess.CompletedProcess(arguments, 0, source, b"")
+            if arguments[-1] == "/proc/self/status":
+                return subprocess.CompletedProcess(arguments, 0, process, b"")
+            stage = "invalid-input" if arguments[-1] == "--not-an-option" else "publisher-libraries" if "/usr/bin/ldd" in arguments else "help"
+            if stage == failed_stage:
+                return subprocess.CompletedProcess(arguments, status, stdout, stderr)
+            return subprocess.CompletedProcess(arguments, 64, b"", b"Usage: asm-publisher serve\n")
+
+        args = SimpleNamespace(context="owned-context", image="synthetic-local-image", revision="3" * 40,
+                               smoke_kind="publisher", output=str(Path(directory) / "report.json"))
+        return args, boundary
+
+    def test_smoke_failure_identifies_the_command_stage_without_private_tool_output(self):
+        with tempfile.TemporaryDirectory(prefix="asm-smoke-failure-") as directory:
+            args, boundary = self.smoke_fixture(directory, failed_stage="publisher-libraries")
+            with patch.object(image.subprocess, "run", side_effect=boundary), \
+                    self.assertRaisesRegex(ValueError, r"stage=publisher-libraries.*command-status.*expected=0 actual=127") as stopped:
+                image.runtime_smoke(args)
+            self.assertNotIn("synthetic-private-diagnostic", str(stopped.exception))
+            self.assertFalse(Path(args.output).exists())
+
+    def test_publisher_invalid_input_still_refuses_nonempty_machine_output(self):
+        with tempfile.TemporaryDirectory(prefix="asm-smoke-output-") as directory:
+            args, boundary = self.smoke_fixture(directory, failed_stage="invalid-input", status=64,
+                                                stdout=b"synthetic-private-diagnostic", stderr=b"")
+            with patch.object(image.subprocess, "run", side_effect=boundary), \
+                    self.assertRaisesRegex(ValueError, "Invalid input emitted machine output") as stopped:
+                image.runtime_smoke(args)
+            self.assertNotIn("synthetic-private-diagnostic", str(stopped.exception))
+            self.assertFalse(Path(args.output).exists())
+
     def test_v2_inspection_refuses_wrong_entrypoint_identity_or_writable_image_volume(self):
         for role, entrypoint in (("publisher", ["/usr/local/bin/asm-publisher"]),
                 ("checker", ["/usr/bin/python3", "-B", "-I", "/app/tools/checker_entrypoint.py"])):
