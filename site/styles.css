@@ -456,7 +456,7 @@ h1 { margin: 0 0 var(--space-6); font-size: var(--heading-page); font-weight: 60
 .reference-files { margin: var(--space-8) 0; padding: 0; list-style: none; }
 .reference-files li { border-top: 1px solid var(--rule); padding-block: var(--space-4); }
 .reference-files a { display: block; max-width: 100%; min-height: var(--control-height); overflow-wrap: anywhere; font: var(--text-sm)/1.8 var(--mono); }
-.reference-files code { display: block; color: var(--muted); }
+.reference-files li > code { display: block; color: var(--muted); }
 
 /* Content breaks only when the available width needs a new composition. */
 @container (max-width: 18rem) {

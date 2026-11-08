@@ -461,6 +461,7 @@ for fragment in ("<details>\\n", "<summary>", "<details>\\n<summary>label</summa
         self.assertEqual(overview.count('<footer '), 1)
         self.assertNotIn('aria-current="page">Sponsor', overview)
         self.assertIn("namespace", self.read("packages/stubbi").lower())
+        self.assertIn('aria-label="Browse packages in the stubbi namespace"', overview)
         missing = (self.stage / "404.html").read_text()
         self.assertIn('content="noindex"', missing)
         self.assertIn('href="https://asm.build/404.html"', missing)
@@ -810,11 +811,17 @@ class DiscoveryPageTests(unittest.TestCase):
 
     def test_native_pages_keep_unknown_counts_and_do_not_relabel_totals(self):
         routes = self.module.write_discovery_pages(self.stage, self.index, self.snapshot)
-        self.assertEqual(set(routes), {"browse/popular/", "browse/new/", "browse/updated/", "discovery/"})
+        self.assertEqual(set(routes), {"discovery/"})
         page = (self.stage / "browse/popular/index.html").read_text()
         self.assertIn("Download data is unavailable", page)
         self.assertNotIn("1 downloads", page)
+        for kind in ("popular", "new", "updated"):
+            content = (self.stage / f"browse/{kind}/index.html").read_text()
+            self.assertIn('name="robots" content="noindex"', content)
+            self.assertIn('Browse all packages</a>', content)
+            self.assertIn(f'rel="canonical" href="https://asm.build/browse/{kind}/"', content)
         metrics = (self.stage / "discovery/index.html").read_text()
+        self.assertNotIn('name="robots" content="noindex"', metrics)
         self.assertIn("known bots, and internal validation do not enter Popular", metrics)
         self.assertIn("Historical imports do not invent those events", metrics)
         self.assertIn("≥", metrics)
@@ -836,6 +843,12 @@ class DiscoveryPageTests(unittest.TestCase):
         self.assertIn('datetime="2026-11-01T00:29:24Z"', new)
         self.assertIn("First GitHub release", new)
         self.assertNotIn("first entered the registry", new)
+        routes = self.module.write_discovery_pages(self.stage, self.index, self.snapshot)
+        self.assertEqual(set(routes), {"browse/popular/", "browse/new/", "browse/updated/", "discovery/"})
+        for kind in ("popular", "new", "updated"):
+            content = (self.stage / f"browse/{kind}/index.html").read_text()
+            self.assertNotIn('name="robots" content="noindex"', content)
+            self.assertIn('stubbi/math</a>', content)
 
     def test_explicit_purpose_categories_join_active_packages_and_reject_typos(self):
         value = {"schema": 1, "categories": [{"id": "math", "name": "Math", "packages": ["stubbi/math"]}]}

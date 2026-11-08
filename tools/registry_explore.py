@@ -164,8 +164,8 @@ def _dependency_note(metadata):
             ' Counts describe distinct active packages with declared direct dependencies. They do not establish suitability or safety.</p>')
 
 
-def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> str:
-    """Render a complete native document; unknown discovery identities are 404s."""
+def _render_explore(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> tuple[str, bool]:
+    """Render a document and derive indexing eligibility from its actual rows."""
     keyword = kind.split("/", 1)[1] if isinstance(kind, str) and kind.startswith("keywords/") else None
     architecture = kind.split("/", 1)[1] if isinstance(kind, str) and kind.startswith("architectures/") else None
     if kind not in BASE and not _identifier(keyword) and architecture not in ARCHITECTURES: raise KeyError(kind)
@@ -222,6 +222,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
     depended = sorted((name for name, row in dependents.items() if row["count"] is not None and row["count"] > 0), key=lambda name: (-dependents[name]["count"], name))
     dependent_signals = {name: count_html(dependents[name]["count"], lower_bound=not dependents[name]["exact"]) +
                          (' dependent' if dependents[name]["count"] == 1 else ' dependents') for name in depended}
+    indexable = True
     if kind == "explore":
         def group(key, heading, caption, destination, content, note=""):
             return ('<section class="discovery-group" aria-labelledby="explore-' + key + '"><div class="discovery-group-header"><div class="discovery-group-heading"><h2 id="explore-' + key + '">' +
@@ -278,6 +279,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
     elif keyword:
         body += _package_cards(prefix, sorted(keywords[keyword]["packages"]), active, {})
     elif kind == "depended-on":
+        indexable = bool(depended)
         body += _dependency_note(metadata)
         empty = ("Direct dependency declarations are unavailable." if metadata["dependency_coverage"]["known"] == 0 else
                  "No direct dependents appear in the available declarations.")
@@ -291,12 +293,20 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                 registry.require(retained.get("observed_at") is not None, "retained counts lack a reporting cutoff")
                 values[name] = count
         names = sorted(values, key=lambda name: (-values[name], name))
+        indexable = bool(names)
         signals = {name: count_html(values[name], lower_bound=not retained["complete"]) +
                    (' download' if values[name] == 1 else ' downloads') for name in names}
         body += _package_cards(prefix, names, active, signals) if names else '<p class="package-empty">No positive completed transfers are available for this observation period.</p>'
         body += '<p class="package-note">These cumulative observations cover configured Asm delivery sources since collection began. Unreported earlier or external transfers are outside this metric. Transfers do not measure people or installations.</p>'
     body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("Discovery data and coverage", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
-    return package_pages._page(route, page_title, description, body, package_pages._chrome(stage), active_nav="Explore", scripts=False)
+    html = package_pages._page(route, page_title, description, body, package_pages._chrome(stage),
+                               active_nav="Explore", scripts=False, noindex=not indexable)
+    return html, indexable
+
+
+def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> str:
+    """Render a complete native document; unknown discovery identities are 404s."""
+    return _render_explore(stage, index, snapshot, metadata, retained, kind)[0]
 
 
 def write_explore(stage: Path, index: dict, snapshot: dict, metadata: dict, retained: dict) -> list[str]:
@@ -305,8 +315,8 @@ def write_explore(stage: Path, index: dict, snapshot: dict, metadata: dict, reta
     kinds.extend("architectures/" + group["id"] for group in architecture_groups(index))
     outputs = []
     for kind in kinds:
-        html = explore_page(stage, index, snapshot, metadata, retained, kind)
+        html, indexable = _render_explore(stage, index, snapshot, metadata, retained, kind)
         route = "explore/" if kind == "explore" else "browse/" + kind + "/"
-        outputs.append((route, html.encode("utf-8")))
-    for route, html in outputs: registry.write_atomic(stage / route / "index.html", html)
-    return [route for route, _ in outputs]
+        outputs.append((route, html.encode("utf-8"), indexable))
+    for route, html, _ in outputs: registry.write_atomic(stage / route / "index.html", html)
+    return [route for route, _, indexable in outputs if indexable]

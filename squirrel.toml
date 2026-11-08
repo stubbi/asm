@@ -30,3 +30,119 @@ items = [
   "Article missing image",
 ]
 reason = "These recommended Article facts are unavailable. Keep syntax errors, invalid values, and other missing properties active."
+
+# Functional pages reviewed individually; do not extend these paths to new content.
+# The word-count rule has no item-level floor. Rendered-content tests guard their tasks.
+[[ignore]]
+rule = "content/word-count"
+checks = ["word-count"]
+urls = [
+  'regex:^/(about|docs|explore|packages(/stubbi)?|reference|stats)?$',
+  'regex:^/blog(/releases(/0\.[1-6]\.0)?)?$',
+  'regex:^/browse/architectures(/(aarch64|riscv64|x86-64))?$',
+  'regex:^/browse/categories(/(developer-tools|examples|math))?$',
+  'regex:^/browse/keywords(/(build-tools|cli|examples|hello-world|integers|math))?$',
+  'regex:^/browse/(new|updated)$',
+]
+reason = "These 33 reviewed search, catalog, documentation, source, statistics, and release pages complete concise tasks. Do not pad them to 300 words. Future articles, releases, and taxonomy paths retain the default check."
+
+[[ignore]]
+rule = "links/no-contextual-inbound"
+checks = ["no-contextual-inbound"]
+items = [
+  "https://asm.build/blog/articles",
+  "https://asm.build/blog/releases",
+  "https://asm.build/packages/stubbi",
+]
+reason = "Blog archive links are in the blog introduction header. Namespace links are in package source sidebars and breadcrumbs. The scanner excludes those semantic regions; native links remain tested."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/$']
+items = ["packages"]
+reason = "The homepage names package search, package records, and the package registry. Keep the same term for the same concept."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/blog(/releases)?$']
+items = ["release", "github", "availability", "nov", "utc"]
+reason = "These two existing archives list six actual releases with their GitHub availability date and UTC time. Repeated labels and date tokens identify each entry."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/blog/releases/0\.[1-6]\.0$']
+items = ["release"]
+reason = "These six exact released changelog sections and their source links describe releases. Preserve the recorded release text."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/blog/releases/0\.[1-2]\.0$']
+items = ["source"]
+reason = "These two exact release notes describe source handling and link their recorded sources. Preserve the changelog text."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/blog/releases/0\.2\.0$']
+items = ["license"]
+reason = "The exact 0.2.0 changelog records the license transition and retained 0.1.0 terms. Preserve that historical text."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/docs$']
+items = ["package"]
+reason = "The documentation directory links package inspection, use, publication, and format references. Package identifies the shared subject of distinct tasks."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/explore$']
+items = ["linux", "package", "packages", "aarch"]
+reason = "Current discovery cards show distinct package memberships and their explicit target identifiers. Repeated Linux and aarch64 targets are functional metadata."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/packages/stubbi/hello$']
+items = ["linux"]
+reason = "The current Hello overview contains explicit Linux target metadata and the exact source README. Keep machine requirements unambiguous."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/packages/stubbi/hello/0\.[1-5]\.0$']
+items = ["source", "linux", "executable"]
+reason = "These exact historical pages label each source or executable artifact and its Linux target independently, plus exact source facts. Preserve those repeated distinctions."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/packages/stubbi/hello/0\.6\.0$']
+items = ["source", "linux"]
+reason = "The exact 0.6.0 Hello page repeats explicit Linux artifact targets, source facts, and the recorded README. Preserve their technical terms."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/packages/stubbi/math/0\.[1-5]\.0$']
+items = ["source"]
+reason = "These exact historical Math pages label source artifacts, source-bound dependency declarations, README snapshots, and source facts. Preserve the distinction."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/privacy$']
+items = ["github"]
+reason = "The privacy notice identifies GitHub as the actual hosting and optional API provider. Provider names should not be replaced with vague synonyms."
+
+[[ignore]]
+rule = "content/keyword-stuffing"
+checks = ["keyword-stuffing"]
+urls = ['regex:^/stats$']
+items = ["activity"]
+reason = "The statistics page names download activity panels, scope, and links. Activity identifies the measured data rather than an inserted search phrase."
