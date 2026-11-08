@@ -22,6 +22,7 @@ from count_format import compact_count, count_html
 SITE = "https://asm.build/"
 REPOSITORY = "https://github.com/stubbi/asm"
 MAX_README_BYTES = 128 * 1024
+CATALOG_PAGE_SIZE = 50
 README_NAMES = ("README.md", "README", "README.txt")
 EVIDENCE = {"metadata": "Metadata", "artifacts": "Artifacts", "provenance": "Provenance",
             "formal": "Formal proof", "agent_review": "Agent review"}
@@ -42,6 +43,22 @@ def record_route(record: dict) -> str:
 def _anchor(label: str, href: str, *, package: bool = False, attrs: str = "", accessible_suffix: str = "") -> str:
     text = escape(label) + ('<span class="sr-only"> ' + escape(accessible_suffix) + '</span>' if accessible_suffix else '')
     return f'<a href="{escape(href, quote=True)}"' + (' data-package-link' if package else '') + attrs + '>' + text + '</a>'
+
+
+def _browse_navigation(route: str, selected: str = "explore") -> str:
+    """Keep native discovery routes and their parent states in one order."""
+    prefix = "../" * route.count("/")
+    links = []
+    for label, target, key in (
+        ("Explore", "explore/", "explore"), ("All packages", "packages/", "all"),
+        ("Categories", "browse/categories/", "categories"), ("Keywords", "browse/keywords/", "keywords"),
+        ("Architectures", "browse/architectures/", "architectures"),
+        ("Most depended on", "browse/depended-on/", "depended-on"),
+        ("Total downloads", "browse/downloaded/", "downloaded"),
+    ):
+        current = (' aria-current="' + ("page" if route == target else "location") + '"') if key == selected else ''
+        links.append(_anchor(label, prefix + target, attrs=current + (' aria-label="Explore assembly packages"' if key == 'explore' else '')))
+    return '<nav class="package-section-nav browse-navigation" aria-label="Explore packages">' + ''.join(links) + '</nav>'
 
 
 def _breadcrumbs(trail: list[tuple[str, str | None]], *, back_search: str | None = None) -> str:
@@ -815,6 +832,41 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
             version_link = _anchor(version, prefix + package_route(name, version), package=True, attrs=' class="package-version"') if latest else '<span class="package-version">No active release</span>'
             rows.append('<li class="package-catalog-item"><div class="package-result-heading">' + _anchor(name, prefix + package_route(name), package=True, attrs=' class="package-catalog-name"') + version_link + '</div><p>' + escape(summary) + '</p>' + _preview_metadata(latest) + '</li>')
         return '<ul class="package-catalog">' + "".join(rows) + '</ul>' if rows else '<p class="package-empty">The registry has no published packages yet.</p>'
+    def write_listing(names, base_route, owner=None):
+        names = sorted(names)
+        pages = max(1, (len(names) + CATALOG_PAGE_SIZE - 1) // CATALOG_PAGE_SIZE)
+        def page_route(number):
+            # Numeric page leaves cannot be package names or release versions.
+            return base_route if number == 1 else base_route + 'page/' + str(number) + '/'
+        for number in range(1, pages + 1):
+            route = page_route(number)
+            prefix = '../' * route.count('/')
+            title = owner + ' assembly packages' if owner else 'Assembly package catalog and releases'
+            description = ('Browse assembly packages in the ' + owner + ' namespace. Inspect exact versions, licenses, targets, and source records. A namespace is a package name prefix.' if owner else
+                           'Browse the Asm assembly package catalog. Compare package purposes, exact releases, licenses, and declared targets, then inspect source and release evidence.')
+            if number > 1:
+                title += ' — page ' + str(number)
+                description += ' Page ' + str(number) + ' of ' + str(pages) + '.'
+            body = _breadcrumbs([('Packages', prefix + 'packages/'), (owner, None)]) if owner else ''
+            caption = ('This namespace is a package name prefix, not an authenticated publisher profile.' if owner else
+                       'Inspect package records, targets, and release evidence.')
+            body += '<header class="package-heading"><h1>' + escape(owner or 'All packages') + '</h1><p>' + caption + '</p></header>'
+            body += _browse_navigation(route, selected='all')
+            start = (number - 1) * CATALOG_PAGE_SIZE
+            stop = min(start + CATALOG_PAGE_SIZE, len(names))
+            if names:
+                body += ('<div class="package-list-toolbar"><p class="package-note">Showing ' + str(start + 1) + '–' + str(stop) + ' of ' + str(len(names)) + ' packages.</p>'
+                         + _anchor('Refine in search', prefix + 'index.html#search?all=1', attrs=' class="text-link"') + '</div>')
+            body += listing(names[start:stop], route)
+            if pages > 1:
+                body += '<nav class="package-pagination" aria-label="Catalog pages">'
+                if number > 1:
+                    body += _anchor('Previous', prefix + page_route(number - 1), attrs=' rel="prev"')
+                body += '<span>Page ' + str(number) + ' of ' + str(pages) + '</span>'
+                if number < pages:
+                    body += _anchor('Next', prefix + page_route(number + 1), attrs=' rel="next"')
+                body += '</nav>'
+            write(route, title, description, body)
     for name, releases in grouped.items():
         releases.sort(key=lambda record: registry.version_tuple(record["version"]), reverse=True)
         matches = {version["version"]: version for version in indexed[name]["versions"]}
@@ -833,10 +885,12 @@ def write_package_pages(repo: Path, stage: Path, records: list[dict], index: dic
             write(route, name + "@" + record["version"] + " assembly package", _release_description(name, record, exact=True), _package_body(repo, route, name, releases, record, matches, counts, True, cache, delivery=delivery,
                   activity=(activities or {}).get((name, record["version"])), publications=publications,
                   dependency_sources=dependency_sources, package_names=set(indexed)), package=name, record=record)
-    write("packages/", "Assembly package catalog and releases", "Browse the Asm assembly package catalog. Compare package purposes, exact releases, licenses, and declared targets, then inspect source and release evidence.", '<header class="package-heading"><h1>Assembly packages</h1><p>Inspect package records, targets, and release evidence.</p></header>' + listing(grouped, "packages/"))
-    for owner in sorted({name.split("/")[0] for name in grouped}):
-        route = "packages/" + owner + "/"
-        write(route, owner + " assembly packages", "Browse assembly packages in the " + owner + " namespace. Inspect exact versions, licenses, targets, and source records. A namespace is a package name prefix.", _breadcrumbs([("Packages", "../../packages/"), (owner, None)]) + '<header class="package-heading"><h1>' + escape(owner) + '</h1><p>This namespace is a package name prefix, not an authenticated publisher profile.</p></header>' + listing([name for name in grouped if name.split("/")[0] == owner], route))
+    write_listing(grouped, 'packages/')
+    owners = {}
+    for name in sorted(grouped):
+        owners.setdefault(name.split('/')[0], []).append(name)
+    for owner, names in owners.items():
+        write_listing(names, 'packages/' + owner + '/', owner)
     write("404.html", "Page not found", "The requested Asm page was not found.", '<section class="package-empty"><h1>Page not found</h1><p>Check the address or browse the available packages.</p>' + _anchor("Browse packages", "/packages/", attrs=' class="button button-primary"', package=True) + _anchor("Asm home", "/index.html", attrs=' class="text-link"') + '</section>', missing=True)
     return routes
 
@@ -946,10 +1000,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
     descriptions = {"popular": "Downloads · Last 30 days", "new": "First GitHub release, newest first.",
                     "updated": "Package release activity, newest publication first.", "metrics": "The sources, coverage, and limits behind Popular and New packages."}
     description = "Assembly packages by purpose." if category else descriptions[kind]
-    navigation = '<nav class="package-section-nav" aria-label="Browse packages">' + "".join(
-        _anchor(label, prefix + target, attrs=(' aria-current="page"' if selected == kind else '') + (' aria-label="Explore assembly packages"' if label == "Explore" else ''))
-        for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"), ("Most downloaded", "browse/popular/", "popular"),
-                                        ("New", "browse/new/", "new"), ("Recently updated", "browse/updated/", "updated"))) + '</nav>'
+    navigation = _browse_navigation(route, "categories" if category else "explore")
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(description) + '</p></header>' + navigation
     observed = snapshot.get("observed_at")
     if observed:

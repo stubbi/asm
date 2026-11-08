@@ -26,11 +26,14 @@ class Page(HTMLParser):
         super().__init__()
         self.links, self.scripts, self.assets, self.ids, self.text = [], [], [], [], []
         self.forms, self.script_attributes = [], []
+        self.catalog_links = []
         self.feed(content)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "a": self.links.append(attrs.get("href", ""))
+        if tag == "a" and 'package-catalog-name' in attrs.get('class', '').split():
+            self.catalog_links.append(attrs.get('href', ''))
         if tag == "script" and "src" in attrs: self.scripts.append(attrs["src"])
         if tag == "script": self.script_attributes.append(attrs)
         if tag == "form": self.forms.append(attrs)
@@ -471,6 +474,71 @@ for fragment in ("<details>\\n", "<summary>", "<details>\\n<summary>label</summa
         self.assertIn('<dd>AGPL-3.0-or-later</dd>', catalog)
         self.assertNotIn('<dd>MIT</dd>', catalog)
         self.assertIn('stubbi/math/0.10.0/', catalog)
+
+    def test_native_catalog_pages_are_bounded_sorted_and_keep_withdrawn_packages(self):
+        self.records = [self.record('0.2.0', self.old_commit, 'Package ' + str(number), 'MIT',
+                                    'x86_64-linux', name=f'stubbi/item-{number:02d}')
+                        for number in reversed(range(53))]
+        self.records[0].update(yanked=True, yank_reason='Withdrawn fixture')
+        routes = self.generate()
+        self.assertIn('packages/page/2/', routes)
+        self.assertNotIn('packages/page/3/', routes)
+        names = []
+        for route, expected_count, expected_range in (
+                ('packages/', 50, 'Showing 1–50 of 53 packages.'),
+                ('packages/page/2/', 3, 'Showing 51–53 of 53 packages.')):
+            page = self.read(route)
+            parsed = Page(page)
+            identities = [urlsplit(urljoin('https://asm.build/' + route, link)).path
+                          for link in parsed.catalog_links]
+            self.assertEqual(len(identities), expected_count)
+            names.extend(identities)
+            self.assertIn(expected_range, page)
+            self.assertIn('aria-label="Catalog pages"', page)
+        self.assertEqual(names, [f'/packages/stubbi/item-{number:02d}/' for number in range(53)])
+        first, second = self.read('packages'), self.read('packages/page/2')
+        self.assertIn('href="../packages/" aria-current="page">All packages</a>', first)
+        self.assertIn('href="../../../packages/" aria-current="location">All packages</a>', second)
+        self.assertIn('Page 1 of 2', first)
+        self.assertIn('Assembly package catalog and releases — page 2', second)
+        self.assertIn('href="../packages/page/2/" rel="next"', first)
+        self.assertNotIn('rel="prev"', first)
+        self.assertIn('href="../../../packages/" rel="prev"', second)
+        self.assertNotIn('rel="next"', second)
+        self.assertIn('No active release', second)
+        self.assertNotIn('item-52/0.2.0/', second)
+        self.assertIn('href="../../../explore/"', second)
+        self.assertIn('href="../../../index.html#search?all=1"', second)
+
+
+    def test_namespace_pagination_does_not_collide_with_page_namespace_or_package(self):
+        self.records = [self.record('0.2.0', self.old_commit, 'Package ' + str(number), 'MIT',
+                                    'x86_64-linux', name=f'page/item-{number:02d}')
+                        for number in range(52)]
+        self.records.append(self.record('0.2.0', self.old_commit, 'A package named page', 'MIT',
+                                        'x86_64-linux', name='page/page'))
+        routes = self.generate()
+        for route in ('packages/page/', 'packages/page/2/', 'packages/page/page/',
+                      'packages/page/page/0.2.0/', 'packages/page/page/2/'):
+            self.assertIn(route, routes)
+        first, second = self.read('packages/page'), self.read('packages/page/page/2')
+        self.assertIn('href="../../packages/" aria-current="location">All packages</a>', first)
+        self.assertIn('Showing 1–50 of 53 packages.', first)
+        self.assertIn('href="../../packages/page/page/2/" rel="next"', first)
+        self.assertIn('href="../../../../packages/page/" rel="prev"', second)
+        self.assertIn('Showing 51–53 of 53 packages.', second)
+        self.assertIn('A package named page', self.read('packages/page/page'))
+        self.assertEqual(len(routes), len(set(routes)))
+
+
+    def test_empty_native_catalog_has_no_pagination(self):
+        self.records = []
+        routes = self.generate()
+        catalog = self.read('packages')
+        self.assertIn('The registry has no published packages yet.', catalog)
+        self.assertNotIn('aria-label="Catalog pages"', catalog)
+        self.assertEqual(set(routes), {'packages/', '404.html'})
+
 
     def test_missing_page_recovery_and_assets_resolve_from_nested_unknown_address(self):
         self.generate()

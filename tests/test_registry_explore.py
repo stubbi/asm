@@ -126,6 +126,26 @@ class RegistryExploreTests(unittest.TestCase):
         self.assertIn("collection coverage", downloaded)
         self.assertNotIn("<title>Most downloaded packages", downloaded)
 
+    def test_discovery_navigation_keeps_order_and_marks_directory_parents(self):
+        destinations = None
+        for kind in ("explore", "categories", "keywords", "keywords/math", "architectures", "architectures/aarch64", "depended-on", "downloaded"):
+            with self.subTest(kind=kind):
+                page = HierarchyParser()
+                page.feed(self.render(kind))
+                nav = next(item for item in page.elements if item["tag"] == "nav" and item["attrs"].get("aria-label") == "Explore packages")
+                links = [item for item in page.elements if item["tag"] == "a" and id(nav) in item["ancestors"]]
+                route = "explore/" if kind == "explore" else "browse/" + kind + "/"
+                actual = [urlsplit(urljoin("https://asm.build/" + route, item["attrs"]["href"])).path for item in links]
+                if destinations is None:
+                    destinations = actual
+                self.assertEqual(actual, destinations)
+                current = [item for item in links if "aria-current" in item["attrs"]]
+                self.assertEqual(len(current), 1)
+                parent = "explore/" if kind == "explore" else "browse/" + kind.split("/")[0] + "/"
+                self.assertEqual(urlsplit(urljoin("https://asm.build/" + route, current[0]["attrs"]["href"])).path, "/" + parent)
+                self.assertEqual(current[0]["attrs"]["aria-current"], "location" if "/" in kind else "page")
+
+
     def test_dashboard_group_headers_keep_headings_routes_and_scope_above_rows(self):
         page = HierarchyParser()
         page.feed(self.render())
