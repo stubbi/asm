@@ -1,6 +1,6 @@
 # Storage, mirrors, and operating cost
 
-Status: unreleased source implementation, 8 November 2026. No production deployment or capacity claim.
+Status: published 0.7.0 client and source implementation, 8 November 2026. No official hosted V2 activation or capacity claim.
 
 Asm keeps application logic in assembly.
 Reuse the existing [assembly reader](../server/README.md), [catalog operator](../server/catalog/README.md), and [qualified-image procedure](operator-images.md).
@@ -21,7 +21,8 @@ The [infrastructure evidence](registry-infrastructure-evidence.md) and [V2 evide
 | Public publishing service | Catalog service plus publisher authentication, durable tasks, isolated checks, signing, and lifecycle operations | Authorize and distribute new package releases |
 
 Public self-service enrollment remains unimplemented.
-The unreleased [assembly publisher](../server/publisher/README.md) accepts scoped tasks through a loopback-only API.
+The [assembly publisher source](../server/publisher/README.md) accepts scoped tasks through a loopback-only API.
+Official hosted publication remains unprovisioned.
 Private check and distribution jobs complete signed publication.
 The [native V2 profile](specs/registry-v2.md) supports exact fetch, installation, and mirror selection.
 The released 0.6.0 CLI retains its V1 contract.
@@ -190,22 +191,36 @@ Disable caching for `metadata/timestamp.json`; cache immutable digest objects in
 Do not expose work directories, private retained objects, credentials, keys, or logs.
 A public mirror need not expose its synchronization inventory.
 
-## Use the native V2 preview
+<a id="use-the-native-v2-preview"></a>
 
-Build on Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later.
-Install the host assembler/linker, Python, and the Go version in `verifier/go.mod` first.
+## Use the native V2 client
+
+Use published Asm 0.7.0 on Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later.
+Follow the [installation instructions](../README.md#install-the-command) for your supported host.
 Install `curl` and `gzip` for HTTPS and source archive checks.
 Project publication also needs Git 2.39.5 or later at `/usr/bin/git`.
 Linux requires GNU Coreutils at `/usr/bin/sha256sum`; macOS uses `/usr/bin/shasum` for hashing.
 The transport and cryptography adapter is bundled into the native assembly executable.
 
 ```sh
+asm registry --help
+```
+
+Help lists the required explicit publication and trust options.
+Official hosted V2 publication remains unprovisioned; use a configured registry with independently selected trust.
+
+Alternatively, build from source on a supported host.
+Install the host assembler/linker, Python, and the Go version in `verifier/go.mod` before building.
+
+```sh
 make registry-cli
 build/asm-registry-v2 registry --help
 ```
 
-Success creates `build/asm-registry-v2`; help lists the required explicit publication and trust options.
-The default `make` output and released CLI remain V1.
+Success creates `build/asm-registry-v2` with the same command family.
+Use that path instead of `asm` in the commands below when selecting this source build.
+Ordinary `make` and published 0.7.0 CLIs include V2 commands.
+`make REGISTRY_V2=0` selects the explicit V1-only source profile.
 Project publication reads committed Git objects and prepares the archive and canonical manifest in assembly.
 It ignores dirty and untracked working files.
 It does not build, test, or execute the project.
@@ -213,7 +228,7 @@ Use the package's actual license identifier and enrolled owner identity.
 The committed `asm.toml` supplies the version.
 
 ```sh
-build/asm-registry-v2 registry publish \
+asm registry publish \
   --project /absolute/project-repository \
   --name owner/package --owner-id OWNER_ID_32_HEX \
   --summary "The package purpose." --license SPDX_IDENTIFIER \
@@ -254,7 +269,7 @@ GitHub, Entire, GitLab, Codeberg, and local repositories use the same workflow.
 Prepared input remains supported:
 
 ```sh
-build/asm-registry-v2 registry publish \
+asm registry publish \
   --manifest /private/package/manifest.json \
   --objects-dir /private/package/objects \
   --credential-file /private/asm/publisher.token \
@@ -273,7 +288,7 @@ Keep the root file and persistent trust directory under an owned private directo
 Install an exact compatible executable through explicitly selected mirrors:
 
 ```sh
-build/asm-registry-v2 registry install owner/name@1.0.0 \
+asm registry install owner/name@1.0.0 \
   --registry-id REGISTRY_ID_32_HEX \
   --root /private/asm-trust/root.json --state /private/asm-trust/client-state \
   --mirror https://mirror-one.example/asm --mirror https://mirror-two.example/asm \
@@ -286,7 +301,7 @@ Use `registry fetch` to expose checked source or executable bytes without instal
 Use `--ca /private/asm-trust/ca.pem` when private HTTPS requires an explicit certificate authority.
 A failed mirror can select the next mirror; authority and retained rollback state stay the same.
 Invalid signatures, stale metadata, revocation, corruption, and unrelated existing destinations fail without replacing installed bytes.
-Use this preview binary for its V2 installation inventory; the released V1 binary cannot manage that inventory.
+V2 installation inventories require a V2-enabled client; V1-only clients cannot manage those inventories.
 V1 upgrade refuses V2 origin receipts; V2 version changes require another explicit exact selection.
 
 GitHub, Entire, GitLab, Codeberg, and local projects use the same publication contract.
@@ -296,7 +311,7 @@ CI identity integration remains optional future work.
 
 ## Resolve and restore V2 dependencies
 
-Use the optional native V2 binary built above on a supported native host.
+Use the native V2 client described above on a supported host.
 Keep the transport and source-archive prerequisites for registry commands.
 Install build tools before compiling assembly.
 Project publication also requires Git.
@@ -339,7 +354,7 @@ The [feature contract](specs/registry-v2.md#feature-activation) defines names, a
 Resolve the complete graph for one declared target:
 
 ```sh
-build/asm-registry-v2 registry resolve --project /absolute/project \
+asm registry resolve --project /absolute/project \
   --registry-id REGISTRY_ID_32_HEX \
   --root /private/asm-trust/root.json --state /private/asm-trust/client-state \
   --mirror https://mirror-one.example/asm --mirror https://mirror-two.example/asm \
@@ -353,7 +368,7 @@ Use only names declared in the root project; an unknown name fails before a netw
 Resolve reads signed metadata without downloading artifacts or executing package code.
 An explicit resolve can select newer permitted versions.
 Keep the lock with the consumer project when repeatable selections are required.
-Preserve a legacy lock separately before adopting this optional profile.
+Preserve a legacy lock separately before adopting this V2 workflow.
 Resolve refuses a lock bound to another authority or target.
 It also refuses changed package identities and altered bindings for an already locked version.
 Preserve that lock when investigating a changed registry view.
@@ -361,7 +376,7 @@ Preserve that lock when investigating a changed registry view.
 Restore its exact packages:
 
 ```sh
-build/asm-registry-v2 registry sync --project /absolute/project \
+asm registry sync --project /absolute/project \
   --registry-id REGISTRY_ID_32_HEX \
   --root /private/asm-trust/root.json --state /private/asm-trust/client-state \
   --mirror https://mirror-one.example/asm --mirror https://mirror-two.example/asm \
@@ -390,7 +405,7 @@ It reads at most 256 reached candidate versions and 64 dependencies per release.
 The solver stops after 100,000 operations and reports exhaustion separately from incompatible constraints.
 Discovery fetches metadata only when an active solver branch requires a package name.
 It can read unused versions of that name; it does not fetch their artifacts.
-This bounded source profile does not establish global resolver capacity.
+This bounded V2 profile does not establish global resolver capacity.
 
 Mirrors still need only storage synchronization and HTTPS serving.
 Resolution adds no database, resolver service, publisher secret, or signing key to a mirror.
@@ -493,7 +508,8 @@ The website shows its distribution revisions and observation cutoff.
 It can lag the registry; native commands still check current signed lifecycle policy.
 Unreported time remains a gap rather than zero activity.
 
-Use `make registry-cli` for the package pages' V2 preview commands.
+Use published Asm 0.7.0 for the package pages' V2 commands.
+The [source build](#use-the-native-v2-client) remains an alternative.
 Asm 0.6.0 does not provide that command family.
 Obtain the initial trust root and registry identity independently before using a copied command.
 Replace its root, state, and output placeholders with protected absolute paths.
@@ -632,7 +648,7 @@ TLS, serving permissions, log rotation, and scheduling remain operator responsib
 
 Snapshot hashes establish transport integrity, not publisher identity or metadata freshness.
 Released V1 clients retain GitHub artifact URLs; they do not automatically select an S3 mirror.
-Use the explicit V2 preview above for authenticated mirror selection.
+Use the explicit V2 client above for authenticated mirror selection.
 Do not solve air-gap expiry failures by weakening verification.
 
 ## Collect observations asynchronously

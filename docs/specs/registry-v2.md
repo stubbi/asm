@@ -1,6 +1,6 @@
 # Signed V2 distribution and native use
 
-Status: unreleased source implementation, 8 November 2026. No public deployment is activated.
+Status: published 0.7.0 client and source implementation, 8 November 2026. No official hosted V2 deployment is activated.
 
 This profile extends [publication](publication.md) from immutable intent through signed distribution and native use.
 The outcome is publishing and installing exact package bytes without requiring a particular Git host or CI service.
@@ -198,7 +198,7 @@ Committed or published task replay therefore needs no redundant upload.
 | `asm registry resolve` | Resolve source dependencies for one target and write the complete graph lock |
 | `asm registry sync` | Authenticate the exact locked graph and restore its source cache |
 
-`make` includes these commands on the supported native CLI hosts.
+Published Asm 0.7.0 and ordinary `make` builds include these commands on the supported native CLI hosts.
 `make registry-cli` builds the same full client.
 `make REGISTRY_V2=0` selects the explicit V1-only source profile.
 The official V2 registry still requires independent trust provisioning and deployment qualification.
@@ -215,7 +215,7 @@ Changing installed versions remains a separate explicit operation.
 
 ## Resolve a bounded dependency graph
 
-This source profile resolves mandatory and optional source dependencies from one explicitly selected registry.
+This V2 profile resolves mandatory and optional source dependencies from one explicitly selected registry.
 The [implementation plan](../superpowers/plans/2026-11-08-v2-dependencies.md) records its scope and qualification work.
 The [dependency evidence record](../v2-dependency-evidence.md) identifies completed checks and remaining limits.
 The released V1 dependency commands and target-aware `asm-lock-v2` format retain their existing behavior.
@@ -406,7 +406,7 @@ No V2 input becomes a counterfeit V1 record or a V1 fallback.
 Package, namespace, exact-version, browse, and statistics pages retain ordinary links and useful content without scripts.
 Search runs locally against the explicitly selected V2 projection.
 Commands use `asm registry fetch` with an exact version, registry, independently provisioned root, persistent state, mirrors, target, kind, and destination.
-They require the preview client and do not install or execute a package.
+They require the V2-enabled client and do not install or execute a package.
 The native client independently authenticates current metadata and rechecks lifecycle policy.
 Disabled releases receive no new selection commands or download links.
 Raw artifact links require explicit builder validation of the exact retained artifact bytes and structure.

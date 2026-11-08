@@ -783,9 +783,12 @@ class SearchDiscoveryTests(unittest.TestCase):
         candidate = Path(self.temporary.name) / "checked-installer-recovery"
         # Artifact acceptance is a separately tested prerequisite; retain the
         # real default transport, metadata resolver, generator, and site build.
+        # Keep this historical fixture independent of later bootstrap versions.
+        records = [item for item in self.records
+                   if item["name"] != "stubbi/asm" or item["version"] == "0.6.0"]
         with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
              patch.object(build_site, "build_opener", return_value=opener), \
-             patch.object(registry, "read_records", return_value=[record if item["name"] == "stubbi/asm" and item["version"] == "0.6.0" else item for item in self.records]):
+             patch.object(registry, "read_records", return_value=[record if item["name"] == "stubbi/asm" else item for item in records]):
             build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate, verify=True)
         script = (candidate / "install.sh").read_text()
         expected = {"https://api.github.com/repos/stubbi/asm/releases/assets/" + str(item["id"]) for item in assets}
@@ -807,7 +810,11 @@ class SearchDiscoveryTests(unittest.TestCase):
         candidate = Path(self.temporary.name) / "unpublished-corrupt-bootstrap"
         def reader(url, limit, hosts, *, expected_size=None):
             return b'{"dsseEnvelope":{}}' if url.endswith("release-attestation.sigstore.json") else b"corrupt"
-        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}):
+        # Select the same historical release whose corrupt bytes this test supplies.
+        records = [item for item in self.records
+                   if item["name"] != "stubbi/asm" or item["version"] == "0.6.0"]
+        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
+             patch.object(registry, "read_records", return_value=records):
             with self.assertRaisesRegex(registry.RegistryError, "artifact byte size mismatch"):
                 build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate,
                                       verify=True, artifact_reader=reader)

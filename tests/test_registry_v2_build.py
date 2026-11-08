@@ -60,7 +60,7 @@ class RegistryV2BuildTests(unittest.TestCase):
         self.assertIn("Download activity is unavailable", page)
         self.assertTrue((self.output / "docs/index.html").is_file())
         docs = (self.output / "docs/index.html").read_text()
-        self.assertIn("Build the V2 preview", docs)
+        self.assertIn("Use the V2 client", docs)
         self.assertIn("docs/specs/registry-v2.md", docs)
         self.assertNotIn("submit a registry pull request", docs)
         self.assertTrue((self.output / "blog/index.html").is_file())
