@@ -52,7 +52,8 @@ def main(argv=None):
             print("Fixture binary profiles match; no server checks ran.")
             return 0
         result = unittest.TextTestRunner(verbosity=2).run(load_suites(args.suites))
-        return 0 if result.testsRun and not result.skipped and result.wasSuccessful() else 1
+        return 0 if (result.testsRun and not result.skipped and not result.expectedFailures
+                     and not result.unexpectedSuccesses and result.wasSuccessful()) else 1
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print("PostgreSQL 18 qualification refused: " + str(error), file=sys.stderr)
         return 1

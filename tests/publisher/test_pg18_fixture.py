@@ -199,18 +199,38 @@ class Pg18FixtureTests(unittest.TestCase):
             cwd=Path(__file__).parent, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_launcher_refuses_empty_or_skipped_suites(self):
+    def test_launcher_refuses_unqualified_suites(self):
         self.module()
         launcher = importlib.import_module("run_pg18")
         class SkippedCase(unittest.TestCase):
             @unittest.skip("This case cannot qualify the server.")
             def test_unavailable(self):
                 pass
-        for suite in (unittest.TestSuite(), unittest.defaultTestLoader.loadTestsFromTestCase(SkippedCase)):
+        class ExpectedFailureCase(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_contract(self):
+                self.fail("This failed assertion cannot qualify the server.")
+        class UnexpectedSuccessCase(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_contract(self):
+                pass
+        for suite in (unittest.TestSuite(), *(unittest.defaultTestLoader.loadTestsFromTestCase(case)
+                      for case in (SkippedCase, ExpectedFailureCase, UnexpectedSuccessCase))):
             with self.subTest(cases=suite.countTestCases()), \
                     patch.object(launcher, "preflight"), patch.object(launcher, "load_suites", return_value=suite), \
                     patch.object(sys, "stderr", io.StringIO()):
                 self.assertEqual(launcher.main(["authority"]), 1)
+
+    def test_launcher_accepts_successful_assertions(self):
+        self.module()
+        launcher = importlib.import_module("run_pg18")
+        class SuccessfulCase(unittest.TestCase):
+            def test_contract(self):
+                pass
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(SuccessfulCase)
+        with patch.object(launcher, "preflight"), patch.object(launcher, "load_suites", return_value=suite), \
+                patch.object(sys, "stderr", io.StringIO()):
+            self.assertEqual(launcher.main(["authority"]), 0)
 
 
 if __name__ == "__main__":
