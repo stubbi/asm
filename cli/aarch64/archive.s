@@ -2025,7 +2025,9 @@ arc_compare_file:
 
 /* Walk one directory without following links. Mode 0 compares the exact tree;
  * mode 1 removes a failed private stage. Each recursion owns its getdents buffer.
- * x0 fd, x1 prefix length in arc_scan_path, w2 mode. */
+ * x0 fd, x1 prefix length in arc_scan_path, w2 mode. Own a fresh directory
+ * descriptor per recursion; leave the caller's descriptor and cursor intact.
+ * Prefix length remains bounded by ARC_PATH; all return paths close our FD. */
 arc_walk_tree:
     ARM_SAVE x19
     ARM_SAVE x20
@@ -2041,6 +2043,18 @@ arc_walk_tree:
     ARM_IMM x17, 4104
     add x16, x16, x17
     str w2, [x16]
+    mov x0, x21
+    mov x21, #-1
+    ARM_ADDR x1, arc_dot
+    ARM_IMM w2, ARC_DIRECTORY
+    mov x6, #0
+.Larc_walk_open:
+    ARM_CALL arm_openat
+    cmn x9, #4
+    b.eq .Larc_walk_open
+    tst x9, x9
+    b.mi .Larc_walk_bad
+    mov x21, x9
 .Larc_walk_read:
     mov x0, x21
     mov x10, sp
@@ -2292,6 +2306,10 @@ arc_walk_tree:
     ARM_IMM w10, 1
     mov w9, w10
 .Larc_walk_return:
+    mov w22, w9
+    mov x0, x21
+    ARM_CALL arc_close
+    mov w9, w22
     ARM_IMM x17, 4128
     add sp, sp, x17
     ARM_RESTORE x24

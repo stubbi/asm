@@ -576,6 +576,9 @@ dependency_accept_payload:
     call validate_source_package
     test eax, eax
     jnz dependency_archive_error
+/* The graph caller has already checked this private payload and its signed
+ * declarations. Keep validation before this entry for all ordinary callers. */
+dependency_accept_validated_payload:
     mov eax, 6
     lea rdi, [rip + dependency_package_path]
     lea rsi, [rip + dependency_stat]
@@ -761,6 +764,11 @@ dependency_write_string:
  * Output: returns with a shared project lock held until build completion.
  * Does not fetch, resolve new versions, execute code or modify source caches. */
 verify_project_dependencies:
+.ifdef ASM_REGISTRY_V2
+    call r3_verify_project
+    test eax, eax
+    jnz .Ldep_graph_verified
+.endif
     push rbx
     push r12
     push r13
@@ -1118,3 +1126,9 @@ dependency_temp_lock: .skip 96
 dependency_number: .skip 32
 dependency_lock_buffer: .skip 1048578
 .section .note.GNU-stack,"",@progbits
+
+.ifdef ASM_REGISTRY_V2
+.section .text
+.Ldep_graph_verified:
+    ret
+.endif

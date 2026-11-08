@@ -100,6 +100,12 @@ Native ARM64 Linux and Apple Silicon macOS jobs supply exact-commit executables 
 The final builder consumes those bytes after it checks their source, target, version, digest, and native test results.
 A missing or mismatched native input stops the build.
 
+The source command metadata selects the client profile.
+Ordinary 0.7 builds include V2 and require the Go SDK declared in `verifier/go.mod`.
+Receipts bind that profile, embedded adapter bytes, SDK identity, and dependency notices.
+The public V2 release includes per-host notice files without duplicating the embedded adapter as another asset.
+Keep self-update trust activation separate until its production provisioning gates pass.
+
 Linux qualification runs the full CLI suite against the final executable and rejects changed bytes after testing.
 The release workflow requires this qualification for the selected distribution profile.
 Linux x86-64 and ARM64 qualification run as root on disposable runners with read-only repository permissions.
@@ -108,8 +114,10 @@ Private, root-owned source snapshots stay below `/tmp`.
 This is a test-runner requirement.
 The CLI installation contract still uses the caller's account.
 
-`make test` runs every root-level CLI test module on Linux.
+`make test` runs the native CLI contract suite on Linux.
 On macOS, it runs the native suite in `tests/macos`.
+Full-profile native qualification includes the V2 graph, feature, and publication suites.
+Operator, provider, and V2 website suites have separate explicit gates.
 `make package-test` runs all reference-package tests.
 `make check` runs both suites and the registry, release, and site checks.
 Package skips identify unsupported hosts or unavailable tools.
@@ -137,6 +145,12 @@ A correction to published artifact bytes requires a new version.
 8. Review the generated registry manifests against the published bytes.
 9. Retain the reviewed manifests in the compatibility snapshot.
 10. Check the deployed registry and download links after the [Pages workflow][pages-workflow] finishes.
+
+The read-only build job retains proposed compatibility records in `proposed-registry-COMMIT` for seven days.
+Download that artifact from the recorded release workflow run.
+Review its records against the verified published bytes.
+Import accepted records through a normal protected pull request.
+These proposed records stay separate from the flat artifact handoff to the signing job.
 
 The Pages workflow downloads and validates declared artifacts before deployment.
 Scheduled refreshes can reuse the latest successful main-push Check run for the exact source commit.

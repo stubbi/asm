@@ -38,6 +38,8 @@ Remove completed implementation plans when current specifications cover their de
 
 Use Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later for native CLI checks.
 Install Git, Make, Python 3.11 or later, and Node.js 18 or later.
+Install the Go SDK declared in `verifier/go.mod` for the default full CLI build.
+Use that SDK directly; builds disable ambient Go configuration, workspaces, and automatic toolchain switching.
 Standalone website builds also require Node.js for the pinned, vendored Terser minifier.
 No npm installation is required.
 Linux also needs GNU Binutils, curl, GNU Coreutils, and gzip.
@@ -54,8 +56,9 @@ Cross-target examples need the corresponding GNU tools and QEMU for local execut
 The release workflow installs those tools from Ubuntu packages.
 CI requires Linux x86-64, Linux ARM64, and native macOS qualification before a release.
 
-Verifier changes also require the Go version declared in `verifier/go.mod`.
 Run `make verifier-test` for bundled-verifier or trust-publication changes.
+Use `make REGISTRY_V2=0` only when you need the explicit V1-only build without a Go dependency.
+Profile outputs remain separate so an incremental build cannot reuse another profile's executable.
 The [trust guide](docs/trusted-distribution.md) defines the separate production activation gates.
 
 ## Make a change

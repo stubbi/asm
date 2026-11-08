@@ -64,6 +64,17 @@ No GitHub login is required for this bundle-based verification route.
 A missing or unsupported verifier stops the update.
 There is no checksum-only fallback.
 
+The bootstrap installer downloads checked copies of the selected executable and signed bundle from `asm.build`.
+Their paths include their SHA-256 digests; the original release bytes and source identity remain unchanged.
+It can recover a transient download failure through the exact public GitHub release-asset API.
+The site build fixes the recovery endpoint to the same release asset before publishing the installer.
+Size, digest, and signed-provenance checks remain mandatory.
+An unavailable recovery endpoint stops installation without replacing an existing command.
+This bootstrap recovery does not change the download behavior of an already published native CLI.
+The static site retains copies for its current bootstrap release.
+If a saved older installer has a missing copy, it tries the same original asset through its fixed public API endpoint.
+If both routes are unavailable, obtain the current installer or retry after the reported network failure.
+
 ## Verification contract
 
 The package is fixed to `stubbi/asm`.

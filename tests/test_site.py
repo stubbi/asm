@@ -1,7 +1,10 @@
 """Static checks for accessible references and local website assets."""
 
 from html.parser import HTMLParser
+from contextlib import redirect_stderr
+from copy import deepcopy
 from datetime import datetime, timezone
+from io import BytesIO, StringIO
 from pathlib import Path
 import hashlib
 import json
@@ -13,6 +16,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from urllib.error import HTTPError
+from urllib.request import Request
 from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
@@ -68,10 +73,13 @@ class SiteParser(HTMLParser):
         self.elements = []
         self.definitions = []
         self._elements = []
+        self.parents = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        element = {"tag": tag, "attrs": attrs, "text": [], "accessible_text": []}
+        element = {"tag": tag, "attrs": attrs, "text": [], "accessible_text": [],
+                   "in_main": tag == "main" or any(parent["tag"] == "main" for parent in self._elements)}
+        self.parents[id(element)] = id(self._elements[-1]) if self._elements else None
         self.elements.append(element)
         if tag == "header" and "site-header" in attrs.get("class", "").split():
             self.in_header = True
@@ -402,6 +410,271 @@ class SiteTests(unittest.TestCase):
 
 
 
+class ReleaseAssetRecoveryTests(unittest.TestCase):
+    url = "https://github.com/stubbi/asm/releases/download/v0.6.0/payload"
+    metadata_url = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.0"
+    asset_url = "https://api.github.com/repos/stubbi/asm/releases/assets/123"
+
+    class Response(BytesIO):
+        status = 200
+
+        def __init__(self, url, body, headers=None):
+            super().__init__(body)
+            self.url = url
+            self.headers = {"Content-Length": str(len(body)), **(headers or {})}
+
+        def geturl(self):
+            return self.url
+
+    class Opener:
+        def __init__(self, events):
+            self.events = list(events)
+            self.requests = []
+
+        def open(self, request, timeout):
+            self.requests.append((request.full_url, dict(request.header_items()), timeout))
+            expected_url, event = self.events.pop(0)
+            if request.full_url != expected_url or timeout != 20:
+                raise AssertionError("Unexpected transport request: " + request.full_url)
+            if isinstance(event, Exception):
+                raise event
+            return event
+
+    def release(self):
+        return {"tag_name": "v0.6.0", "draft": False, "assets": [
+            {"id": 123, "name": "payload", "state": "uploaded", "size": 3,
+             "browser_download_url": self.url}]}
+
+    def recovery_opener(self, metadata=None, body=b"abc", final_url=None, binary_headers=None):
+        metadata = self.release() if metadata is None else metadata
+        encoded = metadata if isinstance(metadata, bytes) else json.dumps(metadata).encode()
+        return self.Opener([
+            (self.url, HTTPError(self.url, 504, "Gateway Time-out", {}, None)),
+            (self.metadata_url, self.Response(self.metadata_url, encoded)),
+            (self.asset_url, self.Response(final_url or self.asset_url, body, binary_headers)),
+        ])
+
+    def test_504_recovers_only_the_exact_public_asset_without_credentials(self):
+        opener = self.recovery_opener()
+        warning = StringIO()
+        try:
+            with redirect_stderr(warning):
+                result = build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                              expected_size=3, opener=opener)
+        except HTTPError as error:
+            self.fail("The exact public release asset was not recovered: " + str(error))
+        self.assertEqual(result, b"abc")
+        self.assertEqual(len(opener.requests), 3)
+        self.assertEqual(opener.requests[2][1]["Accept"], "application/octet-stream")
+        self.assertIn("504", warning.getvalue())
+        self.assertIn(self.url, warning.getvalue())
+        for _, headers, _ in opener.requests:
+            self.assertEqual(headers["Accept-encoding"], "identity")
+            self.assertTrue({"authorization", "cookie", "referer"}.isdisjoint(name.lower() for name in headers))
+
+    def test_installer_endpoint_is_bound_without_downloading_replacement_bytes(self):
+        opener = self.Opener([(self.metadata_url, self.Response(self.metadata_url, json.dumps(self.release()).encode()))])
+        try:
+            endpoint = build_site.release_asset_url(self.url, 16, expected_size=3, opener=opener)
+        except AttributeError as error:
+            self.fail("Installer generation needs the existing exact release-asset binding: " + str(error))
+        self.assertEqual(endpoint, "https://api.github.com/repos/stubbi/asm/releases/assets/123")
+        self.assertEqual(len(opener.requests), 1)
+        self.assertNotIn("Authorization", opener.requests[0][1])
+
+    def test_installer_endpoint_rejects_a_different_size_or_ambiguous_asset(self):
+        for metadata in ({**self.release(), "draft": True}, {**self.release(), "tag_name": "v0.5.0"},
+                         {**self.release(), "assets": self.release()["assets"] * 2},
+                         {**self.release(), "assets": [{**self.release()["assets"][0], "size": 4}]},
+                         {**self.release(), "assets": [{**self.release()["assets"][0], "state": "starter"}]}):
+            opener = self.Opener([(self.metadata_url, self.Response(self.metadata_url, json.dumps(metadata).encode()))])
+            try:
+                with self.assertRaises(registry.RegistryError):
+                    build_site.release_asset_url(self.url, 16, expected_size=3, opener=opener)
+            except AttributeError as error:
+                self.fail("Installer binding validation is absent: " + str(error))
+
+    def test_non_504_errors_never_start_an_api_request(self):
+        for status in (403, 404, 500, 502, 503):
+            with self.subTest(status=status):
+                opener = self.Opener([(self.url, HTTPError(self.url, status, "Rejected", {}, None))])
+                warning = StringIO()
+                with redirect_stderr(warning), self.assertRaises(HTTPError) as failed:
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(failed.exception.code, status)
+                failed.exception.close()
+                self.assertEqual(len(opener.requests), 1)
+                self.assertEqual(warning.getvalue(), "")
+
+    def test_metadata_must_bind_one_uploaded_asset_to_the_original_release(self):
+        base = self.release()
+        cases = []
+        for key, value in (("draft", True), ("draft", None), ("tag_name", "v0.5.0"),
+                           ("assets", []), ("assets", [base["assets"][0]] * 1001)):
+            candidate = deepcopy(base)
+            candidate[key] = value
+            cases.append(candidate)
+        duplicate = deepcopy(base)
+        duplicate["assets"].append(deepcopy(duplicate["assets"][0]))
+        cases.append(duplicate)
+        for key, value in (("name", "different"), ("browser_download_url", self.url + "-other"),
+                           ("state", "open"), ("id", 0), ("id", -1), ("id", True),
+                           ("id", "123"), ("id", 123.0), ("id", 2**63),
+                           ("size", 4), ("size", True), ("size", "3")):
+            candidate = deepcopy(base)
+            candidate["assets"][0][key] = value
+            cases.append(candidate)
+        cases.append(b'{"tag_name":"v0.6.0","draft":false,"draft":false,"assets":[]}')
+        for metadata in cases:
+            with self.subTest(metadata=str(metadata)[:160]):
+                opener = self.recovery_opener(metadata)
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 2)
+
+    def test_api_endpoint_is_constructed_and_does_not_expand_the_public_url_policy(self):
+        metadata = self.release()
+        metadata["url"] = "https://evil.invalid/releases/tags/v0.6.0"
+        metadata["assets"][0]["url"] = "https://evil.invalid/asset"
+        opener = self.recovery_opener(metadata)
+        with redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                                  expected_size=3, opener=opener), b"abc")
+        self.assertEqual(opener.requests[-1][0], self.asset_url)
+        with self.assertRaises(registry.RegistryError):
+            build_site.check_https_url(self.asset_url, {"api.github.com"})
+        self.assertNotIn("api.github.com", build_site.ASSET_HOSTS)
+
+    def test_api_binary_preserves_storage_origins_encoding_and_exact_size_checks(self):
+        for final_url, headers, body in (
+            ("https://evil.invalid/payload", None, b"abc"),
+            ("https://api.github.com/repos/other/repo/releases/assets/123", None, b"abc"),
+            (self.asset_url, {"Content-Encoding": "gzip"}, b"abc"),
+            (self.asset_url, {"Content-Length": "4"}, b"abc"),
+            (self.asset_url, {"Content-Length": "3"}, b"ab"),
+        ):
+            with self.subTest(url=final_url, headers=headers, body=body):
+                opener = self.recovery_opener(body=body, final_url=final_url, binary_headers=headers)
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 3)
+        opener = self.recovery_opener(final_url="https://release-assets.githubusercontent.com/checked-payload")
+        with redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                                  expected_size=3, opener=opener), b"abc")
+
+    def test_direct_response_mismatch_does_not_enter_recovery(self):
+        opener = self.Opener([(self.url, self.Response(self.url, b"abcd"))])
+        with self.assertRaises(registry.RegistryError):
+            build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_metadata_is_bounded_identity_encoded_and_tied_to_the_requested_api_route(self):
+        for final_url, body, headers in (
+            (self.metadata_url, b" " * (2 * 1024 * 1024 + 1), None),
+            (self.metadata_url, json.dumps(self.release()).encode(), {"Content-Encoding": "gzip"}),
+            ("https://api.github.com/repos/other/repo/releases/tags/v0.6.0", json.dumps(self.release()).encode(), None),
+        ):
+            with self.subTest(url=final_url, size=len(body), headers=headers):
+                opener = self.recovery_opener()
+                opener.events[1] = (self.metadata_url, self.Response(final_url, body, headers))
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 2)
+
+    def test_api_errors_do_not_reenter_recovery(self):
+        for position, url in ((1, self.metadata_url), (2, self.asset_url)):
+            with self.subTest(url=url):
+                opener = self.recovery_opener()
+                opener.events[position] = (url, HTTPError(url, 504, "Gateway Time-out", {}, None))
+                with redirect_stderr(StringIO()), self.assertRaises(HTTPError) as failed:
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                failed.exception.close()
+                self.assertEqual(len(opener.requests), position + 1)
+
+    def test_recovery_redirect_handlers_pin_metadata_and_allow_only_asset_storage(self):
+        opener = self.recovery_opener()
+        handlers = []
+        def make(handler):
+            handlers.append(handler)
+            return opener
+        with patch.object(build_site, "build_opener", side_effect=make), redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3), b"abc")
+        with self.assertRaises(registry.RegistryError):
+            handlers[1].redirect_request(Request(self.metadata_url), None, 302, "Found", {},
+                                         "https://api.github.com/repos/other/repo/releases/tags/v0.6.0")
+        storage = "https://release-assets.githubusercontent.com/checked-payload"
+        redirected = handlers[2].redirect_request(Request(self.asset_url), None, 302, "Found", {}, storage)
+        self.assertEqual(redirected.full_url, storage)
+        with self.assertRaises(registry.RegistryError):
+            handlers[2].redirect_request(Request(self.asset_url), None, 302, "Found", {}, "https://evil.invalid/payload")
+
+    def test_recovered_corrupt_bytes_still_fail_the_existing_artifact_verifier(self):
+        record = deepcopy(registry.read_records(ROOT / "registry")[0])
+        artifact = {**record["artifacts"][0], "url": self.url, "bytes": 3, "sha256": "0" * 64}
+        record["artifacts"] = [artifact]
+        opener = self.recovery_opener()
+        with patch.object(build_site, "build_opener", return_value=opener), redirect_stderr(StringIO()):
+            with self.assertRaisesRegex(registry.RegistryError, "SHA-256 mismatch"):
+                build_site.verify_artifacts([record])
+        self.assertEqual(len(opener.requests), 3)
+
+    def test_release_metadata_reuse_ends_with_each_verification_call(self):
+        record = deepcopy(registry.read_records(ROOT / "registry")[0])
+        record["artifacts"] = [
+            {"kind": "executable", "target": "x86_64-linux", "url": self.url, "bytes": 3,
+             "sha256": hashlib.sha256(b"abc").hexdigest()},
+            {"kind": "executable", "target": "aarch64-linux", "url": self.url + "-two", "bytes": 3,
+             "sha256": hashlib.sha256(b"def").hexdigest()},
+        ]
+        metadata = self.release()
+        metadata["assets"].append({"id": 124, "name": "payload-two", "state": "uploaded", "size": 3,
+                                   "browser_download_url": self.url + "-two"})
+        for _ in range(2):
+            opener = self.Opener([
+                (self.url, HTTPError(self.url, 504, "Gateway Time-out", {}, None)),
+                (self.metadata_url, self.Response(self.metadata_url, json.dumps(metadata).encode())),
+                (self.asset_url, self.Response(self.asset_url, b"abc")),
+                (self.url + "-two", HTTPError(self.url + "-two", 504, "Gateway Time-out", {}, None)),
+                (self.asset_url[:-3] + "124", self.Response(self.asset_url[:-3] + "124", b"def")),
+            ])
+            with patch.object(build_site, "build_opener", return_value=opener), \
+                    patch.object(registry, "validate_artifact") as validate, redirect_stderr(StringIO()):
+                self.assertEqual(build_site.verify_artifacts([record]), {(record["name"], record["version"])})
+            self.assertEqual(validate.call_count, 2)
+            self.assertEqual(len(opener.requests), 5)
+
+    def test_release_metadata_reuse_evicts_old_entries_in_a_large_catalog(self):
+        events = []
+        for number in [*range(9), 0]:
+            url = f"https://github.com/stubbi/asm/releases/download/v0.6.{number}/payload"
+            api = f"https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.{number}"
+            metadata = self.release()
+            metadata["tag_name"] = f"v0.6.{number}"
+            metadata["assets"][0]["browser_download_url"] = url
+            events.extend([(url, HTTPError(url, 504, "Gateway Time-out", {}, None)),
+                           (api, self.Response(api, json.dumps(metadata).encode())),
+                           (self.asset_url, self.Response(self.asset_url, b"abc"))])
+        opener = self.Opener(events)
+        read = build_site._scoped_asset_reader(build_site.read_https)
+        with patch.object(build_site, "build_opener", return_value=opener), redirect_stderr(StringIO()):
+            for number in [*range(9), 0]:
+                url = f"https://github.com/stubbi/asm/releases/download/v0.6.{number}/payload"
+                self.assertEqual(read(url, 16, build_site.ASSET_HOSTS, expected_size=3), b"abc")
+        self.assertEqual(len(opener.requests), 30)
+
+    def test_invalid_asset_selection_cannot_evict_valid_release_metadata(self):
+        cache = {self.metadata_url + "-" + str(number): self.release() for number in range(8)}
+        before = deepcopy(cache)
+        metadata = self.release()
+        metadata["assets"][0]["size"] = 4
+        opener = self.recovery_opener(metadata)
+        with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+            build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3,
+                                  opener=opener, _release_cache=cache)
+        self.assertEqual(cache, before)
+
+
 class SearchDiscoveryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -456,6 +729,12 @@ class SearchDiscoveryTests(unittest.TestCase):
         build_site.build_site(repo, ROOT / "registry", cls.output,
                               artifact_reader=forbidden, metrics_fetcher=forbidden)
         cls.routes = site_routes.PageRoutes.from_directory(cls.output)
+        cls.index = registry.strict_json((cls.output / "registry/v1/index.json").read_bytes())
+        cls.discovery = registry.strict_json((cls.output / "registry/v1/discovery.json").read_bytes())
+        cls.classification = registry.strict_json((cls.output / "registry/v1/discovery-metadata.json").read_bytes())
+        cls.active = {package["name"]: next(record for record in cls.records
+                      if record["name"] == package["name"] and record["version"] == package["latest"])
+                      for package in cls.index["packages"] if package["latest"] is not None}
         cls.pages = {}
         for path in sorted(cls.output.rglob("*.html")):
             page = SiteParser()
@@ -473,6 +752,74 @@ class SearchDiscoveryTests(unittest.TestCase):
             self.assertIn("Download data is unavailable", page) if kind == "popular" else self.assertIn("No packages have publication data", page)
             self.assertIn("Browse all packages", page)
         self.assertFalse(list(self.output.rglob("*.sqlite*")))
+
+    def test_default_verified_build_binds_all_installer_recovery_routes(self):
+        from test_bootstrap import first_party_payloads
+        payloads = first_party_payloads()
+        record = deepcopy(next(item for item in self.records if item["name"] == "stubbi/asm" and item["version"] == "0.6.0"))
+        artifacts = [item for item in record["artifacts"] if item["kind"] == "executable"]
+        for artifact in artifacts:
+            artifact["bytes"] = len(payloads[artifact["target"]])
+            artifact["sha256"] = hashlib.sha256(payloads[artifact["target"]]).hexdigest()
+        bundle = b'{"dsseEnvelope":{}}'
+        bundle_url = "https://github.com/stubbi/asm/releases/download/v0.6.0/release-attestation.sigstore.json"
+        assets = [{"id": 100 + number, "name": item["url"].rsplit("/", 1)[1], "state": "uploaded",
+                   "size": item["bytes"], "browser_download_url": item["url"]}
+                  for number, item in enumerate(artifacts)]
+        assets.append({"id": 900, "name": "release-attestation.sigstore.json", "state": "uploaded",
+                       "size": len(bundle), "browser_download_url": bundle_url})
+        metadata = {"tag_name": "v0.6.0", "draft": False, "assets": assets}
+        api = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.0"
+        responses = {bundle_url: bundle, api: json.dumps(metadata).encode(),
+                     **{item["url"]: payloads[item["target"]] for item in artifacts}}
+        requests = []
+        class Opener:
+            def open(inner, request, timeout):
+                requests.append(request.full_url)
+                self.assertEqual(timeout, 20)
+                self.assertIn(request.full_url, responses)
+                return ReleaseAssetRecoveryTests.Response(request.full_url, responses[request.full_url])
+        opener = Opener()
+        candidate = Path(self.temporary.name) / "checked-installer-recovery"
+        # Artifact acceptance is a separately tested prerequisite; retain the
+        # real default transport, metadata resolver, generator, and site build.
+        # Keep this historical fixture independent of later bootstrap versions.
+        records = [item for item in self.records
+                   if item["name"] != "stubbi/asm" or item["version"] == "0.6.0"]
+        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
+             patch.object(build_site, "build_opener", return_value=opener), \
+             patch.object(registry, "read_records", return_value=[record if item["name"] == "stubbi/asm" else item for item in records]):
+            build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate, verify=True)
+        script = (candidate / "install.sh").read_text()
+        expected = {"https://api.github.com/repos/stubbi/asm/releases/assets/" + str(item["id"]) for item in assets}
+        self.assertEqual(set(re.findall(r"https://api\.github\.com/repos/stubbi/asm/releases/assets/[0-9]+", script)), expected)
+        self.assertEqual(len(requests), 5, "One bundle, one metadata snapshot, and three checked executable copies")
+        self.assertEqual(json.loads((candidate / "build.json").read_text())["bootstrap_version"], "0.6.0")
+        copied = {path.relative_to(candidate).as_posix(): path.read_bytes() for path in (candidate / "bootstrap").rglob("*") if path.is_file()}
+        expected_copies = {"bootstrap/sha256/" + item["sha256"] + "/" + item["url"].rsplit("/", 1)[1]: payloads[item["target"]]
+                           for item in artifacts}
+        expected_copies["bootstrap/sha256/" + hashlib.sha256(bundle).hexdigest() + "/release-attestation.sigstore.json"] = bundle
+        self.assertEqual(copied, expected_copies)
+        self.assertEqual(set(re.findall(r"https://asm\.build/bootstrap/sha256/[0-9a-f]{64}/[^'\s]+", script)),
+                         {"https://asm.build/" + path for path in expected_copies})
+
+    def test_corrupt_bootstrap_reread_does_not_publish_a_candidate(self):
+        previous = Path(self.temporary.name) / "previous-before-corrupt-bootstrap"
+        previous.mkdir()
+        (previous / "keep").write_bytes(b"Previous published bytes")
+        candidate = Path(self.temporary.name) / "unpublished-corrupt-bootstrap"
+        def reader(url, limit, hosts, *, expected_size=None):
+            return b'{"dsseEnvelope":{}}' if url.endswith("release-attestation.sigstore.json") else b"corrupt"
+        # Select the same historical release whose corrupt bytes this test supplies.
+        records = [item for item in self.records
+                   if item["name"] != "stubbi/asm" or item["version"] == "0.6.0"]
+        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
+             patch.object(registry, "read_records", return_value=records):
+            with self.assertRaisesRegex(registry.RegistryError, "artifact byte size mismatch"):
+                build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate,
+                                      verify=True, artifact_reader=reader)
+        self.assertFalse(candidate.exists())
+        self.assertEqual({path.name: path.read_bytes() for path in previous.iterdir()}, {"keep": b"Previous published bytes"})
 
     def test_optional_metrics_parse_failure_keeps_the_site_available_without_retrying_urls(self):
         calls = []
@@ -520,6 +867,9 @@ class SearchDiscoveryTests(unittest.TestCase):
             url = urljoin("https://asm.build/reference", link["attrs"]["href"])
             self.assertEqual(entry["position"], position)
             self.assertEqual(item["name"], "".join(link["text"]))
+            filename_codes = [element for element in page.elements
+                              if element["tag"] == "code" and page.parents[id(element)] == id(link)]
+            self.assertEqual(["".join(element["text"]) for element in filename_codes], [item["name"]])
             self.assertEqual(item["url"], url)
             self.assertEqual(item["contentUrl"], url)
             self.assertEqual(item["@type"], "MediaObject")
@@ -671,6 +1021,148 @@ Unpublished body sentinel.
         return [" ".join("".join(value["accessible_text"]).split()) for term, value in page.definitions
                 if " ".join("".join(term["text"]).split()) == name]
 
+    def task_page(self, route):
+        relative = self.routes.file_for(route)
+        self.assertIsNotNone(relative, route)
+        return self.pages[relative.as_posix()]
+
+    def main_text(self, page):
+        mains = [element for element in page.elements if element["tag"] == "main"]
+        self.assertEqual(len(mains), 1)
+        text = " ".join("".join(mains[0]["accessible_text"]).split())
+        self.assertTrue(text, "Shared chrome must not substitute for the page's task content")
+        return text
+
+    def assert_package_content(self, page, names, *, targets=None, licenses=False):
+        self.main_text(page)
+        links = {self.normalized_url(page.canonicals[0], element["attrs"]["href"]): element
+                 for element in page.main_links}
+        package_links = {url for url in links if re.fullmatch(r"https://asm\.build/packages/[^/]+/[^/#]+(?:#.*)?", url)}
+        self.assertEqual({urlsplit(url).path for url in package_links}, {"/packages/" + name for name in names})
+        elements = {id(element): element for element in page.elements}
+        for name in names:
+            link = next(links[url] for url in package_links if urlsplit(url).path == "/packages/" + name)
+            row = link
+            while row["tag"] != "li" and page.parents[id(row)] in elements:
+                row = elements[page.parents[id(row)]]
+            self.assertEqual(row["tag"], "li", name)
+            self.assertTrue(row["in_main"], name)
+            text = " ".join("".join(row["accessible_text"]).split())
+            record = self.active[name]
+            for value in (name, record["version"], record["summary"]):
+                self.assertIn(value, text)
+            expected_targets = targets[name] if targets is not None else {item["target"] for item in record["artifacts"]}
+            for target in expected_targets:
+                self.assertIn(target, text)
+            if licenses:
+                self.assertIn(record["license"], text)
+                self.assertIn("https://asm.build/packages/" + name + "/" + record["version"], links)
+
+    def test_native_taxonomy_pages_keep_membership_and_package_context_in_main(self):
+        categories = registry.strict_json((self.output / "registry/v1/categories.json").read_bytes())["categories"]
+        declared = [item for item in self.classification["packages"] if item["name"] in self.active]
+        keywords = [{"id": tag, "packages": [item["name"] for item in declared if tag in item["keywords"]]}
+                    for tag in sorted({tag for item in declared for tag in item["keywords"]})]
+        directories = {"categories": categories, "keywords": keywords}
+        architecture_targets = {"aarch64": {"aarch64-linux", "aarch64-macos"},
+                                "riscv64": {"riscv64-linux"}, "x86-64": {"x86_64-linux"}}
+        for group, entries in directories.items():
+            directory = self.task_page("/browse/" + group)
+            self.main_text(directory)
+            links = {self.normalized_url(directory.canonicals[0], link["attrs"]["href"]): link
+                     for link in directory.main_links}
+            for entry in entries:
+                with self.subTest(group=group, entry=entry["id"]):
+                    route = "/browse/" + group + "/" + entry["id"]
+                    link = links["https://asm.build" + route]
+                    self.assertRegex(" ".join(" ".join(link["accessible_text"]).split()), rf"\b{len(entry['packages'])} packages?\b")
+                    self.assert_package_content(self.task_page(route), entry["packages"])
+        directory = self.task_page("/browse/architectures")
+        self.main_text(directory)
+        links = self.link_urls(directory, directory.main_links)
+        for architecture, allowed in architecture_targets.items():
+            with self.subTest(architecture=architecture):
+                route = "/browse/architectures/" + architecture
+                targets = {name: {item["target"] for item in record["artifacts"] if item["target"] in allowed}
+                           for name, record in self.active.items()}
+                members = {name for name, matching in targets.items() if matching}
+                self.assertIn("https://asm.build" + route, links)
+                self.assert_package_content(self.task_page(route), members, targets=targets)
+
+    def test_concise_task_hubs_keep_their_actions_and_evidence_in_main(self):
+        home = self.task_page("/")
+        self.main_text(home)
+        form = home.elements_by_id["registry-controls"]
+        self.assertEqual((form["tag"], form["attrs"].get("role")), ("form", "search"))
+        self.assertTrue(form["in_main"])
+        search = home.elements_by_id["package-search"]
+        self.assertEqual((search["attrs"].get("type"), search["attrs"].get("form")), ("search", "registry-controls"))
+        self.assertTrue(any(button["in_main"] and button["attrs"].get("type") == "submit"
+                            and button["attrs"].get("form") == "registry-controls" for button in home.buttons))
+        self.assertTrue({"https://asm.build/packages", "https://asm.build/registry/v1/index.json",
+                         *("https://asm.build/browse/" + kind for kind in ("new", "popular", "updated"))}
+                        <= self.link_urls(home, home.main_links))
+        required = {
+            "/docs": {"https://github.com/stubbi/asm/#install-the-command", "https://github.com/stubbi/asm/#run-your-first-project",
+                      "https://github.com/stubbi/asm/blob/main/docs/use-a-package.md", "https://asm.build/guide",
+                      "https://asm.build/reference", "https://github.com/stubbi/asm/blob/main/docs/specs/security.md"},
+            "/about": {"https://github.com/stubbi/asm/blob/main/docs/why-asm.md", "https://github.com/stubbi/asm#license",
+                       "https://asm.build/docs", "https://asm.build/contact"},
+            "/explore": {"https://asm.build/packages", *("https://asm.build/browse/" + kind for kind in
+                          ("categories", "keywords", "architectures", "popular", "new", "updated", "depended-on", "downloaded"))},
+            "/stats": {"https://asm.build/registry/v1/stats.json", "https://asm.build/discovery", "https://asm.build/browse/popular"},
+        }
+        for route, expected in required.items():
+            with self.subTest(route=route):
+                page = self.task_page(route)
+                self.main_text(page)
+                self.assertTrue(expected <= self.link_urls(page, page.main_links), expected - self.link_urls(page, page.main_links))
+        stats = self.task_page("/stats")
+        for label, expected in (("Registered packages", len({item["name"] for item in self.records})),
+                                ("Retained releases", len(self.records))):
+            values = [value for term, value in stats.definitions if term["in_main"] and "".join(term["text"]) == label]
+            self.assertEqual(len(values), 1)
+            self.assertTrue(" ".join("".join(values[0]["accessible_text"]).split()).startswith(str(expected) + " "))
+        self.assertIn("Cumulative observations are unavailable", self.main_text(stats))
+        self.assertIn("Missing collection history does not establish zero downloads", self.main_text(stats))
+
+    def test_release_archives_and_notes_keep_actual_changes_in_main(self):
+        records = [item for item in self.records if item["name"] == "stubbi/asm"]
+        expected_links = {"https://asm.build/blog/releases/" + item["version"] for item in records}
+        for route in ("/blog", "/blog/releases"):
+            page = self.task_page(route)
+            self.assertTrue(expected_links <= self.link_urls(page, page.main_links))
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        for record in records:
+            with self.subTest(version=record["version"]):
+                page = self.task_page("/blog/releases/" + record["version"])
+                text = self.main_text(page)
+                section = re.search(r"^## " + re.escape(record["version"]) + r"\s*\n(.*?)(?=^## |\Z)", changelog, re.M | re.S)
+                self.assertIsNotNone(section)
+                first_change = next(line.removeprefix("- ") for line in section[1].splitlines() if line.strip())
+                self.assertIn(first_change.replace("`", ""), text)
+                self.assertIn(record["source"]["commit"], text)
+                self.assertIn(record["license"], text)
+                self.assertIn("https://asm.build/packages/stubbi/asm/" + record["version"], self.link_urls(page, page.main_links))
+
+    def test_empty_utility_routes_keep_explanations_and_native_recovery_without_indexing(self):
+        empty_routes = {"/blog/articles": "No articles are published yet",
+                        "/browse/depended-on": "Direct dependency declarations are unavailable",
+                        "/browse/downloaded": "Missing observations do not establish zero downloads"}
+        for kind in ("popular", "new", "updated"):
+            self.assertEqual(self.discovery["feeds"][kind], [])
+            empty_routes["/browse/" + kind] = "unavailable" if kind == "popular" else "No packages have publication data"
+        for route, explanation in empty_routes.items():
+            with self.subTest(route=route):
+                page = self.task_page(route)
+                self.assertIn(explanation, self.main_text(page))
+                self.assertIn("noindex", page.robots)
+                destination = "/blog/releases" if route == "/blog/articles" else "/packages"
+                self.assertIn("https://asm.build" + destination, self.link_urls(page, page.main_links))
+        for canonical in self.routes.pages:
+            page = self.task_page(canonical)
+            self.assertEqual("noindex" in page.robots, canonical in {*empty_routes, "/404"}, canonical)
+
     def test_every_built_page_has_complete_landmarks_and_accessible_controls(self):
         self.assertEqual(set(self.pages), self.expected_html)
         for name, page in self.pages.items():
@@ -735,8 +1227,11 @@ Unpublished body sentinel.
                             if not url.fragment.startswith("from="):
                                 self.assertEqual(destination, "index.html")
                             state = parse_qs(fragment[7:], keep_blank_values=True, strict_parsing=True)
-                            self.assertIn(state.get("architecture"), [["aarch64"], ["x86_64"], ["riscv64"]])
-                            self.assertEqual(state, {"architecture": state["architecture"], "all": ["1"]})
+                            if "architecture" in state:
+                                self.assertIn(state["architecture"], [["aarch64"], ["x86_64"], ["riscv64"]])
+                                self.assertEqual(state, {"architecture": state["architecture"], "all": ["1"]})
+                            else:
+                                self.assertEqual(state, {"all": ["1"]})
                         else:
                             self.assertIn(unquote(fragment), self.pages[destination].ids)
 
@@ -823,6 +1318,7 @@ Unpublished body sentinel.
 
     def test_catalog_namespaces_and_package_history_have_static_permalinks(self):
         catalog = self.pages["packages/index.html"]
+        self.assert_package_content(catalog, self.active, licenses=True)
         self.assertEqual(catalog.canonicals, ["https://asm.build/packages"])
         home = self.pages["index.html"]
         self.assertIn("https://asm.build/packages", self.link_urls(home, home.main_links))
@@ -836,6 +1332,7 @@ Unpublished body sentinel.
             overview = self.pages[overview_path]
             namespace = self.pages[f"packages/{owner}/index.html"]
             with self.subTest(package=name):
+                self.assert_package_content(namespace, {package for package in self.active if package.split("/")[0] == owner}, licenses=True)
                 self.assertEqual(overview.canonicals, [overview_url])
                 self.assertIn(overview_url, self.link_urls(catalog, catalog.main_links))
                 self.assertIn(overview_url, self.link_urls(namespace, namespace.main_links))
@@ -895,7 +1392,8 @@ Unpublished body sentinel.
         namespace = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
         self.assertEqual(sitemap.getroot().tag, namespace + "urlset")
         locations = [item.text for item in sitemap.findall(f"{namespace}url/{namespace}loc")]
-        expected = {self.canonical_url(path) for path in self.expected_html if path != "404.html"}
+        expected = {self.canonical_url(path) for path in self.expected_html
+                    if "noindex" not in self.pages[path].robots}
         self.assertEqual(set(locations), expected)
         self.assertEqual(len(locations), len(expected))
         robots = RobotFileParser()

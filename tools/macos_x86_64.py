@@ -28,10 +28,10 @@ def prepare(source: Path) -> str:
         target_text = 'x86_64-macos (host; Apple clang + libSystem)\n' + ''.join(
             target + ' (cross; LLVM)\n' for target in build_targets[:-1])
         text = re.sub(r'^targets_text:.*$', lambda m: 'targets_text: .asciz ' + json.dumps(target_text), text, flags=re.M)
-        match = re.search(r'(status_json:\n\s*\.asciz )(.+)', text)
-        status = json.loads(json.loads(match[2]))
+        match = re.search(r'(status_json:\n\s*\.ascii )(.+)', text)
+        status = json.loads(json.loads(match[2]) + ']}')
         status['targets'] = build_targets
-        text = text[:match.start(2)] + json.dumps(json.dumps(status, separators=(',', ':')) + '\n') + text[match.end(2):]
+        text = text[:match.start(2)] + json.dumps(json.dumps(status, separators=(',', ':')).removesuffix(']}')) + text[match.end(2):]
         text = text.replace('.global _start', '.global _main')
         text = re.sub(r'_start:\n.*?(?=\.Lglobals:)', '''_main:
     cld
@@ -83,6 +83,8 @@ def prepare(source: Path) -> str:
         text = text.replace('call pub_validate_elf', 'call mac_pub_validate_executable')
         text = text.replace('.quad registry_sha256sum, 0', '.quad registry_sha256sum, mac_sha256_option, 0')
         text += (ROOT / 'cli/macos/x86_64/publish.s').read_text()
+    if source.name == 'registry_v2.s':
+        text = text.replace('build/asm-verify-x86_64-linux', 'build/asm-verify-x86_64-macos')
     if source.name == 'self_update.s':
         text = text.replace('self_asset_suffix: .asciz "-x86_64-linux"',
                             'self_asset_suffix: .asciz "-x86_64-macos"')

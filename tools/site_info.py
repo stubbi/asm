@@ -73,18 +73,33 @@ def _contact() -> str:
             '<p>Read ' + _link("how the website handles data", "../privacy/") + ' before sharing information.</p>'))
 
 
-def _privacy() -> str:
+def _privacy(registry_version: int) -> str:
+    hosting = (
+        '<p>This static website uses the hosting service selected by its operator.</p>'
+        '<p>That service can observe network requests. Read its privacy policy before using the site.</p>'
+    ) if registry_version == 2 else (
+        '<p>GitHub Pages hosts asm.build.</p>'
+        '<p>GitHub states that Pages visits log and store visitors’ IP addresses for security purposes, whether visitors sign in or not.</p>'
+        '<p>Read ' + _link("GitHub Pages data collection", GITHUB_PAGES) + ' and the '
+        + _link("GitHub Privacy Statement", GITHUB_PRIVACY) + ' for GitHub’s handling of data.</p>'
+    )
+    downloads = (
+        '<p>V2 download counts come from private server observations for declared public files.</p>'
+        '<p>Counts show reporting cutoffs and gaps. Unreported mirrors and cache hits remain outside their coverage.</p>'
+        '<p>The reference log format excludes IP addresses, cookies, user-agent strings, referrers, and raw queries.</p>'
+    ) if registry_version == 2 else (
+        '<p>Asm’s local delivery tooling records artifact-bound completed transfers for aggregate download counts.</p>'
+        '<p>Its ledger stores no visitor identifiers, IP addresses, cookies, fingerprints, user-agent strings, or search terms.</p>'
+        '<p>This deployed static site does not operate the local delivery event service.</p>'
+        '<p>Direct downloads from other hosts are outside this event coverage.</p>'
+    )
     return (
         _section("privacy-search", "Package search",
             '<p>Package search runs in your browser. Search terms and filters stay in the URL fragment after <code>#</code>.</p>'
             '<p>The website does not add them to request URLs or send them to analytics or an external search service.</p>'
             '<p>Sharing the full address shares its fragment with the recipient.</p>')
         + _section("privacy-hosting", "Hosting and network requests",
-            '<p>GitHub Pages hosts asm.build.</p>'
-            '<p>GitHub states that Pages visits log and store visitors’ IP addresses for security purposes, whether visitors sign in or not.</p>'
-            '<p>Read ' + _link("GitHub Pages data collection", GITHUB_PAGES) + ' and the '
-            + _link("GitHub Privacy Statement", GITHUB_PRIVACY) + ' for GitHub’s handling of data.</p>'
-            '<p>Opening repository links, downloading release assets, or sending email uses the selected provider’s services.</p>')
+            hosting + '<p>Opening repository links, downloading release assets, or sending email uses the selected provider’s services.</p>')
         + _section("privacy-stars", "GitHub star count",
             '<p>The optional star counter first reads a public observation from asm.build.</p>'
             '<p>If cached data is unavailable or expired, it can request GitHub’s fixed public API for <code>stubbi/asm</code>.</p>'
@@ -93,24 +108,25 @@ def _privacy() -> str:
             '<p>Session storage holds public repository metadata and a retry deadline. This storage does not contain a visitor identifier.</p>'
             '<p>Displayed observations expire after five minutes.</p>')
         + _section("privacy-downloads", "Download measurements",
-            '<p>Asm’s local delivery tooling records artifact-bound completed transfers for aggregate download counts.</p>'
-            '<p>Its ledger stores no visitor identifiers, IP addresses, cookies, fingerprints, user-agent strings, or search terms.</p>'
-            '<p>This deployed static site does not operate the local delivery event service.</p>'
-            '<p>Direct downloads from other hosts are outside this event coverage.</p>'
-            '<p>Read the ' + _link("Discovery data and coverage", "../discovery/") + ' and '
+            downloads + '<p>Read the ' + _link("Discovery data and coverage", "../discovery/") + ' and '
             + _link("implemented security boundaries", SOURCE + "docs/specs/security.md") + '.</p>')
         + _section("privacy-review", "Questions and review",
             '<p>Use ' + _link("Contact Asm", "../contact/") + ' for a project or privacy question.</p>'
             '<p>This page describes the implementation reviewed on <time datetime="2026-11-08">8 November 2026</time>.</p>'))
 
 
-def write_info(repo: Path, stage: Path) -> list[str]:
+def write_info(repo: Path, stage: Path, *, registry_version: int = 1) -> list[str]:
     """Write three native information routes without copying private source files.
 
     The source checkout can omit documentation. Fixed repository links identify
     maintained facts; this module makes no network requests or legal assurances.
     """
+    registry.require(type(registry_version) is int and registry_version in (1, 2), "unsupported information registry version")
     chrome = package_pages._chrome(stage)
+    privacy_description = (
+        "Read how this V2 website handles private search fragments, operator-selected hosting, public star observations, session storage, and download measurements."
+        if registry_version == 2 else
+        "Read how asm.build handles private search fragments, GitHub Pages hosting, public star observations, session storage, and download measurements.")
     pages = (
         ("about/", "About Asm", "About the assembly package project", "AboutPage",
          "Learn what Asm does, why it starts with assembly, and how exact releases and inspectable evidence support package reuse.",
@@ -119,8 +135,8 @@ def write_info(repo: Path, stage: Path) -> list[str]:
          "Find Asm bug reports, private security reporting, and the public project email. Choose a route before sharing information.",
          "Choose a contact route for a bug, security defect, project question, or sponsorship enquiry.", _contact()),
         ("privacy/", "Privacy at Asm", "Website privacy and data handling", "WebPage",
-         "Read how asm.build handles private search fragments, GitHub Pages hosting, public star observations, session storage, and download measurements.",
-         "How this website handles queries, public repository data, and network requests.", _privacy()),
+         privacy_description,
+         "How this website handles queries, public repository data, and network requests.", _privacy(registry_version)),
     )
     for route, heading, title, kind, description, introduction, content in pages:
         canonical = package_pages.SITE + route.rstrip("/")

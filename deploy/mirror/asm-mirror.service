@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Synchronize retained Asm artifact bytes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=asm-mirror
+Group=asm-mirror
+WorkingDirectory=/opt/asm
+EnvironmentFile=/etc/asm-mirror/source.env
+Environment=AWS_SHARED_CREDENTIALS_FILE=/etc/asm-mirror/source.credentials
+Environment=AWS_CONFIG_FILE=/dev/null
+Environment=AWS_EC2_METADATA_DISABLED=true
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/asm/.venv/bin/python /opt/asm/tools/registry_mirror.py sync \
+    --source-store s3 \
+    --source-bucket ${ASM_SOURCE_BUCKET} \
+    --source-endpoint ${ASM_SOURCE_ENDPOINT} \
+    --source-region ${ASM_SOURCE_REGION} \
+    --source-prefix ${ASM_SOURCE_PREFIX} \
+    --source-profile asm-mirror-source \
+    --store local --root /var/lib/asm-mirror
+StateDirectory=asm-mirror
+StateDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=45min
+TimeoutStopSec=30s
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=16
+NoNewPrivileges=true
+CapabilityBoundingSet=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true

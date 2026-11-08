@@ -33,6 +33,34 @@ jobs:
           set -euo pipefail
           mkdir -p build/verifier-evidence
           make verifier-test 2>&1 | tee build/verifier-evidence/tests.log
+      - name: Select Ed25519 fixture cryptography on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew list --versions openssl@3 >/dev/null || brew install openssl@3
+          ASM_TEST_OPENSSL="$(brew --prefix openssl@3)/bin/openssl"
+          "$ASM_TEST_OPENSSL" version
+          printf 'ASM_REGISTRY_OPENSSL=%s\n' "$ASM_TEST_OPENSSL" >> "$GITHUB_ENV"
+      - name: Check native publication, exact installation, and mirror selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          make registry-v2-test 2>&1 | tee build/verifier-evidence/registry-v2.log
+      - name: Bind native results to executable bytes
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/verifier-evidence
+          python3 - <<'PY' > build/verifier-evidence/artifacts.json
+          import hashlib, json, os
+          from pathlib import Path
+          paths = [Path('build/asm-registry-v2'), Path('build/asm-trust')]
+          paths += sorted(Path('build').glob('asm-verify-*'))
+          artifacts = {str(p): {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+                       for p in paths if p.is_file()}
+          print(json.dumps({'schema': 1, 'source_commit': os.environ['GITHUB_SHA'], 'artifacts': artifacts}, sort_keys=True))
+          PY
       - name: Retain native verifier results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

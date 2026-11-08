@@ -22,7 +22,8 @@ RUN ./configure --prefix=/opt/asm/postgres --with-openssl \
     && make -j2 && make install
 
 COPY tools/operator_source.py tools/operator_entrypoint.py tools/prepare_operator.py \
-     tools/registry_admin.py tools/registry.py tools/test_operator_image.py /source/tools/
+     tools/registry_admin.py tools/registry.py tools/registry_mirror.py tools/registry_storage.py \
+     tools/test_operator_image.py /source/tools/
 COPY server/catalog/schema.sql server/catalog/reader-guard.sql server/catalog/read-exports.sql /source/server/catalog/
 COPY LICENSE README.md /source/
 # This generated context contains only a verified complete HEAD bundle and its manifest.
@@ -43,7 +44,8 @@ COPY --from=build --chmod=0555 /opt/asm/postgres/bin/psql /opt/asm/postgres/bin/
 COPY --from=build /opt/asm/postgres/lib/libpq.so* /opt/asm/postgres/lib/
 COPY --from=build --chown=65532:65532 /opt/asm/source.git /opt/asm/source.git
 COPY --from=build /source/tools/operator_entrypoint.py /source/tools/prepare_operator.py \
-     /source/tools/registry_admin.py /source/tools/registry.py /app/tools/
+     /source/tools/registry_admin.py /source/tools/registry.py /source/tools/registry_mirror.py \
+     /source/tools/registry_storage.py /app/tools/
 COPY --from=build /source/server/catalog /app/server/catalog
 COPY --from=build --chmod=0444 /source/source.json /app/SOURCE.json
 COPY --from=build /source/LICENSE /source/README.md /app/
@@ -80,6 +82,8 @@ COPY .github/workflows/operator-images.yml /qualification/.github/workflows/oper
 COPY registry/packages /qualification/registry/packages
 RUN ln -s /app/tools/registry.py /qualification/tools/registry.py \
     && ln -s /app/tools/registry_admin.py /qualification/tools/registry_admin.py \
+    && ln -s /app/tools/registry_mirror.py /qualification/tools/registry_mirror.py \
+    && ln -s /app/tools/registry_storage.py /qualification/tools/registry_storage.py \
     && ln -s /app/tools/prepare_operator.py /qualification/tools/prepare_operator.py \
     && ln -s /app/tools/operator_entrypoint.py /qualification/tools/operator_entrypoint.py \
     && ln -s /app/server/catalog /qualification/server/catalog \
