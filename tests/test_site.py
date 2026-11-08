@@ -68,12 +68,13 @@ class SiteParser(HTMLParser):
         self.elements = []
         self.definitions = []
         self._elements = []
+        self.parents = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         element = {"tag": tag, "attrs": attrs, "text": [], "accessible_text": [],
-                   "parent": id(self._elements[-1]) if self._elements else None,
                    "in_main": tag == "main" or any(parent["tag"] == "main" for parent in self._elements)}
+        self.parents[id(element)] = id(self._elements[-1]) if self._elements else None
         self.elements.append(element)
         if tag == "header" and "site-header" in attrs.get("class", "").split():
             self.in_header = True
@@ -529,7 +530,7 @@ class SearchDiscoveryTests(unittest.TestCase):
             self.assertEqual(entry["position"], position)
             self.assertEqual(item["name"], "".join(link["text"]))
             filename_codes = [element for element in page.elements
-                              if element["tag"] == "code" and element["parent"] == id(link)]
+                              if element["tag"] == "code" and page.parents[id(element)] == id(link)]
             self.assertEqual(["".join(element["text"]) for element in filename_codes], [item["name"]])
             self.assertEqual(item["url"], url)
             self.assertEqual(item["contentUrl"], url)
@@ -704,8 +705,8 @@ Unpublished body sentinel.
         for name in names:
             link = next(links[url] for url in package_links if urlsplit(url).path == "/packages/" + name)
             row = link
-            while row["tag"] != "li" and row["parent"] in elements:
-                row = elements[row["parent"]]
+            while row["tag"] != "li" and page.parents[id(row)] in elements:
+                row = elements[page.parents[id(row)]]
             self.assertEqual(row["tag"], "li", name)
             self.assertTrue(row["in_main"], name)
             text = " ".join("".join(row["accessible_text"]).split())
