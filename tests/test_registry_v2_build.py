@@ -9,11 +9,14 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from urllib.parse import unquote, urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_site
 import registry
+import site_routes
+from test_site import SiteParser
 import test_registry_v2_stats as fixtures
 
 
@@ -49,7 +52,7 @@ class RegistryV2BuildTests(unittest.TestCase):
         self.assertFalse((self.output / "registry/v1/index.json").exists())
         home = (self.output / "index.html").read_text()
         self.assertIn('data-registry-version="2"', home)
-        self.assertIn('href="registry/v2/index.json"', home)
+        self.assertIn('href="/registry/v2/index.json"', home)
         page = (self.output / "packages/fixture/one/1.0.0/index.html").read_text()
         self.assertIn("asm registry fetch fixture/one@1.0.0", page)
         self.assertIn(self.fixture.registry_id, page)
@@ -63,6 +66,25 @@ class RegistryV2BuildTests(unittest.TestCase):
         self.assertTrue((self.output / "blog/index.html").is_file())
         self.assertFalse((self.output / "blog/releases/0.6.0/index.html").exists())
         self.assertNotIn("events.sqlite3", [p.name for p in self.output.rglob("*")])
+
+    def test_v2_stage_retains_shared_info_routes_policy_and_asset_finalization(self):
+        self.build()
+        for route in ("about", "contact", "privacy"):
+            self.assertTrue((self.output / route / "index.html").is_file(), route)
+        home = (self.output / "index.html").read_text()
+        self.assertIn('http-equiv="Content-Security-Policy"', home)
+        self.assertIn('href="/about"', home)
+        self.assertNotIn('href="guide.html"', home)
+        detail = (self.output / "packages/fixture/one/1.0.0/index.html").read_text()
+        self.assertIn('data-registry-version="2"', detail)
+        self.assertIn('href="https://asm.build/packages/fixture/one/1.0.0"', detail)
+        self.assertIn('http-equiv="Content-Security-Policy"', detail)
+        self.assertLess((self.output / "app.js").stat().st_size, (ROOT / "site/app.js").stat().st_size)
+        self.assertTrue((self.output / ".well-known/security.txt").is_file())
+        privacy = (self.output / "privacy/index.html").read_text()
+        self.assertIn("private server observations", privacy)
+        self.assertNotIn("GitHub Pages hosts asm.build", privacy)
+        self.assertFalse((self.output / "registry/v1/index.json").exists())
 
     def test_actual_import_reaches_the_selected_package_without_crediting_shared_bytes(self):
         store = self.fixture.store()
@@ -80,6 +102,32 @@ class RegistryV2BuildTests(unittest.TestCase):
         popular = (self.output / "browse/popular/index.html").read_text()
         self.assertIn("fixture/one", popular)
         self.assertNotIn('href="../../packages/fixture/two/"', popular)
+
+    def test_v2_pages_resolve_all_local_navigation_assets_and_fragments(self):
+        self.build()
+        routes = site_routes.PageRoutes.from_directory(self.output)
+        pages = {}
+        for path in self.output.rglob("*.html"):
+            page = SiteParser()
+            page.feed(path.read_text())
+            pages[path.relative_to(self.output)] = page
+        for name, page in pages.items():
+            self.assertEqual(len(page.canonicals), 1, name)
+            base = page.canonicals[0]
+            for value in [*page.assets, *(link.get("href", "") for link in page.links)]:
+                with self.subTest(page=name, reference=value):
+                    self.assertTrue(value.strip())
+                    url = urlsplit(urljoin(base, value))
+                    if url.netloc != "asm.build":
+                        self.assertIn(url.scheme, {"https", "mailto"})
+                        continue
+                    relative = routes.file_for(unquote(url.path))
+                    if relative is not None:
+                        self.assertEqual(url.path, routes.canonical_path(url.path))
+                    destination = relative if relative is not None else Path(unquote(url.path).lstrip("/"))
+                    self.assertTrue((self.output / destination).is_file(), value)
+                    if url.fragment and destination.suffix == ".html" and not url.fragment.startswith("search?"):
+                        self.assertIn(unquote(url.fragment), pages[destination].ids)
 
     def test_wrong_registry_and_incomplete_configuration_do_not_publish_output(self):
         for changes in ({"v2_registry_id": "f" * 32}, {"v2_mirrors": ()},

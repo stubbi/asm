@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 const { mathSourcePath } = require("../site/app.js");
 const { githubURL, normalizeIndex, catalogStats, searchResultMetadata, findPackages, packageStatus, formatBytes, validArtifact, evidenceText, versionLicenseText, formatDownloadCount, compactCount, exactCount, architectureGroups } = require("../site/app.js");
 const countCases = require("./count-format-cases.json");
@@ -689,4 +690,332 @@ test("V2 sender observations cannot claim complete coverage or exact download co
     const invalid = structuredClone(data); change(invalid);
     assert.throws(() => normalizeDiscovery(invalid, packages, now), /discovery/i);
   }
+});
+
+async function searchPage({ hash = "", offline = false, title = "Assembly package registry and CLI | Asm",
+  metadata = { schema: 1, packages: [] }, categories = { schema: 1, categories: [] }, deferTopics = false,
+  responses = {}, registryVersion = "1", index = null } = {}) {
+  const requests = [], listeners = {}, nodes = new Map(), deferred = [];
+  let document;
+  function node(tag = "div") {
+    const attributes = new Map(), handlers = new Map();
+    return { tagName: tag.toUpperCase(), children: [], dataset: {}, value: "", textContent: "", hidden: false,
+      disabled: false, classList: { values: new Set(), add(name) { this.values.add(name); },
+        remove(name) { this.values.delete(name); }, contains(name) { return this.values.has(name); }, toggle(name, enabled) {
+          if (enabled) this.values.add(name); else this.values.delete(name);
+        } },
+      setAttribute(name, value) { attributes.set(name, String(value)); },
+      getAttribute(name) { return attributes.get(name) ?? null; },
+      removeAttribute(name) { attributes.delete(name); },
+      append(...items) { this.children.push(...items); },
+      replaceChildren(...items) { this.children = items; },
+      get options() { return this.children; },
+      querySelectorAll(selector) { return selector === "[data-unavailable-target]"
+        ? this.children.filter((child) => child.dataset.unavailableTarget) : []; },
+      contains(item) { return item === this || this.children.some((child) => child.contains?.(item)); },
+      remove() {}, focus() { document.activeElement = this; },
+      addEventListener(name, callback) { handlers.set(name, callback); },
+      dispatch(name) { const event = { type: name, preventDefault() { this.defaultPrevented = true; } };
+        handlers.get(name)?.(event); return event; }
+    };
+  }
+  for (const id of ["package-list", "registry-status", "package-search", "package-target", "package-kind",
+    "package-architecture", "registry-controls", "search-submit", "reset-search", "catalog-heading",
+    "registry-fallback", "package-discovery", "results-toolbar", "browse-all", "catalog-note"]) nodes.set(id, node());
+  const canonical = node("link"), description = node("meta"), social = node("meta");
+  canonical.setAttribute("href", "https://asm.build/");
+  description.setAttribute("content", "Find assembly packages.");
+  social.setAttribute("content", "Assembly package registry and CLI | Asm");
+  const head = { 'link[rel="canonical"]': canonical, 'meta[name="description"]': description,
+    'meta[property="og:title"]': social };
+  document = { title, documentElement: node("html"), body: node("body"), hidden: false, activeElement: null,
+    getElementById(id) { return nodes.get(id) || null; }, createElement: node,
+    querySelector(selector) { return head[selector] || null; }, querySelectorAll() { return []; },
+    addEventListener(name, callback) { listeners[name] = callback; } };
+  document.body.dataset.registryVersion = registryVersion;
+  const location = { pathname: "/", search: "", hash };
+  const history = {};
+  for (const name of ["pushState", "replaceState"]) history[name] = (_state, _title, address) => {
+    const url = new URL(address, "https://asm.build/"); location.hash = url.hash; location.search = url.search;
+  };
+  const window = { location, history, addEventListener(name, callback) { listeners[name] = callback; },
+    setTimeout() { return 1; }, clearTimeout() {}, setInterval(callback) { listeners.refresh = callback; } };
+  const packages = index?.packages || [record("owner/math", "x86_64-linux"), record("owner/text", "aarch64-linux")];
+  const fetch = async (url, options) => {
+    requests.push([url, options]);
+    if (offline) throw new Error("The index is unavailable.");
+    const values = { [`registry/v${registryVersion}/index.json`]: index || { schema: 1, packages },
+      [`registry/v${registryVersion}/discovery.json`]: null,
+      "registry/v1/discovery-metadata.json": metadata, "registry/v1/categories.json": categories };
+    assert.ok(Object.hasOwn(values, url));
+    const value = values[url];
+    if (deferTopics && ["registry/v1/discovery-metadata.json", "registry/v1/categories.json"].includes(url)) {
+      await new Promise((resolve) => deferred.push(resolve));
+    }
+    if (value instanceof Error) throw value;
+    return responses[url] || new Response(typeof value === "string" ? value : JSON.stringify(value));
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../site/app.js"), "utf8"),
+    { document, window, fetch, URL, URLSearchParams, AbortController, TextDecoder, queueMicrotask });
+  await new Promise(setImmediate);
+  return { document, nodes, location, requests, canonical, description, social, packages,
+    async finishTopics() { deferred.splice(0).forEach((resolve) => resolve()); await new Promise(setImmediate); },
+    async refresh() { listeners.refresh(); await new Promise(setImmediate); },
+    blur() { document.activeElement = null; listeners.focusout?.(); },
+    visit(fragment) { location.hash = fragment; listeners.popstate?.(); } };
+}
+
+test("search tab titles follow restored, submitted, cleared, and browser Back states", async () => {
+  const page = await searchPage({ hash: "#search?q=math&all=1", title: "Homepage fixture | Asm" });
+  const search = page.nodes.get("package-search");
+  assert.equal(page.document.title, "Search results for math | Asm");
+  search.value = "text";
+  assert.equal(page.nodes.get("registry-controls").dispatch("submit").defaultPrevented, true);
+  assert.equal(page.document.title, "Search results for text | Asm");
+  page.visit("#search?q=math&all=1");
+  assert.equal(page.document.title, "Search results for math | Asm");
+  page.nodes.get("reset-search").dispatch("click");
+  assert.equal(page.document.title, "Homepage fixture | Asm");
+  assert.equal(search.value, "");
+  page.visit("");
+  assert.equal(page.document.title, "Homepage fixture | Asm");
+});
+
+test("filter-only and complete catalog tab titles describe the visible results", async () => {
+  const page = await searchPage();
+  assert.equal(page.document.title, "Assembly package registry and CLI | Asm");
+  page.nodes.get("browse-all").dispatch("click");
+  assert.equal(page.document.title, "All packages | Asm");
+  page.nodes.get("package-kind").value = "source";
+  page.nodes.get("package-kind").dispatch("change");
+  assert.equal(page.document.title, "Source packages | Asm");
+  page.nodes.get("package-architecture").value = "aarch64";
+  page.nodes.get("package-architecture").dispatch("change");
+  assert.equal(page.document.title, "Source packages for ARM64 | Asm");
+  page.nodes.get("package-target").value = "aarch64-linux";
+  page.nodes.get("package-target").dispatch("change");
+  assert.equal(page.document.title, "Source packages for ARM64 on aarch64-linux | Asm");
+  page.visit("#search?kind=executable&all=1");
+  assert.equal(page.document.title, "Executable packages | Asm");
+  assert.equal(page.nodes.get("package-list").children.length, 0);
+  page.visit("#search?target=x86_64-linux&all=1");
+  assert.equal(page.document.title, "Assembly packages on x86_64-linux | Asm");
+});
+
+test("search titles display bounded plain Unicode text without changing private query state or page metadata", async () => {
+  const query = "  math\t\n\u202Espoof\u202C\u0000 <script>alert(1)</script> " + "😀".repeat(100);
+  const page = await searchPage({ hash: "#search?q=" + encodeURIComponent(query) + "&all=1" });
+  assert.match(page.document.title, /^Search results for math spoof <script>alert\(1\)<\/script> 😀/u);
+  assert.doesNotMatch(page.document.title, /[\u0000-\u001f\u007f-\u009f\u202a-\u202e]/u);
+  assert.ok(Array.from(page.document.title).length < 120);
+  assert.ok(page.document.title.endsWith("… | Asm"));
+  assert.equal(page.nodes.get("package-search").value, query);
+  assert.equal(new URLSearchParams(page.location.hash.slice(8)).get("q"), query);
+  assert.equal(page.canonical.getAttribute("href"), "https://asm.build/");
+  assert.equal(page.description.getAttribute("content"), "Find assembly packages.");
+  assert.equal(page.social.getAttribute("content"), "Assembly package registry and CLI | Asm");
+  assert.deepEqual(page.requests.map(([url]) => url).sort(), ["registry/v1/categories.json", "registry/v1/discovery-metadata.json",
+    "registry/v1/discovery.json", "registry/v1/index.json"]);
+});
+
+test("invalid search links and unavailable catalog data keep a usable homepage tab title", async () => {
+  const page = await searchPage({ hash: "#search?q=math&all=1" });
+  assert.equal(page.document.title, "Search results for math | Asm");
+  page.visit("#search?kind=unrecognized");
+  assert.equal(page.document.title, "Assembly package registry and CLI | Asm");
+  assert.match(page.nodes.get("registry-status").textContent, /unsupported filters/);
+  const unavailable = await searchPage({ hash: "#search?q=math&all=1", offline: true });
+  assert.equal(unavailable.document.title, "Assembly package registry and CLI | Asm");
+  assert.equal(unavailable.nodes.get("registry-fallback").hidden, false);
+  assert.match(unavailable.nodes.get("registry-status").textContent, /could not be loaded/);
+});
+
+test("license queries use only the exact latest active release", () => {
+  const current = record("owner/current", "x86_64-linux");
+  current.license = "MIT";
+  current.versions[0].license = "AGPL-3.0-or-later";
+  current.versions.push({ version: "0.0.1", license: "MIT", yanked: false, artifacts: [] });
+  const retired = record("owner/retired", "x86_64-linux");
+  retired.latest = null;
+  retired.versions[0].license = "MIT";
+  retired.versions[0].yanked = true;
+  assert.deepEqual(findPackages([current, retired], "agpl-3.0-or-later", "").map((pkg) => pkg.name), ["owner/current"]);
+  assert.deepEqual(findPackages([current, retired], "MIT", ""), []);
+  delete current.versions[0].license;
+  assert.deepEqual(findPackages([current], "AGPL", ""), []);
+});
+
+function reviewedTopics() {
+  return { metadata: { schema: 1, packages: [{ name: "owner/math", keywords: ["integers", "arithmetic"] }] },
+    categories: { schema: 1, categories: [{ id: "number-tools", name: "Number tools", packages: ["owner/math"] }] } };
+}
+
+test("reviewed keyword and category searches compose with one active artifact and exact identity ranking", () => {
+  const { normalizeSearchTopics } = require("../site/app.js");
+  const math = packageWithArtifacts("owner/math", [artifact("source", "aarch64-linux"), artifact("executable", "x86_64-linux")]);
+  const named = record("owner/integers", "x86_64-linux");
+  const catalog = [math, named], { metadata, categories } = reviewedTopics();
+  const before = JSON.stringify(catalog);
+  const topics = [normalizeSearchTopics(metadata, catalog, "keywords"), normalizeSearchTopics(categories, catalog, "categories")];
+  assert.deepEqual(findPackages(catalog, "integers", "", "", "", topics).map((pkg) => pkg.name), ["owner/integers", "owner/math"]);
+  assert.deepEqual(findPackages(catalog, "number tools arithmetic", "aarch64-linux", "source", "aarch64", topics).map((pkg) => pkg.name), ["owner/math"]);
+  assert.deepEqual(findPackages(catalog, "number-tools", "x86_64-linux", "source", "", topics), []);
+  assert.equal(JSON.stringify(catalog), before);
+});
+
+test("reviewed labels cannot survive a changed latest version or yanked-only history", () => {
+  const { normalizeSearchTopics } = require("../site/app.js");
+  const math = record("owner/math", "x86_64-linux");
+  const catalog = [math], { metadata, categories } = reviewedTopics();
+  const topics = [normalizeSearchTopics(metadata, catalog, "keywords"), normalizeSearchTopics(categories, catalog, "categories")];
+  const next = { ...math, latest: "0.2.0", versions: [{ ...math.versions[0], version: "0.2.0" }, ...math.versions] };
+  assert.deepEqual(findPackages([next], "integers", "", "", "", topics), []);
+  const retired = { ...math, latest: null, versions: [{ ...math.versions[0], yanked: true }] };
+  const retiredTopics = [normalizeSearchTopics(metadata, [retired], "keywords"), normalizeSearchTopics(categories, [retired], "categories")];
+  assert.deepEqual(findPackages([retired], "number-tools", "", "", "", retiredTopics), []);
+});
+
+test("optional search metadata rejects ambiguous malformed oversized and foreign declarations", () => {
+  const { normalizeSearchTopics } = require("../site/app.js");
+  const catalog = [record("owner/math", "x86_64-linux")], { metadata, categories } = reviewedTopics();
+  for (const data of [null, {}, { ...metadata, schema: 2 }, { ...metadata, extra: true },
+    { schema: 1, packages: [...metadata.packages, ...metadata.packages] },
+    { schema: 1, packages: [{ name: "other/math", keywords: [] }] },
+    ...[["Uppercase"], ["bad--id"], ["trailing-"], ["<script>"], ["same", "same"], Array(33).fill("topic")]
+      .map((keywords) => ({ schema: 1, packages: [{ name: "owner/math", keywords }] })),
+    { schema: 1, packages: [{ name: "owner/math", releases: [{ version: "0.0.1", source_commit: "a".repeat(40), dependencies: [] }] }] }]) {
+    assert.throws(() => normalizeSearchTopics(data, catalog, "keywords"), { name: "RangeError" });
+  }
+  for (const data of [{ ...categories, schema: 0 }, { ...categories, categories: [...categories.categories, ...categories.categories] },
+    ...[{ id: "bad--id" }, { name: " " }, { name: "a".repeat(81) }, { name: "Bad\u0000label" },
+      { packages: ["other/math"] }, { packages: ["owner/math", "owner/math"] }].map((change) => ({ schema: 1,
+      categories: [{ ...categories.categories[0], ...change }] })), { schema: 1, categories: Array(33).fill(categories.categories[0]) }]) {
+    assert.throws(() => normalizeSearchTopics(data, catalog, "categories"), { name: "RangeError" });
+  }
+});
+
+test("optional topic loads preserve the base search and focused query before completing", async () => {
+  const page = await searchPage({ ...reviewedTopics(), deferTopics: true, hash: "#search?q=integers&all=1" });
+  const search = page.nodes.get("package-search"), list = page.nodes.get("package-list");
+  assert.equal(search.disabled, false);
+  assert.equal(list.children.length, 0);
+  assert.match(page.nodes.get("registry-status").textContent, /topic.*loading/i);
+  search.focus();
+  await page.finishTopics();
+  assert.equal(list.children.length, 1);
+  assert.equal(page.document.activeElement, search);
+  assert.equal(search.value, "integers");
+  assert.equal(page.location.hash, "#search?q=integers&all=1");
+  assert.equal(page.document.title, "Search results for integers | Asm");
+  assert.deepEqual(page.requests.map(([url]) => url).sort(), ["registry/v1/categories.json", "registry/v1/discovery-metadata.json",
+    "registry/v1/discovery.json", "registry/v1/index.json"]);
+});
+
+test("failed or excessive topic sources retain base results and independent valid labels with limited coverage", async () => {
+  for (const metadata of [new Error("Unavailable"), "not JSON", " ".repeat(256 * 1024 + 1), { schema: 2, packages: [] }]) {
+    const page = await searchPage({ metadata, categories: reviewedTopics().categories, hash: "#search?q=number-tools&all=1" });
+    assert.equal(page.nodes.get("package-list").children.length, 1);
+    assert.match(page.nodes.get("registry-status").textContent, /topic.*unavailable|keyword.*unavailable/i);
+    page.visit("#search?q=text&all=1");
+    assert.equal(page.nodes.get("package-list").children.length, 1);
+    assert.equal(page.nodes.get("package-search").disabled, false);
+  }
+  const page = await searchPage({ metadata: reviewedTopics().metadata, categories: new Error("Unavailable"),
+    hash: "#search?q=integers&all=1" });
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  assert.match(page.nodes.get("registry-status").textContent, /topic.*unavailable|categor.*unavailable/i);
+});
+
+test("optional topic bodies stop reading at the byte limit and cancel excessive streams", { timeout: 5000 }, async () => {
+  let reads = 0, cancelled = false;
+  const response = new Response(new ReadableStream({ pull(controller) {
+    if (reads++ === 100) { controller.close(); return; }
+    controller.enqueue(new Uint8Array(8192).fill(32));
+  }, cancel() { cancelled = true; } }));
+  const page = await searchPage({ metadata: reviewedTopics().metadata, responses: { "registry/v1/categories.json": response },
+    hash: "#search?q=integers&all=1" });
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  assert.ok(reads <= 10, `Read ${reads} chunks after exceeding the 64 KiB category bound.`);
+  assert.equal(cancelled, true);
+  assert.match(page.nodes.get("registry-status").textContent, /topic.*unavailable|categor.*unavailable/i);
+});
+
+test("late optional topics defer result replacement while a package link has focus", async () => {
+  const page = await searchPage({ ...reviewedTopics(), deferTopics: true, hash: "#search?q=math&all=1" });
+  const list = page.nodes.get("package-list"), result = list.children[0];
+  result.focus();
+  await page.finishTopics();
+  assert.equal(list.children[0], result);
+  assert.equal(page.document.activeElement, result);
+  page.blur();
+  await new Promise(setImmediate);
+  page.visit("#search?q=integers&all=1");
+  assert.equal(list.children.length, 1);
+});
+
+test("a later failed topic refresh removes stale matches without losing the query or current catalog", async () => {
+  const topics = reviewedTopics(), page = await searchPage({ ...topics, hash: "#search?q=integers&all=1" });
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  topics.metadata.schema = 2;
+  page.packages[0].latest = "0.2.0";
+  page.packages[0].versions.unshift({ ...page.packages[0].versions[0], version: "0.2.0" });
+  const search = page.nodes.get("package-search");
+  search.focus();
+  await page.refresh();
+  assert.equal(page.nodes.get("package-list").children.length, 0);
+  assert.equal(page.document.activeElement, search);
+  assert.equal(search.value, "integers");
+  assert.equal(page.location.hash, "#search?q=integers&all=1");
+  assert.match(page.nodes.get("registry-status").textContent, /topic.*unavailable|keyword.*unavailable/i);
+  page.visit("#search?q=number-tools&all=1");
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  page.visit("#search?q=text&all=1");
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+});
+
+test("an invalid initial search retains visible recovery through delayed topics and catalog refresh", async () => {
+  const hash = "#search?kind=unrecognized";
+  const page = await searchPage({ ...reviewedTopics(), hash, deferTopics: true });
+  const status = page.nodes.get("registry-status"), reset = page.nodes.get("reset-search");
+  const search = page.nodes.get("package-search");
+  assert.match(status.textContent, /unsupported filters/);
+  assert.equal(reset.hidden, false);
+  search.focus();
+  await page.finishTopics();
+  assert.match(status.textContent, /unsupported filters/);
+  assert.equal(status.classList.contains("sr-only"), false);
+  assert.equal(reset.hidden, false);
+  assert.equal(page.location.hash, hash);
+  assert.equal(page.document.activeElement, search);
+  await page.refresh();
+  await page.finishTopics();
+  assert.match(status.textContent, /unsupported filters/);
+  assert.equal(reset.hidden, false);
+  assert.equal(page.document.activeElement, search);
+  reset.dispatch("click");
+  assert.equal(page.location.hash, "");
+  assert.equal(reset.hidden, true);
+  assert.doesNotMatch(status.textContent, /unsupported filters/);
+  page.visit(hash);
+  search.value = "math";
+  search.dispatch("input");
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  assert.doesNotMatch(status.textContent, /unsupported filters/);
+});
+
+
+test("V2 search refresh keeps its catalog and never requests V1 topic metadata", async () => {
+  const page = await searchPage({ registryVersion: "2", index: v2Catalog(), hash: "#search?q=alpha&all=1" });
+  assert.equal(page.nodes.get("package-list").children.length, 1);
+  assert.deepEqual(page.requests.map(([url]) => url).sort(), ["registry/v2/discovery.json", "registry/v2/index.json"]);
+  assert.equal(page.document.title, "Search results for alpha | Asm");
+  assert.equal(page.nodes.get("package-search").value, "alpha");
+});
+
+test("a V2 catalog error retains recovery without fetching V1 catalogs or topics", async () => {
+  const page = await searchPage({ registryVersion: "2", index: { schema: 1, packages: [] }, hash: "#search?q=alpha&all=1" });
+  assert.equal(page.nodes.get("package-list").children.length, 0);
+  assert.equal(page.nodes.get("registry-fallback").hidden, false);
+  assert.match(page.nodes.get("registry-status").textContent, /could not be loaded/);
+  assert.deepEqual(page.requests.map(([url]) => url).sort(), ["registry/v2/discovery.json", "registry/v2/index.json"]);
 });

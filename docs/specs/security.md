@@ -8,6 +8,14 @@ Asm distributes executable code. A package can be correctly signed, build succes
 
 The registry tools validate metadata, artifact size, and SHA-256. They compare immutable history when a baseline is supplied. They also check source archives and target-specific executable containers and segment bounds. Source packaging can read a pinned Git commit.
 
+If a declared GitHub release URL returns HTTP 504, the site build can use GitHub's public release-asset API.
+Release metadata must match the original repository, tag, filename, browser URL, and known byte size.
+Only one uploaded asset can match, with a valid numeric identifier.
+Requests use no credentials and retain bounded metadata, responses, timeouts, HTTPS origins, and redirects.
+All existing byte, archive, and bootstrap bundle checks remain mandatory.
+Permission errors, missing files, rejected metadata, and byte mismatches cannot use this fallback.
+API delivery does not establish that the original browser-download route currently works.
+
 The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
 
 The released V1 index relies on HTTPS and control of the registry origin.
@@ -32,6 +40,15 @@ Bound response size, request time, and refresh frequency.
 The browser renders counts as text and hides expired observations when refresh fails.
 Session storage contains public repository metadata and a bounded retry deadline, without visitor identifiers.
 These counts do not establish package suitability or safety.
+
+The static site build embeds a Content Security Policy before resources in each published HTML page.
+It restricts scripts and assets to the same origin, with the GitHub API permitted for the fixed repository observation.
+Inline styles remain permitted for existing charts and interface styles; inline executable scripts and event handlers are rejected during the build.
+This document policy does not provide HSTS or framing protection, which require response headers unavailable through the current GitHub Pages configuration.
+Fresh discovery and statistics responses from the local preview server do not inherit this build-only document policy.
+The [CSP specification](https://www.w3.org/TR/CSP3/#meta-element) defines delivery through HTML and its limits.
+[Chrome's transition guidance](https://developer.chrome.com/docs/web-platform/view-transitions/cross-document) requires the retained early head script.
+These primary references were reviewed on 8 November 2026.
 
 Exact dependency locks bind archive digests and selected targets. Native cache checks compare expected source bytes and reject unexpected members. Advisory locks coordinate Asm processes; they do not constrain other processes running as the same user.
 
@@ -265,6 +282,23 @@ Both routes use GitHub CLI 2.93.0 or later for Sigstore verification. This minim
 The policy fixes the repository name and numeric identity. It also fixes the release workflow, main source ref, OIDC issuer, SLSA predicate, and hosted-runner requirement. The source and signer commits must match the selected release. A valid signature from another repository, workflow, or commit is insufficient. The verifier must return exactly one matching repository identity.
 
 Each release contains the action-produced `release-attestation.sigstore.json` bundle. It is a single JSON object with a 1 MiB limit. The release job verifies every payload against this same published bundle without a GitHub account. The bundle supplies signature evidence, not replacement trust roots.
+
+The site build copies the selected bootstrap executables and signed bundle to digest-qualified paths on `asm.build`.
+It checks each executable's size, SHA-256, and container before publishing the complete site.
+These copies retain the original release bytes, source identity, and license.
+The generated bootstrap downloads these copies and can recover a transient failure through the exact public GitHub release-asset API.
+The site build binds each recovery endpoint to the original repository, tag, filename, browser URL, uploaded state, and byte size.
+The installer receives fixed numeric asset identifiers; it does not parse API metadata or accept a caller-selected endpoint.
+Recovery uses no credentials and retains the HTTPS, redirect, byte, and file limits.
+Each artifact has a total download budget of 120 seconds across its two transport attempts.
+A missing first-party copy can use its pinned public API endpoint; the copy route has no package authority.
+Missing official assets, permission errors, certificate failures, corrupt bytes, and failed attestations stop installation.
+API rate limits or unavailable recovery endpoints also stop installation and preserve an existing command.
+This recovery applies to the generated bootstrap. Published native clients retain their existing download behavior.
+Only the current bootstrap release receives these first-party copies.
+Saved older installers can lose their copy URLs after a later deployment and use their original API endpoint instead.
+This controlled bootstrap route is not a general package mirror, retained artifact store, or new package authority.
+Static hosting supplies no Asm-owned download observations. These copies do not establish a known download count.
 
 The site offers the bootstrap only for checked CLI releases from 0.2.0 onward. It also downloads the required bundle before publication. A missing or malformed bundle stops the site build. These site checks establish availability and format; the installer performs signature verification. Earlier releases retain the source-build route.
 

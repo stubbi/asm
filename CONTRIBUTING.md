@@ -38,6 +38,8 @@ Remove completed implementation plans when current specifications cover their de
 
 Use Linux x86-64, Linux ARM64, or Apple Silicon macOS 15 or later for native CLI checks.
 Install Git, Make, Python 3.11 or later, and Node.js 18 or later.
+Standalone website builds also require Node.js for the pinned, vendored Terser minifier.
+No npm installation is required.
 Linux also needs GNU Binutils, curl, GNU Coreutils, and gzip.
 Linux x86-64 release checks need AArch64 and RISC-V GNU cross-binutils and QEMU user emulation.
 On macOS, install Xcode Command Line Tools. The OS supplies the other native tools.

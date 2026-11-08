@@ -431,6 +431,7 @@ The [observation contract](specs/registry-v2.md#v2-delivery-observations) record
 
 ## Build the V2 website
 
+Install Node.js 18 or later for the build-time JavaScript minifier.
 Use an owned local copy of the public V2 mirror for the static build.
 Keep the private log ledger outside that mirror and the website output.
 Select the registry identity and HTTPS mirror bases explicitly.

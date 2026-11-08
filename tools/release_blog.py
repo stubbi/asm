@@ -120,12 +120,12 @@ def _summary(notes: str) -> str:
     return first if len(first) <= 220 else first[:217].rsplit(" ", 1)[0] + "…"
 
 
-def _blog_page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], preview: bool) -> str:
-    html = package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False)
+def _blog_page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], preview: bool,
+               *, structured_data: dict | None = None, noindex=False) -> str:
     # Preview is a build-wide choice. Archives and released posts must also
     # remain unindexed when they link to unpublished articles.
-    if preview: html = html.replace("</head>", '<meta name="robots" content="noindex">\n</head>', 1)
-    return html
+    return package_pages._page(route, title, description, body, chrome, active_nav="Blog", scripts=False,
+                               structured_data=structured_data, noindex=preview or noindex)
 
 
 def _navigation(route: str, selected: str) -> str:
@@ -218,6 +218,7 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
     now = datetime.now(timezone.utc)
     dates = _dates(release_dates, releases, now)
     articles = blog_posts.load_posts(repo, include_drafts=include_drafts, now=now)
+    has_published_articles = any(not post["draft"] for post in articles)
     chrome = package_pages._chrome(stage)
     # Parsed instants, rather than lexical ISO text, preserve fractional order.
     versions = sorted(releases, key=lambda version: (version in dates, datetime.fromisoformat(dates[version].replace("Z", "+00:00")) if version in dates else datetime.min.replace(tzinfo=timezone.utc), registry.version_tuple(version)), reverse=True)
@@ -237,7 +238,9 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                 package_pages._anchor("GitHub release notes", REPOSITORY + "/releases/tag/v" + version) + ' · ' +
                 package_pages._anchor("Exact package and evidence", prefix + package_pages.package_route(NAME, version)) + '</p>'
                 '<p>Release source commit: <code>' + record["source"]["commit"] + '</code></p></section></article>')
-        html = _blog_page(route, "Asm " + version, "Release notes for Asm " + version + ".", body, chrome, include_drafts)
+        description = ("Read the recorded Asm " + version + " change log. Inspect its " + record["license"]
+                       + " license, exact source commit, package record, and available release evidence.")
+        html = _blog_page(route, "Assembly CLI " + version + " release notes", description, body, chrome, include_drafts)
         outputs.append((route + "index.html", html.encode("utf-8")))
         posts.append({"kind": "release", "title": "Asm " + version, "version": version, "route": route, "date": dates.get(version), "html": content,
                       "summary": package_pages._inline(_summary(sections[version]), record["source"], "CHANGELOG.md")})
@@ -254,7 +257,16 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
                 package_pages._anchor("Read the maintained source", post["source"]) + '</p><p>' +
                 package_pages._anchor("Back to articles", prefix + "blog/articles/") + ' · ' +
                 package_pages._anchor("Back to blog", prefix + "blog/") + '</p></section></article>')
-        html = _blog_page(route, post["title"], post["summary"], body, chrome, include_drafts)
+        structured = None
+        if not include_drafts and not post["draft"]:
+            url = package_pages.SITE + route.rstrip("/")
+            structured = {"@context": "https://schema.org", "@type": "BlogPosting", "@id": url + "#article",
+                          "url": url, "headline": post["title"], "description": post["summary"],
+                          "creditText": post["author"], "datePublished": post["date"][:10],
+                          "inLanguage": "en", "isBasedOn": post["source"]}
+            if post["updated"]: structured["dateModified"] = post["updated"][:10]
+        html = _blog_page(route, post["title"], post["summary"], body, chrome, include_drafts,
+                          structured_data=structured)
         outputs.append((route + "index.html", html.encode("utf-8")))
     posts += articles
     # Published timestamps define chronological order. Stable route ordering
@@ -269,11 +281,26 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
             ("blog/articles/", "Articles", "Articles about Asm, assembly, and dependable software reuse.", "Articles", [post for post in posts if post["kind"] == "article"]),
             ("blog/releases/", "Releases", "Release notes for registered Asm releases.", "Releases", [post for post in posts if post["kind"] == "release"])):
         prefix = "../" * route.count("/")
-        body = ('<header class="package-heading blog-heading"><h1>' + title + '</h1><p>' + description + '</p></header>' +
+        introduction = ('<a href="' + prefix + 'blog/articles/">Articles</a> about Asm and <a href="' + prefix +
+                        'blog/releases/">release notes</a> from the change log.') if selected == "All" else description
+        body = ('<header class="package-heading blog-heading"><h1>' + title + '</h1><p>' + introduction + '</p></header>' +
                 _navigation(route, selected) + '<p class="blog-feed-link">' + package_pages._anchor("Subscribe with Atom", prefix + "blog/atom.xml") + '</p>')
         body += _listing(entries, route) if entries else '<p>' + ("No articles are published yet." if selected == "Articles" else "No Asm releases are registered yet." if selected == "Releases" else "No posts are published yet.") + '</p>'
         body += '<p class="package-note">Release entries require registered Asm versions. Unreleased changes stay in the repository change log. The feed includes published articles and releases with known dates.</p>'
-        outputs.append((route + "index.html", _blog_page(route, title, description, body, chrome, include_drafts).encode("utf-8")))
+        page_title, page_description = {
+            "All": ("Project blog and release notes", "Read recorded CLI release notes and repository-authored articles. Each entry retains its source and publication date when available."),
+            "Articles": ("Assembly software article archive", "Read published articles about assembly software and dependable package reuse. Each article identifies its author, source, and declared publication date."),
+            "Releases": ("Assembly CLI release notes", "Read change logs for registered CLI versions. Inspect each release's recorded license, source commit, package evidence, and publication date when available."),
+        }[selected]
+        if not entries:
+            page_description = ("No articles are published yet. This archive will list repository-authored articles about assembly software, package reuse, and recorded results." if selected == "Articles" else
+                                "No CLI releases are registered yet. Published releases appear here with their recorded change log and available evidence." if selected == "Releases" else
+                                "No posts are published yet. Published articles and registered CLI release notes appear here when available.")
+        elif selected == "Articles" and any(post.get("draft") for post in entries):
+            page_description = "Preview repository-authored articles, including unpublished drafts. Drafts remain outside the public feed and sitemap."
+        outputs.append((route + "index.html", _blog_page(route, page_title, page_description, body, chrome, include_drafts,
+                       noindex=selected == "Articles" and not has_published_articles).encode("utf-8")))
     outputs.append(("blog/atom.xml", _feed(posts, now)))
     for relative, data in outputs: registry.write_atomic(stage / relative, data)
-    return ["blog/", "blog/articles/", "blog/releases/"] + [post["route"] for post in posts if not post.get("draft")]
+    archives = ["blog/"] + (["blog/articles/"] if has_published_articles else []) + ["blog/releases/"]
+    return archives + [post["route"] for post in posts if not post.get("draft")]

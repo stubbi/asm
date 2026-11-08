@@ -6,8 +6,10 @@ const { packagePath, parseSearchState, searchStateHash, readReturnState, matches
 
 test("package permalinks identify the exact package and optional numeric release", () => {
   assert.equal(typeof packagePath, "function");
-  assert.equal(packagePath("stubbi/math"), "packages/stubbi/math/");
-  assert.equal(packagePath("stubbi/asm", "0.1.0"), "packages/stubbi/asm/0.1.0/");
+  assert.equal(packagePath("stubbi/math"), "/packages/stubbi/math");
+  assert.equal(packagePath("stubbi/asm", "0.1.0"), "/packages/stubbi/asm/0.1.0");
+  assert.equal(new URL(packagePath("stubbi/math"), "https://asm.build/browse/architectures/aarch64").href,
+    "https://asm.build/packages/stubbi/math");
   for (const name of ["../math", "owner/../math", "Owner/math", "owner/bad--name", "owner/trailing-", "owner/math?x=1", "owner/math#files", "owner/%2e%2e", "owner\\math", "a".repeat(40) + "/math"]) {
     assert.equal(packagePath(name), null, name);
   }

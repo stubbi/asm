@@ -29,6 +29,7 @@ import registry_explore
 import registry_stats
 import registry
 import repository_stars
+import site_routes
 
 
 class DiscoveryService:
@@ -194,6 +195,7 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
                 release.pop("evidence", None)
     registry.require(metadata == expected,
                      "build the site from this registry before starting the server")
+    routes = site_routes.PageRoutes.from_directory(site)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -224,6 +226,9 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
                         "\\" in path or any(ord(char) < 32 or ord(char) == 127 for char in path) or
                         any(part in {".", ".."} for part in path.split("/"))):
                     raise ValueError("invalid local path")
+                # Apply the route parser's decoding checks before dispatch or
+                # custom error HTML can use the path as a document base.
+                routes.canonical_path(path)
                 destination = site.joinpath(path.lstrip("/")).resolve()
                 if not destination.is_relative_to(site):
                     raise ValueError("path leaves site")
@@ -233,9 +238,13 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
             return path
 
         def _send(self, status, data, content_type, head=False, *, fresh=False):
-            if repository is not None and content_type.startswith("text/html"):
-                data = repository_stars.render_header(data.decode("utf-8"), repository_stars.unknown_snapshot()).encode("utf-8")
-                fresh = True
+            if content_type.startswith("text/html"):
+                request_path = unquote(urlsplit(self.path).path, errors="strict")
+                content = routes.html(data.decode("utf-8"), routes.legacy_path(request_path) or request_path)
+                if repository is not None:
+                    content = repository_stars.render_header(content, repository_stars.unknown_snapshot())
+                    fresh = True
+                data = content.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
@@ -261,6 +270,9 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
                 return
             if delivery is not None and delivery.handle(self, path, head=head):
                 return
+            # Keep the generators' directory routes while accepting every
+            # known public alias. Raw APIs, sources, and downloads are unmapped.
+            path = routes.legacy_path(path) or path
             if path == "/registry/v1/github.json" and repository is not None:
                 self._send(200, registry.json_bytes(self._github_snapshot()), "application/json; charset=utf-8", head, fresh=True)
                 return
@@ -354,9 +366,14 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
 
         def send_head(self):
             destination = Path(self.translate_path(self.path))
-            candidate = destination / "index.html" if destination.is_dir() else destination
-            if (self.path.startswith("/packages/") and candidate.suffix == ".html" and candidate.exists()
-                    and (not destination.is_dir() or urlsplit(self.path).path.endswith("/"))):
+            request_path = unquote(urlsplit(self.path).path, errors="strict")
+            page = routes.file_for(request_path)
+            candidate = site / page if page is not None else destination
+            if page is None and destination.is_dir():
+                candidate = destination / "index.html"
+            readable_page = page is not None or not destination.is_dir() or request_path.endswith("/")
+            if (request_path.startswith("/packages/") and candidate.suffix == ".html" and candidate.exists()
+                    and readable_page):
                 try:
                     relative = candidate.relative_to(site).as_posix()
                     content = registry.read_regular(site, relative, build_site.MAX_HTML_BYTES).decode("utf-8")
@@ -386,8 +403,8 @@ def build_handler(site: Path, index: dict, service: DiscoveryService, delivery=N
                     if linked_index.exists() and not linked_index.resolve().is_relative_to(site):
                         self.send_error(403, "Use a path within the local site.")
                         return None
-            if (repository is not None and candidate.suffix == ".html" and candidate.is_file()
-                    and (not destination.is_dir() or urlsplit(self.path).path.endswith("/"))):
+            if ((page is not None or repository is not None) and candidate.suffix == ".html"
+                    and candidate.is_file() and readable_page):
                 try:
                     content = registry.read_regular(site, candidate.relative_to(site).as_posix(), build_site.MAX_HTML_BYTES)
                     data = self._send(200, content, "text/html; charset=utf-8", True)

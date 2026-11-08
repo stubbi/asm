@@ -12,7 +12,7 @@ import sys
 import subprocess
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from xml.etree import ElementTree
 
@@ -26,12 +26,19 @@ import registry_stats
 import release_blog
 import site_docs
 import repository_stars
+import site_routes
+import site_assets
+import site_info
 from release import materialize, output_path, publish_directory, resolve_commit
 
 
 ASSET_HOSTS = {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"}
 MAX_HTML_BYTES = 4 * 1024 * 1024
+MAX_RELEASE_METADATA_BYTES = 2 * 1024 * 1024
+MAX_RELEASE_ASSETS = 1000
+MAX_RELEASE_CACHE_ENTRIES = 8
 API_PATTERN = re.compile(r"https://api\.github\.com/repos/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}/releases/tags/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+ASSET_API_PATTERN = re.compile(r"https://api\.github\.com/repos/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}/releases/assets/[1-9][0-9]{0,18}\Z")
 
 
 def check_https_url(url: str, hosts: set[str]) -> None:
@@ -52,27 +59,42 @@ class RestrictedRedirects(HTTPRedirectHandler):
     max_redirections = 4
     max_repeats = 2
 
-    def __init__(self, hosts: set[str]):
+    def __init__(self, hosts: set[str], *, exact_url: str | None = None):
         self.hosts = hosts
+        self.exact_url = exact_url
         super().__init__()
 
     def redirect_request(self, request, response, code, message, headers, newurl):
         check_https_url(newurl, self.hosts)
+        registry.require(self.exact_url is None or newurl == self.exact_url,
+                         "release API metadata redirect changes the requested route")
         return super().redirect_request(request, response, code, message, headers, newurl)
 
 
-def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None, opener=None) -> bytes:
-    check_https_url(url, hosts)
+def _https_bytes(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None,
+                 opener=None, api_asset_url: str | None = None, exact_url: str | None = None) -> bytes:
+    # Only recovery constructs this exact API endpoint. Redirects still use
+    # the caller's original asset origins, without adding the API host.
+    if api_asset_url is None:
+        check_https_url(url, hosts)
+    else:
+        registry.require(url == api_asset_url and ASSET_API_PATTERN.fullmatch(url) is not None,
+                         "release asset API URL is invalid")
     registry.require(type(limit) is int and 0 < limit <= registry.MAX_ARTIFACT_BYTES, "download limit is invalid")
     if expected_size is not None:
         registry.require(type(expected_size) is int and 0 < expected_size <= limit, "declared download size is invalid")
-    opener = opener or build_opener(RestrictedRedirects(hosts))
+    opener = opener or build_opener(RestrictedRedirects(hosts, exact_url=exact_url))
     headers = {"User-Agent": "asm-site-builder/1", "Accept-Encoding": "identity"}
     if urlsplit(url).netloc == "api.github.com":
         headers.update({"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+    if api_asset_url is not None:
+        headers["Accept"] = "application/octet-stream"
     request = Request(url, headers=headers)
     with opener.open(request, timeout=20) as response:
-        check_https_url(response.geturl(), hosts)
+        registry.require(exact_url is None or response.geturl() == exact_url,
+                         "release API metadata moved to a different route")
+        if api_asset_url is None or response.geturl() != api_asset_url:
+            check_https_url(response.geturl(), hosts)
         registry.require(response.status == 200, "download did not return HTTP 200")
         encoding = response.headers.get("Content-Encoding", "identity").lower()
         registry.require(encoding == "identity", "unexpected download content encoding")
@@ -89,7 +111,81 @@ def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | No
         return data
 
 
+def _release_asset_binding(url: str, limit: int, *, expected_size: int | None = None,
+                           opener=None, _release_cache: dict | None = None) -> tuple[str, int]:
+    """Bind an official API endpoint to the exact declared release asset."""
+    registry.require(type(limit) is int and 0 < limit <= registry.MAX_ARTIFACT_BYTES, "download limit is invalid")
+    if expected_size is not None:
+        registry.require(type(expected_size) is int and 0 < expected_size <= limit, "declared download size is invalid")
+    repository, tag, filename = registry.artifact_url(url)
+    metadata_url, _ = discovery._api(url)
+    cache = {} if _release_cache is None else _release_cache
+    if metadata_url not in cache:
+        value = registry.strict_json(_https_bytes(metadata_url, MAX_RELEASE_METADATA_BYTES,
+                                                 {"api.github.com"}, opener=opener, exact_url=metadata_url))
+        registry.require(isinstance(value, dict) and value.get("draft") is False
+                         and value.get("tag_name") == tag, "release API metadata differs from the public tag")
+        assets = value.get("assets")
+        registry.require(isinstance(assets, list) and len(assets) <= MAX_RELEASE_ASSETS
+                         and all(isinstance(asset, dict) for asset in assets), "release API assets are invalid")
+    else:
+        value = cache[metadata_url]
+    matches = [asset for asset in value["assets"] if asset.get("browser_download_url") == url]
+    registry.require(len(matches) == 1, "release API must identify one exact artifact URL")
+    asset = matches[0]
+    registry.require(asset.get("name") == filename and asset.get("state") == "uploaded",
+                     "release API asset identity differs from the artifact")
+    asset_id, size = asset.get("id"), asset.get("size")
+    registry.require(type(asset_id) is int and 0 < asset_id <= 9223372036854775807,
+                     "release API asset ID is invalid")
+    registry.require(type(size) is int and 0 < size <= limit and (expected_size is None or size == expected_size),
+                     "release API asset size differs from the artifact")
+    if metadata_url not in cache:
+        if len(cache) >= MAX_RELEASE_CACHE_ENTRIES:
+            cache.pop(next(iter(cache)))
+        cache[metadata_url] = value
+    endpoint = repository.replace("https://github.com/", "https://api.github.com/repos/") + "/releases/assets/" + str(asset_id)
+    return endpoint, size
+
+
+def release_asset_url(url: str, limit: int, *, expected_size: int,
+                      opener=None, _release_cache: dict | None = None) -> str:
+    """Resolve a build-bound installer transport without replacing its byte checks."""
+    return _release_asset_binding(url, limit, expected_size=expected_size,
+                                  opener=opener, _release_cache=_release_cache)[0]
+
+
+def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None,
+               opener=None, _release_cache: dict | None = None) -> bytes:
+    """Recover only a release permalink's 504 through its exact public GitHub asset."""
+    try:
+        return _https_bytes(url, limit, hosts, expected_size=expected_size, opener=opener)
+    except HTTPError as error:
+        if error.code != 504 or urlsplit(url).netloc != "github.com":
+            raise
+        error.close()
+        print("build-site: HTTP 504 for " + url + "; checking the same asset through the GitHub API.", file=sys.stderr)
+        endpoint, size = _release_asset_binding(url, limit, expected_size=expected_size,
+                                              opener=opener, _release_cache=_release_cache)
+        return _https_bytes(endpoint, limit, hosts, expected_size=size, opener=opener, api_asset_url=endpoint)
+
+
+def _scoped_asset_reader(read):
+    """Reuse release metadata only within one verification/build operation."""
+    if read is not read_https:
+        return read
+    cache = {}
+    def scoped(url, limit, hosts, *, expected_size=None):
+        return read_https(url, limit, hosts, expected_size=expected_size, _release_cache=cache)
+    # The production reader always binds every advertised installer fallback.
+    # Offline fixture readers have no network resolver or implicit requests.
+    scoped.asset_resolver = lambda url, limit, *, expected_size: release_asset_url(
+        url, limit, expected_size=expected_size, _release_cache=cache)
+    return scoped
+
+
 def verify_artifacts(records: list[dict], read=read_https, *, dependency_metadata: dict | None = None) -> set[tuple[str, str]]:
+    read = _scoped_asset_reader(read)
     checked = set()
     for record in registry.check_records(records):
         for artifact in record["artifacts"]:
@@ -150,32 +246,53 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     selected = {name: data for name, data in files.items() if name.endswith((".s", ".inc")) or name == "commands.json"}
     registry.require(selected, "source commit has no CLI reference files")
     materialize(selected, output)
-    rows = []
-    for name, (data, _) in sorted(selected.items()):
-        rows.append(f'<li><a href="{escape(name, quote=True)}">{escape(name)}</a><code>{hashlib.sha256(data).hexdigest()}</code></li>')
+    rows, items = [], []
+    canonical = "https://asm.build/reference"
+    for position, (name, (data, _)) in enumerate(sorted(selected.items()), 1):
+        digest = hashlib.sha256(data).hexdigest()
+        rows.append(f'<li><a href="{escape(name, quote=True)}"><code>{escape(name)}</code></a><code>{digest}</code></li>')
+        url = canonical + "/" + quote(name, safe="/")
+        items.append({"@type": "ListItem", "position": position,
+                      "item": {"@type": "MediaObject", "@id": url, "url": url,
+                               "contentUrl": url, "name": name, "sha256": digest}})
+    structured = {"@context": "https://schema.org", "@type": "CollectionPage",
+                  "@id": canonical + "#webpage", "url": canonical,
+                  "name": "Assembly CLI source files and digests", "inLanguage": "en",
+                  "isBasedOn": "https://github.com/stubbi/asm/tree/" + commit + "/cli",
+                  "identifier": {"@type": "PropertyValue", "propertyID": "Git commit", "value": commit},
+                  "mainEntity": {"@type": "ItemList", "@id": canonical + "#files",
+                                 "itemListOrder": "https://schema.org/ItemListOrderAscending",
+                                 "numberOfItems": len(items), "itemListElement": items}}
     page = f'''<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f5f4">
-    <meta name="description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta name="description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
+    <meta property="og:site_name" content="Asm">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="CLI source reference — asm">
-    <meta property="og:description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta property="og:title" content="Assembly CLI source files and digests | Asm">
+    <meta property="og:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta property="og:url" content="https://asm.build/reference/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
     <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="CLI source reference — asm">
-    <meta name="twitter:description" content="Read the Asm CLI source for Linux and Apple Silicon macOS. Inspect the source commit and SHA-256 file digests.">
+    <meta name="twitter:title" content="Assembly CLI source files and digests | Asm">
+    <meta name="twitter:description" content="Read the recorded Asm CLI assembly source for Linux and Apple Silicon macOS. Inspect each file, its SHA-256 digest, and the exact source commit.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
+    <meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <link rel="canonical" href="https://asm.build/reference/">
+    <link rel="alternate" type="application/atom+xml" href="../blog/atom.xml" title="Asm blog">
     <link rel="icon" type="image/svg+xml" href="../icon.svg">
     <link rel="stylesheet" href="../styles.css">
+    {package_pages._json_ld(structured)}
     <script src="../navigation.js"></script>
     <script src="../repository-stars.js" defer></script>
-    <title>CLI source reference — asm</title>
+    <title>Assembly CLI source files and digests | Asm</title>
   </head>
   <body class="reference-page">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -192,7 +309,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
         </form>
         <a class="header-search-fallback" data-header-search-fallback href="../packages/">Browse packages</a>
         <nav aria-label="Main navigation">
-          <a href="../explore/">Explore</a>
+          <a href="../explore/" aria-label="Explore assembly packages">Explore</a>
           <a href="../stats/">Stats</a>
           <a href="../blog/">Blog</a>
           <a href="../docs/" aria-current="page">Docs</a>
@@ -218,9 +335,9 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
         </div>
         <div class="footer-navs">
           <nav aria-label="Learn"><h2>Learn</h2><a href="../docs/">Docs</a><a href="../guide.html">Guide</a><a href="https://github.com/stubbi/asm#install-the-command">Install Asm</a><a href="../reference/">CLI source</a><a href="../agents.md">For AI agents</a></nav>
-          <nav aria-label="Registry"><h2>Registry</h2><a href="../explore/">Explore</a><a href="../packages/">All packages</a><a href="../browse/new/">New packages</a><a href="../browse/popular/">Most downloaded</a><a href="../stats/">Statistics</a></nav>
-          <nav aria-label="Project"><h2>Project</h2><a href="../guide.html#why">Why Asm</a><a href="../blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="../sponsors.html">Sponsorship</a></nav>
-          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/stubbi/asm#status">Supported hosts</a></nav>
+          <nav aria-label="Registry"><h2>Registry</h2><a href="../explore/" aria-label="Explore assembly packages">Explore</a><a href="../packages/">All packages</a><a href="../browse/new/">New packages</a><a href="../browse/popular/">Most downloaded</a><a href="../stats/">Statistics</a></nav>
+          <nav aria-label="Project"><h2>Project</h2><a href="../about/">About Asm</a><a href="../blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="../sponsors.html">Sponsorship</a></nav>
+          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="../contact/">Contact</a><a href="../privacy/">Privacy</a></nav>
         </div>
       </div>
       <div class="footer-support">
@@ -233,6 +350,29 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
   </body>
 </html>'''
     (output / "index.html").write_text(page, encoding="utf-8")
+
+
+def _finalize_stage(stage: Path, *, registry_version: int = 1) -> None:
+    """Apply the same public routes, policy, and asset checks to both catalogs."""
+    for page in stage.rglob("*.html"):
+        relative = page.relative_to(stage).as_posix()
+        content = registry.read_regular(stage, relative, MAX_HTML_BYTES).decode("utf-8")
+        # Cached HTML must not keep an expired numeric observation visible.
+        content = repository_stars.render_header(content, repository_stars.unknown_snapshot())
+        if registry_version == 2:
+            content = re.sub(r'<body(?![^>]*\bdata-registry-version=)([^>]*)>',
+                             r'<body data-registry-version="2"\1>', content, count=1)
+        registry.write_atomic(page, site_assets.with_content_policy(content).encode("utf-8"))
+    site_routes.PageRoutes.from_directory(stage).export(stage)
+    site_assets.minify_scripts(stage)
+    # Pages must include .well-known without publishing arbitrary hidden
+    # source files. Keep this allowlist narrower than the upload action.
+    public_hidden = {".nojekyll", ".well-known", ".well-known/security.txt"}
+    for path in stage.rglob("*"):
+        relative = path.relative_to(stage)
+        if any(part.startswith(".") for part in relative.parts):
+            registry.require(relative.as_posix() in public_hidden,
+                             "unreviewed hidden site path: " + relative.as_posix())
 
 
 def _build_v2(repo: Path, output: Path, *, reference: str, distribution_root: Path,
@@ -281,6 +421,7 @@ def _build_v2(repo: Path, output: Path, *, reference: str, distribution_root: Pa
         routes.extend(site_docs.write_docs(repo, stage, registry_version=2))
         routes.extend(release_blog.write_release_blog(repo, stage, catalog, include_drafts=include_blog_drafts,
                                                       include_releases=False))
+        routes.extend(site_info.write_info(repo, stage, registry_version=2))
         extend_sitemap(stage, routes)
         releases = sum(len(package["versions"]) for package in catalog["packages"])
         build = {"schema": 1, "registry_schema": 2, "registry_id": registry_id,
@@ -335,13 +476,7 @@ Missing counts are unknown; imported empty reporting can establish an observed z
 Sender observations do not establish verification, installations, people, quality, or safety.
 No source-host authentication, hosted build, public enrollment, or ownership recovery follows from this preview.
 """)
-        for page in stage.rglob("*.html"):
-            relative = page.relative_to(stage).as_posix()
-            content = registry.read_regular(stage, relative, MAX_HTML_BYTES).decode("utf-8")
-            content = repository_stars.render_header(content, repository_stars.unknown_snapshot())
-            content = re.sub(r'<body(?![^>]*\bdata-registry-version=)([^>]*)>',
-                             r'<body data-registry-version="2"\1>', content, count=1)
-            registry.write_atomic(page, content.encode("utf-8"))
+        _finalize_stage(stage, registry_version=2)
         publish_directory(stage, output)
     return build
 
@@ -376,6 +511,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
                          repository_fetcher=repository_fetcher, include_blog_drafts=include_blog_drafts)
     commit = resolve_commit(repo, reference)
     records = registry.read_records(registry_path)
+    artifact_reader = _scoped_asset_reader(artifact_reader)
     dependency_metadata = {}
     checked = verify_artifacts(records, artifact_reader, dependency_metadata=dependency_metadata) if verify else set()
     tsv, index = registry.make_indexes(records, checked, dependency_metadata=dependency_metadata)
@@ -431,7 +567,6 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         stage = Path(temporary) / "site"
         materialize(registry.collect_files(repo / "site"), stage)
         package_pages.write_catalog_stats(stage, index)
-        package_pages.write_architecture_browse(stage, index)
         (stage / "skills").mkdir(exist_ok=True)
         materialize(registry.collect_files(repo / "skills/asm-build"), stage / "skills/asm-build")
         # Source references use a recorded commit, never an uncommitted file.
@@ -473,10 +608,14 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         routes.extend(release_blog.write_release_blog(repo, stage, index, snapshot, release_dates=cli_dates,
                                                      include_drafts=include_blog_drafts))
         routes.extend(site_docs.write_docs(repo, stage))
+        routes.extend(site_info.write_info(repo, stage))
         extend_sitemap(stage, routes)
         installer = bootstrap.write_bootstrap(
             stage, records, checked,
-            bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS))
+            bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS),
+            asset_resolver=getattr(artifact_reader, "asset_resolver", None),
+            artifact_reader=(lambda url, limit, *, expected_size: artifact_reader(
+                url, limit, ASSET_HOSTS, expected_size=expected_size)) if verify else None)
         if trust_publication is not None:
             import trusted_site
             registry.require(verify and trust_verifier is not None and trust_inspector is not None,
@@ -490,11 +629,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
                  "bootstrap_version": installer["version"] if installer else None,
                  "discovery_policy": snapshot["policy"], "discovery_observed_at": snapshot["observed_at"]}
         registry.write_atomic(stage / "build.json", registry.json_bytes(build))
-        for page in stage.rglob("*.html"):
-            relative = page.relative_to(stage).as_posix()
-            content = registry.read_regular(stage, relative, MAX_HTML_BYTES).decode("utf-8")
-            # Cached HTML must not keep an expired numeric observation visible.
-            registry.write_atomic(page, repository_stars.render_header(content, repository_stars.unknown_snapshot()).encode("utf-8"))
+        _finalize_stage(stage)
         publish_directory(stage, output)
     return build
 

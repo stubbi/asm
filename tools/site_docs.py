@@ -26,7 +26,7 @@ GROUPS = (
         ("Use a source package", SOURCE + "docs/use-a-package.md",
          "Select an exact dependency and check the resulting program."),
         ("Prepare a package release", SOURCE + "docs/specs/registry.md#package-and-prepare-a-record",
-         "Prepare source-bound artifacts and submit a registry pull request."),
+         "Prepare source-bound artifacts and a local release record without uploading."),
     )),
     ("reference", "Reference", (
         ("CLI source", "../reference/",
@@ -74,7 +74,20 @@ def write_docs(repo: Path, stage: Path, *, registry_version=1) -> list[str]:
             body += ('<a class="directory-card" href="' + escape(href, quote=True) + '"><h3>'
                      + escape(title) + '</h3><p>' + escape(description) + '</p></a>')
         body += '</div></section>'
-    content = package_pages._page("docs/", "Documentation", "Install Asm, use assembly packages, and read CLI and registry references.",
-                                  body, package_pages._chrome(stage), active_nav="Docs", scripts=False)
+    description = "Find installation, first-project, package, target, and security guides. Detailed instructions open in the maintained repository documentation."
+    local_urls = {"../guide.html": "https://asm.build/guide", "../reference/": "https://asm.build/reference",
+                  "../agents.md": "https://asm.build/agents.md"}
+    items = []
+    for _, _, cards in GROUPS:
+        for title, href, card_description in cards:
+            title, href, card_description = v2.get(title, (title, href, card_description))
+            url = local_urls.get(href, href)
+            registry.require(url.startswith("https://"), "documentation item needs an absolute URL")
+            items.append({"@type": "ListItem", "position": len(items) + 1, "name": title, "url": url})
+    structured = {"@context": "https://schema.org", "@type": "CollectionPage", "url": "https://asm.build/docs",
+                  "name": "Documentation", "description": description, "inLanguage": "en",
+                  "mainEntity": {"@type": "ItemList", "numberOfItems": len(items), "itemListElement": items}}
+    content = package_pages._page("docs/", "Installation and package documentation", description,
+                                  body, package_pages._chrome(stage), active_nav="Docs", scripts=False, structured_data=structured)
     registry.write_atomic(stage / "docs/index.html", content.encode("utf-8"))
     return ["docs/"]

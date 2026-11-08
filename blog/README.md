@@ -57,10 +57,10 @@ python3 tools/build_site.py --output build/blog-preview --include-blog-drafts
 2. Serve the preview:
 
 ```sh
-python3 -m http.server 8766 --bind 127.0.0.1 --directory build/blog-preview
+python3 tools/serve_site.py --site build/blog-preview --state build/blog-preview-state/events.sqlite3 --port 8766
 ```
 
-3. Open <http://127.0.0.1:8766/blog/>.
+3. Open <http://127.0.0.1:8766/blog>.
 4. Check the article on a narrow screen.
 5. Check its links, author, summary, headings, and dates.
 
@@ -81,7 +81,7 @@ The preview flag belongs only in local preview commands.
 5. Merge the approved change into `main`.
 
 The existing Pages workflow builds and publishes changes pushed to `main`.
-An article at `blog/posts/your-post-name.md` becomes `/blog/articles/your-post-name/`.
+An article at `blog/posts/your-post-name.md` becomes `/blog/articles/your-post-name`.
 Keep its filename stable after publication to preserve links.
 For a later revision, keep `date` and set `updated` to the revision date.
 The author field becomes a public byline.

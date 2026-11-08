@@ -153,7 +153,7 @@ def _download_note(snapshot, prefix, *, retained=False):
     complete = snapshot.get("complete") if retained else snapshot.get("coverage", {}).get("complete")
     note += ('The stated period is fully covered.' if complete else 'Coverage is incomplete. Counts are observed minimums.')
     if snapshot.get("stale"): note += ' These observations are stale.'
-    note += ' ' + package_pages._anchor("How counts work", prefix + "discovery/")
+    note += ' ' + package_pages._anchor("Discovery data and coverage", prefix + "discovery/")
     return '<p class="package-note">' + note + '</p>'
 
 
@@ -164,8 +164,8 @@ def _dependency_note(metadata):
             ' Counts describe distinct active packages with declared direct dependencies. They do not establish suitability or safety.</p>')
 
 
-def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> str:
-    """Render a complete native document; unknown discovery identities are 404s."""
+def _render_explore(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> tuple[str, bool]:
+    """Render a document and derive indexing eligibility from its actual rows."""
     keyword = kind.split("/", 1)[1] if isinstance(kind, str) and kind.startswith("keywords/") else None
     architecture = kind.split("/", 1)[1] if isinstance(kind, str) and kind.startswith("architectures/") else None
     if kind not in BASE and not _identifier(keyword) and architecture not in ARCHITECTURES: raise KeyError(kind)
@@ -184,7 +184,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
     titles = {"explore": "Explore packages", "categories": "Categories", "keywords": "Keywords", "architectures": "Architectures",
               "depended-on": "Most depended on", "downloaded": "Most downloaded packages"}
     title = (architecture_map[architecture]["name"] + " packages" if architecture else
-             keywords[keyword]["name"] if keyword else titles[kind])
+             "Packages tagged " + keywords[keyword]["name"] if keyword else titles[kind])
     captions = {"explore": "Find packages by activity, purpose, and dependencies.",
                 "categories": "Purpose categories, ranked by active package membership.",
                 "keywords": "Declared keywords, ranked by active package membership.",
@@ -193,22 +193,40 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                 "downloaded": "Since collection started · Asm completed transfers"}
     caption = ("Latest active releases with matching architecture artifacts." if architecture else
                "Active packages with this declared keyword." if keyword else captions[kind])
+    page_titles = {"explore": "Explore assembly packages", "categories": "Assembly package categories",
+                   "keywords": "Assembly package keywords", "architectures": "Assembly packages by architecture",
+                   "depended-on": "Assembly packages by direct dependents",
+                   "downloaded": "Package downloads since collection began"}
+    descriptions = {
+        "explore": "Compare assembly packages by release activity, purpose, architecture, and direct dependencies. Missing measurements and declaration coverage remain explicit.",
+        "categories": "Browse purpose categories for active assembly packages. Category counts describe distinct package membership rather than popularity or compatibility.",
+        "keywords": "Browse declared keywords attached to active assembly packages. Keyword counts describe package membership rather than search activity.",
+        "architectures": "Browse active assembly packages by the architecture of their declared artifacts. Operating systems and artifact formats remain explicit.",
+        "depended-on": "Find assembly packages used as direct dependencies of active releases. Check declared dependency coverage and source-bound package versions.",
+        "downloaded": "Inspect Asm completed transfers since collection began. Rankings retain collection coverage and exclude unknown earlier or external-host activity.",
+    }
+    if architecture:
+        label = architecture_map[architecture]["name"]
+        page_title = label + " assembly packages"
+        description = "Find active assembly packages with declared " + label + " artifacts. Compare operating systems, artifact formats, and exact versions before use."
+    elif keyword:
+        label = keywords[keyword]["name"]
+        page_title = "Assembly packages tagged " + label
+        description = 'Browse active assembly packages with the declared keyword "' + label + '". Keyword membership does not establish target compatibility or package quality.'
+    else:
+        page_title, description = page_titles[kind], descriptions[kind]
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(caption) + '</p></header>'
-    body += '<nav class="package-section-nav" aria-label="Explore packages">' + ''.join(
-        package_pages._anchor(label, prefix + target, attrs=' aria-current="page"' if selected == kind else '')
-        for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"),
-            ("Categories", "browse/categories/", "categories"), ("Keywords", "browse/keywords/", "keywords"),
-            ("Architectures", "browse/architectures/", "architectures"),
-            ("Most depended on", "browse/depended-on/", "depended-on"), ("Downloads since collection", "browse/downloaded/", "downloaded"))) + '</nav>'
+    body += package_pages._browse_navigation(route, kind.split('/')[0])
     ranked_keywords = sorted(keywords.values(), key=lambda row: (-len(row["packages"]), row["id"]))
     ranked_categories = sorted(categories, key=lambda row: (-len(row["packages"]), row["id"]))
     depended = sorted((name for name, row in dependents.items() if row["count"] is not None and row["count"] > 0), key=lambda name: (-dependents[name]["count"], name))
     dependent_signals = {name: count_html(dependents[name]["count"], lower_bound=not dependents[name]["exact"]) +
                          (' dependent' if dependents[name]["count"] == 1 else ' dependents') for name in depended}
+    indexable = True
     if kind == "explore":
         def group(key, heading, caption, destination, content, note=""):
-            return ('<section class="discovery-group" aria-labelledby="explore-' + key + '"><div class="discovery-group-header"><div class="discovery-group-heading"><h2 id="explore-' + key + '">' + heading + '</h2>' +
-                    package_pages._anchor("View all", prefix + destination, attrs=' class="discovery-more" aria-label="View all ' + heading.lower() + '"') + '</div>'
+            return ('<section class="discovery-group" aria-labelledby="explore-' + key + '"><div class="discovery-group-header"><div class="discovery-group-heading"><h2 id="explore-' + key + '">' +
+                    package_pages._anchor(heading, prefix + destination, attrs=' class="discovery-heading-link" aria-label="View all ' + heading.lower() + '"') + '</h2></div>'
                     '<p class="discovery-group-caption">' + caption + '</p></div>' + content + note + '</section>')
         groups = []
         for key, heading, feed_caption in (("new", "New packages", "First GitHub release"), ("popular", "Most downloaded", "Last 30 days"), ("updated", "Recently updated", "Latest GitHub release")):
@@ -243,7 +261,9 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
         architecture_content = (_directory_cards(prefix, architectures, "architectures") if architectures else
                                 '<p class="discovery-group-note">No active packages declare a supported architecture.</p>')
         groups.append(group("architectures", "Browse by architecture", "Declared release targets", "browse/architectures/", architecture_content))
-        body += '<div class="discovery-groups">' + ''.join(groups) + '</div>' + _download_note(snapshot, prefix) + _dependency_note(metadata)
+        body += ('<div class="discovery-groups">' + ''.join(groups[:3]) + '</div>'
+                 '<div class="discovery-groups discovery-secondary">' + ''.join(groups[i] for i in (5, 6, 4, 3)) + '</div>'
+                 + _download_note(snapshot, prefix) + _dependency_note(metadata))
     elif kind in {"categories", "keywords", "architectures"}:
         rows = architectures if kind == "architectures" else ranked_categories if kind == "categories" else ranked_keywords
         empty = "No active packages declare a supported architecture." if kind == "architectures" else "No " + kind + " are declared for active packages."
@@ -259,6 +279,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
     elif keyword:
         body += _package_cards(prefix, sorted(keywords[keyword]["packages"]), active, {})
     elif kind == "depended-on":
+        indexable = bool(depended)
         body += _dependency_note(metadata)
         empty = ("Direct dependency declarations are unavailable." if metadata["dependency_coverage"]["known"] == 0 else
                  "No direct dependents appear in the available declarations.")
@@ -272,12 +293,20 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                 registry.require(retained.get("observed_at") is not None, "retained counts lack a reporting cutoff")
                 values[name] = count
         names = sorted(values, key=lambda name: (-values[name], name))
+        indexable = bool(names)
         signals = {name: count_html(values[name], lower_bound=not retained["complete"]) +
                    (' download' if values[name] == 1 else ' downloads') for name in names}
         body += _package_cards(prefix, names, active, signals) if names else '<p class="package-empty">No positive completed transfers are available for this observation period.</p>'
         body += '<p class="package-note">These cumulative observations cover configured Asm delivery sources since collection began. Unreported earlier or external transfers are outside this metric. Transfers do not measure people or installations.</p>'
-    body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("How counts work", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
-    return package_pages._page(route, title, caption, body, package_pages._chrome(stage), active_nav="Explore", scripts=False)
+    body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("Discovery data and coverage", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
+    html = package_pages._page(route, page_title, description, body, package_pages._chrome(stage),
+                               active_nav="Explore", scripts=False, noindex=not indexable)
+    return html, indexable
+
+
+def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict | None, retained: dict | None, kind="explore") -> str:
+    """Render a complete native document; unknown discovery identities are 404s."""
+    return _render_explore(stage, index, snapshot, metadata, retained, kind)[0]
 
 
 def write_explore(stage: Path, index: dict, snapshot: dict, metadata: dict, retained: dict) -> list[str]:
@@ -286,8 +315,8 @@ def write_explore(stage: Path, index: dict, snapshot: dict, metadata: dict, reta
     kinds.extend("architectures/" + group["id"] for group in architecture_groups(index))
     outputs = []
     for kind in kinds:
-        html = explore_page(stage, index, snapshot, metadata, retained, kind)
+        html, indexable = _render_explore(stage, index, snapshot, metadata, retained, kind)
         route = "explore/" if kind == "explore" else "browse/" + kind + "/"
-        outputs.append((route, html.encode("utf-8")))
-    for route, html in outputs: registry.write_atomic(stage / route / "index.html", html)
-    return [route for route, _ in outputs]
+        outputs.append((route, html.encode("utf-8"), indexable))
+    for route, html, _ in outputs: registry.write_atomic(stage / route / "index.html", html)
+    return [route for route, _, indexable in outputs if indexable]

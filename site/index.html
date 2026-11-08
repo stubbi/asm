@@ -4,10 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f5f4">
-    <meta name="description" content="Find assembly packages, inspect their source and release evidence, and build with the Asm command-line tool.">
+    <meta name="description" content="Find assembly packages by architecture and target. Inspect exact versions, source, licenses, and release evidence with the Asm registry and CLI.">
+    <meta property="og:site_name" content="Asm">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="asm — Packages for assembly">
-    <meta property="og:description" content="Find assembly packages, inspect their source and release evidence, and build with the Asm command-line tool.">
+    <meta property="og:title" content="Assembly package registry and CLI | Asm">
+    <meta property="og:description" content="Find assembly packages by architecture and target. Inspect exact versions, source, licenses, and release evidence with the Asm registry and CLI.">
     <meta property="og:url" content="https://asm.build/">
     <meta property="og:image" content="https://asm.build/social-preview.png">
     <meta property="og:image:type" content="image/png">
@@ -15,18 +16,22 @@
     <meta property="og:image:height" content="640">
     <meta property="og:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="asm — Packages for assembly">
-    <meta name="twitter:description" content="Find assembly packages, inspect their source and release evidence, and build with the Asm command-line tool.">
+    <meta name="twitter:title" content="Assembly package registry and CLI | Asm">
+    <meta name="twitter:description" content="Find assembly packages by architecture and target. Inspect exact versions, source, licenses, and release evidence with the Asm registry and CLI.">
     <meta name="twitter:image" content="https://asm.build/social-preview.png">
     <meta name="twitter:image:alt" content="Asm package search, with the &gt;asm wordmark and asm.build.">
     <link rel="canonical" href="https://asm.build/">
-    <link rel="alternate" type="text/markdown" href="llms.txt" title="Asm agent instructions">
+    <link rel="alternate" type="application/atom+xml" href="blog/atom.xml" title="Asm blog">
+    <link rel="help" type="text/plain" href="llms.txt" title="Asm agent instructions">
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="stylesheet" href="styles.css">
     <script src="navigation.js"></script>
     <script src="repository-stars.js" defer></script>
     <script src="app.js" defer></script>
-    <title>asm — Packages for assembly</title>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebSite","name":"Asm","alternateName":"asm.build","url":"https://asm.build/"}
+    </script>
+    <title>Assembly package registry and CLI | Asm</title>
   </head>
   <body class="registry-home">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -43,7 +48,7 @@
         </form>
         <a class="header-search-fallback" data-header-search-fallback href="packages/">Browse packages</a>
         <nav aria-label="Main navigation">
-          <a href="explore/">Explore</a>
+          <a href="explore/" aria-label="Explore assembly packages">Explore</a>
           <a href="stats/">Stats</a>
           <a href="blog/">Blog</a>
           <a href="docs/">Docs</a>
@@ -58,10 +63,13 @@
           <form class="package-search-form" id="registry-controls" role="search">
             <h1 id="hero-heading"><label for="package-search">Find assembly packages</label></h1>
             <p class="registry-description">The package registry and command-line tool for assembly projects.</p>
-            <div class="search-box">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              <input id="package-search" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Name or description" aria-controls="package-list" disabled>
-              <button type="submit" id="search-submit" disabled>Search</button>
+            <div class="hero-search-slot">
+              <div class="search-box">
+                <span class="compact-search-label" id="compact-search-label">Search</span>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <input id="package-search" form="registry-controls" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false" placeholder="Name or description" aria-controls="package-list" disabled>
+                <button type="submit" id="search-submit" form="registry-controls" aria-label="Search" disabled><span class="search-submit-label">Search</span><svg class="compact-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></button>
+              </div>
             </div>
           </form>
           <p class="hero-browse">Or <a href="packages/">browse all packages</a></p>
@@ -76,11 +84,6 @@
           <div><dt>Release files</dt><dd data-catalog-stat="files">—</dd></div>
           <div><dt>Package targets</dt><dd data-catalog-stat="targets">—</dd></div>
         </dl>
-      </section>
-
-      <section class="home-start container" id="start" aria-labelledby="home-start-heading">
-        <div><h2 id="home-start-heading">Build with Asm</h2><p>Set up the command-line tool and create your first project.</p></div>
-        <div class="home-start-actions"><a class="button button-secondary" href="https://github.com/stubbi/asm#install-the-command">Install Asm <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/stubbi/asm#quick-start">Getting started <span aria-hidden="true">↗</span></a></div>
       </section>
 
       <section class="discovery container" id="catalog" aria-labelledby="catalog-heading">
@@ -107,23 +110,18 @@
           <p class="discovery-state">Open the complete lists for current discovery data.</p>
           <div class="discovery-groups">
             <section class="discovery-group" data-discovery-feed="new" aria-labelledby="browse-new">
-              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-new">New packages</h3><a class="discovery-more" href="browse/new/" aria-label="View all new packages">View all</a></div><p class="discovery-group-caption">First GitHub release</p></div>
+              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-new"><a class="discovery-heading-link" href="browse/new/" aria-label="View all new packages">New packages</a></h3></div><p class="discovery-group-caption">First GitHub release</p></div>
               <p class="discovery-group-note">Open the complete list to inspect its current snapshot.</p>
             </section>
             <section class="discovery-group" data-discovery-feed="popular" aria-labelledby="browse-popular">
-              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-popular">Most downloaded</h3><a class="discovery-more" href="browse/popular/" aria-label="View all most downloaded packages">View all</a></div><p class="discovery-group-caption">Last 30 days</p></div>
+              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-popular"><a class="discovery-heading-link" href="browse/popular/" aria-label="View all most downloaded packages">Most downloaded</a></h3></div><p class="discovery-group-caption">Last 30 days</p></div>
               <p class="discovery-group-note">Open the complete list to inspect its current snapshot.</p>
             </section>
             <section class="discovery-group" data-discovery-feed="updated" aria-labelledby="browse-updated">
-              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-updated">Recently updated</h3><a class="discovery-more" href="browse/updated/" aria-label="View all recently updated packages">View all</a></div><p class="discovery-group-caption">Latest GitHub release</p></div>
+              <div class="discovery-group-header"><div class="discovery-group-heading"><h3 id="browse-updated"><a class="discovery-heading-link" href="browse/updated/" aria-label="View all recently updated packages">Recently updated</a></h3></div><p class="discovery-group-caption">Latest GitHub release</p></div>
               <p class="discovery-group-note">Open the complete list to inspect its current snapshot.</p>
             </section>
           </div>
-          <div class="discovery-directories">
-            <nav class="discovery-directory" aria-label="Browse packages by purpose" aria-labelledby="browse-purpose-heading"><div class="discovery-directory-header"><h3 id="browse-purpose-heading">Browse by purpose</h3><a class="discovery-more" href="browse/categories/" aria-label="View all purpose categories">View all</a></div><p class="discovery-directory-note">Open all categories to browse packages by purpose.</p></nav>
-            <!-- architecture-browse:start --><nav class="discovery-directory" aria-label="Browse packages by architecture" aria-labelledby="browse-architecture-heading"><div class="discovery-directory-header"><h3 id="browse-architecture-heading">Browse by architecture</h3><a class="discovery-more" href="browse/architectures/" aria-label="View all architectures">View all</a></div><p class="discovery-directory-note">Open all architectures to browse declared package targets.</p></nav><!-- architecture-browse:end -->
-          </div>
-          <div class="discovery-footer"><details class="discovery-data"><summary>Data and coverage</summary><p class="discovery-freshness">Complete lists show their observation time and coverage.</p><a class="discovery-methods" href="discovery/">How counts work</a></details><a class="discovery-methods" href="explore/">More ways to explore</a></div>
         </div>
         <div id="package-list" class="package-list" hidden></div>
         <button class="reset-search" id="reset-search" type="button" hidden>Back to browse</button>
@@ -140,9 +138,9 @@
         </div>
         <div class="footer-navs">
           <nav aria-label="Learn"><h2>Learn</h2><a href="docs/">Docs</a><a href="guide.html">Guide</a><a href="https://github.com/stubbi/asm#install-the-command">Install Asm</a><a href="reference/">CLI source</a><a href="agents.md">For AI agents</a></nav>
-          <nav aria-label="Registry"><h2>Registry</h2><a href="explore/">Explore</a><a href="packages/">All packages</a><a href="browse/new/">New packages</a><a href="browse/popular/">Most downloaded</a><a href="stats/">Statistics</a></nav>
-          <nav aria-label="Project"><h2>Project</h2><a href="guide.html#why">Why Asm</a><a href="blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="sponsors.html">Sponsorship</a></nav>
-          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="https://github.com/stubbi/asm/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/stubbi/asm#status">Supported hosts</a></nav>
+          <nav aria-label="Registry"><h2>Registry</h2><a href="explore/" aria-label="Explore assembly packages">Explore</a><a href="packages/">All packages</a><a href="browse/new/">New packages</a><a href="browse/popular/">Most downloaded</a><a href="stats/">Statistics</a></nav>
+          <nav aria-label="Project"><h2>Project</h2><a href="about/">About Asm</a><a href="blog/">Blog</a><a href="https://github.com/stubbi/asm">Source code</a><a href="https://github.com/stubbi/asm/blob/main/docs/roadmap.md">Roadmap</a><a href="sponsors.html">Sponsorship</a></nav>
+          <nav aria-label="Help"><h2>Help</h2><a href="https://github.com/stubbi/asm/issues">Report an issue</a><a href="https://github.com/stubbi/asm/blob/main/docs/specs/security.md">Security model</a><a href="contact/">Contact</a><a href="privacy/">Privacy</a></nav>
         </div>
       </div>
       <div class="footer-support">

@@ -5,7 +5,7 @@
 Asm is the package registry and command-line tool for assembly projects.
 Create and test projects, inspect packages, and download exact artifacts.
 
-[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md) · [Sponsor Asm](https://asm.build/sponsors.html)
+[Website](https://asm.build) · [Quick start](#quick-start) · [Status](#status) · [Why Asm](docs/why-asm.md) · [Security model](docs/specs/security.md) · [Sponsor Asm](https://asm.build/sponsors)
 
 Packages declare their targets and connect release records to exact source and artifact digests.
 The [project purpose](docs/why-asm.md) explains our technical assumptions about AI-assisted assembly.
@@ -276,7 +276,7 @@ The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide]
 ## Support Asm
 
 Help fund maintainer time, registry operations, security work, and documentation.
-The [sponsorship page](https://asm.build/sponsors.html) lists company and individual options, recognition, and terms.
+The [sponsorship page](https://asm.build/sponsors) lists company and individual options, recognition, and terms.
 Sponsorships are arranged by email.
 Confirm availability and payment details before you pay.
 

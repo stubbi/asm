@@ -23,6 +23,7 @@ class Page(HTMLParser):
     def __init__(self, html):
         super().__init__()
         self.links, self.scripts, self.canonicals, self.ids, self.mains, self.h1s, self.text = [], [], [], [], [], [], []
+        self.robots = []
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
@@ -33,6 +34,7 @@ class Page(HTMLParser):
         if "id" in attrs: self.ids.append(attrs["id"])
         if tag == "main": self.mains.append(attrs.get("id"))
         if tag == "h1": self.h1s.append(attrs)
+        if tag == "meta" and attrs.get("name") == "robots": self.robots.append(attrs.get("content"))
 
     def handle_data(self, text): self.text.append(text)
 
@@ -79,7 +81,7 @@ class RegistryExploreTests(unittest.TestCase):
     def test_write_routes_are_native_canonical_and_link_to_complete_discovery_views(self):
         routes = self.module().write_explore(self.stage, self.index, self.snapshot, self.metadata, self.retained)
         self.assertEqual(set(routes), {"explore/", "browse/categories/", "browse/keywords/", "browse/keywords/assembly/",
-                                      "browse/keywords/math/", "browse/depended-on/", "browse/downloaded/",
+                                      "browse/keywords/math/", "browse/downloaded/",
                                       "browse/architectures/", "browse/architectures/aarch64/", "browse/architectures/x86_64/", "browse/architectures/riscv64/"})
         for route in routes:
             with self.subTest(route=route):
@@ -99,7 +101,7 @@ class RegistryExploreTests(unittest.TestCase):
 
     def test_dashboard_uses_native_cards_and_correct_first_or_latest_publication_signal(self):
         html = self.render()
-        self.assertIn('name="description" content="Find packages by activity, purpose, and dependencies."', html)
+        self.assertIn('name="description" content="Compare assembly packages by release activity, purpose, architecture, and direct dependencies.', html)
         self.assertIn('class="discovery-groups"', html)
         self.assertEqual(html.count('class="discovery-group"'), 7)
         self.assertIn('class="discovery-item"', html)
@@ -109,6 +111,42 @@ class RegistryExploreTests(unittest.TestCase):
         self.assertIn("Last 30 days", html)
         self.assertIn("incomplete", html.lower())
         self.assertIn("≥ 2", html)
+
+    def test_search_metadata_identifies_the_keyword_architecture_and_metric_scope(self):
+        keyword = self.render("keywords/math").split("</head>", 1)[0]
+        categories = self.render("categories").split("</head>", 1)[0]
+        architecture = self.render("architectures/aarch64").split("</head>", 1)[0]
+        downloaded = self.render("downloaded").split("</head>", 1)[0]
+        self.assertIn("<title>Assembly packages tagged math", keyword)
+        self.assertIn('declared keyword &quot;math&quot;', keyword)
+        self.assertIn("<title>Assembly package categories", categories)
+        self.assertIn("purpose categories", categories)
+        self.assertIn("<title>ARM64 (aarch64) assembly packages", architecture)
+        self.assertIn("operating systems", architecture)
+        self.assertIn("artifact formats", architecture)
+        self.assertIn("<title>Package downloads since collection began", downloaded)
+        self.assertIn("collection coverage", downloaded)
+        self.assertNotIn("<title>Most downloaded packages", downloaded)
+
+    def test_discovery_navigation_keeps_order_and_marks_directory_parents(self):
+        destinations = None
+        for kind in ("explore", "categories", "keywords", "keywords/math", "architectures", "architectures/aarch64", "depended-on", "downloaded"):
+            with self.subTest(kind=kind):
+                page = HierarchyParser()
+                page.feed(self.render(kind))
+                nav = next(item for item in page.elements if item["tag"] == "nav" and item["attrs"].get("aria-label") == "Explore packages")
+                links = [item for item in page.elements if item["tag"] == "a" and id(nav) in item["ancestors"]]
+                route = "explore/" if kind == "explore" else "browse/" + kind + "/"
+                actual = [urlsplit(urljoin("https://asm.build/" + route, item["attrs"]["href"])).path for item in links]
+                if destinations is None:
+                    destinations = actual
+                self.assertEqual(actual, destinations)
+                current = [item for item in links if "aria-current" in item["attrs"]]
+                self.assertEqual(len(current), 1)
+                parent = "explore/" if kind == "explore" else "browse/" + kind.split("/")[0] + "/"
+                self.assertEqual(urlsplit(urljoin("https://asm.build/" + route, current[0]["attrs"]["href"])).path, "/" + parent)
+                self.assertEqual(current[0]["attrs"]["aria-current"], "location" if "/" in kind else "page")
+
 
     def test_dashboard_group_headers_keep_headings_routes_and_scope_above_rows(self):
         page = HierarchyParser()
@@ -196,6 +234,49 @@ class RegistryExploreTests(unittest.TestCase):
         self.snapshot["categories"] = []
         self.assertIn("No keywords", self.render("keywords"))
         self.assertIn("No categories", self.render("categories"))
+
+    def test_empty_metric_rankings_keep_native_pages_without_indexing_unknown_or_zero_as_results(self):
+        for known_zero in (False, True):
+            with self.subTest(known_zero=known_zero):
+                for row in self.retained["packages"].values(): row["total"] = 0 if known_zero else None
+                for row in self.metadata["dependents"]:
+                    row.update(count=0 if known_zero else None, exact=known_zero)
+                self.metadata["dependency_coverage"].update(known=3 if known_zero else 0, complete=known_zero)
+                routes = self.module().write_explore(self.stage, self.index, self.snapshot, self.metadata, self.retained)
+                for kind in ("downloaded", "depended-on"):
+                    route = "browse/" + kind + "/"
+                    content = (self.stage / route / "index.html").read_text()
+                    page = Page(content)
+                    self.assertEqual(page.robots, ["noindex"])
+                    self.assertNotIn(route, routes)
+                    self.assertEqual(page.canonicals, ["https://asm.build/" + route])
+                    self.assertEqual(page.mains, ["main"])
+                    self.assertIn("../../packages/", page.links)
+                    self.assertNotIn('class="discovery-item"', content)
+                self.assertIn("explore/", routes)
+                self.assertEqual(Page((self.stage / "explore/index.html").read_text()).robots, [])
+
+    def test_positive_qualified_rankings_restore_indexing_from_the_actual_rendered_membership(self):
+        for row in self.retained["packages"].values(): row["total"] = None
+        empty_routes = self.module().write_explore(self.stage, self.index, self.snapshot, self.metadata, self.retained)
+        for kind in ("downloaded", "depended-on"):
+            route = "browse/" + kind + "/"
+            self.assertNotIn(route, empty_routes)
+            self.assertEqual(Page((self.stage / route / "index.html").read_text()).robots, ["noindex"])
+        self.retained["packages"]["stubbi/math"]["total"] = 1
+        self.metadata["dependents"][2].update(packages=["stubbi/asm"], count=1, exact=False)
+        self.metadata["dependency_coverage"]["known"] = 1
+        # Cached feed labels do not define the rendered dependency ranking.
+        self.metadata["feeds"]["depended_on"] = []
+        routes = self.module().write_explore(self.stage, self.index, self.snapshot, self.metadata, self.retained)
+        for kind in ("downloaded", "depended-on"):
+            route = "browse/" + kind + "/"
+            content = (self.stage / route / "index.html").read_text()
+            self.assertIn(route, routes)
+            self.assertEqual(Page(content).robots, [])
+            self.assertEqual(content.count('class="discovery-item"'), 1)
+            self.assertIn('class="discovery-name">stubbi/math', content)
+            self.assertIn("≥ 1", content)
 
     def test_unknown_keyword_and_malformed_routes_are_missing_not_empty_successes(self):
         for kind in ("keywords/unknown", "keywords/../math", "keywords/math/extra", "keywords/<script>", "unknown"):
