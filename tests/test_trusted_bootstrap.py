@@ -45,13 +45,13 @@ print("1441332955")
                          "sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
                          "url": f"https://github.com/stubbi/asm/releases/download/v{version}/asm-verify-{version}-{target}"}
         transport = self.tool_double.replace('#!/usr/bin/python3', f'#!{sys.executable}')
-        transport = transport.replace('assert url in (cfg["artifact_url"], cfg["bundle_url"])', '''if url == cfg["verifier_url"]:
+        transport = transport.replace('assert url in artifact_urls + bundle_urls', '''if url == cfg["verifier_url"]:
         if cfg.get("network_error"): sys.exit(22)
         data = pathlib.Path(cfg["verifier_path"]).read_bytes()
         if cfg.get("bad_verifier"): data = b"!" + data[1:]
         output.write_bytes(data)
         sys.exit(0)
-    assert url in (cfg["artifact_url"], cfg["bundle_url"])''')
+    assert url in artifact_urls + bundle_urls''')
         (self.tools / "curl").write_text(transport)
         self.config.update(verifier_url=self.verifier["url"], verifier_path=str(helper))
         # Deliberately remove gh. The production template must not consult it.

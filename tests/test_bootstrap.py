@@ -131,12 +131,23 @@ elif tool == "curl":
     assert "--tlsv1.2" in args and "--max-filesize" in args and "--max-time" in args
     url = args[args.index("--url") + 1]
     output = pathlib.Path(args[args.index("--output") + 1])
-    assert url in (cfg["artifact_url"], cfg["bundle_url"])
+    artifact_urls = (cfg["artifact_url"], cfg.get("artifact_api_url"))
+    bundle_urls = (cfg["bundle_url"], cfg.get("bundle_api_url"))
+    assert url in artifact_urls + bundle_urls
+    if url in (cfg.get("artifact_api_url"), cfg.get("bundle_api_url")):
+        assert args[args.index("--header") + 1] == "Accept: application/octet-stream"
+        assert "X-GitHub-Api-Version: 2022-11-28" in args
+    response = cfg.get("responses", {}).get(url, {})
+    if "--write-out" in args:
+        print(str(response.get("status", 200)) + " " + str(response.get("connect", "000")), end="")
+    if response.get("exit_code"):
+        output.write_bytes(b"partial response")
+        sys.exit(response["exit_code"])
     if cfg.get("network_error"):
         sys.exit(22)
-    if url == cfg["artifact_url"]:
+    if url in artifact_urls:
         data = pathlib.Path(cfg["payload_path"]).read_bytes()
-        if cfg.get("corrupt"):
+        if cfg.get("corrupt") or response.get("corrupt"):
             data = b"!" + data[1:]
         if cfg.get("truncated"):
             data = data[:-1]
@@ -162,6 +173,47 @@ else:
 
 
 class BootstrapGenerationTests(unittest.TestCase):
+    def test_checked_installer_binds_recovery_for_each_artifact_and_the_checked_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp)
+            (stage / "index.html").write_text("<main><h1>Packages</h1></main>")
+            calls = []
+            def resolve(url, limit, *, expected_size):
+                calls.append((url, limit, expected_size))
+                return "https://api.github.com/repos/stubbi/asm/releases/assets/" + ("123" if url.endswith("-linux") else "456")
+            try:
+                selected = bootstrap.write_bootstrap(stage, [release_record()], {("stubbi/asm", "0.2.0")},
+                                                     bundle_reader=lambda url, limit: BUNDLE, asset_resolver=resolve)
+            except TypeError as error:
+                self.fail("The checked installer cannot bind its official recovery endpoints: " + str(error))
+            self.assertEqual(selected["recovery"], {
+                "https://github.com/stubbi/asm/releases/download/v0.2.0/asm-0.2.0-x86_64-linux":
+                    "https://api.github.com/repos/stubbi/asm/releases/assets/123",
+                "https://github.com/stubbi/asm/releases/download/v0.2.0/release-attestation.sigstore.json":
+                    "https://api.github.com/repos/stubbi/asm/releases/assets/456"})
+            self.assertEqual([item[2] for item in calls], [8192, len(BUNDLE)])
+            script = (stage / "install.sh").read_bytes()
+            result = subprocess.run(["/bin/sh", "-n"], input=script, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_recovery_bindings_cannot_add_urls_or_inject_a_different_origin(self):
+        good = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
+        urls = [good["artifacts"][0]["url"], good["bundle_url"]]
+        mapping = dict(zip(urls, ["https://api.github.com/repos/stubbi/asm/releases/assets/123",
+                                  "https://api.github.com/repos/stubbi/asm/releases/assets/456"]))
+        try:
+            bootstrap.render_installer({**good, "recovery": mapping})
+        except registry.RegistryError as error:
+            self.fail("Valid exact recovery bindings must render: " + str(error))
+        for bad in (None, {}, {urls[0]: mapping[urls[0]]}, {**mapping, "https://example.invalid": mapping[urls[0]]},
+                    dict.fromkeys(urls, mapping[urls[0]]),
+                    {**mapping, urls[0]: "https://api.github.com/repos/other/asm/releases/assets/123"},
+                    {**mapping, urls[0]: "https://api.github.com/repos/stubbi/asm/releases/assets/0"},
+                    {**mapping, urls[0]: "https://api.github.com/repos/stubbi/asm/releases/assets/123?token=x"},
+                    {**mapping, urls[0]: "https://api.github.com/repos/stubbi/asm/releases/assets/123';exit"}):
+            with self.subTest(mapping=bad), self.assertRaises(registry.RegistryError):
+                bootstrap.render_installer({**good, "recovery": bad})
+
     def test_only_the_latest_checked_active_cli_can_produce_an_installer(self):
         old, new = release_record("0.1.0"), release_record("0.2.0")
         self.assertIsNone(bootstrap.installer_release([], set()))
@@ -461,6 +513,71 @@ class BootstrapUserFlowTests(unittest.TestCase):
         self.assertEqual(verify["proxy"], "http://proxy.example:8080")
         for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "SIGSTORE_ROOT_FILE", "TUF_ROOT"):
             self.assertNotIn(name, verify["env_keys"])
+
+    def recovery_fixture(self):
+        self.config["artifact_api_url"] = "https://api.github.com/repos/stubbi/asm/releases/assets/123"
+        self.config["bundle_api_url"] = "https://api.github.com/repos/stubbi/asm/releases/assets/456"
+        self.release["recovery"] = {self.config["artifact_url"]: self.config["artifact_api_url"],
+                                     self.config["bundle_url"]: self.config["bundle_api_url"]}
+        try:
+            self.write_script()
+        except registry.RegistryError as error:
+            self.fail("Valid recovery-bound installer cannot be exercised: " + str(error))
+
+    def test_healthy_downloads_never_use_recovery(self):
+        self.recovery_fixture()
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls("curl")
+        self.assertEqual([call["args"][call["args"].index("--url") + 1] for call in calls],
+                         [self.config["artifact_url"], self.config["bundle_url"]])
+        self.assertEqual(self.destination.read_bytes(), PAYLOAD)
+
+    def test_gateway_timeout_and_network_failure_recover_exact_artifact_and_bundle(self):
+        self.recovery_fixture()
+        for url in (self.config["artifact_url"], self.config["bundle_url"]):
+            for code, status, connect in ((22, 502, "000"), (22, 503, "000"), (22, 504, "000"),
+                                           (28, "000", "000"), (6, "000", "000"),
+                                           (7, "000", "000"), (56, "000", 503)):
+                with self.subTest(url=url, exit_code=code, status=status):
+                    for log in (self.tools / "logs").iterdir(): log.unlink()
+                    result = self.run_installer(responses={url: {"exit_code": code, "status": status, "connect": connect}})
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(self.destination.read_bytes(), PAYLOAD)
+                    calls = self.calls("curl")
+                    api_calls = [call for call in calls if "/releases/assets/" in " ".join(call["args"])]
+                    self.assertEqual(len(api_calls), 1)
+                    budgets = [int(call["args"][call["args"].index("--max-time") + 1]) for call in calls]
+                    self.assertEqual(budgets, [60, 60, 60])
+                    self.assertNotIn("GH_TOKEN", api_calls[0]["env_keys"])
+                    self.assertEqual(self.calls("gh")[-1]["args"][:2], ["attestation", "verify"])
+                    self.destination.unlink()
+
+    def test_permission_missing_and_certificate_failures_never_use_recovery(self):
+        self.recovery_fixture()
+        for code, status, connect in ((22, 403, "000"), (22, 404, "000"), (60, "000", "000"),
+                                     (51, "000", "000"), (35, "000", "000"), (56, 403, "000"),
+                                     (56, 401, "000"), (56, 429, "000"), (56, "000", 407)):
+            with self.subTest(exit_code=code, status=status, connect=connect):
+                self.destination.unlink(missing_ok=True)
+                for log in (self.tools / "logs").iterdir(): log.unlink()
+                result = self.run_installer(responses={self.config["artifact_url"]: {"exit_code": code, "status": status,
+                                                                                   "connect": connect}})
+                self.assert_no_install(result)
+                self.assertEqual(len(self.calls("curl")), 1)
+
+    def test_failed_or_corrupt_recovery_and_bad_signature_leave_no_installation(self):
+        self.recovery_fixture()
+        for api_response, verification_error in (({"exit_code": 22, "status": 403}, False),
+                                                  ({"exit_code": 28, "status": "000"}, False),
+                                                  ({"corrupt": True}, False), ({}, True)):
+            with self.subTest(api_response=api_response, verification_error=verification_error):
+                for log in (self.tools / "logs").iterdir(): log.unlink()
+                result = self.run_installer(responses={self.config["artifact_url"]: {"exit_code": 22, "status": 504},
+                                                       self.config["artifact_api_url"]: api_response},
+                                            verification_error=verification_error)
+                self.assert_no_install(result)
+                self.assertEqual(len([call for call in self.calls("curl") if "/releases/assets/" in " ".join(call["args"])]), 1)
 
     def test_same_stream_selects_and_verifies_each_host_without_executing_it(self):
         record = release_record("0.3.0")

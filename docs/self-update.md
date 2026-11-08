@@ -64,6 +64,12 @@ No GitHub login is required for this bundle-based verification route.
 A missing or unsupported verifier stops the update.
 There is no checksum-only fallback.
 
+The bootstrap installer can recover a transient GitHub permalink failure through the exact public release-asset API.
+The site build fixes the recovery endpoint to the same release asset before publishing the installer.
+Size, digest, and signed-provenance checks remain mandatory.
+An unavailable recovery endpoint stops installation without replacing an existing command.
+This bootstrap recovery does not change the download behavior of an already published native CLI.
+
 ## Verification contract
 
 The package is fixed to `stubbi/asm`.

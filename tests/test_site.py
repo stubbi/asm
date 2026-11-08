@@ -472,6 +472,28 @@ class ReleaseAssetRecoveryTests(unittest.TestCase):
             self.assertEqual(headers["Accept-encoding"], "identity")
             self.assertTrue({"authorization", "cookie", "referer"}.isdisjoint(name.lower() for name in headers))
 
+    def test_installer_endpoint_is_bound_without_downloading_replacement_bytes(self):
+        opener = self.Opener([(self.metadata_url, self.Response(self.metadata_url, json.dumps(self.release()).encode()))])
+        try:
+            endpoint = build_site.release_asset_url(self.url, 16, expected_size=3, opener=opener)
+        except AttributeError as error:
+            self.fail("Installer generation needs the existing exact release-asset binding: " + str(error))
+        self.assertEqual(endpoint, "https://api.github.com/repos/stubbi/asm/releases/assets/123")
+        self.assertEqual(len(opener.requests), 1)
+        self.assertNotIn("Authorization", opener.requests[0][1])
+
+    def test_installer_endpoint_rejects_a_different_size_or_ambiguous_asset(self):
+        for metadata in ({**self.release(), "draft": True}, {**self.release(), "tag_name": "v0.5.0"},
+                         {**self.release(), "assets": self.release()["assets"] * 2},
+                         {**self.release(), "assets": [{**self.release()["assets"][0], "size": 4}]},
+                         {**self.release(), "assets": [{**self.release()["assets"][0], "state": "starter"}]}):
+            opener = self.Opener([(self.metadata_url, self.Response(self.metadata_url, json.dumps(metadata).encode()))])
+            try:
+                with self.assertRaises(registry.RegistryError):
+                    build_site.release_asset_url(self.url, 16, expected_size=3, opener=opener)
+            except AttributeError as error:
+                self.fail("Installer binding validation is absent: " + str(error))
+
     def test_non_504_errors_never_start_an_api_request(self):
         for status in (403, 404, 500, 502, 503):
             with self.subTest(status=status):
@@ -730,6 +752,33 @@ class SearchDiscoveryTests(unittest.TestCase):
             self.assertIn("Download data is unavailable", page) if kind == "popular" else self.assertIn("No packages have publication data", page)
             self.assertIn("Browse all packages", page)
         self.assertFalse(list(self.output.rglob("*.sqlite*")))
+
+    def test_default_verified_build_binds_all_installer_recovery_routes(self):
+        record = next(item for item in self.records if item["name"] == "stubbi/asm" and item["version"] == "0.6.0")
+        artifacts = [item for item in record["artifacts"] if item["kind"] == "executable"]
+        bundle = b'{"dsseEnvelope":{}}'
+        bundle_url = "https://github.com/stubbi/asm/releases/download/v0.6.0/release-attestation.sigstore.json"
+        assets = [{"id": 100 + number, "name": item["url"].rsplit("/", 1)[1], "state": "uploaded",
+                   "size": item["bytes"], "browser_download_url": item["url"]}
+                  for number, item in enumerate(artifacts)]
+        assets.append({"id": 900, "name": "release-attestation.sigstore.json", "state": "uploaded",
+                       "size": len(bundle), "browser_download_url": bundle_url})
+        metadata = {"tag_name": "v0.6.0", "draft": False, "assets": assets}
+        api = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.0"
+        opener = ReleaseAssetRecoveryTests.Opener([
+            (bundle_url, ReleaseAssetRecoveryTests.Response(bundle_url, bundle)),
+            (api, ReleaseAssetRecoveryTests.Response(api, json.dumps(metadata).encode()))])
+        candidate = Path(self.temporary.name) / "checked-installer-recovery"
+        # Artifact acceptance is a separately tested prerequisite; retain the
+        # real default transport, metadata resolver, generator, and site build.
+        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
+             patch.object(build_site, "build_opener", return_value=opener):
+            build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate, verify=True)
+        script = (candidate / "install.sh").read_text()
+        expected = {"https://api.github.com/repos/stubbi/asm/releases/assets/" + str(item["id"]) for item in assets}
+        self.assertEqual(set(re.findall(r"https://api\.github\.com/repos/stubbi/asm/releases/assets/[0-9]+", script)), expected)
+        self.assertEqual(len(opener.requests), 2, "One metadata snapshot must bind all targets and the exact checked bundle")
+        self.assertEqual(json.loads((candidate / "build.json").read_text())["bootstrap_version"], "0.6.0")
 
     def test_optional_metrics_parse_failure_keeps_the_site_available_without_retrying_urls(self):
         calls = []
