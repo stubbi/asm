@@ -103,6 +103,18 @@ These finite cases are evidence of their exercised behavior, not a general corre
 - Hostile CPU-feature and Go experiment settings first failed the new environment checks.
   Build, notice, and test environments now pin the baseline architectures, disable experiments, and retain the SDK's default FIPS source profile.
 
+## Protected CI follow-up
+
+The first [PR 69](https://github.com/stubbi/asm/pull/69) head was `96bd79441bb19dea1f637ab343b971ee28a7bc9f`.
+Its test merge input was `2151d15b0a9a2b6819e13d61c8163e80f6637667`.
+Its native server, infrastructure, images, CodeQL, Intel, ARM64, and macOS checks passed.
+The [distribution trust run](https://github.com/stubbi/asm/actions/runs/42494377613) retained six registry-fixture failures on each Windows architecture.
+Five failed current-user ownership checks; the expiry case stopped before reaching its delayed response.
+The ordinary temporary parent could belong to Administrators rather than the current user.
+The registry fixture now creates its protected child through `openState` and writes inputs through `writeExclusive`.
+Production ownership, ACL, timing, required-case, and skip checks remain unchanged.
+Local race tests pass, and both Windows test executables compile. Native Windows CI must qualify the correction.
+
 ## Release and deployment boundary
 
 The release profile includes V2 by default, with an explicit V1-only source build still available.

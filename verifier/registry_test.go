@@ -57,10 +57,15 @@ func registryFixture(t *testing.T, beforeTarget ...func()) (*repositoryFixture, 
 		_, _ = w.Write(data)
 	}))
 	t.Cleanup(server.Close)
-	dir := filepath.Dir(statePath(t))
+	// ROOT, CA, and OUTPUT require a protected current-user directory, too.
+	// A Windows t.TempDir parent can instead belong to Administrators.
+	dir := statePath(t)
+	directory, err := openState(dir)
+	must(t, err)
+	must(t, directory.Close())
 	root, ca := filepath.Join(dir, "registry-root.json"), filepath.Join(dir, "ca.pem")
-	must(t, os.WriteFile(root, r.anchor, 0600))
-	must(t, os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600))
+	must(t, writeExclusive(root, r.anchor))
+	must(t, writeExclusive(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})))
 	return r, []string{"registry-target", root, filepath.Join(dir, "registry-state"), testRegistryID,
 		server.URL, name, filepath.Join(dir, "result"), ca}
 }
