@@ -3,6 +3,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -262,6 +263,67 @@ class SigningPreparationTests(unittest.TestCase):
             with self.assertRaises(AdminError):
                 self.snapshot()
         self.assert_no_snapshot()
+
+
+class RealSigningProjectionImageTests(unittest.TestCase):
+    def test_real_projected_signers_use_tmpfs_and_preserve_destinations_on_refusal(self):
+        fixture = os.environ.get("ASM_OPERATOR_PROJECTION_FIXTURES")
+        if not fixture:
+            self.skipTest("Requires the derived Linux image's synthetic root:GID65532 signing projection fixtures.")
+        self.assertEqual(sys.platform, "linux")
+        self.assertEqual((os.geteuid(), os.getegid()), (65532, 65532))
+        base = Path(fixture)
+        with tempfile.TemporaryDirectory(prefix="asm-SYNTHETIC-real-signers-", dir="/tmp") as name:
+            parent = Path(name)
+            fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                signers.require_memory_parent(fd)
+            finally:
+                os.close(fd)
+
+            def prepare(case, destination):
+                return subprocess.run(["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py", "prepare-signers",
+                    "--keys-directory", str(base / case / "keys"),
+                    "--trust-root-directory", str(base / case / "root"),
+                    "--destination-directory", str(destination)], capture_output=True, timeout=25,
+                    env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"})
+
+            destination = parent / "private"
+            result = prepare("signers-valid", destination)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            receipt = json.loads(result.stdout)
+            root = base / "signers-valid/root/..generation_one/registry-root.json"
+            self.assertEqual(receipt["root_sha256"], hashlib.sha256(root.read_bytes()).hexdigest())
+            self.assertEqual({p.name for p in destination.iterdir()}, set(signers.KEYS))
+            self.assertEqual((destination.stat().st_uid, destination.stat().st_mode & 0o7777), (65532, 0o700))
+            original = {}
+            for key in signers.KEYS:
+                path = destination / key
+                info = path.stat()
+                self.assertEqual((info.st_uid, info.st_nlink, info.st_mode & 0o7777), (65532, 1, 0o600))
+                original[key] = path.read_bytes()
+                self.assertEqual(original[key], (base / "signers-valid/keys/..generation_one" / key).read_bytes())
+            # The maintained parser derives each public-key ID from the actual
+            # private output and checks its authorized role in the public root.
+            checked = subprocess.run(["/app/bin/asm-trust", "check-online-keys", str(root), str(destination)],
+                                     capture_output=True, timeout=20)
+            self.assertEqual(checked.returncode, 0, checked.stderr.decode())
+            self.assertEqual(checked.stdout, b"")
+            repeated = prepare("signers-valid", destination)
+            self.assertEqual(repeated.returncode, 1)
+            self.assertEqual(repeated.stdout, b"")
+            self.assertIn(b"preparation refused", repeated.stderr)
+            self.assertEqual({p.name: p.read_bytes() for p in destination.iterdir()}, original)
+            for case in ("signers-wrong-role", "signers-symlink-key", "signers-bad-mode"):
+                with self.subTest(case=case):
+                    refused = parent / case
+                    result = prepare(case, refused)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, b"")
+                    self.assertIn(b"preparation refused", result.stderr)
+                    self.assertFalse(refused.exists())
+                    self.assertEqual({p.name: p.read_bytes() for p in destination.iterdir()}, original)
+            self.assertEqual(list(parent.glob(".asm-signers-*")), [])
 
 
 if __name__ == "__main__":

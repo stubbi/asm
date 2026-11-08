@@ -247,6 +247,58 @@ def make_projection_fixtures(base):
             pointer.symlink_to("../outside")
             os.lchown(pointer, 0, 65532)
 
+    # These fixed seeds are SYNTHETIC TEST ONLY. This derived qualification
+    # target never supplies a production root or a runtime signing credential.
+    import hashlib
+    synthetic = keys / "SYNTHETIC-online-signers"
+    synthetic.mkdir(mode=0o700)
+    names = ("root1", "root2", "root3", "targets", "snapshot", "timestamp")
+    for name in names:
+        seed = hashlib.sha256(("ASM SYNTHETIC ONLINE PROJECTION TEST ONLY " + name).encode()).digest()
+        encoded = synthetic / (name + ".der")
+        encoded.write_bytes(bytes.fromhex("302e020100300506032b657004220420") + seed)
+        encoded.chmod(0o600)
+        private = synthetic / (name + ".pem")
+        command(["openssl", "pkey", "-inform", "DER", "-in", str(encoded), "-out", str(private)])
+        private.chmod(0o600)
+        command(["openssl", "pkey", "-in", str(private), "-pubout", "-out", str(synthetic / (name + ".pub"))])
+    trust = "/app/bin/asm-trust"
+    unsigned, first, signed = (synthetic / name for name in ("unsigned.json", "first.json", "registry-root.json"))
+    command([trust, "prepare-root", str(unsigned), *(str(synthetic / (name + ".pub")) for name in names)])
+    command([trust, "sign-root", str(unsigned), str(synthetic / "root1.pem"), str(first)])
+    command([trust, "sign-root", str(first), str(synthetic / "root2.pem"), str(signed)])
+    for case in ("signers-valid", "signers-wrong-role", "signers-symlink-key", "signers-bad-mode"):
+        root = base / case
+        root.mkdir(mode=0o755)
+        for name in ("keys", "root"):
+            mount = root / name
+            mount.mkdir(mode=0o550)
+            generation = mount / "..generation_one"
+            generation.mkdir(mode=0o550)
+            for directory in (mount, generation):
+                os.chown(directory, 0, 65532)
+            (mount / "..data").symlink_to(generation.name)
+            os.lchown(mount / "..data", 0, 65532)
+            content = ({role + ".pem": (synthetic / (role + ".pem")).read_bytes()
+                        for role in ("targets", "snapshot", "timestamp")} if name == "keys" else
+                       {"registry-root.json": signed.read_bytes()})
+            for filename, body in content.items():
+                path = generation / filename
+                path.write_bytes(body)
+                os.chown(path, 0, 65532)
+                path.chmod(0o440)
+                (mount / filename).symlink_to("..data/" + filename)
+                os.lchown(mount / filename, 0, 65532)
+        key = root / "keys/..generation_one/targets.pem"
+        if case == "signers-wrong-role":
+            key.write_bytes((synthetic / "snapshot.pem").read_bytes())
+        elif case == "signers-symlink-key":
+            key.unlink()
+            key.symlink_to("snapshot.pem")
+            os.lchown(key, 0, 65532)
+        elif case == "signers-bad-mode":
+            key.chmod(0o444)
+
 
 def actual_entrypoint_test(case):
     """Run the published command interface against this test's owned fresh database."""
