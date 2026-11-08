@@ -40,6 +40,8 @@ r4_option:
     call registry_arg_value
     mov rdi, rax
     call r4_parse_requests
+    test eax, eax
+    jnz r2_arguments
 .Lr4_option_yes:
     mov eax, 1
 .Lr4_option_return:
@@ -48,8 +50,9 @@ r4_option:
     pop rbx
     ret
 
-/* RDI=comma-separated names<=2111 bytes. Canonicalize into owned NUL list.
- * Reject invalid names, duplicates and list overflow. Stack48 plus callees.
+/* RDI=comma-separated names<=2111 bytes. EAX0 valid,1 invalid.
+ * Canonicalize into owned NUL list; reject names, duplicates and overflow.
+ * Preserve callee registers. Stack48 plus callees; failures mutate scratch.
  * All copies have checked total capacity; sort is bounded insertion sort. */
 r4_parse_requests:
     push rbx
@@ -62,7 +65,7 @@ r4_parse_requests:
     lea rdx, [rip + r4_request_input]
 .Lr4_request_copy:
     cmp ecx, 2112
-    jae r2_arguments
+    jae .Lr4_request_invalid
     mov al, [rdi + rcx]
     mov [rdx + rcx], al
     inc ecx
@@ -75,7 +78,7 @@ r4_parse_requests:
 .Lr4_request_split:
     mov rax, [rip + g4_request_count]
     cmp rax, 64
-    jae r2_arguments
+    jae .Lr4_request_invalid
     mov [r13 + rax*8], r12
     inc qword ptr [rip + g4_request_count]
 .Lr4_request_separator:
@@ -90,7 +93,7 @@ r4_parse_requests:
     mov rdi, r12
     call g4_feature_name
     test eax, eax
-    jz r2_arguments
+    jz .Lr4_request_invalid
     inc r14
     mov r12, r14
     jmp .Lr4_request_split
@@ -98,7 +101,7 @@ r4_parse_requests:
     mov rdi, r12
     call g4_feature_name
     test eax, eax
-    jz r2_arguments
+    jz .Lr4_request_invalid
     mov ebx, 1
 .Lr4_request_sort_outer:
     cmp rbx, [rip + g4_request_count]
@@ -113,7 +116,7 @@ r4_parse_requests:
     mov rsi, r12
     call r2_lex
     test eax, eax
-    jz r2_arguments
+    jz .Lr4_request_invalid
     js .Lr4_request_store
     mov [r13 + rbp*8], r14
     dec rbp
@@ -136,6 +139,11 @@ r4_parse_requests:
     inc rbx
     jmp .Lr4_request_own
 .Lr4_request_done:
+    xor eax, eax
+    jmp .Lr4_request_return
+.Lr4_request_invalid:
+    mov eax, 1
+.Lr4_request_return:
     pop r15
     pop r14
     pop r13
@@ -230,6 +238,8 @@ r4_read_selection:
     cmp word ptr [rdi], 0x002d
     je .Lr4_selection_check
     call r4_parse_requests
+    test eax, eax
+    jnz r3_lock_error
 .Lr4_selection_check:
     call r4_validate_selection
     pop rbx

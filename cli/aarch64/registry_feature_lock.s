@@ -75,6 +75,7 @@ r4_option:
     ARM_CALL registry_arg_value
     mov x0, x9
     ARM_CALL r4_parse_requests
+    cbnz w9, r2_arguments
 .Lr4_option_yes:
     ARM_IMM w9, 1
 .Lr4_option_return:
@@ -83,8 +84,9 @@ r4_option:
     ARM_RESTORE x19
     ret
 
-/* x0=comma-separated names<=2111 bytes. Canonicalize into owned NUL list.
- * Reject invalid names, duplicates and list overflow. Stack 96 plus callees.
+/* x0=comma-separated names<=2111 bytes. w9=0 valid,1 invalid.
+ * Canonicalize into owned NUL list; reject names, duplicates and overflow.
+ * Preserve x19-x24. Stack96 plus callees; failures mutate scratch.
  * All copies have checked total capacity; sort is bounded insertion sort. */
 r4_parse_requests:
     ARM_SAVE x19
@@ -102,7 +104,7 @@ r4_parse_requests:
     mov w10, w3
     ARM_IMM w11, 2112
     cmp w10, w11
-    b.hs r2_arguments
+    b.hs .Lr4_request_invalid
     mov x16, x0
     add x16, x16, x3
     ldrb w10, [x16]
@@ -134,7 +136,7 @@ r4_parse_requests:
     mov x10, x9
     ARM_IMM x11, 64
     cmp x10, x11
-    b.hs r2_arguments
+    b.hs .Lr4_request_invalid
     mov x16, x22
     add x16, x16, x9, lsl #3
     str x21, [x16]
@@ -171,7 +173,7 @@ r4_parse_requests:
     mov w10, w9
     mov w11, w9
     tst w10, w11
-    b.eq r2_arguments
+    b.eq .Lr4_request_invalid
     ARM_IMM x11, 1
     adds x23, x23, x11
     mov x21, x23
@@ -182,7 +184,7 @@ r4_parse_requests:
     mov w10, w9
     mov w11, w9
     tst w10, w11
-    b.eq r2_arguments
+    b.eq .Lr4_request_invalid
     ARM_IMM w19, 1
 .Lr4_request_sort_outer:
     mov x10, x19
@@ -210,7 +212,7 @@ r4_parse_requests:
     mov w10, w9
     mov w11, w9
     tst w10, w11
-    b.eq r2_arguments
+    b.eq .Lr4_request_invalid
     b.mi .Lr4_request_store
     mov x16, x22
     add x16, x16, x20, lsl #3
@@ -252,6 +254,11 @@ r4_parse_requests:
     adds x19, x19, x11
     b .Lr4_request_own
 .Lr4_request_done:
+    mov w9, #0
+    b .Lr4_request_return
+.Lr4_request_invalid:
+    mov w9, #1
+.Lr4_request_return:
     ARM_RESTORE x24
     ARM_RESTORE x23
     ARM_RESTORE x22
@@ -406,6 +413,7 @@ r4_read_selection:
     cmp w10, w11
     b.eq .Lr4_selection_check
     ARM_CALL r4_parse_requests
+    cbnz w9, r3_lock_error
 .Lr4_selection_check:
     ARM_CALL r4_validate_selection
     ARM_RESTORE x19

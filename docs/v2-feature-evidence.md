@@ -115,6 +115,16 @@ The registry fixture now creates its protected child through `openState` and wri
 Production ownership, ACL, timing, required-case, and skip checks remain unchanged.
 Local race tests pass, and both Windows test executables compile. Native Windows CI must qualify the correction.
 
+Final audit also reproduced a retained-lock error-classification defect.
+Duplicate, empty, or malformed feature names in the lock first returned command usage status 2.
+The shared parser now returns its failure to the caller.
+CLI syntax errors retain status 2; retained lock errors use status 1 with the existing resolve instruction.
+Six sync/build failure cases preserve the lock, cache, output, and execution marker without a registry request.
+Seven invalid CLI cases retain their usage behavior.
+The two new macOS methods passed in 3.046 seconds; 44 Linux ARM dependency methods passed in 81.846 seconds.
+Three x86-64 methods passed through Rosetta in 19.323 seconds, including successful default and explicit selection flows.
+The recorded native macOS failure remains at `/tmp/asm-v4-malformed-selection-macos-red.log`.
+
 ## Release and deployment boundary
 
 The release profile includes V2 by default, with an explicit V1-only source build still available.

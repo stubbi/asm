@@ -377,6 +377,54 @@ class RegistryV2DependencyTests(unittest.TestCase):
         cache.chmod(0o600)
         self.native_cli("build", "--locked")
 
+    def test_malformed_retained_feature_requests_are_lock_errors_and_preserve_project(self):
+        self.write_project({"fixture/a": "*"}, features={"default": [], "ready": []})
+        self.publish_graph([self.package("fixture/a", "1.0.0")], fresh=True)
+        self.graph_cli("resolve")
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        executable = self.project / "build/app"
+        output = b'#!/bin/sh\nprintf executed > "${0%/*}/execution-observed"\n'
+        executable.write_bytes(output)
+        executable.chmod(0o755)
+        cache = self.project / ".asm"
+        before = {str(path.relative_to(cache)): (path.stat().st_mode, path.read_bytes() if path.is_file() else None)
+                  for path in cache.rglob("*")}
+        lock = self.project / "asm.lock"
+        original = lock.read_bytes()
+        for requests in (b"default,default", b"default,,ready", b"Default"):
+            forged = original.replace(b"selection\t1\t-\n", b"selection\t1\t" + requests + b"\n")
+            self.assertNotEqual(forged, original)
+            lock.write_bytes(forged)
+            for command in ("sync", "build"):
+                with self.subTest(requests=requests, command=command):
+                    self.requests.clear()
+                    result = (self.graph_cli("sync", code=1) if command == "sync" else
+                              self.native_cli("build", "--locked", code=1))
+                    self.assertEqual(result.stdout, b"")
+                    self.assertIn(b"lock", result.stderr.lower())
+                    self.assertIn(b"resolve", result.stderr.lower())
+                    self.assertEqual(self.requests, [])
+                    self.assertEqual(lock.read_bytes(), forged)
+                    self.assertEqual(executable.read_bytes(), output)
+                    self.assertFalse((executable.parent / "execution-observed").exists())
+                    self.assertEqual({str(path.relative_to(cache)): (path.stat().st_mode,
+                        path.read_bytes() if path.is_file() else None) for path in cache.rglob("*")}, before)
+
+    def test_malformed_cli_feature_requests_remain_usage_errors_before_network(self):
+        self.write_project({"fixture/a": "*"}, features={"default": [], "ready": []})
+        self.publish_graph([self.package("fixture/a", "1.0.0")], fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        before = lock.read_bytes()
+        for requests in ("default,default", "default,,ready", "Default", "", "f" * 33,
+                         ",".join("f" + str(index) for index in range(65)), "f" * 2112):
+            with self.subTest(requests=requests):
+                self.requests.clear()
+                self.graph_cli("resolve", options=("--features", requests), code=2)
+                self.assertEqual(self.requests, [])
+                self.assertEqual(lock.read_bytes(), before)
+
     def test_source_feature_declarations_must_equal_signed_metadata_before_exposure(self):
         self.write_project({"fixture/a": "*"})
         node = self.package("fixture/a", "1.0.0", features={"default": [], "unused": []})

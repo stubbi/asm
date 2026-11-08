@@ -352,6 +352,8 @@ Each group uses byte order.
 Explicit root requests use a sorted comma-separated list; `-` represents no explicit request.
 Names and parent-child edges use byte order.
 The lock has a 1 MiB limit.
+Malformed selection lists report a lock error and retain existing files.
+Invalid `--features` syntax reports a usage error before a network request.
 Every selected node, enabled feature, and active dependency edge is retained.
 Dormant declarations remain bound by the root manifest or exact envelope digest.
 Changing feature selection does not change the immutable release bindings.
