@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
 from html import escape
 from pathlib import Path
 import re
@@ -25,6 +26,7 @@ INSTALL_COMMAND = "curl -qfsS -m120 https://asm.build/install.sh | sh"
 MINIMUM_VERSION = (0, 2, 0)
 MAX_BUNDLE_BYTES = 1024 * 1024
 ASSET_API = re.compile(r"https://api\.github\.com/repos/stubbi/asm/releases/assets/[1-9][0-9]{0,18}\Z")
+DELIVERY_PREFIX = "https://asm.build/bootstrap/sha256/"
 TEMPLATE = Path(__file__).with_name("install.sh.in")
 START = "<!-- ASM_BOOTSTRAP_START -->"
 END = "<!-- ASM_BOOTSTRAP_END -->"
@@ -81,7 +83,7 @@ def installer_release(records: list[dict], checked: set[tuple[str, str]]) -> dic
 def validate_release(release: dict) -> None:
     """Check every field used in the shell, including each architecture's identity."""
     fields = {"version", "artifacts", "source_commit", "repository_id", "bundle_url"}
-    registry.require(set(release) in (fields, fields | {"recovery"}),
+    registry.require(fields <= set(release) <= fields | {"recovery", "delivery"},
                      "invalid installer release fields")
     version = release.get("version")
     registry.require(registry.version_tuple(version) >= MINIMUM_VERSION,
@@ -112,9 +114,9 @@ def validate_release(release: dict) -> None:
         registry.require(isinstance(artifact["sha256"], str) and
                          re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]) is not None,
                          "invalid installer digest")
+    urls = {artifact["url"] for artifact in artifacts} | {release["bundle_url"]}
     if "recovery" in release:
         recovery = release["recovery"]
-        urls = {artifact["url"] for artifact in artifacts} | {release["bundle_url"]}
         registry.require(isinstance(recovery, dict) and set(recovery) == urls,
                          "installer recovery must bind every selected release asset")
         for endpoint in recovery.values():
@@ -122,11 +124,23 @@ def validate_release(release: dict) -> None:
                              and int(endpoint.rsplit("/", 1)[1]) <= 9223372036854775807,
                              "installer recovery needs an exact public release asset endpoint")
         registry.require(len(set(recovery.values())) == len(recovery), "installer recovery asset endpoints must be distinct")
+    if "delivery" in release:
+        delivery = release["delivery"]
+        registry.require(isinstance(delivery, dict) and set(delivery) == urls,
+                         "installer delivery must bind every selected release asset")
+        for artifact in artifacts:
+            expected = DELIVERY_PREFIX + artifact["sha256"] + "/" + artifact["url"].rsplit("/", 1)[1]
+            registry.require(delivery[artifact["url"]] == expected, "installer delivery differs from the exact artifact")
+        bundle_delivery = delivery[release["bundle_url"]]
+        registry.require(isinstance(bundle_delivery, str) and re.fullmatch(
+            re.escape(DELIVERY_PREFIX) + r"[0-9a-f]{64}/release-attestation\.sigstore\.json", bundle_delivery) is not None,
+            "installer bundle delivery needs a fixed content-addressed path")
 
 
 def render_installer(release: dict) -> bytes:
     """Bind each checked artifact to its local operating system and ISA."""
     validate_release(release)
+    delivery = release.get("delivery", {})
     cases = []
     for artifact in release["artifacts"]:
         target = artifact["target"]
@@ -134,13 +148,14 @@ def render_installer(release: dict) -> bytes:
                      f"            asm_target='{target}'\n"
                      f"            asm_sha256='{artifact['sha256']}'\n"
                      f"            asm_bytes='{artifact['bytes']}'\n"
-                     f"            asm_url='{artifact['url']}'\n"
+                     f"            asm_url='{delivery.get(artifact['url'], artifact['url'])}'\n"
                      f"            asm_api_url='{release.get('recovery', {}).get(artifact['url'], '')}'\n"
                      "            ;;")
     script = TEMPLATE.read_text(encoding="utf-8")
     script = script.replace("@@BUNDLE_API_URL@@", release.get("recovery", {}).get(release["bundle_url"], ""))
     for key in ("version", "source_commit", "bundle_url"):
-        script = script.replace(f"@@{key.upper()}@@", str(release[key]))
+        value = delivery.get(release[key], release[key]) if key == "bundle_url" else release[key]
+        script = script.replace(f"@@{key.upper()}@@", str(value))
     script = script.replace("@@TARGET_CASES@@", "\n".join(cases))
     registry.require("@@" not in script, "unexpanded installer template field")
     return script.encode("utf-8")
@@ -212,7 +227,8 @@ unset asm_installer</code></pre></div>
 
 def write_bootstrap(stage: Path, records: list[dict], checked: set[tuple[str, str]], *,
                     bundle_reader: Callable[[str, int], bytes] | None = None,
-                    asset_resolver: Callable[..., str] | None = None) -> dict | None:
+                    asset_resolver: Callable[..., str] | None = None,
+                    artifact_reader: Callable[..., bytes] | None = None) -> dict | None:
     # Only this generator can publish an installer. A copied, stale file is not
     # evidence that this build checked the current CLI artifact.
     (stage / "install.sh").unlink(missing_ok=True)
@@ -221,6 +237,9 @@ def write_bootstrap(stage: Path, records: list[dict], checked: set[tuple[str, st
     content = page.read_text(encoding="utf-8")
     region = insertion_point(content)
     if release is not None:
+        if artifact_reader is not None:
+            registry.require(not (stage / "bootstrap").exists() and not (stage / "bootstrap").is_symlink(),
+                             "the bootstrap output namespace must be empty")
         registry.require(bundle_reader is not None, "installer needs a checked release bundle")
         bundle = bundle_reader(release["bundle_url"], MAX_BUNDLE_BYTES)
         registry.require(type(bundle) is bytes and 0 < len(bundle) <= MAX_BUNDLE_BYTES,
@@ -234,9 +253,31 @@ def write_bootstrap(stage: Path, records: list[dict], checked: set[tuple[str, st
                 for artifact in release["artifacts"]}
             release["recovery"][release["bundle_url"]] = asset_resolver(
                 release["bundle_url"], MAX_BUNDLE_BYTES, expected_size=len(bundle))
+        payloads = {}
+        if artifact_reader is not None:
+            # Only the selected CLI's supported executables enter this bounded
+            # staging set. Recheck the returned bytes, even after an earlier gate.
+            record = next(item for item in records if item["name"] == "stubbi/asm" and item["version"] == release["version"])
+            selected = {artifact["url"] for artifact in release["artifacts"]}
+            release["delivery"] = {}
+            for artifact in record["artifacts"]:
+                if artifact["url"] not in selected:
+                    continue
+                data = artifact_reader(artifact["url"], artifact["bytes"], expected_size=artifact["bytes"])
+                registry.require(type(data) is bytes, "bootstrap artifact reader must return owned bytes")
+                registry.validate_artifact(data, record, artifact)
+                relative = "bootstrap/sha256/" + artifact["sha256"] + "/" + artifact["url"].rsplit("/", 1)[1]
+                payloads[relative] = data
+                release["delivery"][artifact["url"]] = "https://asm.build/" + relative
+            relative = "bootstrap/sha256/" + hashlib.sha256(bundle).hexdigest() + "/release-attestation.sigstore.json"
+            payloads[relative] = bundle
+            release["delivery"][release["bundle_url"]] = "https://asm.build/" + relative
         # This is an availability and format check. The installer verifies the
         # signature, exact artifact, and identity with the independent verifier.
-        registry.write_atomic(stage / "install.sh", render_installer(release))
+        script = render_installer(release)
+        for relative, data in payloads.items():
+            registry.write_atomic(stage / relative, data)
+        registry.write_atomic(stage / "install.sh", script)
     if region is not None:
         before, original, after = region
         body = installer_markup(release) if release is not None else original

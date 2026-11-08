@@ -754,8 +754,13 @@ class SearchDiscoveryTests(unittest.TestCase):
         self.assertFalse(list(self.output.rglob("*.sqlite*")))
 
     def test_default_verified_build_binds_all_installer_recovery_routes(self):
-        record = next(item for item in self.records if item["name"] == "stubbi/asm" and item["version"] == "0.6.0")
+        from test_bootstrap import first_party_payloads
+        payloads = first_party_payloads()
+        record = deepcopy(next(item for item in self.records if item["name"] == "stubbi/asm" and item["version"] == "0.6.0"))
         artifacts = [item for item in record["artifacts"] if item["kind"] == "executable"]
+        for artifact in artifacts:
+            artifact["bytes"] = len(payloads[artifact["target"]])
+            artifact["sha256"] = hashlib.sha256(payloads[artifact["target"]]).hexdigest()
         bundle = b'{"dsseEnvelope":{}}'
         bundle_url = "https://github.com/stubbi/asm/releases/download/v0.6.0/release-attestation.sigstore.json"
         assets = [{"id": 100 + number, "name": item["url"].rsplit("/", 1)[1], "state": "uploaded",
@@ -765,20 +770,49 @@ class SearchDiscoveryTests(unittest.TestCase):
                        "size": len(bundle), "browser_download_url": bundle_url})
         metadata = {"tag_name": "v0.6.0", "draft": False, "assets": assets}
         api = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.0"
-        opener = ReleaseAssetRecoveryTests.Opener([
-            (bundle_url, ReleaseAssetRecoveryTests.Response(bundle_url, bundle)),
-            (api, ReleaseAssetRecoveryTests.Response(api, json.dumps(metadata).encode()))])
+        responses = {bundle_url: bundle, api: json.dumps(metadata).encode(),
+                     **{item["url"]: payloads[item["target"]] for item in artifacts}}
+        requests = []
+        class Opener:
+            def open(inner, request, timeout):
+                requests.append(request.full_url)
+                self.assertEqual(timeout, 20)
+                self.assertIn(request.full_url, responses)
+                return ReleaseAssetRecoveryTests.Response(request.full_url, responses[request.full_url])
+        opener = Opener()
         candidate = Path(self.temporary.name) / "checked-installer-recovery"
         # Artifact acceptance is a separately tested prerequisite; retain the
         # real default transport, metadata resolver, generator, and site build.
         with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}), \
-             patch.object(build_site, "build_opener", return_value=opener):
+             patch.object(build_site, "build_opener", return_value=opener), \
+             patch.object(registry, "read_records", return_value=[record if item["name"] == "stubbi/asm" and item["version"] == "0.6.0" else item for item in self.records]):
             build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate, verify=True)
         script = (candidate / "install.sh").read_text()
         expected = {"https://api.github.com/repos/stubbi/asm/releases/assets/" + str(item["id"]) for item in assets}
         self.assertEqual(set(re.findall(r"https://api\.github\.com/repos/stubbi/asm/releases/assets/[0-9]+", script)), expected)
-        self.assertEqual(len(opener.requests), 2, "One metadata snapshot must bind all targets and the exact checked bundle")
+        self.assertEqual(len(requests), 5, "One bundle, one metadata snapshot, and three checked executable copies")
         self.assertEqual(json.loads((candidate / "build.json").read_text())["bootstrap_version"], "0.6.0")
+        copied = {path.relative_to(candidate).as_posix(): path.read_bytes() for path in (candidate / "bootstrap").rglob("*") if path.is_file()}
+        expected_copies = {"bootstrap/sha256/" + item["sha256"] + "/" + item["url"].rsplit("/", 1)[1]: payloads[item["target"]]
+                           for item in artifacts}
+        expected_copies["bootstrap/sha256/" + hashlib.sha256(bundle).hexdigest() + "/release-attestation.sigstore.json"] = bundle
+        self.assertEqual(copied, expected_copies)
+        self.assertEqual(set(re.findall(r"https://asm\.build/bootstrap/sha256/[0-9a-f]{64}/[^'\s]+", script)),
+                         {"https://asm.build/" + path for path in expected_copies})
+
+    def test_corrupt_bootstrap_reread_does_not_publish_a_candidate(self):
+        previous = Path(self.temporary.name) / "previous-before-corrupt-bootstrap"
+        previous.mkdir()
+        (previous / "keep").write_bytes(b"Previous published bytes")
+        candidate = Path(self.temporary.name) / "unpublished-corrupt-bootstrap"
+        def reader(url, limit, hosts, *, expected_size=None):
+            return b'{"dsseEnvelope":{}}' if url.endswith("release-attestation.sigstore.json") else b"corrupt"
+        with patch.object(build_site, "verify_artifacts", return_value={("stubbi/asm", "0.6.0")}):
+            with self.assertRaisesRegex(registry.RegistryError, "artifact byte size mismatch"):
+                build_site.build_site(Path(self.temporary.name) / "repo", ROOT / "registry", candidate,
+                                      verify=True, artifact_reader=reader)
+        self.assertFalse(candidate.exists())
+        self.assertEqual({path.name: path.read_bytes() for path in previous.iterdir()}, {"keep": b"Previous published bytes"})
 
     def test_optional_metrics_parse_failure_keeps_the_site_available_without_retrying_urls(self):
         calls = []

@@ -29,6 +29,12 @@ The TSV permits at most 4,096 artifact rows and 1 MiB.
 Both its generator and native reader enforce those bounds.
 The [registry validator](../tools/registry.py) permits GitHub release URLs and artifacts up to 64 MiB.
 
+The checked site build also publishes digest-qualified copies of the current bootstrap executables and signed bundle.
+The installer verifies the original release bytes and fixed provenance identity before installation.
+This route supplies only Asm's selected bootstrap release, without a general artifact store or retention guarantee.
+It adds no package authority or Asm-owned download observations.
+Arbitrary package delivery still requires the separate origin, storage, and recovery qualification described below.
+
 These are compatibility alpha limits.
 They are not the future distribution protocol or a scalable search endpoint.
 Increasing the TSV limit would preserve its whole-catalog download cost.

@@ -169,6 +169,12 @@ def check(expected_target, expected_commit, evidence):
                         release_source_commit=record["source"]["commit"], record_sha256=sha256(record_data),
                         observed_installer_sha256=sha256(script), artifact=artifact,
                         installer_binding="Installer hash observed before and after the unchanged README pipeline.")
+        evidence["phase"] = "check the public executable copy"
+        public_path = f"/bootstrap/sha256/{artifact['sha256']}/asm-{version}-{target}"
+        public_bytes = fetch(public_path, artifact["bytes"], **common)
+        registry.validate_artifact(public_bytes, record, artifact)
+        evidence["first_party_executable"] = {"url": SITE + public_path, "bytes": len(public_bytes),
+                                               "sha256": sha256(public_bytes)}
         evidence["phase"] = "run the normal published installer"
         item, _ = command(["/bin/sh", "-c", INSTALL], **common, timeout=480)
         require(item["exit_code"] == 0, "The published installer failed. See the retained command error.")
@@ -224,7 +230,7 @@ def main():
                 "phase": "check native host", "commands": [], "credential_free": True,
                 "checker_sha256": sha256(Path(__file__).read_bytes()),
                 "expected_site_commit": arguments.expected_site_commit,
-                "scope": "Published POSIX installer, exact installed bytes, first project, repeat and refusal paths."}
+                "scope": "Published POSIX installer, public executable copy, exact installed bytes, first project, repeat and refusal paths."}
     try:
         check(arguments.expected_target, arguments.expected_site_commit, evidence)
     except Exception as error:
