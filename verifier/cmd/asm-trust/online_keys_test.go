@@ -16,7 +16,7 @@ func onlineFixture(t *testing.T) (string, string, string) {
 	t.Helper()
 	dir, root, _ := fixture(t)
 	online := filepath.Join(dir, "online")
-	check(t, os.Mkdir(online, 0700))
+	createOnlineKeyFixtureDirectory(t, online)
 	for _, role := range []string{"targets", "snapshot", "timestamp"} {
 		data, err := os.ReadFile(filepath.Join(dir, role+".pem"))
 		check(t, err)
@@ -30,10 +30,35 @@ func TestCheckOnlineKeysAcceptsOnlySelectedCurrentRegistryRoles(t *testing.T) {
 	check(t, run([]string{"check-online-keys", root, online}))
 }
 
+func TestCheckOnlineKeysRejectsNonphysicalOrMissingDirectory(t *testing.T) {
+	for _, name := range []string{"symlink", "file", "missing"} {
+		t.Run(name, func(t *testing.T) {
+			dir, root, online := onlineFixture(t)
+			check(t, run([]string{"check-online-keys", root, online}))
+			path := filepath.Join(dir, "selected-online")
+			switch name {
+			case "symlink":
+				check(t, os.Symlink(online, path))
+			case "file":
+				check(t, os.WriteFile(path, []byte("not a directory"), 0600))
+			}
+			if err := run([]string{"check-online-keys", root, path}); err == nil {
+				t.Fatal("accepted an invalid online signing directory")
+			}
+			if name == "missing" {
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Fatal("created a missing online signing directory")
+				}
+			}
+		})
+	}
+}
+
 func TestCheckOnlineKeysRejectsWrongRolesAndRootMaterial(t *testing.T) {
 	for _, name := range []string{"snapshot.pem", "root1.pem", "root-extra", "public-mode", "symlink", "missing"} {
 		t.Run(name, func(t *testing.T) {
 			dir, root, online := onlineFixture(t)
+			check(t, run([]string{"check-online-keys", root, online}))
 			path := filepath.Join(online, "targets.pem")
 			switch name {
 			case "snapshot.pem", "root1.pem":
@@ -43,7 +68,7 @@ func TestCheckOnlineKeysRejectsWrongRolesAndRootMaterial(t *testing.T) {
 			case "root-extra":
 				check(t, os.WriteFile(filepath.Join(online, "root.pem"), []byte("SYNTHETIC ROOT KEY MUST NOT ENTER ONLINE DIRECTORY"), 0600))
 			case "public-mode":
-				check(t, os.Chmod(path, 0640))
+				grantOnlineKeyFixtureReadAccess(t, path)
 			case "symlink":
 				check(t, os.Remove(path))
 				check(t, os.Symlink(filepath.Join(dir, "targets.pem"), path))
@@ -61,6 +86,7 @@ func TestCheckOnlineKeysRejectsInvalidRegistryRoot(t *testing.T) {
 	for _, name := range []string{"unsigned", "expired", "shared-role", "online-threshold", "changed-key-id"} {
 		t.Run(name, func(t *testing.T) {
 			dir, root, online := onlineFixture(t)
+			check(t, run([]string{"check-online-keys", root, online}))
 			r, err := metadata.Root().FromFile(root)
 			check(t, err)
 			r.Signatures = nil

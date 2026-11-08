@@ -31,10 +31,11 @@ func checkOnlineKeys(rootPath, directory string) error {
 	if err := registryRootProfile(root.Signed); err != nil {
 		return err
 	}
-	info, err := os.Lstat(directory)
-	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-		return errors.New("use a private physical online signing directory")
+	opened, err := openOnlineKeyDirectory(directory)
+	if err != nil {
+		return err
 	}
+	defer opened.Close()
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return err
