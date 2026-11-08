@@ -70,7 +70,7 @@ jobs:
             --image asm-operator:runtime-amd64 --qualification-image asm-operator:qualification-amd64 \
             --output "$ASM_EVIDENCE/qualification.json" \
             2>&1 | tee "$ASM_EVIDENCE/image-tests.log"
-      - name: Build and inspect the V2 publisher and checker targets
+      - name: Build and qualify the exact V2 publisher and checker images
         timeout-minutes: 15
         shell: bash
         run: |
@@ -79,11 +79,27 @@ jobs:
           for kind in publisher checker; do
             docker build --platform linux/amd64 --file containers/operator.Dockerfile \
               --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target "$kind" \
-              --tag "asm-v2-$kind:smoke-amd64" . 2>&1 | tee "$ASM_EVIDENCE/build-$kind.log"
-            python3 tools/test_operator_image.py --context default --revision "$GITHUB_SHA" \
-              --image "asm-v2-$kind:smoke-amd64" --smoke-kind "$kind" \
-              --output "$ASM_EVIDENCE/$kind-smoke.json" \
-              2>&1 | tee "$ASM_EVIDENCE/$kind-smoke.log"
+              --tag "asm-v2-$kind:runtime-amd64" . 2>&1 | tee "$ASM_EVIDENCE/build-$kind.log"
+          done
+          docker build --platform linux/amd64 --file containers/operator.Dockerfile \
+            --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target publisher-qualification \
+            --tag asm-v2-publisher:qualification-amd64 . 2>&1 | tee "$ASM_EVIDENCE/build-publisher-qualification.log"
+          python3 tools/qualify_publisher_image.py --context default --revision "$GITHUB_SHA" \
+            --image asm-v2-publisher:runtime-amd64 --qualification-image asm-v2-publisher:qualification-amd64 \
+            --output "$ASM_EVIDENCE/publisher-qualification.json" \
+            2>&1 | tee "$ASM_EVIDENCE/publisher-qualification.log"
+          sudo python3 -I tools/qualify_checker_image.py --context default --revision "$GITHUB_SHA" \
+            --image asm-v2-checker:runtime-amd64 --output "$ASM_EVIDENCE/checker-qualification.json" \
+            2>&1 | tee "$ASM_EVIDENCE/checker-qualification.log"
+          for kind in publisher checker; do
+            mkdir -m 700 "$ASM_EVIDENCE/$kind"
+            docker image inspect "asm-v2-$kind:runtime-amd64" --format '{{json .}}' > "$ASM_EVIDENCE/$kind/image.json"
+            cp "$ASM_EVIDENCE/$kind-qualification.json" "$ASM_EVIDENCE/$kind/qualification.json"
+            cp "$ASM_EVIDENCE/source.bundle" "$ASM_EVIDENCE/$kind/source.bundle"
+            python3 -I tools/v2_image_publication.py --role "$kind" --revision "$GITHUB_SHA" \
+              --qualification "$ASM_EVIDENCE/$kind/qualification.json" --image "$ASM_EVIDENCE/$kind/image.json"
+            docker save --output "$ASM_EVIDENCE/$kind/runtime.tar" "asm-v2-$kind:runtime-amd64"
+            (cd "$ASM_EVIDENCE/$kind" && sha256sum runtime.tar > runtime.sha256)
           done
       - name: Retain only this run's exact qualified final image
         shell: bash
@@ -97,7 +113,7 @@ jobs:
           (cd "$ASM_EVIDENCE" && sha256sum runtime.tar > runtime.sha256)
       - name: Retain successful and failed evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-image-evidence-amd64-${{ github.sha }}
           path: |
@@ -108,7 +124,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Retain the qualified image and source transfer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-image-amd64-${{ github.sha }}
           path: |
@@ -117,6 +133,21 @@ jobs:
             ${{ runner.temp }}/asm-operator-image-evidence/qualification.json
             ${{ runner.temp }}/asm-operator-image-evidence/image.json
             ${{ runner.temp }}/asm-operator-image-evidence/source.bundle
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Retain the exact qualified publisher image and source
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: v2-image-publisher-amd64-${{ github.sha }}
+          path: ${{ runner.temp }}/asm-operator-image-evidence/publisher/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Retain the exact qualified checker image and source
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: v2-image-checker-amd64-${{ github.sha }}
+          path: ${{ runner.temp }}/asm-operator-image-evidence/checker/
           if-no-files-found: error
           retention-days: 3
 
@@ -184,10 +215,80 @@ jobs:
           subject-name: ghcr.io/stubbi/asm-operator
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: operator-image-digest-amd64-${{ github.sha }}
+          path: |
+            registry-digest.txt
+            qualification.json
+            image.json
+            loaded-image.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-v2:
+    needs: qualify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [publisher, checker]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: v2-image-${{ matrix.role }}-amd64-${{ github.sha }}
+      - name: Check and load only this run's qualified image
+        shell: bash
+        env:
+          ASM_IMAGE_ROLE: ${{ matrix.role }}
+        run: |
+          set -euo pipefail
+          sha256sum --check runtime.sha256
+          python3 -I tools/v2_image_publication.py --role "$ASM_IMAGE_ROLE" --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image image.json
+          docker load --input runtime.tar
+          docker image inspect "asm-v2-$ASM_IMAGE_ROLE:runtime-amd64" --format '{{json .}}' > loaded-image.json
+          python3 -I tools/v2_image_publication.py --role "$ASM_IMAGE_ROLE" --revision "$GITHUB_SHA" \
+            --qualification qualification.json --image loaded-image.json
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-amd64"
+          docker tag "asm-v2-$ASM_IMAGE_ROLE:runtime-amd64" "ghcr.io/stubbi/asm-$ASM_IMAGE_ROLE:$ASM_TAG"
+      - name: Publish the checked artifact without rebuilding or executing it
+        id: image
+        shell: bash
+        env:
+          ASM_IMAGE_ROLE: ${{ matrix.role }}
+          ASM_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ASM_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          ASM_TAG="sha-$GITHUB_SHA-run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-amd64"
+          docker push "ghcr.io/stubbi/asm-$ASM_IMAGE_ROLE:$ASM_TAG"
+          ASM_REF="$(docker image inspect "ghcr.io/stubbi/asm-$ASM_IMAGE_ROLE:$ASM_TAG" --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$ASM_REF" | grep -Eq "^ghcr.io/stubbi/asm-$ASM_IMAGE_ROLE@sha256:[0-9a-f]{64}$"
+          printf 'digest=%s\n' "${ASM_REF#*@}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$ASM_REF" | tee registry-digest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the exact qualified image and public source
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/stubbi/asm-${{ matrix.role }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: v2-image-digest-${{ matrix.role }}-amd64-${{ github.sha }}
           path: |
             registry-digest.txt
             qualification.json

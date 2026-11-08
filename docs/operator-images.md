@@ -190,8 +190,38 @@ The assembly publisher currently prints usage and exits `64` for `--help`.
 That retained behavior does not start a listener or read credentials.
 Smoke reports have scope `v2-runtime-smoke`; the publication gate does not accept that scope.
 Native HTTP, authority, checker isolation, credential projection, and recovery gates remain separate.
-The existing workflow publishes only its default operator target after its existing qualification procedure.
-New target publication requires its own reviewed qualification and publication change.
+### Exact V2 qualification
+
+The workflow also requires exact-image qualification for the publisher and checker.
+A successful smoke report cannot authorize either publication.
+No digest is qualified until its complete native run passes.
+
+The publisher uses a derived test image with the exact final executable and loaded libraries.
+The harness compares both image layer histories and every recorded runtime digest.
+Its 55 cases use PostgreSQL18.6 with the final16.15 client library.
+They cover authority, HTTP uploads, signed distribution, dependency locks, installation, and deliberate execution of synthetic packages.
+Only the test image contains the server, CLI, fixture tools, and synthetic keys.
+Its private temporary filesystem permits the deliberate execution checks.
+The final publisher contains no compiler or PostgreSQL server.
+The publisher links the pinned SSL library directly to avoid indirect library-search ambiguity.
+
+The checker gate calls the final image's default entrypoint with nine fixed synthetic tasks.
+It mounts one private input directory read-only and mounts no application code.
+The cases include valid source and features, corrupt or absent objects, links, malformed inputs, and target or feature mismatches.
+The gate checks canonical receipt bindings and unchanged input bytes.
+It uses no network, credentials, capabilities, or cluster token.
+These source-artifact cases do not qualify every executable file format.
+
+Both gates require native Linux AMD64 and a named Docker context.
+The checker gate requires root access to assign its private fixture files to UID65532.
+CI supplies that access only in the credential-free qualification job.
+
+The trusted V2 publication policy rejects missing cases, skips, source drift, emulation, and mismatched loaded images.
+Main pushes can publish the saved qualified publisher and checker artifacts separately.
+The publication job checks evidence before loading and after inspection.
+It cannot rebuild or execute either image with registry credentials.
+It records immutable image digests and public-source provenance.
+Kubernetes isolation, storage identities, custody, recovery, and public activation still require their separate gates.
 
 Pinned tool sources were checked on 8 November 2026:
 [Go release metadata](https://go.dev/dl/?mode=json&include=all),

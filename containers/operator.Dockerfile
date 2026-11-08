@@ -34,7 +34,7 @@ RUN python3 /source/tools/operator_source.py restore --bundle /source/source.bun
     && chmod -R a=rX /opt/asm/source.git \
     && mkdir /accepted \
     && git --git-dir=/opt/asm/source.git archive --output=/build/accepted.tar \
-       "$ASM_SOURCE_REVISION" verifier server tools/verifier_notices.py \
+       "$ASM_SOURCE_REVISION" \
     && tar -xf /build/accepted.tar -C /accepted
 
 FROM build AS operator-dependencies
@@ -112,7 +112,10 @@ COPY --from=build /usr/bin/openssl /usr/bin/openssl
 COPY --from=build /etc/ssl/openssl.cnf /usr/lib/ssl/openssl.cnf
 COPY --from=build /usr/share/doc/openssl/copyright /usr/share/licenses/asm-operator/qualification-openssl/COPYRIGHT
 COPY tools/test_operator_image.py tools/operator_source.py tools/operator_publication.py /qualification/tools/
+COPY tools/qualify_publisher_image.py tools/qualify_checker_image.py tools/v2_image_publication.py /qualification/tools/
 COPY server/test_runtime.py /qualification/server/test_runtime.py
+COPY server/publisher/test_runtime.py /qualification/server/publisher/test_runtime.py
+COPY tests/publisher/test_authority.py tests/publisher/test_distribution_authority.py tests/publisher/test_full_flow.py /qualification/tests/publisher/
 COPY experiments/assembly-server/local_postgres.py experiments/assembly-server/guard.sql /qualification/experiments/assembly-server/
 COPY experiments/assembly-server/fixtures/0001_registry.sql /qualification/experiments/assembly-server/fixtures/0001_registry.sql
 COPY tests/hosted_registry /qualification/tests/hosted_registry
@@ -159,8 +162,9 @@ RUN ./configure --prefix=/opt/asm/mhd --disable-https --disable-examples --disab
     && mkdir -p /build/mhd-notices \
     && for notice in COPYING COPYING.* LICENSE LICENSE.* NOTICE AUTHORS; do \
          if test -f "$notice"; then cp "$notice" /build/mhd-notices/; fi; done
+# libpq has its own RUNPATH. Retain libssl directly so the publisher's private RPATH selects it.
 RUN make -C /accepted/server publisher MHD_PREFIX=/opt/asm/mhd PG_PREFIX=/opt/asm/postgres BUILD=/build/publisher \
-      'CC=cc -I/opt/asm/openssl/include -L/opt/asm/openssl/lib -Wl,--disable-new-dtags,-rpath,/opt/asm/openssl/lib' \
+      'CC=cc -I/opt/asm/openssl/include -L/opt/asm/openssl/lib -Wl,--disable-new-dtags,-rpath,/opt/asm/openssl/lib -Wl,--no-as-needed -lssl -Wl,--as-needed' \
       PUBLISHER_OPENSSL_PROFILE=3.5.9 SOURCE_REVISION="$ASM_SOURCE_REVISION"
 
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS publisher
@@ -184,6 +188,35 @@ USER 65532:65532
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/asm-publisher"]
 CMD ["--help"]
+
+# Build fixture tools only. The final publisher target above remains unchanged.
+FROM operator-dependencies AS publisher-qualification-build
+WORKDIR /build
+RUN curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 \
+      --output postgres18.tar.bz2 https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2 \
+    && printf '%s  %s\n' 555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f postgres18.tar.bz2 | sha256sum --check --strict \
+    && tar -xjf postgres18.tar.bz2
+WORKDIR /build/postgresql-18.6
+RUN ./configure --prefix=/opt/asm/postgres18 --with-openssl \
+      --without-readline --without-zlib --without-icu --without-lz4 --without-zstd \
+    && make -j2 && make install
+WORKDIR /accepted
+RUN make registry-cli build/asm-trust GO=/opt/asm/go/bin/go
+
+# Qualify these exact final-image layers; fixtures never enter the publisher.
+FROM publisher AS publisher-qualification
+USER 0:0
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes binutils ca-certificates curl git nginx nodejs openssl python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=publisher-qualification-build /opt/asm/postgres18 /opt/asm/postgres18
+COPY --from=build --chmod=0555 /opt/asm/postgres/bin/psql /opt/asm/postgres/bin/psql
+COPY --from=publisher-qualification-build --chown=65532:65532 /accepted /qualification/source
+COPY --from=build --chown=65532:65532 /opt/asm/source.git /qualification/source/.git
+COPY --from=operator-dependencies /opt/asm/storage /opt/asm/storage
+COPY --from=publisher-qualification-build /build/postgresql-18.6/COPYRIGHT /usr/share/licenses/asm-publisher/qualification-postgresql18/COPYRIGHT
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/asm/storage
+USER 65532:65532
 
 # This target has only structural-check modules; no privileged operator tools or SDK.
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS checker

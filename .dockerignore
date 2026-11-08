@@ -28,6 +28,9 @@
 !tools/publication_check.py
 !tools/registry_distribution.py
 !tools/verifier_notices.py
+!tools/qualify_publisher_image.py
+!tools/qualify_checker_image.py
+!tools/v2_image_publication.py
 !verifier/
 !verifier/go.mod
 !verifier/go.sum
@@ -42,6 +45,10 @@
 !tests/hosted_registry/**
 !tests/operator_image/
 !tests/operator_image/**
+!tests/publisher/
+!tests/publisher/test_authority.py
+!tests/publisher/test_distribution_authority.py
+!tests/publisher/test_full_flow.py
 !registry/
 !registry/packages/
 !registry/packages/**
