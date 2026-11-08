@@ -141,7 +141,8 @@ def run_suite(suite, expected):
             super().startTest(test)
     with contextlib.redirect_stdout(sys.stderr):
         result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2, resultclass=Result).run(suite)
-    need(result.wasSuccessful() and result.testsRun == len(expected) and not result.skipped and sorted(actual) == expected,
+    need(result.wasSuccessful() and result.testsRun == len(expected) and not result.skipped
+         and not result.expectedFailures and not result.unexpectedSuccesses and sorted(actual) == expected,
          "The complete publisher suite did not pass without skips.")
     return result, sorted(actual)
 
