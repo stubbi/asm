@@ -264,6 +264,37 @@ class NativePublishTests(unittest.TestCase):
                 else:
                     self.assertFalse(self.output.exists())
 
+    def test_v1_source_comments_and_consumer_lock_keep_legacy_behavior(self):
+        cases = (("legacy-comment", source_files(), False),
+                 ("target-comment", self.target_files(), False),
+                 ("consumer-lock", source_files(), True))
+        for label, files, consumer_lock in cases:
+            if consumer_lock:
+                files["asm.lock"] = (b"# retained legacy consumer lock\n", 0o644)
+            else:
+                data, mode = files["asm.toml"]
+                files["asm.toml"] = (data + "# Größe\n".encode("utf-8"), mode)
+            self.artifact.write_bytes(registry.make_archive(files))
+            with self.subTest(label=label):
+                self.cli()
+                self.assertTrue(self.output.is_file())
+                self.output.unlink()
+
+    def test_v1_source_publication_refuses_dependency_and_feature_declarations(self):
+        for declaration in (b'\n[features]\nempty = []\n',
+                            b'\n[features]\n',
+                            b'\n[dependencies]\n"other/math" = "*"\n'):
+            files = source_files()
+            data, mode = files["asm.toml"]
+            files["asm.toml"] = (data + declaration, mode)
+            self.artifact.write_bytes(registry.make_archive(files))
+            with self.subTest(declaration=declaration):
+                try:
+                    self.cli(code=1)
+                    self.assertFalse(self.output.exists())
+                finally:
+                    self.output.unlink(missing_ok=True)
+
     def test_named_target_source_manifest_uses_the_native_build_byte_bound(self):
         files = self.target_files()
         manifest = files["asm.toml"][0]

@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import contextlib
 import io
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
@@ -15,6 +16,25 @@ import operator_entrypoint as entrypoint
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_import_help_exposes_the_optional_local_distribution_gate(self):
+        result = subprocess.run([sys.executable, str(ROOT / "tools/operator_entrypoint.py"), "import", "--help"],
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertIn(b"--distribution-root", result.stdout)
+
+    def test_distribution_path_is_one_argument_without_source_or_client_override(self):
+        commit = "1" * 40
+        path = "/distribution/operator snapshot"
+        with patch.object(entrypoint, "source_revision", return_value=commit), \
+                patch.object(entrypoint.registry_admin, "main", return_value=0) as delegated:
+            self.assertEqual(entrypoint.main(["import", "--connection-file", "/run/private/database.url",
+                "--expected-revision", "3", "--plan-sha256", "a" * 64, "--distribution-root", path]), 0)
+        arguments = delegated.call_args.args[0]
+        self.assertEqual(arguments[arguments.index("--distribution-root") + 1], path)
+        self.assertEqual(arguments[arguments.index("--repository") + 1], "/opt/asm/source.git")
+        self.assertEqual(arguments[arguments.index("--commit") + 1], commit)
+        self.assertEqual(arguments[arguments.index("--psql") + 1], "/opt/asm/postgres/bin/psql")
+
     def test_plan_and_import_use_only_the_image_source_and_fixed_client(self):
         commit = "1" * 40
         with patch.object(entrypoint, "source_revision", return_value=commit), patch.object(entrypoint.registry_admin, "main", return_value=0) as delegated:
@@ -32,6 +52,7 @@ class EntrypointTests(unittest.TestCase):
         with patch.object(entrypoint.registry_admin, "main") as delegated:
             for argv in (["plan", "--expected-revision", "0", "--repository", "/untrusted"],
                          ["plan", "--expected-revision", "0", "--commit", "2" * 40],
+                         ["plan", "--expected-revision", "0", "--distribution-root", "/distribution"],
                          ["grant", "--connection-file", "/run/private/database.url", "--reader-role", "other"],
                          ["migrate", "--connection-file", "/run/private/database.url", "--psql", "/untrusted"]):
                 with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as stopped:

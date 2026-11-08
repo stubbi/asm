@@ -63,10 +63,21 @@ class InfoTests(unittest.TestCase):
         for relative in ("navigation.js", "repository-stars.js", "styles.css", "packages.css", "icon.svg"):
             (self.stage / relative).write_text("fixture")
 
-    def generate(self):
+    def generate(self, *, registry_version=1):
         self.assertTrue((ROOT / "tools/site_info.py").is_file(), "Project information pages are not implemented.")
-        routes = importlib.import_module("site_info").write_info(self.repo, self.stage)
+        routes = importlib.import_module("site_info").write_info(self.repo, self.stage, registry_version=registry_version)
         return routes, {route: (self.stage / route / "index.html").read_text() for route in routes}
+
+    def test_v2_privacy_describes_server_observations_without_assuming_a_host(self):
+        _, pages = self.generate(registry_version=2)
+        privacy = pages["privacy/"]
+        self.assertIn("private server observations", privacy)
+        self.assertIn("Unreported mirrors and cache hits", privacy)
+        self.assertIn("The reference log format excludes IP addresses", privacy)
+        self.assertIn("hosting service selected by its operator", privacy)
+        self.assertNotIn("GitHub Pages hosts asm.build", privacy)
+        self.assertNotIn("local delivery event service", privacy)
+        self.assertNotIn("GitHub Pages hosting", privacy)
 
     def test_pages_have_native_landmarks_shared_chrome_and_truthful_page_types(self):
         routes, pages = self.generate()

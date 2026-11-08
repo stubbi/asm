@@ -2,7 +2,7 @@
 
 Asm implements its project and package commands in assembly.
 The repository root is the CLI project root.
-The root [asm.toml](../asm.toml) describes the Linux x86-64 reference build.
+The root [asm.toml](../asm.toml) describes the minimal Linux x86-64 reference build.
 The root [Makefile](../Makefile) selects the supported native implementation and coordinates builds, checks, and installation.
 
 | Path | Purpose |
@@ -26,6 +26,9 @@ RISC-V Linux and Windows sources under [examples](../examples/) implement packag
 On Linux, Make assembles the source into an object file, then links the executable.
 On Apple Silicon macOS, `tools/macos.py` prepares assembly for Apple Clang, which assembles and links the executable.
 The selected development executable is `build/asm`.
+The default full build includes V2 commands and the Go transport and cryptography adapter.
+Use `make REGISTRY_V2=0` for a V1-only build without Go.
+Make keeps profile outputs in separate directories.
 The [contribution guide](../CONTRIBUTING.md) lists additional checks and their prerequisites.
 
 The CLI invokes system tools for assembly, linking, transport, and cryptographic checks.

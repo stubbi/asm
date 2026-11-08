@@ -92,11 +92,22 @@ mac_return:
 MAC_WIDE mac_read, read
 MAC_WIDE mac_write, write
 MAC_WIDE mac_lseek, lseek
+.ifdef ASM_REGISTRY_V2
+/* The project reader maps only a bounded regular file, PROT_READ=1 and
+ * MAP_PRIVATE=2 on both systems. Dispatch already converts Linux arg4 R10 to
+ * SysV RCX. MAC_FRAME aligns calls and restores contract registers; MAC_WIDE
+ * translates MAP_FAILED through errno without truncating the pointer. */
+MAC_WIDE mac_mmap, mmap
+MAC_SIMPLE mac_munmap, munmap
+.endif
 MAC_SIMPLE mac_access, access
 MAC_SIMPLE mac_mkdir, mkdir
 MAC_SIMPLE mac_unlink, unlink
 MAC_SIMPLE mac_rmdir, rmdir
 MAC_SIMPLE mac_rename, rename
+.ifdef ASM_REGISTRY_V2
+MAC_SIMPLE mac_link, link
+.endif
 MAC_SIMPLE mac_chmod, chmod
 MAC_SIMPLE mac_fchmod, fchmod
 MAC_SIMPLE mac_fsync, fsync
@@ -643,6 +654,10 @@ mac_syscall_table:
     .quad 2, mac_open
     .quad 3, mac_close
     .quad 5, mac_fstat
+.ifdef ASM_REGISTRY_V2
+    .quad 9, mac_mmap
+    .quad 11, mac_munmap
+.endif
     .quad 6, mac_lstat
     .quad 8, mac_lseek
     .quad 13, mac_sigaction
@@ -666,6 +681,9 @@ mac_syscall_table:
     .quad 82, mac_rename
     .quad 83, mac_mkdir
     .quad 84, mac_rmdir
+.ifdef ASM_REGISTRY_V2
+    .quad 86, mac_link
+.endif
     .quad 87, mac_unlink
     .quad 89, mac_readlink
     .quad 90, mac_chmod

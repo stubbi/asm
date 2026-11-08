@@ -157,6 +157,73 @@ class CatalogDatabaseTests(unittest.TestCase):
         self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.snapshots"), [["1"]])
         self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.releases"), [[str(len(self.records))]])
 
+    def test_verified_distribution_survives_database_refusal_then_imports_and_replays(self):
+        import registry_mirror
+        from registry_storage import LocalBlobStore
+
+        # Use owned synthetic bytes; current registry artifacts need no download.
+        version = "1.0.0"
+        data = registry.make_archive({
+            "asm.toml": (b'[package]\nname = "hello"\nversion = "1.0.0"\n'
+                         b'[build]\nsource = "src/main.s"\ntarget = "x86_64-linux"\n', 0o644),
+            "LICENSE": (b"Synthetic fixture under MIT.\n", 0o644),
+            "README.md": (b"Synthetic distribution integration fixture.\n", 0o644),
+            "src/main.s": (b".global _start\n_start: nop\n", 0o644),
+        })
+        artifacts = self.work / "artifacts"
+        artifacts.mkdir()
+        (artifacts / "hello-1.0.0.tar.gz").write_bytes(data)
+        record = {"schema": 1, "name": "stubbi/hello", "version": version,
+            "summary": "Synthetic distribution integration fixture.", "license": "MIT", "yanked": False,
+            "source": {"repository": "https://github.com/stubbi/asm", "commit": "a" * 40, "path": "."},
+            "artifacts": [{"target": "x86_64-linux", "kind": "source", "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "url": "https://github.com/stubbi/asm/releases/download/v1.0.0/hello-1.0.0.tar.gz"}]}
+        self.git("rm", "-r", "registry/packages")
+        path = self.repo / "registry/packages/stubbi/hello/1.0.0.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(registry.json_bytes(record))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Accept synthetic distribution integration bytes")
+        self.commit = self.git("rev-parse", "HEAD").decode().strip()
+        store = LocalBlobStore(self.work / "distribution")
+        snapshot = registry_mirror.publish(store, self.repo, self.commit, artifacts, initialize=True)
+
+        def retained_bytes():
+            return {p.relative_to(store.root): p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
+
+        before = retained_bytes()
+        self.migrate()
+        self.bind()
+
+        def importing(revision):
+            return self.command("operator", "import", "--repository", str(self.repo), "--commit", self.commit,
+                "--expected-revision", str(revision), "--plan-sha256", self.plan(revision)["plan_sha256"],
+                "--distribution-root", str(store.root))
+
+        refused = importing(1)  # The empty database requires expected revision 0.
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(refused.stdout, b"")
+        self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.snapshots"), [["0"]])
+        self.assertEqual(retained_bytes(), before)
+        accepted = importing(0)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr.decode())
+        result = json.loads(accepted.stdout)
+        self.assertTrue(result["artifact_bytes_checked"])
+        self.assertEqual(result["revision"], 1)
+        self.assertEqual(result["distribution"], {"snapshot_sha256": snapshot, "source_commit": self.commit,
+                                                 "sequence": 1, "artifact_count": 1})
+        _, _, exports = registry_admin.prepare_import(self.repo, self.commit, 0)
+        actual = dict(self.admin.execute("SELECT route,body FROM asm_catalog.current_exports"))
+        self.assertEqual(actual, dict(zip(registry_admin.ROUTES, exports)))
+        self.assertEqual(json.loads(actual["/registry/v1/index.json"])["packages"][0]["versions"][0]
+                         ["evidence"]["artifacts"], "not-run")
+        replay = importing(0)
+        self.assertEqual(replay.returncode, 0, replay.stderr.decode())
+        self.assertEqual(json.loads(replay.stdout)["revision"], 1)
+        self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_catalog.snapshots"), [["1"]])
+        self.assertEqual(retained_bytes(), before)
+
     def test_windows_rows_publish_only_to_full_feed_and_json_in_one_revision(self):
         self.import_first()
         before = self.admin.execute("SELECT route,body FROM asm_catalog.current_exports ORDER BY route")

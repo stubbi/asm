@@ -663,8 +663,10 @@ The package browser provides these routes:
 
 | Route | Purpose |
 | --- | --- |
-| `/packages` | Complete catalog with ordinary package links |
-| `/packages/owner` | Packages in a declared namespace |
+| `/packages` | First catalog page with ordinary package links |
+| `/packages/page/number` | Subsequent catalog pages |
+| `/packages/owner` | First page of packages in a declared namespace |
+| `/packages/owner/page/number` | Subsequent namespace pages |
 | `/packages/owner/name` | Latest active release and complete history |
 | `/packages/owner/name/version` | Exact release and its recorded metadata |
 | `/404` | Missing-page recovery |
@@ -729,6 +731,26 @@ Do not add account, ownership, or publication controls before their backend cont
 Acceptance covers discovery, permanent links, exact historical metadata, target/format filtering, copying, history, and recovery.
 Test malformed search links, unsafe readmes, unknown versions, missing documentation, no active releases, yanked releases, and unavailable counters.
 Run `make site-test` and check the full flow through the browser.
+
+### Secondary page consistency, 8 November 2026
+
+Use Explore as the main discovery route.
+Keep All packages as a native, paginated catalog within the same navigation.
+Show at most fifty packages per catalog or namespace page, ordered by identity.
+Retain exact version links, active-release targets, and packages without active releases.
+Use native Previous and Next links with a visible page position and result range.
+Pagination bounds each catalog document; it does not qualify search or delivery capacity for a large registry.
+
+Give secondary pages the same entry spacing, muted introductions, and space below section navigation.
+Keep activity groups together on Explore, followed by purpose, architecture, keyword, and dependency groups.
+Use compact, rounded package lists within the shared reading measure.
+Keep full artifact details and evidence on package pages.
+Keep the homepage composition and its search emphasis.
+
+This serves package discovery and inspection, following serve-the-person and dependable-reuse principles.
+The trade-off is an additional navigation step for catalogs with more than fifty packages.
+Use browser review, native pagination, keyboard navigation, narrow layouts, and failure states as implementation evidence.
+These checks do not establish comparative usability or capacity at hundreds of thousands of packages.
 
 ### Package and results refinement, 7 November 2026
 

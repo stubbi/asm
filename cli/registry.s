@@ -373,6 +373,9 @@ registry_workspace:
  * and checksum, then removes the empty directory. Clears the ownership flag.
  * Does not replace an original error with a cleanup error. Stack: none. */
 registry_cleanup:
+.ifdef ASM_REGISTRY_V2
+    call r2_clean_files
+.endif
     call program_cleanup
     cmp byte ptr [rip + self_active], 0
     jne self_update_cleanup

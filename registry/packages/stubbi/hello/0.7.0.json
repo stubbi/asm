@@ -1,0 +1,57 @@
+{
+  "artifacts": [
+    {
+      "bytes": 1064,
+      "kind": "executable",
+      "sha256": "22a64f7e768dd171bb538a1cc1ee2510a0cad22b6cba2517921be490cc3479b9",
+      "target": "aarch64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-aarch64-linux"
+    },
+    {
+      "bytes": 10424,
+      "kind": "source",
+      "sha256": "9459d3c0dd3a61e9f5a6b90c2bc4174fefc9a9319e7570c2a016bf4335e847d8",
+      "target": "aarch64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-aarch64-linux.tar.gz"
+    },
+    {
+      "bytes": 1296,
+      "kind": "executable",
+      "sha256": "9f6cf7a98aa3a87c4f397062b05d6fb47cf6dc581c8d4353c9def9167f241e92",
+      "target": "riscv64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-riscv64-linux"
+    },
+    {
+      "bytes": 10424,
+      "kind": "source",
+      "sha256": "9459d3c0dd3a61e9f5a6b90c2bc4174fefc9a9319e7570c2a016bf4335e847d8",
+      "target": "riscv64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-riscv64-linux.tar.gz"
+    },
+    {
+      "bytes": 8880,
+      "kind": "executable",
+      "sha256": "aea9462919b3be2dfc4c1532ad8dbf4b7b38b14f968646fea49056c01678f440",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-x86_64-linux"
+    },
+    {
+      "bytes": 10424,
+      "kind": "source",
+      "sha256": "9459d3c0dd3a61e9f5a6b90c2bc4174fefc9a9319e7570c2a016bf4335e847d8",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/hello-0.7.0-x86_64-linux.tar.gz"
+    }
+  ],
+  "license": "MIT",
+  "name": "stubbi/hello",
+  "schema": 1,
+  "source": {
+    "commit": "11f526c2f4264b8c33c4865ff03862857424c184",
+    "path": "examples/hello",
+    "repository": "https://github.com/stubbi/asm"
+  },
+  "summary": "A small Linux assembly program that writes a greeting.",
+  "version": "0.7.0",
+  "yanked": false
+}

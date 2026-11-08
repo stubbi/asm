@@ -64,6 +64,19 @@ def arm_native_evidence(commit, version, binary, *, selected_target=False):
     }
 
 
+def add_v2_evidence(directory, evidence):
+    """Synthetic fan-in identity only; these bytes never qualify a native host."""
+    notices = b"Synthetic dependency notice fixture.\n"
+    filename = f"asm-{evidence['version']}-{evidence['target']}.LICENSES.txt"
+    (directory / filename).write_bytes(notices)
+    evidence["client_profile"] = {"registry_v2": True, "trusted_distribution": False}
+    evidence["adapter"] = {"bytes": 4096, "sha256": "b" * 64,
+                           "notices": {"file": filename, "bytes": len(notices),
+                                       "sha256": hashlib.sha256(notices).hexdigest()}}
+    evidence["tool_versions"]["go"] = "go version go1.27.3; synthetic fixture"
+    return evidence
+
+
 class ArmNativeInputTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -89,6 +102,17 @@ class ArmNativeInputTests(unittest.TestCase):
             self.fail(f"exact ARM64 native input was refused: {error}")
         self.assertEqual(binary, self.binary)
         self.assertEqual(evidence, self.evidence)
+
+    def test_v2_receipt_requires_the_source_profile_and_exact_dependency_notices(self):
+        add_v2_evidence(self.directory, self.evidence)
+        self.write(self.evidence)
+        self.assertEqual(self.read(registry_v2=True)[1], self.evidence)
+        with self.assertRaises(registry.RegistryError):
+            self.read()
+        notices = self.directory / self.evidence["adapter"]["notices"]["file"]
+        notices.write_bytes(notices.read_bytes() + b"changed")
+        with self.assertRaises(registry.RegistryError):
+            self.read(registry_v2=True)
 
     def test_selected_target_arm_receipt_accepts_exactly_the_three_linux_targets(self):
         selected = copy.deepcopy(self.evidence)
@@ -488,6 +512,12 @@ class ReleaseTests(unittest.TestCase):
         shutil.copytree(ROOT / "skills/asm-build", cls.repo / "skills/asm-build")
         (cls.repo / "tools").mkdir()
         shutil.copy2(ROOT / "tools/install.sh", cls.repo / "tools/install.sh")
+        shutil.copy2(ROOT / "tools/verifier_notices.py", cls.repo / "tools/verifier_notices.py")
+        shutil.copytree(ROOT / "verifier", cls.repo / "verifier")
+        shutil.copytree(ROOT / "blog", cls.repo / "blog")
+        shutil.copytree(ROOT / "deploy", cls.repo / "deploy")
+        for name in ("requirements-storage.in", "requirements-storage.txt"):
+            shutil.copy2(ROOT / name, cls.repo / name)
         shutil.copyfile(ROOT / "README.md", cls.repo / "README.md")
         shutil.copyfile(ROOT / "CHANGELOG.md", cls.repo / "CHANGELOG.md")
         shutil.copyfile(ROOT / "LICENSE", cls.repo / "LICENSE")
@@ -505,6 +535,7 @@ class ReleaseTests(unittest.TestCase):
         cls.arm_input.mkdir()
         cls.arm_binary = minimal_arm_elf()
         cls.arm_evidence = arm_native_evidence(cls.commit, cls.version, cls.arm_binary, selected_target=True)
+        add_v2_evidence(cls.arm_input, cls.arm_evidence)
         (cls.arm_input / cls.arm_evidence["asset"]["file"]).write_bytes(cls.arm_binary)
         (cls.arm_input / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(cls.arm_evidence))
         cls.first = cls.base / "first-release"
@@ -600,12 +631,15 @@ class ReleaseTests(unittest.TestCase):
         native.mkdir()
         binary = minimal_macho()
         evidence = native_evidence(commit, self.version, binary, selected_target=True)
+        add_v2_evidence(native, evidence)
         filename = evidence["asset"]["file"]
         (native / filename).write_bytes(binary)
         (native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(evidence))
         arm = self.case_dir / "arm-input"
         arm.mkdir()
         (arm / self.arm_evidence["asset"]["file"]).write_bytes(self.arm_binary)
+        notice_name = self.arm_evidence["adapter"]["notices"]["file"]
+        (arm / notice_name).write_bytes((self.arm_input / notice_name).read_bytes())
         (arm / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes({**self.arm_evidence, "source_commit": commit}))
         output = self.case_dir / "with-native-host"
         result = release.build_release(repo, output, native_input=native, native_inputs={"aarch64-linux": arm})

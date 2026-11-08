@@ -1,6 +1,6 @@
 # Assembly canonical registry runtime
 
-Status: incomplete implementation, 5 November 2026.
+Status: source implementation with separate deployment gates, 8 November 2026.
 
 This directory contains the assembly runtime path for hosted Asm work.
 It reads the canonical catalog; the [earlier experiment](../experiments/assembly-server/README.md) tests prototype search against a frozen fixture schema.
@@ -9,6 +9,13 @@ It must not activate either private deployment stage.
 
 The consumer outcome is exact compatibility feeds from the retained canonical catalog.
 Source implementation, target execution, deployment, and recovery remain separate acceptance results.
+
+The separate [publisher checkpoint](publisher/README.md) adds a loopback-only task API under its own write-scoped role.
+It retains checked publication intent and does not activate public distribution.
+
+The unreleased [assembly publisher](publisher/README.md) adds direct credentials, durable uploads, and private fenced distribution jobs.
+The [native V2 profile](../docs/specs/registry-v2.md) and [evidence record](../docs/registry-v2-evidence.md) describe signed publication and installation.
+These source checks do not qualify a deployed service or every assembly server port.
 
 ## Implemented scope
 

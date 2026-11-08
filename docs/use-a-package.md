@@ -1,8 +1,9 @@
 # Use a source package
 
-This example calls a function from `stubbi/math@0.6.0`.
+This V1 compatibility example calls a function from `stubbi/math@0.6.0`.
+It retains that exact published package version.
 It runs on Linux x86-64.
-Use Asm 0.6.0.
+Use Asm 0.6.0 or later.
 Run `asm doctor` before you start.
 
 ## Create the project
@@ -99,6 +100,7 @@ Use `asm remove stubbi/math` to remove the selection.
 Remove its include and function calls from your source too.
 The command retains cached files.
 
-The current resolver supports direct source dependencies.
-It does not resolve transitive dependencies or version ranges.
+These V1 commands select exact direct source dependencies.
+For signed V2 ranges, transitive graphs, and features, use the [V2 dependency workflow](hosting.md#resolve-and-restore-v2-dependencies).
+That workflow requires an explicitly configured V2 registry and trusted root.
 A lock file checks declared packages; GNU assembler can still read other local files.

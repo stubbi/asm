@@ -59,6 +59,8 @@ def main(argv=None):
             item.add_argument("--expected-revision", type=int, required=True)
         if name == "import":
             item.add_argument("--plan-sha256", required=True)
+            item.add_argument("--distribution-root", type=Path,
+                              help="Check a matching private local distribution before reading database credentials")
         if name == "bind-namespace":
             item.add_argument("--namespace", required=True)
             item.add_argument("--github-id", type=int, required=True)
@@ -73,6 +75,8 @@ def main(argv=None):
             delegated += ["--repository", REPOSITORY, "--commit", commit, "--expected-revision", str(args.expected_revision)]
         if args.command == "import":
             delegated += ["--plan-sha256", args.plan_sha256]
+            if args.distribution_root is not None:
+                delegated += ["--distribution-root", str(args.distribution_root)]
         if args.command == "bind-namespace":
             delegated += ["--namespace", args.namespace, "--github-id", str(args.github_id), "--acceptance-commit", commit]
         return registry_admin.main(delegated)

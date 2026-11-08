@@ -26,11 +26,14 @@ class Page(HTMLParser):
         super().__init__()
         self.links, self.scripts, self.assets, self.ids, self.text = [], [], [], [], []
         self.forms, self.script_attributes = [], []
+        self.catalog_links = []
         self.feed(content)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "a": self.links.append(attrs.get("href", ""))
+        if tag == "a" and 'package-catalog-name' in attrs.get('class', '').split():
+            self.catalog_links.append(attrs.get('href', ''))
         if tag == "script" and "src" in attrs: self.scripts.append(attrs["src"])
         if tag == "script": self.script_attributes.append(attrs)
         if tag == "form": self.forms.append(attrs)
@@ -458,6 +461,7 @@ for fragment in ("<details>\\n", "<summary>", "<details>\\n<summary>label</summa
         self.assertEqual(overview.count('<footer '), 1)
         self.assertNotIn('aria-current="page">Sponsor', overview)
         self.assertIn("namespace", self.read("packages/stubbi").lower())
+        self.assertIn('aria-label="Browse packages in the stubbi namespace"', overview)
         missing = (self.stage / "404.html").read_text()
         self.assertIn('content="noindex"', missing)
         self.assertIn('href="https://asm.build/404.html"', missing)
@@ -471,6 +475,71 @@ for fragment in ("<details>\\n", "<summary>", "<details>\\n<summary>label</summa
         self.assertIn('<dd>AGPL-3.0-or-later</dd>', catalog)
         self.assertNotIn('<dd>MIT</dd>', catalog)
         self.assertIn('stubbi/math/0.10.0/', catalog)
+
+    def test_native_catalog_pages_are_bounded_sorted_and_keep_withdrawn_packages(self):
+        self.records = [self.record('0.2.0', self.old_commit, 'Package ' + str(number), 'MIT',
+                                    'x86_64-linux', name=f'stubbi/item-{number:02d}')
+                        for number in reversed(range(53))]
+        self.records[0].update(yanked=True, yank_reason='Withdrawn fixture')
+        routes = self.generate()
+        self.assertIn('packages/page/2/', routes)
+        self.assertNotIn('packages/page/3/', routes)
+        names = []
+        for route, expected_count, expected_range in (
+                ('packages/', 50, 'Showing 1–50 of 53 packages.'),
+                ('packages/page/2/', 3, 'Showing 51–53 of 53 packages.')):
+            page = self.read(route)
+            parsed = Page(page)
+            identities = [urlsplit(urljoin('https://asm.build/' + route, link)).path
+                          for link in parsed.catalog_links]
+            self.assertEqual(len(identities), expected_count)
+            names.extend(identities)
+            self.assertIn(expected_range, page)
+            self.assertIn('aria-label="Catalog pages"', page)
+        self.assertEqual(names, [f'/packages/stubbi/item-{number:02d}/' for number in range(53)])
+        first, second = self.read('packages'), self.read('packages/page/2')
+        self.assertIn('href="../packages/" aria-current="page">All packages</a>', first)
+        self.assertIn('href="../../../packages/" aria-current="location">All packages</a>', second)
+        self.assertIn('Page 1 of 2', first)
+        self.assertIn('Assembly package catalog and releases — page 2', second)
+        self.assertIn('href="../packages/page/2/" rel="next"', first)
+        self.assertNotIn('rel="prev"', first)
+        self.assertIn('href="../../../packages/" rel="prev"', second)
+        self.assertNotIn('rel="next"', second)
+        self.assertIn('No active release', second)
+        self.assertNotIn('item-52/0.2.0/', second)
+        self.assertIn('href="../../../explore/"', second)
+        self.assertIn('href="../../../index.html#search?all=1"', second)
+
+
+    def test_namespace_pagination_does_not_collide_with_page_namespace_or_package(self):
+        self.records = [self.record('0.2.0', self.old_commit, 'Package ' + str(number), 'MIT',
+                                    'x86_64-linux', name=f'page/item-{number:02d}')
+                        for number in range(52)]
+        self.records.append(self.record('0.2.0', self.old_commit, 'A package named page', 'MIT',
+                                        'x86_64-linux', name='page/page'))
+        routes = self.generate()
+        for route in ('packages/page/', 'packages/page/2/', 'packages/page/page/',
+                      'packages/page/page/0.2.0/', 'packages/page/page/2/'):
+            self.assertIn(route, routes)
+        first, second = self.read('packages/page'), self.read('packages/page/page/2')
+        self.assertIn('href="../../packages/" aria-current="location">All packages</a>', first)
+        self.assertIn('Showing 1–50 of 53 packages.', first)
+        self.assertIn('href="../../packages/page/page/2/" rel="next"', first)
+        self.assertIn('href="../../../../packages/page/" rel="prev"', second)
+        self.assertIn('Showing 51–53 of 53 packages.', second)
+        self.assertIn('A package named page', self.read('packages/page/page'))
+        self.assertEqual(len(routes), len(set(routes)))
+
+
+    def test_empty_native_catalog_has_no_pagination(self):
+        self.records = []
+        routes = self.generate()
+        catalog = self.read('packages')
+        self.assertIn('The registry has no published packages yet.', catalog)
+        self.assertNotIn('aria-label="Catalog pages"', catalog)
+        self.assertEqual(set(routes), {'packages/', '404.html'})
+
 
     def test_missing_page_recovery_and_assets_resolve_from_nested_unknown_address(self):
         self.generate()
@@ -742,11 +811,17 @@ class DiscoveryPageTests(unittest.TestCase):
 
     def test_native_pages_keep_unknown_counts_and_do_not_relabel_totals(self):
         routes = self.module.write_discovery_pages(self.stage, self.index, self.snapshot)
-        self.assertEqual(set(routes), {"browse/popular/", "browse/new/", "browse/updated/", "discovery/"})
+        self.assertEqual(set(routes), {"discovery/"})
         page = (self.stage / "browse/popular/index.html").read_text()
         self.assertIn("Download data is unavailable", page)
         self.assertNotIn("1 downloads", page)
+        for kind in ("popular", "new", "updated"):
+            content = (self.stage / f"browse/{kind}/index.html").read_text()
+            self.assertIn('name="robots" content="noindex"', content)
+            self.assertIn('Browse all packages</a>', content)
+            self.assertIn(f'rel="canonical" href="https://asm.build/browse/{kind}/"', content)
         metrics = (self.stage / "discovery/index.html").read_text()
+        self.assertNotIn('name="robots" content="noindex"', metrics)
         self.assertIn("known bots, and internal validation do not enter Popular", metrics)
         self.assertIn("Historical imports do not invent those events", metrics)
         self.assertIn("≥", metrics)
@@ -768,6 +843,12 @@ class DiscoveryPageTests(unittest.TestCase):
         self.assertIn('datetime="2026-11-01T00:29:24Z"', new)
         self.assertIn("First GitHub release", new)
         self.assertNotIn("first entered the registry", new)
+        routes = self.module.write_discovery_pages(self.stage, self.index, self.snapshot)
+        self.assertEqual(set(routes), {"browse/popular/", "browse/new/", "browse/updated/", "discovery/"})
+        for kind in ("popular", "new", "updated"):
+            content = (self.stage / f"browse/{kind}/index.html").read_text()
+            self.assertNotIn('name="robots" content="noindex"', content)
+            self.assertIn('stubbi/math</a>', content)
 
     def test_explicit_purpose_categories_join_active_packages_and_reject_typos(self):
         value = {"schema": 1, "categories": [{"id": "math", "name": "Math", "packages": ["stubbi/math"]}]}
