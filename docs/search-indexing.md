@@ -48,6 +48,29 @@ The public architecture page uses `/browse/architectures/x86-64`.
 Its earlier underscore addresses remain working aliases.
 Registry identifiers, targets, filters, and private search fragments retain literal `x86_64` values.
 
+### Schema review, 8 November 2026
+
+Squirrelscan reports eight failed page checks, with ten underlying complaints.
+Seven expect article metadata on `/docs`, `/reference`, and `stubbi/hello` versions `0.1.0` through `0.5.0`.
+One guide check groups missing `author`, `datePublished`, and `image` fields.
+
+Docs and the source-file index are collections, not articles.
+Their `ItemList` metadata describes the same links, names, and order as the visible pages.
+The source index records its exact commit and each file's actual URL and SHA-256 digest.
+It uses `MediaObject`, which supports `contentUrl` and `sha256`, without inferring file authorship or license.
+The guide keeps its `TechArticle` type and a stable entity identifier.
+
+The five historical Hello source paths contain no root README.
+Keep their exact source metadata and unavailable-documentation state instead of substituting newer or nested documentation.
+Git commit authors and timestamps do not establish a guide's byline or public publication date.
+The shared social image represents package search, not the guide's technical walkthrough.
+
+Google's Article guidance specifies no required properties and recommends applicable facts.
+Keep unsupported values absent and preserve the raw scanner findings.
+See [Article guidance](https://developers.google.com/search/docs/appearance/structured-data/article),
+[CollectionPage](https://schema.org/CollectionPage), [ItemList](https://schema.org/ItemList), and
+[sha256](https://schema.org/sha256), reviewed on 8 November 2026.
+
 ## Page intent and keyword hypotheses
 
 These phrases describe existing registry and CLI tasks.

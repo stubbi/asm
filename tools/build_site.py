@@ -12,7 +12,7 @@ import sys
 import subprocess
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from xml.etree import ElementTree
 
@@ -153,9 +153,23 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     selected = {name: data for name, data in files.items() if name.endswith((".s", ".inc")) or name == "commands.json"}
     registry.require(selected, "source commit has no CLI reference files")
     materialize(selected, output)
-    rows = []
-    for name, (data, _) in sorted(selected.items()):
-        rows.append(f'<li><a href="{escape(name, quote=True)}">{escape(name)}</a><code>{hashlib.sha256(data).hexdigest()}</code></li>')
+    rows, items = [], []
+    canonical = "https://asm.build/reference"
+    for position, (name, (data, _)) in enumerate(sorted(selected.items()), 1):
+        digest = hashlib.sha256(data).hexdigest()
+        rows.append(f'<li><a href="{escape(name, quote=True)}">{escape(name)}</a><code>{digest}</code></li>')
+        url = canonical + "/" + quote(name, safe="/")
+        items.append({"@type": "ListItem", "position": position,
+                      "item": {"@type": "MediaObject", "@id": url, "url": url,
+                               "contentUrl": url, "name": name, "sha256": digest}})
+    structured = {"@context": "https://schema.org", "@type": "CollectionPage",
+                  "@id": canonical + "#webpage", "url": canonical,
+                  "name": "Assembly CLI source files and digests", "inLanguage": "en",
+                  "isBasedOn": "https://github.com/stubbi/asm/tree/" + commit + "/cli",
+                  "identifier": {"@type": "PropertyValue", "propertyID": "Git commit", "value": commit},
+                  "mainEntity": {"@type": "ItemList", "@id": canonical + "#files",
+                                 "itemListOrder": "https://schema.org/ItemListOrderAscending",
+                                 "numberOfItems": len(items), "itemListElement": items}}
     page = f'''<!doctype html>
 <html lang="en">
   <head>
@@ -182,6 +196,7 @@ def write_reference(repo: Path, commit: str, output: Path) -> None:
     <link rel="alternate" type="application/atom+xml" href="../blog/atom.xml" title="Asm blog">
     <link rel="icon" type="image/svg+xml" href="../icon.svg">
     <link rel="stylesheet" href="../styles.css">
+    {package_pages._json_ld(structured)}
     <script src="../navigation.js"></script>
     <script src="../repository-stars.js" defer></script>
     <title>Assembly CLI source files and digests | Asm</title>

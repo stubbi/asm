@@ -19,21 +19,28 @@ sys.path.insert(0, str(ROOT / "tools"))
 class Page(HTMLParser):
     def __init__(self, content):
         super().__init__()
-        self.links, self.tags, self.text, self.structured = [], [], [], []
+        self.links, self.tags, self.text, self.structured, self.cards = [], [], [], [], []
         self.json_text = None
+        self.card, self.card_heading = None, False
         self.feed(content)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         self.tags.append((tag, attrs))
         if tag == "a": self.links.append(attrs)
+        if tag == "a" and "directory-card" in attrs.get("class", "").split():
+            self.card = {"url": attrs["href"], "name": ""}; self.cards.append(self.card)
+        if tag == "h3" and self.card is not None: self.card_heading = True
         if tag == "script" and attrs.get("type") == "application/ld+json": self.json_text = ""
 
     def handle_data(self, text):
         self.text.append(text)
         if self.json_text is not None: self.json_text += text
+        if self.card_heading: self.card["name"] += text
 
     def handle_endtag(self, tag):
+        if tag == "h3": self.card_heading = False
+        if tag == "a": self.card = None
         if tag == "script" and self.json_text is not None:
             self.structured.append(json.loads(self.json_text))
             self.json_text = None
@@ -89,12 +96,37 @@ class DocsTests(unittest.TestCase):
         for invented in ("author", "datePublished", "dateModified", "aggregateRating"):
             self.assertNotIn(invented, schema)
 
+    def test_directory_item_list_roundtrips_actual_card_names_order_and_canonical_destinations(self):
+        _, content = self.generate()
+        page = Page(content)
+        listing = page.structured[0]["mainEntity"]
+        self.assertEqual(listing["@type"], "ItemList")
+        self.assertEqual(listing["numberOfItems"], len(page.cards))
+        self.assertEqual(len(page.cards), 12)
+        items = listing["itemListElement"]
+        self.assertEqual([item["name"] for item in items], [card["name"] for card in page.cards])
+        self.assertEqual([item["position"] for item in items], list(range(1, 13)))
+        canonical = {"/guide.html": "/guide", "/reference/": "/reference"}
+        destinations = []
+        for card in page.cards:
+            url = urlsplit(urljoin("https://asm.build/docs/", card["url"]))
+            if url.netloc == "asm.build": url = url._replace(path=canonical.get(url.path, url.path))
+            destinations.append(url.geturl())
+        self.assertEqual([item["url"] for item in items], destinations)
+        self.assertTrue(all(item["@type"] == "ListItem" for item in items))
+        self.assertIn("https://asm.build/guide", destinations)
+        self.assertIn("https://asm.build/reference", destinations)
+        self.assertIn("https://asm.build/agents.md", destinations)
+        for item in items:
+            self.assertTrue({"author", "publisher", "datePublished", "dateModified", "aggregateRating"}.isdisjoint(item))
+
     def test_guide_metadata_identifies_the_real_walkthrough_without_invented_dates_or_authors(self):
         content = (ROOT / "site/guide.html").read_text()
         page = Page(content)
         self.assertEqual(len(page.structured), 1)
         schema = page.structured[0]
         self.assertEqual(schema["@type"], "TechArticle")
+        self.assertEqual(schema.get("@id"), "https://asm.build/guide#article")
         self.assertEqual(schema["url"], "https://asm.build/guide")
         self.assertEqual(schema["headline"], "Build with Asm")
         for invented in ("author", "datePublished", "dateModified", "aggregateRating"):

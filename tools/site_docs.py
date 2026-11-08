@@ -61,8 +61,17 @@ def write_docs(repo: Path, stage: Path) -> list[str]:
                      + escape(title) + '</h3><p>' + escape(description) + '</p></a>')
         body += '</div></section>'
     description = "Find installation, first-project, package, target, and security guides. Detailed instructions open in the maintained repository documentation."
+    local_urls = {"../guide.html": "https://asm.build/guide", "../reference/": "https://asm.build/reference",
+                  "../agents.md": "https://asm.build/agents.md"}
+    items = []
+    for _, _, cards in GROUPS:
+        for title, href, _ in cards:
+            url = local_urls.get(href, href)
+            registry.require(url.startswith("https://"), "documentation item needs an absolute URL")
+            items.append({"@type": "ListItem", "position": len(items) + 1, "name": title, "url": url})
     structured = {"@context": "https://schema.org", "@type": "CollectionPage", "url": "https://asm.build/docs",
-                  "name": "Documentation", "description": description, "inLanguage": "en"}
+                  "name": "Documentation", "description": description, "inLanguage": "en",
+                  "mainEntity": {"@type": "ItemList", "numberOfItems": len(items), "itemListElement": items}}
     content = package_pages._page("docs/", "Installation and package documentation", description,
                                   body, package_pages._chrome(stage), active_nav="Docs", scripts=False, structured_data=structured)
     registry.write_atomic(stage / "docs/index.html", content.encode("utf-8"))

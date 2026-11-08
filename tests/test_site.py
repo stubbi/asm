@@ -500,6 +500,34 @@ class SearchDiscoveryTests(unittest.TestCase):
             with self.subTest(statistic=label):
                 self.assertEqual(self.definition_values(page, label), [f"{value:,}"])
 
+    def test_reference_metadata_matches_visible_files_recorded_commit_and_downloaded_bytes(self):
+        page = self.pages["reference/index.html"]
+        scripts = [item for item in page.elements if item["tag"] == "script"
+                   and item["attrs"].get("type") == "application/ld+json"]
+        self.assertEqual(len(scripts), 1, "The source-file collection needs structured metadata")
+        schema = json.loads("".join(scripts[0]["text"]))
+        self.assertEqual(schema["@type"], "CollectionPage")
+        self.assertEqual(schema["@id"], "https://asm.build/reference#webpage")
+        inventory = schema["mainEntity"]
+        links = [item for item in page.main_links if not urlsplit(item["attrs"]["href"]).scheme]
+        self.assertEqual(inventory["numberOfItems"], len(links))
+        self.assertEqual(len(inventory["itemListElement"]), len(links))
+        visible_digests = {"".join(item["text"]) for item in page.elements if item["tag"] == "code"}
+        self.assertIn(schema["identifier"]["value"], visible_digests)
+        self.assertEqual(schema["isBasedOn"], "https://github.com/stubbi/asm/tree/" + schema["identifier"]["value"] + "/cli")
+        for position, (entry, link) in enumerate(zip(inventory["itemListElement"], links), 1):
+            item = entry["item"]
+            url = urljoin("https://asm.build/reference", link["attrs"]["href"])
+            self.assertEqual(entry["position"], position)
+            self.assertEqual(item["name"], "".join(link["text"]))
+            self.assertEqual(item["url"], url)
+            self.assertEqual(item["contentUrl"], url)
+            self.assertEqual(item["@type"], "MediaObject")
+            self.assertEqual(item["sha256"], hashlib.sha256((self.output / urlsplit(url).path.lstrip("/")).read_bytes()).hexdigest())
+            self.assertIn(item["sha256"], visible_digests)
+        for invented in ("author", "datePublished", "dateModified", "image", "aggregateRating"):
+            self.assertNotIn(invented, schema)
+
     def test_private_discovery_state_cannot_be_written_into_public_sources_or_output(self):
         candidate = Path(self.temporary.name) / "private-state-check"
         for state in (candidate / "state.sqlite3", ROOT / "site/state.sqlite3", ROOT / "skills/asm-build/state.sqlite3"):
