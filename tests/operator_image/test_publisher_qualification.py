@@ -18,6 +18,23 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 
 class PublisherQualificationTests(unittest.TestCase):
+    def test_suite_requires_every_assertion_to_pass(self):
+        qualification = self.module()
+        class ExpectedFailureCase(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_contract(self):
+                self.fail("This failed assertion cannot qualify the publisher.")
+        class UnexpectedSuccessCase(unittest.TestCase):
+            @unittest.expectedFailure
+            def test_contract(self):
+                pass
+        for case in (ExpectedFailureCase, UnexpectedSuccessCase):
+            suite = unittest.defaultTestLoader.loadTestsFromTestCase(case)
+            expected = [case("test_contract").id()]
+            with self.subTest(case=case.__name__), contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(ValueError):
+                qualification.run_suite(suite, expected)
+
     def test_suite_receipts_go_to_the_log_without_contaminating_the_marker_channel(self):
         qualification = self.module()
         class NoisyCase(unittest.TestCase):
