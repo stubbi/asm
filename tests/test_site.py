@@ -1,7 +1,10 @@
 """Static checks for accessible references and local website assets."""
 
 from html.parser import HTMLParser
+from contextlib import redirect_stderr
+from copy import deepcopy
 from datetime import datetime, timezone
+from io import BytesIO, StringIO
 from pathlib import Path
 import hashlib
 import json
@@ -13,6 +16,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from urllib.error import HTTPError
+from urllib.request import Request
 from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
@@ -403,6 +408,249 @@ class SiteTests(unittest.TestCase):
             with self.subTest(source=relative):
                 self.assertTrue((ROOT / relative).exists(), f"The source link is missing: {relative}")
 
+
+
+class ReleaseAssetRecoveryTests(unittest.TestCase):
+    url = "https://github.com/stubbi/asm/releases/download/v0.6.0/payload"
+    metadata_url = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.0"
+    asset_url = "https://api.github.com/repos/stubbi/asm/releases/assets/123"
+
+    class Response(BytesIO):
+        status = 200
+
+        def __init__(self, url, body, headers=None):
+            super().__init__(body)
+            self.url = url
+            self.headers = {"Content-Length": str(len(body)), **(headers or {})}
+
+        def geturl(self):
+            return self.url
+
+    class Opener:
+        def __init__(self, events):
+            self.events = list(events)
+            self.requests = []
+
+        def open(self, request, timeout):
+            self.requests.append((request.full_url, dict(request.header_items()), timeout))
+            expected_url, event = self.events.pop(0)
+            if request.full_url != expected_url or timeout != 20:
+                raise AssertionError("Unexpected transport request: " + request.full_url)
+            if isinstance(event, Exception):
+                raise event
+            return event
+
+    def release(self):
+        return {"tag_name": "v0.6.0", "draft": False, "assets": [
+            {"id": 123, "name": "payload", "state": "uploaded", "size": 3,
+             "browser_download_url": self.url}]}
+
+    def recovery_opener(self, metadata=None, body=b"abc", final_url=None, binary_headers=None):
+        metadata = self.release() if metadata is None else metadata
+        encoded = metadata if isinstance(metadata, bytes) else json.dumps(metadata).encode()
+        return self.Opener([
+            (self.url, HTTPError(self.url, 504, "Gateway Time-out", {}, None)),
+            (self.metadata_url, self.Response(self.metadata_url, encoded)),
+            (self.asset_url, self.Response(final_url or self.asset_url, body, binary_headers)),
+        ])
+
+    def test_504_recovers_only_the_exact_public_asset_without_credentials(self):
+        opener = self.recovery_opener()
+        warning = StringIO()
+        try:
+            with redirect_stderr(warning):
+                result = build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                              expected_size=3, opener=opener)
+        except HTTPError as error:
+            self.fail("The exact public release asset was not recovered: " + str(error))
+        self.assertEqual(result, b"abc")
+        self.assertEqual(len(opener.requests), 3)
+        self.assertEqual(opener.requests[2][1]["Accept"], "application/octet-stream")
+        self.assertIn("504", warning.getvalue())
+        self.assertIn(self.url, warning.getvalue())
+        for _, headers, _ in opener.requests:
+            self.assertEqual(headers["Accept-encoding"], "identity")
+            self.assertTrue({"authorization", "cookie", "referer"}.isdisjoint(name.lower() for name in headers))
+
+    def test_non_504_errors_never_start_an_api_request(self):
+        for status in (403, 404, 500, 502, 503):
+            with self.subTest(status=status):
+                opener = self.Opener([(self.url, HTTPError(self.url, status, "Rejected", {}, None))])
+                warning = StringIO()
+                with redirect_stderr(warning), self.assertRaises(HTTPError) as failed:
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(failed.exception.code, status)
+                failed.exception.close()
+                self.assertEqual(len(opener.requests), 1)
+                self.assertEqual(warning.getvalue(), "")
+
+    def test_metadata_must_bind_one_uploaded_asset_to_the_original_release(self):
+        base = self.release()
+        cases = []
+        for key, value in (("draft", True), ("draft", None), ("tag_name", "v0.5.0"),
+                           ("assets", []), ("assets", [base["assets"][0]] * 1001)):
+            candidate = deepcopy(base)
+            candidate[key] = value
+            cases.append(candidate)
+        duplicate = deepcopy(base)
+        duplicate["assets"].append(deepcopy(duplicate["assets"][0]))
+        cases.append(duplicate)
+        for key, value in (("name", "different"), ("browser_download_url", self.url + "-other"),
+                           ("state", "open"), ("id", 0), ("id", -1), ("id", True),
+                           ("id", "123"), ("id", 123.0), ("id", 2**63),
+                           ("size", 4), ("size", True), ("size", "3")):
+            candidate = deepcopy(base)
+            candidate["assets"][0][key] = value
+            cases.append(candidate)
+        cases.append(b'{"tag_name":"v0.6.0","draft":false,"draft":false,"assets":[]}')
+        for metadata in cases:
+            with self.subTest(metadata=str(metadata)[:160]):
+                opener = self.recovery_opener(metadata)
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 2)
+
+    def test_api_endpoint_is_constructed_and_does_not_expand_the_public_url_policy(self):
+        metadata = self.release()
+        metadata["url"] = "https://evil.invalid/releases/tags/v0.6.0"
+        metadata["assets"][0]["url"] = "https://evil.invalid/asset"
+        opener = self.recovery_opener(metadata)
+        with redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                                  expected_size=3, opener=opener), b"abc")
+        self.assertEqual(opener.requests[-1][0], self.asset_url)
+        with self.assertRaises(registry.RegistryError):
+            build_site.check_https_url(self.asset_url, {"api.github.com"})
+        self.assertNotIn("api.github.com", build_site.ASSET_HOSTS)
+
+    def test_api_binary_preserves_storage_origins_encoding_and_exact_size_checks(self):
+        for final_url, headers, body in (
+            ("https://evil.invalid/payload", None, b"abc"),
+            ("https://api.github.com/repos/other/repo/releases/assets/123", None, b"abc"),
+            (self.asset_url, {"Content-Encoding": "gzip"}, b"abc"),
+            (self.asset_url, {"Content-Length": "4"}, b"abc"),
+            (self.asset_url, {"Content-Length": "3"}, b"ab"),
+        ):
+            with self.subTest(url=final_url, headers=headers, body=body):
+                opener = self.recovery_opener(body=body, final_url=final_url, binary_headers=headers)
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 3)
+        opener = self.recovery_opener(final_url="https://release-assets.githubusercontent.com/checked-payload")
+        with redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS,
+                                                  expected_size=3, opener=opener), b"abc")
+
+    def test_direct_response_mismatch_does_not_enter_recovery(self):
+        opener = self.Opener([(self.url, self.Response(self.url, b"abcd"))])
+        with self.assertRaises(registry.RegistryError):
+            build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_metadata_is_bounded_identity_encoded_and_tied_to_the_requested_api_route(self):
+        for final_url, body, headers in (
+            (self.metadata_url, b" " * (2 * 1024 * 1024 + 1), None),
+            (self.metadata_url, json.dumps(self.release()).encode(), {"Content-Encoding": "gzip"}),
+            ("https://api.github.com/repos/other/repo/releases/tags/v0.6.0", json.dumps(self.release()).encode(), None),
+        ):
+            with self.subTest(url=final_url, size=len(body), headers=headers):
+                opener = self.recovery_opener()
+                opener.events[1] = (self.metadata_url, self.Response(final_url, body, headers))
+                with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                self.assertEqual(len(opener.requests), 2)
+
+    def test_api_errors_do_not_reenter_recovery(self):
+        for position, url in ((1, self.metadata_url), (2, self.asset_url)):
+            with self.subTest(url=url):
+                opener = self.recovery_opener()
+                opener.events[position] = (url, HTTPError(url, 504, "Gateway Time-out", {}, None))
+                with redirect_stderr(StringIO()), self.assertRaises(HTTPError) as failed:
+                    build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3, opener=opener)
+                failed.exception.close()
+                self.assertEqual(len(opener.requests), position + 1)
+
+    def test_recovery_redirect_handlers_pin_metadata_and_allow_only_asset_storage(self):
+        opener = self.recovery_opener()
+        handlers = []
+        def make(handler):
+            handlers.append(handler)
+            return opener
+        with patch.object(build_site, "build_opener", side_effect=make), redirect_stderr(StringIO()):
+            self.assertEqual(build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3), b"abc")
+        with self.assertRaises(registry.RegistryError):
+            handlers[1].redirect_request(Request(self.metadata_url), None, 302, "Found", {},
+                                         "https://api.github.com/repos/other/repo/releases/tags/v0.6.0")
+        storage = "https://release-assets.githubusercontent.com/checked-payload"
+        redirected = handlers[2].redirect_request(Request(self.asset_url), None, 302, "Found", {}, storage)
+        self.assertEqual(redirected.full_url, storage)
+        with self.assertRaises(registry.RegistryError):
+            handlers[2].redirect_request(Request(self.asset_url), None, 302, "Found", {}, "https://evil.invalid/payload")
+
+    def test_recovered_corrupt_bytes_still_fail_the_existing_artifact_verifier(self):
+        record = deepcopy(registry.read_records(ROOT / "registry")[0])
+        artifact = {**record["artifacts"][0], "url": self.url, "bytes": 3, "sha256": "0" * 64}
+        record["artifacts"] = [artifact]
+        opener = self.recovery_opener()
+        with patch.object(build_site, "build_opener", return_value=opener), redirect_stderr(StringIO()):
+            with self.assertRaisesRegex(registry.RegistryError, "SHA-256 mismatch"):
+                build_site.verify_artifacts([record])
+        self.assertEqual(len(opener.requests), 3)
+
+    def test_release_metadata_reuse_ends_with_each_verification_call(self):
+        record = deepcopy(registry.read_records(ROOT / "registry")[0])
+        record["artifacts"] = [
+            {"kind": "executable", "target": "x86_64-linux", "url": self.url, "bytes": 3,
+             "sha256": hashlib.sha256(b"abc").hexdigest()},
+            {"kind": "executable", "target": "aarch64-linux", "url": self.url + "-two", "bytes": 3,
+             "sha256": hashlib.sha256(b"def").hexdigest()},
+        ]
+        metadata = self.release()
+        metadata["assets"].append({"id": 124, "name": "payload-two", "state": "uploaded", "size": 3,
+                                   "browser_download_url": self.url + "-two"})
+        for _ in range(2):
+            opener = self.Opener([
+                (self.url, HTTPError(self.url, 504, "Gateway Time-out", {}, None)),
+                (self.metadata_url, self.Response(self.metadata_url, json.dumps(metadata).encode())),
+                (self.asset_url, self.Response(self.asset_url, b"abc")),
+                (self.url + "-two", HTTPError(self.url + "-two", 504, "Gateway Time-out", {}, None)),
+                (self.asset_url[:-3] + "124", self.Response(self.asset_url[:-3] + "124", b"def")),
+            ])
+            with patch.object(build_site, "build_opener", return_value=opener), \
+                    patch.object(registry, "validate_artifact") as validate, redirect_stderr(StringIO()):
+                self.assertEqual(build_site.verify_artifacts([record]), {(record["name"], record["version"])})
+            self.assertEqual(validate.call_count, 2)
+            self.assertEqual(len(opener.requests), 5)
+
+    def test_release_metadata_reuse_evicts_old_entries_in_a_large_catalog(self):
+        events = []
+        for number in [*range(9), 0]:
+            url = f"https://github.com/stubbi/asm/releases/download/v0.6.{number}/payload"
+            api = f"https://api.github.com/repos/stubbi/asm/releases/tags/v0.6.{number}"
+            metadata = self.release()
+            metadata["tag_name"] = f"v0.6.{number}"
+            metadata["assets"][0]["browser_download_url"] = url
+            events.extend([(url, HTTPError(url, 504, "Gateway Time-out", {}, None)),
+                           (api, self.Response(api, json.dumps(metadata).encode())),
+                           (self.asset_url, self.Response(self.asset_url, b"abc"))])
+        opener = self.Opener(events)
+        read = build_site._scoped_asset_reader(build_site.read_https)
+        with patch.object(build_site, "build_opener", return_value=opener), redirect_stderr(StringIO()):
+            for number in [*range(9), 0]:
+                url = f"https://github.com/stubbi/asm/releases/download/v0.6.{number}/payload"
+                self.assertEqual(read(url, 16, build_site.ASSET_HOSTS, expected_size=3), b"abc")
+        self.assertEqual(len(opener.requests), 30)
+
+    def test_invalid_asset_selection_cannot_evict_valid_release_metadata(self):
+        cache = {self.metadata_url + "-" + str(number): self.release() for number in range(8)}
+        before = deepcopy(cache)
+        metadata = self.release()
+        metadata["assets"][0]["size"] = 4
+        opener = self.recovery_opener(metadata)
+        with redirect_stderr(StringIO()), self.assertRaises(registry.RegistryError):
+            build_site.read_https(self.url, 16, build_site.ASSET_HOSTS, expected_size=3,
+                                  opener=opener, _release_cache=cache)
+        self.assertEqual(cache, before)
 
 
 class SearchDiscoveryTests(unittest.TestCase):
