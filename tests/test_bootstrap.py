@@ -19,6 +19,7 @@ from pathlib import Path
 import platform
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,37 @@ def release_record(version="0.2.0"):
                        "sha256": hashlib.sha256(PAYLOAD).hexdigest(), "bytes": len(PAYLOAD),
                        "url": f"https://github.com/stubbi/asm/releases/download/v{version}/asm-{version}-x86_64-linux"}],
     }
+
+
+def first_party_payloads():
+    """Small executable containers for byte validation, never execution."""
+    payloads = {}
+    for target, machine in (("x86_64-linux", 62), ("aarch64-linux", 183), ("riscv64-linux", 243)):
+        header = bytearray(64)
+        header[:7] = b"\x7fELF\x02\x01\x01"
+        struct.pack_into("<HHI", header, 16, 2, machine, 1)
+        struct.pack_into("<Q", header, 32, 64)
+        struct.pack_into("<HHH", header, 52, 64, 56, 1)
+        payloads[target] = bytes(header) + struct.pack("<IIQQQQQQ", 1, 5, 0, 0x400000, 0x400000, 120, 120, 4096)
+    macho = bytearray(160)
+    struct.pack_into("<8I", macho, 0, 0xFEEDFACF, 0x100000C, 0, 2, 3, 120, 0x200000, 0)
+    struct.pack_into("<II16sQQQQIIII", macho, 32, 0x19, 72, b"__TEXT", 0, 160, 0, 160, 5, 5, 0, 0)
+    struct.pack_into("<IIQQ", macho, 104, 0x80000028, 24, 152, 0)
+    struct.pack_into("<6I", macho, 128, 0x32, 24, 1, 0xF0000, 0xF0000, 0)
+    payloads["aarch64-macos"] = bytes(macho)
+    return payloads
+
+
+def first_party_record():
+    record = release_record("0.6.0")
+    record["artifacts"] = [{"kind": "executable", "target": target, "bytes": len(data),
+                             "sha256": hashlib.sha256(data).hexdigest(),
+                             "url": f"https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-{target}"}
+                            for target, data in first_party_payloads().items()]
+    record["artifacts"].append({"kind": "source", "target": "x86_64-linux", "bytes": 7,
+                                 "sha256": hashlib.sha256(b"archive").hexdigest(),
+                                 "url": "https://github.com/stubbi/asm/releases/download/v0.6.0/asm-source.tar.gz"})
+    return record
 
 
 TOOL_DOUBLE = r'''#!/usr/bin/python3
@@ -131,8 +163,8 @@ elif tool == "curl":
     assert "--tlsv1.2" in args and "--max-filesize" in args and "--max-time" in args
     url = args[args.index("--url") + 1]
     output = pathlib.Path(args[args.index("--output") + 1])
-    artifact_urls = (cfg["artifact_url"], cfg.get("artifact_api_url"))
-    bundle_urls = (cfg["bundle_url"], cfg.get("bundle_api_url"))
+    artifact_urls = (cfg["artifact_url"], cfg.get("artifact_api_url"), cfg.get("artifact_delivery_url"))
+    bundle_urls = (cfg["bundle_url"], cfg.get("bundle_api_url"), cfg.get("bundle_delivery_url"))
     assert url in artifact_urls + bundle_urls
     if url in (cfg.get("artifact_api_url"), cfg.get("bundle_api_url")):
         assert args[args.index("--header") + 1] == "Accept: application/octet-stream"
@@ -173,6 +205,102 @@ else:
 
 
 class BootstrapGenerationTests(unittest.TestCase):
+    def test_first_party_files_bind_only_latest_checked_supported_executables_and_bundle(self):
+        record = first_party_record()
+        original = deepcopy(record)
+        payloads = first_party_payloads()
+        calls = []
+        def read(url, limit, *, expected_size):
+            calls.append((url, limit, expected_size))
+            target = url.removeprefix("https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-")
+            self.assertIn(target, ("x86_64-linux", "aarch64-linux", "aarch64-macos"))
+            self.assertEqual(expected_size, len(payloads[target]))
+            return payloads[target]
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp)
+            (stage / "index.html").write_text("<main><h1>Packages</h1></main>")
+            try:
+                selected = bootstrap.write_bootstrap(stage, [release_record("0.5.0"), record],
+                    {("stubbi/asm", "0.5.0"), ("stubbi/asm", "0.6.0")},
+                    bundle_reader=lambda url, limit: BUNDLE, artifact_reader=read)
+            except TypeError as error:
+                self.fail("The checked site must stage the bounded first-party bootstrap files: " + str(error))
+            expected = {f"bootstrap/sha256/{hashlib.sha256(data).hexdigest()}/asm-0.6.0-{target}": data
+                        for target, data in payloads.items() if target in ("x86_64-linux", "aarch64-linux", "aarch64-macos")}
+            expected[f"bootstrap/sha256/{hashlib.sha256(BUNDLE).hexdigest()}/release-attestation.sigstore.json"] = BUNDLE
+            actual = {path.relative_to(stage).as_posix(): path.read_bytes() for path in (stage / "bootstrap").rglob("*") if path.is_file()}
+            self.assertEqual(actual, expected)
+            self.assertEqual(set(selected["delivery"].values()), {"https://asm.build/" + path for path in expected})
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(record, original, "Transport copies must not rewrite immutable records")
+
+    def test_delivery_urls_cannot_select_other_bytes_hosts_or_paths(self):
+        release = bootstrap.installer_release([release_record()], {("stubbi/asm", "0.2.0")})
+        artifact = release["artifacts"][0]
+        primary = f"https://asm.build/bootstrap/sha256/{artifact['sha256']}/asm-0.2.0-x86_64-linux"
+        bundle = "https://asm.build/bootstrap/sha256/" + "a" * 64 + "/release-attestation.sigstore.json"
+        mapping = {artifact["url"]: primary, release["bundle_url"]: bundle}
+        try:
+            bootstrap.render_installer({**release, "delivery": mapping})
+        except registry.RegistryError as error:
+            self.fail("A complete exact first-party map must render: " + str(error))
+        for invalid in (None, {}, {artifact["url"]: primary}, {**mapping, "extra": primary},
+                        {**mapping, artifact["url"]: primary.replace("asm.build", "other.invalid")},
+                        {**mapping, artifact["url"]: primary.replace(artifact["sha256"], "0" * 64)},
+                        {**mapping, artifact["url"]: primary.replace("asm-0.2.0-x86_64-linux", "different")},
+                        {**mapping, artifact["url"]: primary + "?token=bad"},
+                        {**mapping, artifact["url"]: primary.replace("/asm-0.2.0-", "/../asm-0.2.0-")},
+                        {**mapping, release["bundle_url"]: bundle.replace("a" * 64, "A" * 64)},
+                        {**mapping, release["bundle_url"]: bundle.replace("release-attestation", "other")}):
+            with self.subTest(delivery=invalid), self.assertRaises(registry.RegistryError):
+                bootstrap.render_installer({**release, "delivery": invalid})
+
+    def test_invalid_selected_bootstrap_bytes_cannot_advertise_an_installer(self):
+        record = first_party_record()
+        payloads = first_party_payloads()
+        for kind in ("wrong-hash", "wrong-size", "wrong-container", "late-corrupt", "network"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temp:
+                stage = Path(temp)
+                (stage / "index.html").write_text("<main><h1>Packages</h1></main>")
+                changed = deepcopy(record)
+                if kind == "wrong-container":
+                    changed["artifacts"][0]["sha256"] = hashlib.sha256(b"x" * 120).hexdigest()
+                def reader(url, limit, *, expected_size):
+                    target = url.rsplit("asm-0.6.0-", 1)[1]
+                    data = payloads[target]
+                    if kind == "network": raise OSError("Controlled upstream failure")
+                    if kind == "late-corrupt" and target != "aarch64-linux": return data
+                    return data[:-1] if kind == "wrong-size" else b"x" * len(data)
+                try:
+                    with self.assertRaises((registry.RegistryError, OSError)):
+                        bootstrap.write_bootstrap(stage, [changed], {("stubbi/asm", "0.6.0")},
+                            bundle_reader=lambda url, limit: BUNDLE, artifact_reader=reader)
+                except TypeError as error:
+                    self.fail("Checked bytes must gate first-party staging: " + str(error))
+                self.assertFalse((stage / "install.sh").exists())
+                self.assertFalse((stage / "bootstrap").exists())
+
+    def test_first_party_namespace_collision_preserves_existing_paths(self):
+        for kind in ("directory", "file", "symlink"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                stage = root / "site"
+                stage.mkdir()
+                (stage / "index.html").write_text("<main><h1>Packages</h1></main>")
+                outside = root / "outside"
+                outside.mkdir()
+                (outside / "keep").write_bytes(b"Existing unrelated bytes")
+                path = stage / "bootstrap"
+                if kind == "directory": path.mkdir()
+                elif kind == "file": path.write_bytes(b"Keep this file")
+                else: path.symlink_to(outside, target_is_directory=True)
+                def forbidden(*args, **kwargs): self.fail("An occupied namespace must stop before artifact reads")
+                with self.assertRaises(registry.RegistryError):
+                    bootstrap.write_bootstrap(stage, [first_party_record()], {("stubbi/asm", "0.6.0")},
+                        bundle_reader=lambda url, limit: BUNDLE, artifact_reader=forbidden)
+                self.assertEqual((outside / "keep").read_bytes(), b"Existing unrelated bytes")
+                self.assertFalse((stage / "install.sh").exists())
+
     def test_checked_installer_binds_recovery_for_each_artifact_and_the_checked_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
             stage = Path(temp)
@@ -523,6 +651,57 @@ class BootstrapUserFlowTests(unittest.TestCase):
             self.write_script()
         except registry.RegistryError as error:
             self.fail("Valid recovery-bound installer cannot be exercised: " + str(error))
+
+    def delivery_fixture(self):
+        self.recovery_fixture()
+        artifact = self.release["artifacts"][0]
+        self.config["artifact_delivery_url"] = "https://asm.build/bootstrap/sha256/" + artifact["sha256"] + "/" + artifact["url"].rsplit("/", 1)[1]
+        self.config["bundle_delivery_url"] = "https://asm.build/bootstrap/sha256/" + "a" * 64 + "/release-attestation.sigstore.json"
+        self.release["delivery"] = {self.config["artifact_url"]: self.config["artifact_delivery_url"],
+                                     self.config["bundle_url"]: self.config["bundle_delivery_url"]}
+        try:
+            self.write_script()
+        except registry.RegistryError as error:
+            self.fail("A checked first-party installer must be executable: " + str(error))
+
+    def test_first_party_primary_still_verifies_signed_exact_bytes(self):
+        self.delivery_fixture()
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.destination.read_bytes(), PAYLOAD)
+        self.assertEqual([call["args"][call["args"].index("--url") + 1] for call in self.calls("curl")],
+                         [self.config["artifact_delivery_url"], self.config["bundle_delivery_url"]])
+        self.assertEqual(self.calls("gh")[-1]["args"][:2], ["attestation", "verify"])
+
+    def test_retired_first_party_copy_recovers_through_the_same_signed_api_asset(self):
+        self.delivery_fixture()
+        for key, connect in (("artifact_delivery_url", "000"), ("bundle_delivery_url", "000"),
+                             ("artifact_delivery_url", 200), ("bundle_delivery_url", 200)):
+            with self.subTest(asset=key, connect=connect):
+                for log in (self.tools / "logs").iterdir(): log.unlink()
+                result = self.run_installer(responses={self.config[key]: {"exit_code": 22, "status": 404, "connect": connect}})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.destination.read_bytes(), PAYLOAD)
+                urls = [call["args"][call["args"].index("--url") + 1] for call in self.calls("curl")]
+                expected_api = self.config["artifact_api_url" if key.startswith("artifact") else "bundle_api_url"]
+                self.assertEqual(urls.count(expected_api), 1)
+                self.assertEqual(self.calls("gh")[-1]["args"][:2], ["attestation", "verify"])
+                self.destination.unlink()
+
+    def test_first_party_permission_errors_and_missing_api_asset_do_not_install(self):
+        self.delivery_fixture()
+        cases = (
+            ({self.config["artifact_delivery_url"]: {"exit_code": 22, "status": 403}}, 1, False),
+            ({self.config["artifact_delivery_url"]: {"exit_code": 22, "status": 404, "connect": 404}}, 1, False),
+            ({self.config["artifact_delivery_url"]: {"exit_code": 22, "status": 404, "connect": 201}}, 1, False),
+            ({self.config["artifact_delivery_url"]: {"exit_code": 22, "status": 404},
+              self.config["artifact_api_url"]: {"exit_code": 22, "status": 404}}, 2, False),
+            ({}, 2, True))
+        for responses, count, bad_signature in cases:
+            with self.subTest(responses=responses, bad_signature=bad_signature):
+                for log in (self.tools / "logs").iterdir(): log.unlink()
+                self.assert_no_install(self.run_installer(responses=responses, verification_error=bad_signature))
+                self.assertEqual(len(self.calls("curl")), count)
 
     def test_healthy_downloads_never_use_recovery(self):
         self.recovery_fixture()

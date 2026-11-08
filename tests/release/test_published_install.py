@@ -8,11 +8,14 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+import struct
 import sys
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
+
+import test_release as fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/check_published_install.py"
@@ -25,6 +28,55 @@ class PublishedInstallTests(unittest.TestCase):
         module = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(module)
         return module
+
+    def public_copy_fixture(self, *, corrupt=False):
+        """Serve bounded synthetic public objects without executing any payload."""
+        module = self.module()
+        target = module.TARGETS[(platform.system(), platform.machine())]
+        binary = bytearray(fixtures.minimal_macho() if target.endswith("macos") else fixtures.minimal_arm_elf())
+        if target == "x86_64-linux":
+            struct.pack_into("<H", binary, 18, 62)
+        binary = bytes(binary)
+        artifact = {"target": target, "kind": "executable", "bytes": len(binary),
+                    "sha256": module.sha256(binary),
+                    "url": f"https://github.com/stubbi/asm/releases/download/v0.6.0/asm-0.6.0-{target}"}
+        record = {"schema": 1, "name": "stubbi/asm", "version": "0.6.0",
+                  "summary": "Synthetic public-copy fixture; no executable is run.", "license": "AGPL-3.0-or-later",
+                  "source": {"repository": "https://github.com/stubbi/asm", "commit": "a" * 40, "path": "."},
+                  "yanked": False, "artifacts": [artifact]}
+        path = f"/bootstrap/sha256/{artifact['sha256']}/asm-0.6.0-{target}"
+        responses = {"/build.json": json.dumps({"schema": 1, "reference_commit": "a" * 40,
+                                               "bootstrap_version": "0.6.0"}).encode(),
+                     "/registry/v1/packages/stubbi/asm/0.6.0.json": json.dumps(record).encode(),
+                     "/install.sh": b"#!/bin/sh\nexit 1\n",
+                     path: binary[:-1] + bytes([binary[-1] ^ 1]) if corrupt else binary}
+        def fetch(url_path, limit, **options):
+            if url_path.startswith("/bootstrap/"):
+                self.assertEqual(url_path, path)
+                self.assertEqual(limit, len(binary))
+            return responses[url_path]
+        evidence = {"commands": []}
+        failure = None
+        with patch.object(module, "fetch", side_effect=fetch), \
+                patch.object(module, "command", return_value=({"exit_code": 1}, b"")):
+            try:
+                module.check(target, "a" * 40, evidence)
+            except Exception as error:
+                failure = error
+        return module, evidence, failure, path, artifact
+
+    def test_first_party_copy_is_bound_to_record_digest_target_and_size(self):
+        module, evidence, failure, path, artifact = self.public_copy_fixture()
+        self.assertIsInstance(failure, ValueError)
+        self.assertIn("published installer failed", str(failure))
+        self.assertEqual(evidence.get("first_party_executable"),
+                         {"url": module.SITE + path, "bytes": artifact["bytes"], "sha256": artifact["sha256"]})
+
+    def test_corrupt_first_party_copy_stops_before_the_installer(self):
+        module, evidence, failure, _, _ = self.public_copy_fixture(corrupt=True)
+        self.assertIsInstance(failure, module.registry.RegistryError)
+        self.assertIn("SHA-256 mismatch", str(failure))
+        self.assertNotIn("first_party_executable", evidence)
 
     def test_wrong_native_host_fails_before_network_and_retains_evidence(self):
         wrong = "x86_64-linux" if platform.system() == "Darwin" else "aarch64-macos"

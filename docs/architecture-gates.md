@@ -20,8 +20,8 @@ The [published assembly source experiment](../experiments/assembly-server/README
 | Installation metadata | Whole-catalog v1 TSV, at most 1 MiB and 4,096 artifact rows | Exact installs retrieve bounded authenticated package data without search or a full catalog |
 | Metadata trust | Alpha package index relies on HTTPS and origin control | Reviewed TUF profile rejects invalid signatures, rollback, expiry, cross-registry confusion, and mixed snapshots |
 | Trust scaling | No measured delegation or snapshot profile | Cold and warm dependency tests establish bounded trust requests, bytes, validation time, and rotation behavior |
-| Artifact storage | GitHub release assets; 64 MiB alpha limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
-| Mirrors and CDN | No qualified multi-origin artifact delivery | Corrupt and stale mirrors fail verification; healthy alternatives work without changing package authority |
+| Artifact storage | GitHub release assets; checked first-party copies for the current bootstrap only; 64 MiB alpha limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
+| Mirrors and CDN | Controlled bootstrap copies; no qualified general multi-origin artifact delivery | Corrupt and stale mirrors fail verification; healthy alternatives work without changing package authority |
 | Publication | Retained v1 records and hosted operator imports; public publisher authentication remains unimplemented | Authenticated durable tasks, final authorization checks, fencing, idempotency, and recoverable distribution steps |
 | Distribution heads | No authenticated metadata-head publication service | Fenced conditional advancement preserves monotonic revisions and critical policy despite reversed worker completion |
 | Discovery availability | No asynchronous public distribution state | Only distributed `published` releases appear as installable; that transition emits its own revisioned event |

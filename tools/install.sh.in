@@ -486,12 +486,20 @@ ASM_ACL_END
             [0-9][0-9][0-9]' '[0-9][0-9][0-9]) ;;
             *) exit 1 ;;
         esac
-        # A missing asset, permission refusal, or TLS verification error is
-        # fatal. Only transient network and gateway failures can try once.
-        case "$asm_response" in 4[0-9][0-9]' '*|*' '4[0-9][0-9]) exit 1 ;; esac
+        # An older installer can refer to a first-party copy no longer staged.
+        # Only that fixed copy's origin 404 can use the same pinned API asset.
+        asm_copy_miss=no
+        case "$asm_fetch_code:$asm_response" in
+            '22:404 000'|'22:404 200')
+                case "$1" in https://asm.build/bootstrap/sha256/*) asm_copy_miss=yes ;; esac ;;
+        esac
+        case "$asm_response" in
+            *' '4[0-9][0-9]) exit 1 ;;
+            4[0-9][0-9]' '*) [ "$asm_copy_miss" = yes ] || exit 1 ;;
+        esac
         case "$asm_fetch_code" in
             5|6|7|28|52|55|56) ;;
-            22) case "$asm_response" in 502' '*|503' '*|504' '*|*' '502|*' '503|*' '504) ;; *) exit 1 ;; esac ;;
+            22) case "$asm_response" in 502' '*|503' '*|504' '*|*' '502|*' '503|*' '504) ;; *) [ "$asm_copy_miss" = yes ] || exit 1 ;; esac ;;
             *) exit 1 ;;
         esac
         printf '%s\n' 'The release download was interrupted. Trying the same GitHub asset.' >&2

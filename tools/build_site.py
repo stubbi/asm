@@ -467,7 +467,9 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
         installer = bootstrap.write_bootstrap(
             stage, records, checked,
             bundle_reader=lambda url, limit: artifact_reader(url, limit, ASSET_HOSTS),
-            asset_resolver=getattr(artifact_reader, "asset_resolver", None))
+            asset_resolver=getattr(artifact_reader, "asset_resolver", None),
+            artifact_reader=(lambda url, limit, *, expected_size: artifact_reader(
+                url, limit, ASSET_HOSTS, expected_size=expected_size)) if verify else None)
         if trust_publication is not None:
             import trusted_site
             registry.require(verify and trust_verifier is not None and trust_inspector is not None,
