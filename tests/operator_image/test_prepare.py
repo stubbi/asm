@@ -83,6 +83,19 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(options["sslkey"], str(destination / "tls.key"))
         self.assertEqual((destination / "database.url").stat().st_mode & 0o777, 0o600)
 
+    def test_v2_certificate_roles_use_the_same_private_snapshot_policy(self):
+        for role in ("asm_publisher", "asm_publication_worker", "asm_distributor"):
+            body = source_url(self.tls, hostaddr="127.0.0.1").replace(b"asm_operator@", role.encode() + b"@")
+            (self.config / "..generation_one/database.url").chmod(0o600)
+            (self.config / "..generation_one/database.url").write_bytes(body)
+            (self.config / "..generation_one/database.url").chmod(0o440)
+            destination = self.base / role
+            with self.subTest(role=role):
+                result = prepare.prepare(self.config, self.tls, destination, role, self.psql)
+                self.assertEqual(result["role"], role)
+                self.assertEqual((destination / "tls.key").stat().st_mode & 0o7777, 0o600)
+                self.assertEqual(urlsplit((destination / "database.url").read_text()).username, role)
+
     def test_url_policy_refuses_ambient_options_roles_paths_and_implicit_dns(self):
         for body in (source_url(self.tls, sslmode="disable"), source_url(self.tls, options="untrusted"),
                      source_url(self.tls, sslkey="/etc/unrelated.key"),

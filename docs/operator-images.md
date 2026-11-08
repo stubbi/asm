@@ -1,6 +1,6 @@
 # Explicit registry operator image
 
-Status: source candidate, 5 November 2026. Native image qualification and publication remain pending.
+Status: source candidate, 8 November 2026. V2 runtime image qualification and publication remain pending.
 
 This image packages deliberate registry operations for short AMD64 Linux Jobs.
 The native CLI and HTTP application remain assembly.
@@ -20,7 +20,7 @@ The image entrypoint is:
 ```
 
 Python isolated mode excludes ambient Python configuration.
-The dispatcher adds only its immutable application directory.
+The dispatcher adds its immutable application directory and fixed `/opt/asm/storage` dependency directory.
 The default command is `--help`; starting the image does not change a database.
 
 | Command arguments | Result |
@@ -144,6 +144,61 @@ Resolved Debian packages can change between repository updates.
 Qualification binds the actual immutable image; it does not promise byte-for-byte reproducibility across those updates.
 
 ## Qualification and publication
+
+### V2 source candidates
+
+The same Dockerfile now has explicit `publisher` and `checker` targets.
+The default `final` target remains the operator image.
+All three candidates require Linux AMD64 and the complete accepted-source bundle.
+No V2 image digest is qualified by these source changes.
+
+| Target | Fixed operation | Dependency boundary |
+| --- | --- | --- |
+| `final` | Existing catalog commands, `publisher-admin`, `check-worker`, `distribution`, and `prepare-signers` | Fixed psql, kubectl, and `asm-trust`; hash-locked storage SDK |
+| `publisher` | `/usr/local/bin/asm-publisher` | Assembly application; libmicrohttpd 1.0.3, libpq 16.15, and OpenSSL 3.5.9 |
+| `checker` | `/usr/bin/python3 -B -I /app/tools/checker_entrypoint.py --task ID` | Structural checker modules and Python; no operator, storage SDK, database client, or signing tool |
+
+`publisher-admin` accepts `--connection-file` before its subcommand, like the existing private tool.
+Its `check-policy` operation selects the bundled checker revision and policy digest.
+`distribution publish` fixes the signing executable at `/app/bin/asm-trust`.
+`check-worker` selects the Kubernetes executor and fixed `/usr/bin/kubectl`.
+Caller arguments cannot select privileged executables or checker source revisions.
+The checker reads only `/input/manifest.json` and `/input/objects`.
+Its canonical receipt goes to standard output.
+Runtime isolation and input-volume permissions require separate deployment qualification.
+
+The publisher build uses the reviewed [OpenSSL profile](../server/publisher/README.md#build-the-reviewed-library-profile).
+Assembly and Go build inputs come from the verified accepted Git objects.
+The operator pins Go 1.27.3 and kubectl 1.35.10 to upstream archive digests.
+The storage SDK uses `requirements-storage.txt` with mandatory hashes.
+Go module notices, SDK license files, and the upstream Kubernetes release's `LICENSES` directory remain in the image.
+Resolved Debian package versions still require actual-image evidence.
+
+After building a candidate, run the separate smoke check:
+
+```sh
+python3 tools/test_operator_image.py --context DOCKER_CONTEXT \
+  --revision FULL_COMMIT_ID --image LOCAL_IMAGE --smoke-kind checker \
+  --output NEW_REPORT.json
+```
+
+Select `operator`, `publisher`, or `checker` for `--smoke-kind`.
+The check preserves the ambient Docker context and requires a new report file.
+It records image identity, packaged source hashes, non-root execution, help, and invalid-input behavior.
+The publisher check also records loaded-library hashes and the private OpenSSL loader paths.
+The assembly publisher currently prints usage and exits `64` for `--help`.
+That retained behavior does not start a listener or read credentials.
+Smoke reports have scope `v2-runtime-smoke`; the publication gate does not accept that scope.
+Native HTTP, authority, checker isolation, credential projection, and recovery gates remain separate.
+The existing workflow publishes only its default operator target after its existing qualification procedure.
+New target publication requires its own reviewed qualification and publication change.
+
+Pinned tool sources were checked on 8 November 2026:
+[Go release metadata](https://go.dev/dl/?mode=json&include=all),
+[kubectl SHA-256](https://dl.k8s.io/release/v1.35.10/bin/linux/amd64/kubectl.sha256), and
+[Kubernetes release SHA-512](https://dl.k8s.io/release/v1.35.10/kubernetes.tar.gz.sha512).
+
+### Catalog qualification
 
 The dedicated `operator-images.yml` workflow starts with read authority and no registry or database credential.
 It builds native AMD64 and a derived isolated qualification image.

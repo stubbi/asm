@@ -14,6 +14,22 @@ import test_operator_image as image
 
 
 class ImageContractTests(unittest.TestCase):
+    def test_v2_inspection_refuses_wrong_entrypoint_identity_or_writable_image_volume(self):
+        for role, entrypoint in (("publisher", ["/usr/local/bin/asm-publisher"]),
+                ("checker", ["/usr/bin/python3", "-B", "-I", "/app/tools/checker_entrypoint.py"])):
+            value = self.fixture()
+            value["Config"]["Entrypoint"] = entrypoint
+            value["Config"]["Labels"].update({"org.opencontainers.image.source": "https://github.com/stubbi/asm",
+                "org.opencontainers.image.licenses": "AGPL-3.0-or-later"})
+            self.assertEqual(image.v2_image_contract(value, "3" * 40, role), "sha256:" + "1" * 64)
+            for field, changed in (("Entrypoint", ["/bin/sh"]), ("User", "0:0"), ("Volumes", {"/input": {}})):
+                refused = copy.deepcopy(value)
+                refused["Config"][field] = changed
+                with self.subTest(role=role, field=field), self.assertRaises(ValueError):
+                    image.v2_image_contract(refused, "3" * 40, role)
+            with self.assertRaises(ValueError):
+                image.v2_image_contract(value, "4" * 40, role)
+
     def fixture(self):
         return {"Architecture": "amd64", "Os": "linux", "Id": "sha256:" + "1" * 64,
                 "RootFS": {"Layers": ["sha256:" + "2" * 64]}, "Config": {"User": "65532:65532",

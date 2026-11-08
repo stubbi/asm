@@ -21,8 +21,12 @@ MAX_BUNDLE = 64 * 1024 * 1024
 MAX_OBJECTS = 131072
 FILES = ("LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
          "tools/prepare_operator.py", "tools/registry_mirror.py", "tools/registry_storage.py",
+         "tools/image_source.py", "tools/prepare_signers.py", "tools/publisher_admin.py",
+         "tools/publication_worker.py", "tools/kubernetes_checker.py", "tools/publication_check.py",
+         "tools/checker_entrypoint.py", "tools/registry_distribution.py", "tools/verifier_notices.py",
+         "requirements-storage.txt", "verifier/go.mod", "verifier/go.sum",
          "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
-         "server/catalog/read-exports.sql")
+         "server/catalog/read-exports.sql", "server/publisher/schema.sql", "server/publisher/distribution.sql")
 REPOSITORY = "https://github.com/stubbi/asm"
 
 

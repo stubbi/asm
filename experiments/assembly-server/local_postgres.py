@@ -175,16 +175,21 @@ class LocalPostgres:
                           quote_via=quote)
         return urlunsplit(("postgresql", f"{role}:{secret}@127.0.0.1:{port or self.port}", "/" + database, query, ""))
 
-    def start(self):
-        if os.geteuid() == 0:
-            raise RuntimeError("Run the local PostgreSQL tests as a non-root user. Do not use sudo.")
-        verify_migration(MIGRATION.read_bytes())
+    def server_binaries(self, env):
+        """Select only the reviewed default server; clients keep their own guard."""
         bindir = Path(os.environ["ASM_PROTO_PG_BINDIR"]).resolve()
-        env = dict(clean_environment(), LC_ALL="C", TZ="UTC")
         for name in ("initdb", "postgres"):
             result = subprocess.run([str(bindir / name), "--version"], env=env,
                                     capture_output=True, text=True, timeout=3, check=True)
             verify_version(result.stdout)
+        return bindir
+
+    def start(self):
+        if os.geteuid() == 0:
+            raise RuntimeError("Run the local PostgreSQL tests as a non-root user. Do not use sudo.")
+        verify_migration(MIGRATION.read_bytes())
+        env = dict(clean_environment(), LC_ALL="C", TZ="UTC")
+        bindir = self.server_binaries(env)
         self.temp = tempfile.TemporaryDirectory(prefix="asm-owned-pg-", dir=self.parent)
         self.base = Path(self.temp.name)
         self.data = self.base / "data"

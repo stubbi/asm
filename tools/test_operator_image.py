@@ -22,6 +22,7 @@ from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import operator_source
+import registry
 
 PREFIX = "ASM_OPERATOR_QUALIFICATION="
 ENTRYPOINT = ["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py"]
@@ -49,6 +50,88 @@ def image_contract(value, revision):
     need(config.get("Labels", {}).get("org.opencontainers.image.revision") == revision, "Image source identity differs.")
     need(value.get("RootFS", {}).get("Layers"), "The runtime image has no filesystem layers.")
     return value["Id"]
+
+
+def v2_image_contract(value, revision, role):
+    """Inspect source candidates; this does not grant image publication authority."""
+    entries = {"operator": ENTRYPOINT, "publisher": ["/usr/local/bin/asm-publisher"],
+        "checker": ["/usr/bin/python3", "-B", "-I", "/app/tools/checker_entrypoint.py"]}
+    need(role in entries, "Select one explicit V2 runtime role.")
+    need(re.fullmatch(r"[0-9a-f]{40}", revision or "") and revision != "0" * 40, "Supply the exact source revision.")
+    config = value.get("Config", {})
+    need(value.get("Architecture") == "amd64" and value.get("Os") == "linux", "V2 images require Linux AMD64.")
+    need(re.fullmatch(r"sha256:[0-9a-f]{64}", value.get("Id", "")), "The image has no immutable ID.")
+    need(config.get("User") == "65532:65532", "The image must use UID/GID 65532.")
+    need(config.get("Entrypoint") == entries[role] and config.get("Cmd") == ["--help"], "The V2 entrypoint differs.")
+    need(not config.get("Volumes"), "V2 images must not declare writable image volumes.")
+    labels = config.get("Labels", {})
+    need(labels.get("org.opencontainers.image.revision") == revision
+         and labels.get("org.opencontainers.image.source") == "https://github.com/stubbi/asm"
+         and labels.get("org.opencontainers.image.licenses") == "AGPL-3.0-or-later", "Image source identity differs.")
+    need(value.get("RootFS", {}).get("Layers"), "The runtime image has no filesystem layers.")
+    return value["Id"]
+
+
+def runtime_smoke(args):
+    """Record actual-image smoke evidence separately from native release qualification."""
+    need(args.context and args.image and args.output, "Select an explicit Docker context, image, and new report file.")
+    client = ["docker", "--context", args.context]
+    inspections = registry.strict_json(command([*client, "image", "inspect", args.image]))
+    need(isinstance(inspections, list) and len(inspections) == 1, "Inspect one exact local image.")
+    image_id = v2_image_contract(inspections[0], args.revision, args.smoke_kind)
+
+    def run(arguments=(), *, entrypoint=None, status=0):
+        options = [*client, "run", "--rm", "--pull=never", "--platform", "linux/amd64", *security()]
+        if entrypoint is not None:
+            options += ["--entrypoint", entrypoint]
+        result = subprocess.run([*options, image_id, *arguments], capture_output=True, timeout=30)
+        need(len(result.stdout) <= 1024 * 1024 and len(result.stderr) <= 65536, "Image smoke output exceeds its bound.")
+        need(result.returncode == status, "The actual-image command returned an unexpected status.")
+        return result
+
+    source = registry.strict_json(run(["/app/SOURCE.json"], entrypoint="/bin/cat").stdout)
+    need(source["source_revision"] == args.revision and source["repository"] == "https://github.com/stubbi/asm",
+         "The runtime source marker differs.")
+    process = dict(line.split(":", 1) for line in run(["/proc/self/status"], entrypoint="/bin/cat").stdout.decode().splitlines() if ":" in line)
+    need(process["Uid"].split() == ["65532"] * 4 and process["Gid"].split() == ["65532"] * 4
+         and int(process["CapEff"].strip(), 16) == 0 and process["NoNewPrivs"].strip() == "1", "Unexpected runtime privileges.")
+    help_result = run(status=64 if args.smoke_kind == "publisher" else 0)
+    invalid = run(["--not-an-option"], status=64 if args.smoke_kind == "publisher" else 2)
+    need(not invalid.stdout, "Invalid input emitted machine output.")
+    files = {"/app/SOURCE.json"}
+    if args.smoke_kind == "publisher":
+        executable = "/usr/local/bin/asm-publisher"
+        files.add(executable)
+        libraries = run([executable], entrypoint="/usr/bin/ldd").stdout.decode()
+        need("not found" not in libraries and "libcrypto.so.3 => /opt/asm/openssl/lib/libcrypto.so.3" in libraries
+             and "libssl.so.3 => /opt/asm/openssl/lib/libssl.so.3" in libraries, "The reviewed publisher crypto profile is unresolved.")
+        files.update(re.findall(r"(?:=>\s+)?(/[^\s()]+)", libraries))
+        run(["-a", "-q", "-F", args.revision, executable], entrypoint="/bin/grep")
+    else:
+        selected = operator_source.FILES if args.smoke_kind == "operator" else (
+            "tools/checker_entrypoint.py", "tools/image_source.py", "tools/publication_check.py", "tools/registry.py", "tools/registry_storage.py")
+        files.update("/app/" + name for name in selected)
+        if args.smoke_kind == "operator":
+            files.update(("/app/bin/asm-trust", "/usr/bin/kubectl", "/opt/asm/postgres/bin/psql"))
+            refusal = run(["publisher-admin", "--connection-file", "/absent", "migrate"], status=1)
+            need(not refusal.stdout, "Missing credentials emitted machine output.")
+    hashes = {}
+    for line in run(sorted(files), entrypoint="/usr/bin/sha256sum").stdout.decode().splitlines():
+        digest, name = line.split("  ", 1)
+        need(name in files and name not in hashes and re.fullmatch(r"[0-9a-f]{64}", digest), "Invalid image file digest.")
+        hashes[name] = digest
+    need(set(hashes) == files, "The image digest record is incomplete.")
+    for name, digest in hashes.items():
+        if name.startswith("/app/") and name != "/app/SOURCE.json" and name[5:] in source["files"]:
+            need(digest == source["files"][name[5:]], "Runtime source bytes differ from the accepted source.")
+    report = {"schema": 1, "status": "pass", "scope": "v2-runtime-smoke", "role": args.smoke_kind,
+        "source_revision": args.revision, "runtime_image_id": image_id, "source": source,
+        "runtime_files": hashes, "help_exit_status": help_result.returncode,
+        "daemon": command([*client, "info", "--format", "{{.OSType}}/{{.Architecture}}"]).decode().strip(),
+        "limit": "Smoke checks do not qualify native execution, hostile-input isolation, Kubernetes deployment, or publication."}
+    with Path(args.output).open("x") as stream:
+        json.dump(report, stream, indent=2, sort_keys=True)
+        stream.write("\n")
 
 
 def derived_contract(runtime, qualifier, files, qualified_files):
@@ -206,7 +289,8 @@ def inside(args):
     marker = json.loads(Path("/app/SOURCE.json").read_bytes())
     need(marker["source_revision"] == args.revision, "The accepted source differs from the qualified image revision.")
     os.environ.update(ASM_PROTO_PG_BINDIR="/opt/asm/postgres/bin", ASM_PROTO_LIBPQ="/opt/asm/postgres/lib/libpq.so.5",
-                      ASM_OPERATOR_PROJECTION_FIXTURES="/qualification/projected")
+                      ASM_OPERATOR_PROJECTION_FIXTURES="/qualification/projected",
+                      ASM_TEST_TRUST_TOOL="/app/bin/asm-trust")
     sys.path.insert(0, "/qualification/tests/hosted_registry")
     module = importlib.import_module("test_database")
     setattr(module.CatalogDatabaseTests, "test_actual_image_entrypoint", actual_entrypoint_test)
@@ -294,12 +378,16 @@ def main():
     parser.add_argument("--image")
     parser.add_argument("--qualification-image")
     parser.add_argument("--output")
+    parser.add_argument("--context", help="Explicit Docker context for V2 smoke checks; ambient context is unchanged")
+    parser.add_argument("--smoke-kind", choices=("operator", "publisher", "checker"))
     args = parser.parse_args()
     if args.make_projection_fixtures:
         make_projection_fixtures(args.make_projection_fixtures)
         return
     need(re.fullmatch(r"[0-9a-f]{40}", args.revision or "") and args.revision != "0" * 40, "Supply an exact source revision.")
-    if args.inside:
+    if args.smoke_kind:
+        runtime_smoke(args)
+    elif args.inside:
         inside(args)
     else:
         need(args.image and args.qualification_image and args.output, "Supply both image names and a report path.")

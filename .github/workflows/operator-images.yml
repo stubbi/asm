@@ -70,6 +70,21 @@ jobs:
             --image asm-operator:runtime-amd64 --qualification-image asm-operator:qualification-amd64 \
             --output "$ASM_EVIDENCE/qualification.json" \
             2>&1 | tee "$ASM_EVIDENCE/image-tests.log"
+      - name: Build and inspect the V2 publisher and checker targets
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASM_EVIDENCE="$RUNNER_TEMP/asm-operator-image-evidence"
+          for kind in publisher checker; do
+            docker build --platform linux/amd64 --file containers/operator.Dockerfile \
+              --build-arg ASM_SOURCE_REVISION="$GITHUB_SHA" --target "$kind" \
+              --tag "asm-v2-$kind:smoke-amd64" . 2>&1 | tee "$ASM_EVIDENCE/build-$kind.log"
+            python3 tools/test_operator_image.py --context default --revision "$GITHUB_SHA" \
+              --image "asm-v2-$kind:smoke-amd64" --smoke-kind "$kind" \
+              --output "$ASM_EVIDENCE/$kind-smoke.json" \
+              2>&1 | tee "$ASM_EVIDENCE/$kind-smoke.log"
+          done
       - name: Retain only this run's exact qualified final image
         shell: bash
         run: |

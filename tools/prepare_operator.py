@@ -25,6 +25,7 @@ SOURCE_UID = 0
 SOURCE_GID = 65532
 PSQL = Path("/opt/asm/postgres/bin/psql")
 TLS_FILES = {"sslrootcert": "ca.crt", "sslcert": "tls.crt", "sslkey": "tls.key"}
+ROLES = ("asm_migrator", "asm_operator", "asm_publisher", "asm_publication_worker", "asm_distributor")
 DNS_PROGRAM = """import ipaddress,socket,sys
 values=sorted({str(ipaddress.IPv4Address(v[4][0])) for v in socket.getaddrinfo(sys.argv[1],None,socket.AF_INET,socket.SOCK_STREAM)})
 if not 1 <= len(values) <= 8: raise SystemExit(1)
@@ -43,7 +44,7 @@ def resolve_ipv4(host, *, timeout=5):
 
 
 def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
-    require(role in {"asm_migrator", "asm_operator"}, "Select one explicit operator authority.")
+    require(role in ROLES, "Select one explicit operator authority.")
     value = body.decode("ascii").removesuffix("\n")
     require(value.startswith("postgresql://") and "\n" not in value and "\r" not in value and "\0" not in value,
             "Use one canonical connection URL.")
@@ -196,7 +197,7 @@ def write_private(directory_fd, name, body):
         os.close(fd)
 
 
-def discard_owned_staging(parent_fd, staging_name, private_fd):
+def discard_owned_staging(parent_fd, staging_name, private_fd, *, names=(*TLS_FILES.values(), ".check.url", "database.url")):
     """Remove only a still-owned staging name; publication or uncertain identity preserves all files."""
     if private_fd is None:
         return
@@ -207,7 +208,7 @@ def discard_owned_staging(parent_fd, staging_name, private_fd):
             return
     except OSError:
         return
-    for name in (*TLS_FILES.values(), ".check.url", "database.url"):
+    for name in names:
         try:
             os.unlink(name, dir_fd=private_fd)
         except FileNotFoundError:
@@ -281,7 +282,7 @@ def main(argv=None):
     parser.add_argument("--config-directory", type=Path, required=True)
     parser.add_argument("--tls-directory", type=Path, required=True)
     parser.add_argument("--destination-directory", type=Path, required=True)
-    parser.add_argument("--role", choices=("asm_migrator", "asm_operator"), required=True)
+    parser.add_argument("--role", choices=ROLES, required=True)
     parser.add_argument("--resolve-dns", action="store_true")
     args = parser.parse_args(argv)
     try:

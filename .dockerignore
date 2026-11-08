@@ -2,6 +2,7 @@
 !LICENSE
 !README.md
 !requirements-mcp.txt
+!requirements-storage.txt
 !containers/
 !containers/**
 !tools/
@@ -18,6 +19,18 @@
 !tools/operator_publication.py
 !tools/prepare_operator.py
 !tools/test_operator_image.py
+!tools/image_source.py
+!tools/checker_entrypoint.py
+!tools/prepare_signers.py
+!tools/publisher_admin.py
+!tools/publication_worker.py
+!tools/kubernetes_checker.py
+!tools/publication_check.py
+!tools/registry_distribution.py
+!tools/verifier_notices.py
+!verifier/
+!verifier/go.mod
+!verifier/go.sum
 !.operator-source/
 !.operator-source/source.bundle
 !.operator-source/source.json

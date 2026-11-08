@@ -23,7 +23,7 @@ jobs:
           - { runner: ubuntu-24.04, target: x86_64-linux }
           - { runner: ubuntu-24.04-arm, target: aarch64-linux }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       ASM_TEST_TARGET: ${{ matrix.target }}
     steps:
@@ -210,8 +210,46 @@ jobs:
           export ASM_PUBLISHER_BINARY="$RUNNER_TEMP/publisher-build/asm-publisher"
           export ASM_SERVER_SOURCE_REVISION="$GITHUB_SHA"
           export ASM_TEST_NGINX=/usr/sbin/nginx
+          make publisher-proxy-test NGINX=/usr/sbin/nginx \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/publisher-proxy.log"
           make registry-v2-authority-test registry-v2-full-flow-test \
             2>&1 | tee "$RUNNER_TEMP/server-port-evidence/registry-v2-full-flow.log"
+      - name: Build the separate owned PostgreSQL 18.6 server fixture
+        if: matrix.target == 'x86_64-linux'
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_DEPS/downloads/postgresql-18.6.tar.bz2" \
+            https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2
+          printf '%s  %s\n' \
+            555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f \
+            "$ASM_DEPS/downloads/postgresql-18.6.tar.bz2" | sha256sum --check --strict
+          tar -xjf "$ASM_DEPS/downloads/postgresql-18.6.tar.bz2" -C "$ASM_DEPS"
+          cd "$ASM_DEPS/postgresql-18.6"
+          TMPDIR="$ASM_DEPS/tmp" ./configure --prefix="$ASM_DEPS/postgres18" \
+            --with-openssl --without-readline --without-zlib --without-icu --without-lz4 --without-zstd
+          make -j2
+          make install
+      - name: Check V2 publication with the owned PostgreSQL 18.6 server and 16.15 clients
+        if: matrix.target == 'x86_64-linux'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
+          export ASM_PROTO_PG18_BINDIR="$ASM_DEPS/postgres18/bin"
+          export ASM_PUBLISHER_BINARY="$RUNNER_TEMP/publisher-build/asm-publisher"
+          export ASM_SERVER_SOURCE_REVISION="$GITHUB_SHA"
+          make publisher-pg18-test NGINX=/usr/sbin/nginx \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/publisher-postgres18.log"
+          sha256sum "$ASM_DEPS/postgres18/bin/initdb" "$ASM_DEPS/postgres18/bin/postgres" \
+            "$ASM_DEPS/postgres/bin/psql" "$ASM_DEPS/postgres/lib/libpq.so" \
+            > "$RUNNER_TEMP/server-port-evidence/postgres18-artifacts.sha256"
       - name: Check build failure preserves both executables
         shell: bash
         run: |
