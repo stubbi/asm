@@ -156,14 +156,14 @@ def _relative_chrome(fragment: str, prefix: str, active: bool | str) -> str:
 
 
 def _page(route: str, title: str, description: str, body: str, chrome: tuple[str, str], *, missing=False,
-          active_nav="Explore", scripts=True, structured_data=None, metadata_url=None) -> str:
+          active_nav="Explore", scripts=True, structured_data=None, metadata_url=None, noindex=False) -> str:
     # A host can serve this document at any missing path. Root paths preserve
     # recovery and assets without changing the skip link's local fragment.
     prefix = "/" if missing else "../" * route.count("/")
     canonical = SITE + route
     header = _relative_chrome(chrome[0], prefix, active_nav if not missing else False)
     footer = _relative_chrome(chrome[1], prefix, False)
-    robots = '<meta name="robots" content="noindex">' if missing else ''
+    robots = '<meta name="robots" content="noindex">' if missing or noindex else ''
     og_type = "article" if structured_data and structured_data.get("@type") == "BlogPosting" else "website"
     metadata_link = ('<link rel="describedby" type="application/json" href="' + escape(metadata_url, quote=True)
                      + '" title="Exact release metadata">') if metadata_url else ''
@@ -749,7 +749,7 @@ def _package_body(repo: Path, route: str, name: str, records: list[dict], select
         source += '<p>' + _anchor("Release record (JSON)", prefix + record_route(selected)) + '</p>'
     else:
         source += '<p>Select an exact release to inspect its source and record.</p>'
-    source += '<p class="package-note" data-downloads-name="' + escape(name, quote=True) + '" data-downloads-version="' + (escape(selected["version"], quote=True) if selected and exact else '') + '">' + counts_html(counts, name, selected["version"] if selected and exact else None) + '</p><p class="package-note">' + _anchor(owner, prefix + 'packages/' + owner + '/') + ' is a package namespace, not an authenticated publisher profile.</p></section>'
+    source += '<p class="package-note" data-downloads-name="' + escape(name, quote=True) + '" data-downloads-version="' + (escape(selected["version"], quote=True) if selected and exact else '') + '">' + counts_html(counts, name, selected["version"] if selected and exact else None) + '</p><p class="package-note">' + _anchor(owner, prefix + 'packages/' + owner + '/', attrs=' aria-label="Browse packages in the ' + escape(owner, quote=True) + ' namespace"') + ' is a package namespace, not an authenticated publisher profile.</p></section>'
     if publications:
         entry = next((item for item in publications.get("packages", []) if item["name"] == name), {})
         if entry.get("publication_source") == "github-release":
@@ -951,6 +951,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
         for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"), ("Most downloaded", "browse/popular/", "popular"),
                                         ("New", "browse/new/", "new"), ("Recently updated", "browse/updated/", "updated"))) + '</nav>'
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(description) + '</p></header>' + navigation
+    noindex = False
     observed = snapshot.get("observed_at")
     if observed:
         body += '<p class="package-note">Observed ' + _discovery_date(observed) + ' at ' + escape(observed[11:19]) + ' UTC.'
@@ -993,6 +994,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
                          and all(isinstance(name, str) and name in indexed and indexed[name].get("latest") for name in names)
                          and len(names) == len(set(names)), "invalid discovery feed")
         rows = []
+        noindex = not category and not names
         for name in names:
             item, fact = indexed[name], facts[name]
             latest = next((version for version in item["versions"]
@@ -1026,7 +1028,7 @@ def discovery_page(stage: Path, index: dict, snapshot: dict, kind: str) -> str:
         "metrics": "Understand Asm package discovery: completed download transfers, publication dates, observation windows, missing data, and ranking limits."}
     meta_title = category["name"] + " packages for assembly projects" if category else meta_titles[kind]
     meta_description = ("Browse assembly packages in the " + category["name"] + " category. Compare purposes and declared targets, then inspect exact versions, source, and release evidence.") if category else meta_descriptions[kind]
-    return _page(route, meta_title, meta_description, body, _chrome(stage), active_nav="Stats" if kind == "metrics" else "Explore", scripts=False)
+    return _page(route, meta_title, meta_description, body, _chrome(stage), active_nav="Stats" if kind == "metrics" else "Explore", scripts=False, noindex=noindex)
 
 
 def write_discovery_pages(stage: Path, index: dict, snapshot: dict) -> list[str]:
@@ -1036,5 +1038,6 @@ def write_discovery_pages(stage: Path, index: dict, snapshot: dict) -> list[str]
     for kind in kinds:
         route = "discovery/" if kind == "metrics" else "browse/" + kind + "/"
         registry.write_atomic(stage / route / "index.html", discovery_page(stage, index, enriched, kind).encode())
-        routes.append(route)
+        if kind == "metrics" or kind.startswith("categories/") or enriched["feeds"][kind]:
+            routes.append(route)
     return routes

@@ -68,10 +68,13 @@ class SiteParser(HTMLParser):
         self.elements = []
         self.definitions = []
         self._elements = []
+        self.parents = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        element = {"tag": tag, "attrs": attrs, "text": [], "accessible_text": []}
+        element = {"tag": tag, "attrs": attrs, "text": [], "accessible_text": [],
+                   "in_main": tag == "main" or any(parent["tag"] == "main" for parent in self._elements)}
+        self.parents[id(element)] = id(self._elements[-1]) if self._elements else None
         self.elements.append(element)
         if tag == "header" and "site-header" in attrs.get("class", "").split():
             self.in_header = True
@@ -456,6 +459,12 @@ class SearchDiscoveryTests(unittest.TestCase):
         build_site.build_site(repo, ROOT / "registry", cls.output,
                               artifact_reader=forbidden, metrics_fetcher=forbidden)
         cls.routes = site_routes.PageRoutes.from_directory(cls.output)
+        cls.index = registry.strict_json((cls.output / "registry/v1/index.json").read_bytes())
+        cls.discovery = registry.strict_json((cls.output / "registry/v1/discovery.json").read_bytes())
+        cls.classification = registry.strict_json((cls.output / "registry/v1/discovery-metadata.json").read_bytes())
+        cls.active = {package["name"]: next(record for record in cls.records
+                      if record["name"] == package["name"] and record["version"] == package["latest"])
+                      for package in cls.index["packages"] if package["latest"] is not None}
         cls.pages = {}
         for path in sorted(cls.output.rglob("*.html")):
             page = SiteParser()
@@ -520,6 +529,9 @@ class SearchDiscoveryTests(unittest.TestCase):
             url = urljoin("https://asm.build/reference", link["attrs"]["href"])
             self.assertEqual(entry["position"], position)
             self.assertEqual(item["name"], "".join(link["text"]))
+            filename_codes = [element for element in page.elements
+                              if element["tag"] == "code" and page.parents[id(element)] == id(link)]
+            self.assertEqual(["".join(element["text"]) for element in filename_codes], [item["name"]])
             self.assertEqual(item["url"], url)
             self.assertEqual(item["contentUrl"], url)
             self.assertEqual(item["@type"], "MediaObject")
@@ -670,6 +682,148 @@ Unpublished body sentinel.
     def definition_values(page, name):
         return [" ".join("".join(value["accessible_text"]).split()) for term, value in page.definitions
                 if " ".join("".join(term["text"]).split()) == name]
+
+    def task_page(self, route):
+        relative = self.routes.file_for(route)
+        self.assertIsNotNone(relative, route)
+        return self.pages[relative.as_posix()]
+
+    def main_text(self, page):
+        mains = [element for element in page.elements if element["tag"] == "main"]
+        self.assertEqual(len(mains), 1)
+        text = " ".join("".join(mains[0]["accessible_text"]).split())
+        self.assertTrue(text, "Shared chrome must not substitute for the page's task content")
+        return text
+
+    def assert_package_content(self, page, names, *, targets=None, licenses=False):
+        self.main_text(page)
+        links = {self.normalized_url(page.canonicals[0], element["attrs"]["href"]): element
+                 for element in page.main_links}
+        package_links = {url for url in links if re.fullmatch(r"https://asm\.build/packages/[^/]+/[^/#]+(?:#.*)?", url)}
+        self.assertEqual({urlsplit(url).path for url in package_links}, {"/packages/" + name for name in names})
+        elements = {id(element): element for element in page.elements}
+        for name in names:
+            link = next(links[url] for url in package_links if urlsplit(url).path == "/packages/" + name)
+            row = link
+            while row["tag"] != "li" and page.parents[id(row)] in elements:
+                row = elements[page.parents[id(row)]]
+            self.assertEqual(row["tag"], "li", name)
+            self.assertTrue(row["in_main"], name)
+            text = " ".join("".join(row["accessible_text"]).split())
+            record = self.active[name]
+            for value in (name, record["version"], record["summary"]):
+                self.assertIn(value, text)
+            expected_targets = targets[name] if targets is not None else {item["target"] for item in record["artifacts"]}
+            for target in expected_targets:
+                self.assertIn(target, text)
+            if licenses:
+                self.assertIn(record["license"], text)
+                self.assertIn("https://asm.build/packages/" + name + "/" + record["version"], links)
+
+    def test_native_taxonomy_pages_keep_membership_and_package_context_in_main(self):
+        categories = registry.strict_json((self.output / "registry/v1/categories.json").read_bytes())["categories"]
+        declared = [item for item in self.classification["packages"] if item["name"] in self.active]
+        keywords = [{"id": tag, "packages": [item["name"] for item in declared if tag in item["keywords"]]}
+                    for tag in sorted({tag for item in declared for tag in item["keywords"]})]
+        directories = {"categories": categories, "keywords": keywords}
+        architecture_targets = {"aarch64": {"aarch64-linux", "aarch64-macos"},
+                                "riscv64": {"riscv64-linux"}, "x86-64": {"x86_64-linux"}}
+        for group, entries in directories.items():
+            directory = self.task_page("/browse/" + group)
+            self.main_text(directory)
+            links = {self.normalized_url(directory.canonicals[0], link["attrs"]["href"]): link
+                     for link in directory.main_links}
+            for entry in entries:
+                with self.subTest(group=group, entry=entry["id"]):
+                    route = "/browse/" + group + "/" + entry["id"]
+                    link = links["https://asm.build" + route]
+                    self.assertRegex(" ".join(" ".join(link["accessible_text"]).split()), rf"\b{len(entry['packages'])} packages?\b")
+                    self.assert_package_content(self.task_page(route), entry["packages"])
+        directory = self.task_page("/browse/architectures")
+        self.main_text(directory)
+        links = self.link_urls(directory, directory.main_links)
+        for architecture, allowed in architecture_targets.items():
+            with self.subTest(architecture=architecture):
+                route = "/browse/architectures/" + architecture
+                targets = {name: {item["target"] for item in record["artifacts"] if item["target"] in allowed}
+                           for name, record in self.active.items()}
+                members = {name for name, matching in targets.items() if matching}
+                self.assertIn("https://asm.build" + route, links)
+                self.assert_package_content(self.task_page(route), members, targets=targets)
+
+    def test_concise_task_hubs_keep_their_actions_and_evidence_in_main(self):
+        home = self.task_page("/")
+        self.main_text(home)
+        form = home.elements_by_id["registry-controls"]
+        self.assertEqual((form["tag"], form["attrs"].get("role")), ("form", "search"))
+        self.assertTrue(form["in_main"])
+        search = home.elements_by_id["package-search"]
+        self.assertEqual((search["attrs"].get("type"), search["attrs"].get("form")), ("search", "registry-controls"))
+        self.assertTrue(any(button["in_main"] and button["attrs"].get("type") == "submit"
+                            and button["attrs"].get("form") == "registry-controls" for button in home.buttons))
+        self.assertTrue({"https://asm.build/packages", "https://asm.build/registry/v1/index.json",
+                         *("https://asm.build/browse/" + kind for kind in ("new", "popular", "updated"))}
+                        <= self.link_urls(home, home.main_links))
+        required = {
+            "/docs": {"https://github.com/stubbi/asm/#install-the-command", "https://github.com/stubbi/asm/#run-your-first-project",
+                      "https://github.com/stubbi/asm/blob/main/docs/use-a-package.md", "https://asm.build/guide",
+                      "https://asm.build/reference", "https://github.com/stubbi/asm/blob/main/docs/specs/security.md"},
+            "/about": {"https://github.com/stubbi/asm/blob/main/docs/why-asm.md", "https://github.com/stubbi/asm#license",
+                       "https://asm.build/docs", "https://asm.build/contact"},
+            "/explore": {"https://asm.build/packages", *("https://asm.build/browse/" + kind for kind in
+                          ("categories", "keywords", "architectures", "popular", "new", "updated", "depended-on", "downloaded"))},
+            "/stats": {"https://asm.build/registry/v1/stats.json", "https://asm.build/discovery", "https://asm.build/browse/popular"},
+        }
+        for route, expected in required.items():
+            with self.subTest(route=route):
+                page = self.task_page(route)
+                self.main_text(page)
+                self.assertTrue(expected <= self.link_urls(page, page.main_links), expected - self.link_urls(page, page.main_links))
+        stats = self.task_page("/stats")
+        for label, expected in (("Registered packages", len({item["name"] for item in self.records})),
+                                ("Retained releases", len(self.records))):
+            values = [value for term, value in stats.definitions if term["in_main"] and "".join(term["text"]) == label]
+            self.assertEqual(len(values), 1)
+            self.assertTrue(" ".join("".join(values[0]["accessible_text"]).split()).startswith(str(expected) + " "))
+        self.assertIn("Cumulative observations are unavailable", self.main_text(stats))
+        self.assertIn("Missing collection history does not establish zero downloads", self.main_text(stats))
+
+    def test_release_archives_and_notes_keep_actual_changes_in_main(self):
+        records = [item for item in self.records if item["name"] == "stubbi/asm"]
+        expected_links = {"https://asm.build/blog/releases/" + item["version"] for item in records}
+        for route in ("/blog", "/blog/releases"):
+            page = self.task_page(route)
+            self.assertTrue(expected_links <= self.link_urls(page, page.main_links))
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        for record in records:
+            with self.subTest(version=record["version"]):
+                page = self.task_page("/blog/releases/" + record["version"])
+                text = self.main_text(page)
+                section = re.search(r"^## " + re.escape(record["version"]) + r"\s*\n(.*?)(?=^## |\Z)", changelog, re.M | re.S)
+                self.assertIsNotNone(section)
+                first_change = next(line.removeprefix("- ") for line in section[1].splitlines() if line.strip())
+                self.assertIn(first_change.replace("`", ""), text)
+                self.assertIn(record["source"]["commit"], text)
+                self.assertIn(record["license"], text)
+                self.assertIn("https://asm.build/packages/stubbi/asm/" + record["version"], self.link_urls(page, page.main_links))
+
+    def test_empty_utility_routes_keep_explanations_and_native_recovery_without_indexing(self):
+        empty_routes = {"/blog/articles": "No articles are published yet",
+                        "/browse/depended-on": "Direct dependency declarations are unavailable",
+                        "/browse/downloaded": "Missing observations do not establish zero downloads"}
+        for kind in ("popular", "new", "updated"):
+            self.assertEqual(self.discovery["feeds"][kind], [])
+            empty_routes["/browse/" + kind] = "unavailable" if kind == "popular" else "No packages have publication data"
+        for route, explanation in empty_routes.items():
+            with self.subTest(route=route):
+                page = self.task_page(route)
+                self.assertIn(explanation, self.main_text(page))
+                self.assertIn("noindex", page.robots)
+                destination = "/blog/releases" if route == "/blog/articles" else "/packages"
+                self.assertIn("https://asm.build" + destination, self.link_urls(page, page.main_links))
+        for canonical in self.routes.pages:
+            page = self.task_page(canonical)
+            self.assertEqual("noindex" in page.robots, canonical in {*empty_routes, "/404"}, canonical)
 
     def test_every_built_page_has_complete_landmarks_and_accessible_controls(self):
         self.assertEqual(set(self.pages), self.expected_html)
@@ -823,6 +977,7 @@ Unpublished body sentinel.
 
     def test_catalog_namespaces_and_package_history_have_static_permalinks(self):
         catalog = self.pages["packages/index.html"]
+        self.assert_package_content(catalog, self.active, licenses=True)
         self.assertEqual(catalog.canonicals, ["https://asm.build/packages"])
         home = self.pages["index.html"]
         self.assertIn("https://asm.build/packages", self.link_urls(home, home.main_links))
@@ -836,6 +991,7 @@ Unpublished body sentinel.
             overview = self.pages[overview_path]
             namespace = self.pages[f"packages/{owner}/index.html"]
             with self.subTest(package=name):
+                self.assert_package_content(namespace, {package for package in self.active if package.split("/")[0] == owner}, licenses=True)
                 self.assertEqual(overview.canonicals, [overview_url])
                 self.assertIn(overview_url, self.link_urls(catalog, catalog.main_links))
                 self.assertIn(overview_url, self.link_urls(namespace, namespace.main_links))
@@ -895,7 +1051,8 @@ Unpublished body sentinel.
         namespace = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
         self.assertEqual(sitemap.getroot().tag, namespace + "urlset")
         locations = [item.text for item in sitemap.findall(f"{namespace}url/{namespace}loc")]
-        expected = {self.canonical_url(path) for path in self.expected_html if path != "404.html"}
+        expected = {self.canonical_url(path) for path in self.expected_html
+                    if "noindex" not in self.pages[path].robots}
         self.assertEqual(set(locations), expected)
         self.assertEqual(len(locations), len(expected))
         robots = RobotFileParser()
