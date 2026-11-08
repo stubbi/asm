@@ -34,7 +34,11 @@ from release import materialize, output_path, publish_directory, resolve_commit
 
 ASSET_HOSTS = {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"}
 MAX_HTML_BYTES = 4 * 1024 * 1024
+MAX_RELEASE_METADATA_BYTES = 2 * 1024 * 1024
+MAX_RELEASE_ASSETS = 1000
+MAX_RELEASE_CACHE_ENTRIES = 8
 API_PATTERN = re.compile(r"https://api\.github\.com/repos/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}/releases/tags/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+ASSET_API_PATTERN = re.compile(r"https://api\.github\.com/repos/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}/releases/assets/[1-9][0-9]{0,18}\Z")
 
 
 def check_https_url(url: str, hosts: set[str]) -> None:
@@ -55,27 +59,42 @@ class RestrictedRedirects(HTTPRedirectHandler):
     max_redirections = 4
     max_repeats = 2
 
-    def __init__(self, hosts: set[str]):
+    def __init__(self, hosts: set[str], *, exact_url: str | None = None):
         self.hosts = hosts
+        self.exact_url = exact_url
         super().__init__()
 
     def redirect_request(self, request, response, code, message, headers, newurl):
         check_https_url(newurl, self.hosts)
+        registry.require(self.exact_url is None or newurl == self.exact_url,
+                         "release API metadata redirect changes the requested route")
         return super().redirect_request(request, response, code, message, headers, newurl)
 
 
-def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None, opener=None) -> bytes:
-    check_https_url(url, hosts)
+def _https_bytes(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None,
+                 opener=None, api_asset_url: str | None = None, exact_url: str | None = None) -> bytes:
+    # Only recovery constructs this exact API endpoint. Redirects still use
+    # the caller's original asset origins, without adding the API host.
+    if api_asset_url is None:
+        check_https_url(url, hosts)
+    else:
+        registry.require(url == api_asset_url and ASSET_API_PATTERN.fullmatch(url) is not None,
+                         "release asset API URL is invalid")
     registry.require(type(limit) is int and 0 < limit <= registry.MAX_ARTIFACT_BYTES, "download limit is invalid")
     if expected_size is not None:
         registry.require(type(expected_size) is int and 0 < expected_size <= limit, "declared download size is invalid")
-    opener = opener or build_opener(RestrictedRedirects(hosts))
+    opener = opener or build_opener(RestrictedRedirects(hosts, exact_url=exact_url))
     headers = {"User-Agent": "asm-site-builder/1", "Accept-Encoding": "identity"}
     if urlsplit(url).netloc == "api.github.com":
         headers.update({"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+    if api_asset_url is not None:
+        headers["Accept"] = "application/octet-stream"
     request = Request(url, headers=headers)
     with opener.open(request, timeout=20) as response:
-        check_https_url(response.geturl(), hosts)
+        registry.require(exact_url is None or response.geturl() == exact_url,
+                         "release API metadata moved to a different route")
+        if api_asset_url is None or response.geturl() != api_asset_url:
+            check_https_url(response.geturl(), hosts)
         registry.require(response.status == 200, "download did not return HTTP 200")
         encoding = response.headers.get("Content-Encoding", "identity").lower()
         registry.require(encoding == "identity", "unexpected download content encoding")
@@ -92,7 +111,63 @@ def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | No
         return data
 
 
+def read_https(url: str, limit: int, hosts: set[str], *, expected_size: int | None = None,
+               opener=None, _release_cache: dict | None = None) -> bytes:
+    """Recover a release permalink's 504 through its exact public GitHub asset.
+
+    API metadata selects a transport endpoint, never replacement registry
+    bytes or a different artifact. Callers still validate digest and format.
+    """
+    try:
+        return _https_bytes(url, limit, hosts, expected_size=expected_size, opener=opener)
+    except HTTPError as error:
+        if error.code != 504 or urlsplit(url).netloc != "github.com":
+            raise
+        error.close()
+        print("build-site: HTTP 504 for " + url + "; checking the same asset through the GitHub API.", file=sys.stderr)
+        repository, tag, filename = registry.artifact_url(url)
+        metadata_url, _ = discovery._api(url)
+        cache = {} if _release_cache is None else _release_cache
+        if metadata_url not in cache:
+            value = registry.strict_json(_https_bytes(metadata_url, MAX_RELEASE_METADATA_BYTES,
+                                                     {"api.github.com"}, opener=opener, exact_url=metadata_url))
+            registry.require(isinstance(value, dict) and value.get("draft") is False
+                             and value.get("tag_name") == tag, "release API metadata differs from the public tag")
+            assets = value.get("assets")
+            registry.require(isinstance(assets, list) and len(assets) <= MAX_RELEASE_ASSETS
+                             and all(isinstance(asset, dict) for asset in assets), "release API assets are invalid")
+        else:
+            value = cache[metadata_url]
+        matches = [asset for asset in value["assets"] if asset.get("browser_download_url") == url]
+        registry.require(len(matches) == 1, "release API must identify one exact artifact URL")
+        asset = matches[0]
+        registry.require(asset.get("name") == filename and asset.get("state") == "uploaded",
+                         "release API asset identity differs from the artifact")
+        asset_id, size = asset.get("id"), asset.get("size")
+        registry.require(type(asset_id) is int and 0 < asset_id <= 9223372036854775807,
+                         "release API asset ID is invalid")
+        registry.require(type(size) is int and 0 < size <= limit and (expected_size is None or size == expected_size),
+                         "release API asset size differs from the artifact")
+        if metadata_url not in cache:
+            if len(cache) >= MAX_RELEASE_CACHE_ENTRIES:
+                cache.pop(next(iter(cache)))
+            cache[metadata_url] = value
+        endpoint = repository.replace("https://github.com/", "https://api.github.com/repos/") + "/releases/assets/" + str(asset_id)
+        return _https_bytes(endpoint, limit, hosts, expected_size=size, opener=opener, api_asset_url=endpoint)
+
+
+def _scoped_asset_reader(read):
+    """Reuse release metadata only within one verification/build operation."""
+    if read is not read_https:
+        return read
+    cache = {}
+    def scoped(url, limit, hosts, *, expected_size=None):
+        return read_https(url, limit, hosts, expected_size=expected_size, _release_cache=cache)
+    return scoped
+
+
 def verify_artifacts(records: list[dict], read=read_https, *, dependency_metadata: dict | None = None) -> set[tuple[str, str]]:
+    read = _scoped_asset_reader(read)
     checked = set()
     for record in registry.check_records(records):
         for artifact in record["artifacts"]:
@@ -275,6 +350,7 @@ def build_site(repo: Path, registry_path: Path, output: Path, *, verify: bool = 
                              "keep discovery state outside published site sources and output")
     commit = resolve_commit(repo, reference)
     records = registry.read_records(registry_path)
+    artifact_reader = _scoped_asset_reader(artifact_reader)
     dependency_metadata = {}
     checked = verify_artifacts(records, artifact_reader, dependency_metadata=dependency_metadata) if verify else set()
     tsv, index = registry.make_indexes(records, checked, dependency_metadata=dependency_metadata)

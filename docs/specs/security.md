@@ -8,6 +8,14 @@ Asm distributes executable code. A package can be correctly signed, build succes
 
 The registry tools validate metadata, artifact size, and SHA-256. They compare immutable history when a baseline is supplied. They also check source archives and target-specific executable containers and segment bounds. Source packaging can read a pinned Git commit.
 
+If a declared GitHub release URL returns HTTP 504, the site build can use GitHub's public release-asset API.
+Release metadata must match the original repository, tag, filename, browser URL, and known byte size.
+Only one uploaded asset can match, with a valid numeric identifier.
+Requests use no credentials and retain bounded metadata, responses, timeouts, HTTPS origins, and redirects.
+All existing byte, archive, and bootstrap bundle checks remain mandatory.
+Permission errors, missing files, rejected metadata, and byte mismatches cannot use this fallback.
+API delivery does not establish that the original browser-download route currently works.
+
 The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
 
 The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
