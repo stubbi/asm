@@ -609,16 +609,32 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         self.assertEqual(replayed["release_counts"], displayed["release_counts"])
         self.assertEqual(replayed["unattributed_requests"], 1)
 
-    def publish_dependency_project(self, name, version, source, dependencies=()):
+    def publish_dependency_project(self, name, version, source, dependencies=(), *, features=None):
         """Publish committed source through the actual native and authority paths."""
         project = self.work / (name.split("/")[-1] + "-" + version)
         (project / "src").mkdir(parents=True)
         manifest = (f'[package]\nname = "{name.split("/")[-1]}"\nversion = "{version}"\n'
                     '[target.x86_64-linux]\nsource = "src/main.s"\n')
-        declared = [{"name": child, "requirement": requirement} for child, requirement in sorted(dependencies)]
+        declared = ([dict(edge) for edge in dependencies] if dependencies and isinstance(dependencies[0], dict)
+                    else [{"name": child, "requirement": requirement} for child, requirement in sorted(dependencies)])
+        declared.sort(key=lambda edge: edge["name"])
+        complex_profile = bool(features) or any(set(edge) != {"name", "requirement"} for edge in declared)
+        if complex_profile:
+            declared = [{"name": edge["name"], "requirement": edge["requirement"],
+                         "optional": edge.get("optional", False), "default_features": edge.get("default_features", True),
+                         "features": sorted(edge.get("features", []))} for edge in declared]
         if declared:
-            manifest += "\n[dependencies]\n" + "".join(
-                f'"{edge["name"]}" = "{edge["requirement"]}"\n' for edge in declared)
+            manifest += "\n[dependencies]\n"
+            for edge in declared:
+                if not complex_profile:
+                    manifest += f'"{edge["name"]}" = "{edge["requirement"]}"\n'
+                else:
+                    manifest += (f'"{edge["name"]}" = {{ version = "{edge["requirement"]}", '
+                        f'optional = {json.dumps(edge["optional"])}, default-features = {json.dumps(edge["default_features"])}, '
+                        f'features = {json.dumps(edge["features"])} }}\n')
+        if features:
+            manifest += "\n[features]\n" + "".join(
+                f'{name} = {json.dumps(sorted(members))}\n' for name, members in sorted(features.items()))
         files = {"asm.toml": manifest.encode(), "src/main.s": source,
                  "LICENSE": (ROOT / "LICENSE").read_bytes(), "README.md": b"Synthetic dependency authority fixture.\n"}
         for relative, data in files.items():
@@ -638,6 +654,8 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         self.assertEqual(initial["state"], "checking")
         generated = registry.strict_json(self.created_manifest)
         self.assertEqual(generated.get("dependencies", []), declared)
+        self.assertEqual(generated.get("features", []), [
+            {"name": name, "members": sorted(members)} for name, members in sorted((features or {}).items())])
         self.assertEqual(generated["source"]["commit"], {"algorithm": "git-sha1", "digest": commit})
         self.assertEqual(generated["name"], name)
         self.assertEqual(generated["version"], version)
@@ -664,10 +682,10 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         self.assertFalse((project / "build").exists(), "Publication built the dependency package")
         return published, generated, envelope_key
 
-    def dependency_command(self, operation, project, *, code=0):
+    def dependency_command(self, operation, project, *options, code=0):
         return self.cli(operation, "--project", project, "--registry-id", self.registry_id,
             "--root", self.anchor, "--state", self.state, "--target", "x86_64-linux", "--ca", self.ca,
-            "--mirror", self.mirror_origin, "--json", code=code)
+            "--mirror", self.mirror_origin, "--json", *options, code=code)
 
     def test_native_dependency_publication_complete_lock_sync_build_and_failures(self):
         # This credential is scoped to the two synthetic packages in this method.
@@ -680,12 +698,15 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         self.publish_dependency_project("fixture/leaf", "2.0.0",
             b".text\n.global asm_leaf\nasm_leaf:\nmov $99, %eax\nret\n")
         middle, middle_manifest, middle_envelope = self.publish_dependency_project("fixture/middle", "1.0.0",
-            b".text\n.global asm_middle\nasm_middle:\ncall asm_leaf\nret\n", [("fixture/leaf", "^1.0.0")])
+            b".text\n.global asm_middle\nasm_middle:\ncall asm_leaf\nret\n",
+            [{"name": "fixture/leaf", "requirement": "^1.0.0", "optional": True}],
+            features={"default": ["math"], "math": ["dep:fixture/leaf"]})
         consumer = self.work / "dependency consumer"
         (consumer / "src").mkdir(parents=True)
         consumer_manifest = (b'[package]\nname = "consumer"\nversion = "1.0.0"\n'
                              b'[target.x86_64-linux]\nsource = "src/main.s"\n'
-                             b'[dependencies]\n"fixture/middle" = "~1.0.0"\n')
+                             b'[dependencies]\n"fixture/middle" = { version = "~1.0.0", default-features = false }\n'
+                             b'[features]\ndefault = ["math"]\nmath = ["fixture/middle/math"]\n')
         (consumer / "asm.toml").write_bytes(consumer_manifest)
         marker = self.work / "dependency.executed.marker"
         source = PROGRAM.replace(b'"executed.marker"', json.dumps(str(marker)).encode("ascii"))
@@ -701,9 +722,10 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         lock = consumer / "asm.lock"
         original_lock = lock.read_bytes()
         lines = original_lock.decode().splitlines()
-        self.assertEqual(lines[:3], ["# asm-lock-v3",
+        self.assertEqual(lines[:6], ["# asm-lock-v4",
             "\t".join(("registry", self.registry_id, hashlib.sha256(self.anchor.read_bytes()).hexdigest(),
                         "x86_64-linux", hashlib.sha256(consumer_manifest).hexdigest())),
+            "selection\t1\t-", "root-feature\tdefault", "root-feature\tmath",
             "root\tfixture/middle\t~1.0.0"])
         nodes = [line.split("\t") for line in lines if line.startswith("node\t")]
         self.assertEqual([(node[1], node[2]) for node in nodes], [("fixture/leaf", "1.0.0"), ("fixture/middle", "1.0.0")])
@@ -739,8 +761,46 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         result = subprocess.run([str(executable)], cwd=consumer, capture_output=True, timeout=5)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"Asm dependency graph.\n", b""))
         self.assertEqual(marker.read_bytes(), b"Asm dependency graph.\n")
+        # Defaults off remove the optional transitive edge. Source imports are
+        # explicit, so this selected project source deliberately has no imports.
+        disabled_source = PROGRAM.replace(b'"executed.marker"', json.dumps(str(marker)).encode("ascii"))
+        disabled_source = disabled_source.replace(b"Asm full-flow fixture.", b"Asm features disabled.")
+        (consumer / "src/main.s").write_bytes(disabled_source)
+        self.mirror_server.reads.clear()
+        disabled = json.loads(self.dependency_command("resolve", consumer, "--no-default-features").stdout)
+        self.assertEqual(disabled["packages"], 1)
+        disabled_lock = lock.read_bytes()
+        self.assertIn(b"selection\t0\t-\n", disabled_lock)
+        self.assertNotIn(b"edge\t", disabled_lock)
+        self.assertFalse(any("/fixture/leaf/" in path for path in self.mirror_server.reads))
+        self.dependency_command("sync", consumer)
+        built = subprocess.run([str(self.cli_binary), "build", "--locked"], cwd=consumer, env=self.environment,
+                               capture_output=True, timeout=30)
+        self.assertEqual((built.returncode, built.stderr), (0, b""), built.stdout)
+        marker.unlink()
+        result = subprocess.run([str(executable)], cwd=consumer, capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"Asm features disabled.\n", b""))
+        # An explicit request enables the same exact graph without implicit defaults.
+        (consumer / "src/main.s").write_bytes(
+            b'.include "fixture/leaf/1.0.0/x86_64-linux/src/main.s"\n'
+            b'.include "fixture/middle/1.0.0/x86_64-linux/src/main.s"\n' + source)
+        requested = json.loads(self.dependency_command("resolve", consumer, "--no-default-features", "--features", "math").stdout)
+        self.assertEqual(requested["packages"], 2)
+        self.assertIn(b"selection\t0\tmath\n", lock.read_bytes())
+        self.dependency_command("sync", consumer)
+        built = subprocess.run([str(self.cli_binary), "build", "--locked"], cwd=consumer, env=self.environment,
+                               capture_output=True, timeout=30)
+        self.assertEqual((built.returncode, built.stderr), (0, b""), built.stdout)
+        self.assertEqual(executable.read_bytes(), original_executable)
+        marker.unlink()
+        result = subprocess.run([str(executable)], cwd=consumer, capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"Asm dependency graph.\n", b""))
+        # Restore the original selection before testing failure preservation.
+        self.dependency_command("resolve", consumer)
+        self.assertEqual(lock.read_bytes(), original_lock)
         # A direct request for leaf 2 conflicts with middle's authenticated range.
-        (consumer / "asm.toml").write_bytes(consumer_manifest + b'"fixture/leaf" = "^2.0.0"\n')
+        (consumer / "asm.toml").write_bytes(consumer_manifest.replace(
+            b"[features]", b'"fixture/leaf" = "^2.0.0"\n[features]'))
         conflict = self.dependency_command("resolve", consumer, code=1)
         self.assertIn(b"no compatible dependency graph", conflict.stderr.lower())
         self.assertEqual(lock.read_bytes(), original_lock)

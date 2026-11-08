@@ -8,7 +8,7 @@ DO $$ BEGIN
     IF current_user<>'asm_migrator' OR session_user<>current_user OR
         (SELECT count(*) FROM asm_publication.schema_version)<>1 OR NOT EXISTS(
             SELECT 1 FROM asm_publication.schema_version WHERE version=1 AND
-            sha384='6865173570e0ea1aafc519facfe9ba1a052bdb655f64df1f15474250d5d6d6180c62fcb530ef7766592e4c2afbb592f4') THEN
+            sha384='e78431a236e7d51945ab767b4318d62f2f04f2cb0289988ed8df930d5fb4ba4604fd8ec0b35d5ef2ecffe7bb4b95ba44') THEN
         RAISE EXCEPTION 'Use the distribution migrator and pinned publication prerequisite' USING ERRCODE='42501';
     END IF;
 END $$;

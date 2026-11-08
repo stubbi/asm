@@ -19,8 +19,8 @@ import registry_admin as admin
 from registry_storage import _absolute, _directory
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION_SHA384 = "6865173570e0ea1aafc519facfe9ba1a052bdb655f64df1f15474250d5d6d6180c62fcb530ef7766592e4c2afbb592f4"
-DISTRIBUTION_MIGRATION_SHA384 = "235cdae69afec2e6f9c6e9ebe76ccb8ff47049021b1ce0296831ae39a770b12c50f95742ae3134602e3f8e8e70139e04"
+MIGRATION_SHA384 = "e78431a236e7d51945ab767b4318d62f2f04f2cb0289988ed8df930d5fb4ba4604fd8ec0b35d5ef2ecffe7bb4b95ba44"
+DISTRIBUTION_MIGRATION_SHA384 = "647baa6b9167e978e16990f51c7e5a8396e710be170dc4c16045e49dfff806fb30e5579827a16b972efda25fbc0dc126"
 HEX32 = re.compile(r"[0-9a-f]{32}")
 TOKEN = re.compile(rb"asm_pub_v1_[0-9a-f]{64}\n?")
 

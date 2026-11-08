@@ -10,9 +10,13 @@
 .equ G3_ROOTS, 64
 .equ G3_DEPS, 64
 .equ G3_RECORD, 40
+.equ G4_FACT_BYTES, 4376
 .global g3_requirement, g3_solve
 .global g3_candidates, g3_candidate_count, g3_roots, g3_root_count
 .global g3_solution, g3_steps, g3_limit
+.global g4_profiles, g4_root_profile, g4_requests, g4_request_count, g4_defaults
+.global g4_active_features, g4_active_deps, g4_root_features, g4_root_deps
+.global g4_lazy, g4_known_names, g4_known_count, g4_missing_name
 .section .text
 
 /* RDI=NUL version, RSI=owned 24-byte numeric tuple. RAX=end pointer or zero.
@@ -364,9 +368,22 @@ g3_selected_for_name:
     pop rbx
     ret
 
-/* RDI=name. Mark all candidates of this required name. EAX=1 found,0 absent,
- * 2 budget. Newly reached selections enter a <=256-byte work queue once.
- * Updates required256/queue256 and queue_write; stack24. */
+/* RDI=candidate index<256. Queue a selected reached candidate once until
+ * processed. Dirty bits permit repeated feature growth without queue overflow.
+ * Registers RAX/RDX change; stack0; static dirty256/count8. */
+g4_schedule:
+    lea rdx, [rip + g4_dirty]
+    cmp byte ptr [rdx + rdi], 0
+    jne .Lg4_schedule_done
+    mov byte ptr [rdx + rdi], 1
+    inc qword ptr [rip + g4_dirty_count]
+.Lg4_schedule_done:
+    ret
+
+/* RDI=name. EAX1found0known-absent2budget4needs-discovery. Mark all versions
+ * required; schedule newly reached selected versions. Missing-name pointer is
+ * borrowed, never copied. Lazy mode asks the IO owner to restart the solver.
+ * Stack24; scans<=256 candidates and<=256 declared known names. */
 g3_mark:
     push rbx
     push r12
@@ -395,20 +412,32 @@ g3_mark:
     lea rdx, [rip + g3_solution]
     cmp byte ptr [rdx + rbx], 0
     je .Lg3_mark_next
-    mov rax, [rip + g3_queue_write]
-    cmp rax, G3_CANDIDATES
-    jae .Lg3_mark_limit
-    lea rdx, [rip + g3_queue]
-    mov byte ptr [rdx + rax], bl
-    inc qword ptr [rip + g3_queue_write]
+    mov rdi, rbx
+    call g4_schedule
 .Lg3_mark_next:
     inc rbx
     jmp .Lg3_mark_loop
 .Lg3_mark_done:
     mov eax, r13d
-    jmp .Lg3_mark_return
-.Lg3_mark_limit:
-    mov eax, 2
+    test eax, eax
+    jnz .Lg3_mark_return
+    cmp qword ptr [rip + g4_lazy], 0
+    je .Lg3_mark_return
+    xor ebx, ebx
+.Lg3_mark_known:
+    cmp rbx, [rip + g4_known_count]
+    jae .Lg3_mark_discover
+    lea rax, [rip + g4_known_names]
+    mov rdi, [rax + rbx*8]
+    mov rsi, r12
+    call g3_string_compare
+    test eax, eax
+    jz .Lg3_mark_return
+    inc rbx
+    jmp .Lg3_mark_known
+.Lg3_mark_discover:
+    mov [rip + g4_missing_name], r12
+    mov eax, 4
 .Lg3_mark_return:
     pop r13
     pop r12
@@ -452,12 +481,323 @@ g3_check:
     pop rbx
     ret
 
-/* Recompute root-reachable closure, check active constraints, then select
- * the lexical first unresolved name and try numeric-newest usable versions.
- * Recursive depth<=256 names. Every failed branch clears its selections.
- * RAX=0 solution,1 unsatisfiable,2 budget,3 invalid. Stack40 per depth plus
- * calls. No graph edge creates unbounded recursion; cycles use required[].
- * A visited work queue processes each reached selection once per branch. */
+/* RDI=validated profile orNULL,RDX=depcount. EAX0charged2exhausted.
+ * Charge each declared option, feature, and list member before search.
+ * Counts were validated<=64. Stack24; callee registers preserved; no I/O. */
+g4_budget_profile:
+    push rbx
+    push r12
+    push r13
+    mov r12, rdi
+    mov r13, rdx
+    test r12, r12
+    jz .Lg4_budget_good
+    mov rbx, [r12 + 16]
+    add rbx, r13
+    inc rbx
+    xor ecx, ecx
+.Lg4_budget_options:
+    cmp rcx, r13
+    jae .Lg4_budget_definitions_begin
+    imul rax, rcx, 24
+    mov rdx, [r12]
+    add rbx, [rdx + rax + 16]
+    inc rcx
+    jmp .Lg4_budget_options
+.Lg4_budget_definitions_begin:
+    xor ecx, ecx
+.Lg4_budget_definitions:
+    cmp rcx, [r12 + 16]
+    jae .Lg4_budget_tick
+    imul rax, rcx, 24
+    mov rdx, [r12 + 8]
+    add rbx, [rdx + rax + 16]
+    inc rcx
+    jmp .Lg4_budget_definitions
+.Lg4_budget_tick:
+    call g3_tick
+    test eax, eax
+    jnz .Lg4_budget_return
+    dec rbx
+    jnz .Lg4_budget_tick
+.Lg4_budget_good:
+    xor eax, eax
+.Lg4_budget_return:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* RDI=profile,RSI=feature,RDX=mask address. EAX0activated1unknown.
+ * New candidate features schedule their selected owner for propagation.
+ * Uses unsigned64 masks, including bit63. Stack24; borrowed profile/strings. */
+g4_activate:
+    push rbx
+    push r12
+    push r13
+    mov r12, rdx
+    call g4_feature_index
+    test rax, rax
+    js .Lg4_activate_missing
+    mov rcx, rax
+    mov eax, 1
+    shl rax, cl
+    test [r12], rax
+    jnz .Lg4_activate_ok
+    or [r12], rax
+    lea rdx, [rip + g4_active_features]
+    mov rdi, r12
+    sub rdi, rdx
+    cmp rdi, G3_CANDIDATES * 8
+    jae .Lg4_activate_ok
+    shr rdi, 3
+    call g4_schedule
+.Lg4_activate_ok:
+    xor eax, eax
+    jmp .Lg4_activate_return
+.Lg4_activate_missing:
+    mov eax, 1
+.Lg4_activate_return:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* RDI=dependency pair16,RSI=options24 orNULL(defaults only). EAX0okay,
+ * 1conflict2budget3invalid4discovery. Only activated edges call this routine.
+ * A missing requested child feature is a candidate conflict, never malformed.
+ * Stack56; schedule facts unite monotonically within one search branch. */
+g4_apply_edge:
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 16
+    mov r12, rdi
+    mov r13, rsi
+    mov rdi, [r12]
+    call g3_mark
+    cmp eax, 1
+    jne .Lg4_edge_mark_result
+    mov rdi, [r12]
+    mov rsi, [r12 + 8]
+    call g3_check
+    test eax, eax
+    jnz .Lg4_edge_return
+    mov rdi, [r12]
+    call g3_selected_for_name
+    test rax, rax
+    js .Lg4_edge_ok
+    mov r14, rax
+    lea rdx, [rip + g4_active_features]
+    lea rbx, [rdx + r14*8]
+    lea rdx, [rip + g4_profiles]
+    mov r15, [rdx + r14*8]
+    test r13, r13
+    jz .Lg4_edge_defaults
+    test qword ptr [r13], 2
+    jz .Lg4_edge_requests
+.Lg4_edge_defaults:
+    mov rdi, r15
+    lea rsi, [rip + g4_default_name]
+    call g4_feature_index
+    test rax, rax
+    js .Lg4_edge_requests
+    mov rdi, r15
+    lea rsi, [rip + g4_default_name]
+    mov rdx, rbx
+    call g4_activate
+.Lg4_edge_requests:
+    test r13, r13
+    jz .Lg4_edge_ok
+    mov rax, [r13 + 8]
+    mov [rsp], rax
+    mov rax, [r13 + 16]
+    mov [rsp + 8], rax
+.Lg4_edge_request:
+    cmp qword ptr [rsp + 8], 0
+    je .Lg4_edge_ok
+    call g3_tick
+    test eax, eax
+    jnz .Lg4_edge_return
+    mov rdi, r15
+    mov rsi, [rsp]
+    mov rdx, rbx
+    call g4_activate
+    test eax, eax
+    jnz .Lg4_edge_return
+    mov rdi, [rsp]
+    call g4_next
+    mov [rsp], rax
+    dec qword ptr [rsp + 8]
+    jmp .Lg4_edge_request
+.Lg4_edge_mark_result:
+    test eax, eax
+    jnz .Lg4_edge_return
+    mov eax, 1
+    jmp .Lg4_edge_return
+.Lg4_edge_ok:
+    xor eax, eax
+.Lg4_edge_return:
+    add rsp, 16
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* RDI=profile orNULL,RSI=deps16,RDX=count,RCX=feature-mask*,R8=dep-mask*.
+ * EAX0okay1conflict2budget3invalid4discovery. Derive local-feature closure,
+ * then apply exactly active edges. Forwarded child features activate their
+ * edge even when optional. Input declarations stay immutable. Stack88. */
+g4_process_node:
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 48
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+    xor ecx, ecx
+.Lg4_node_mandatory:
+    cmp rcx, r13
+    jae .Lg4_node_features_begin
+    test rbx, rbx
+    jz .Lg4_node_enable
+    imul rax, rcx, 24
+    mov rdx, [rbx]
+    test qword ptr [rdx + rax], 1
+    jnz .Lg4_node_mandatory_next
+.Lg4_node_enable:
+    mov eax, 1
+    shl rax, cl
+    or [r15], rax
+.Lg4_node_mandatory_next:
+    inc rcx
+    jmp .Lg4_node_mandatory
+.Lg4_node_features_begin:
+    test rbx, rbx
+    jz .Lg4_node_edges_begin
+.Lg4_node_feature_pass:
+    mov qword ptr [rsp + 24], 0
+    mov qword ptr [rsp], 0
+.Lg4_node_feature:
+    mov rcx, [rsp]
+    cmp rcx, [rbx + 16]
+    jae .Lg4_node_feature_pass_done
+    mov eax, 1
+    shl rax, cl
+    test [r14], rax
+    jz .Lg4_node_feature_next
+    call g3_tick
+    test eax, eax
+    jnz .Lg4_node_return
+    imul rax, rcx, 24
+    mov rdx, [rbx + 8]
+    mov rcx, [rdx + rax + 8]
+    mov [rsp + 8], rcx
+    mov rcx, [rdx + rax + 16]
+    mov [rsp + 16], rcx
+.Lg4_node_member:
+    cmp qword ptr [rsp + 16], 0
+    je .Lg4_node_feature_next
+    call g3_tick
+    test eax, eax
+    jnz .Lg4_node_return
+    mov rdi, rbx
+    mov rsi, r12
+    mov rdx, r13
+    mov rcx, [rsp + 8]
+    call g4_member
+    test eax, eax
+    js .Lg4_node_invalid
+    jz .Lg4_node_local
+    mov [rsp + 32], rax
+    mov [rsp + 40], rcx
+    mov rcx, rdx
+    mov eax, 1
+    shl rax, cl
+    or [r15], rax
+    cmp qword ptr [rsp + 32], 2
+    jne .Lg4_node_member_next
+    mov rax, [rsp + 40]
+    mov [rip + g4_forward_option + 8], rax
+    imul rdi, rdx, 16
+    add rdi, r12
+    lea rsi, [rip + g4_forward_option]
+    call g4_apply_edge
+    test eax, eax
+    jnz .Lg4_node_return
+    jmp .Lg4_node_member_next
+.Lg4_node_local:
+    mov rcx, rdx
+    mov eax, 1
+    shl rax, cl
+    test [r14], rax
+    jnz .Lg4_node_member_next
+    or [r14], rax
+    mov qword ptr [rsp + 24], 1
+.Lg4_node_member_next:
+    mov rdi, [rsp + 8]
+    call g4_next
+    mov [rsp + 8], rax
+    dec qword ptr [rsp + 16]
+    jmp .Lg4_node_member
+.Lg4_node_feature_next:
+    inc qword ptr [rsp]
+    jmp .Lg4_node_feature
+.Lg4_node_feature_pass_done:
+    cmp qword ptr [rsp + 24], 0
+    jne .Lg4_node_feature_pass
+.Lg4_node_edges_begin:
+    mov qword ptr [rsp + 32], 0
+.Lg4_node_edge:
+    mov rcx, [rsp + 32]
+    cmp rcx, r13
+    jae .Lg4_node_ok
+    mov eax, 1
+    shl rax, cl
+    test [r15], rax
+    jz .Lg4_node_edge_next
+    xor esi, esi
+    test rbx, rbx
+    jz .Lg4_node_edge_apply
+    imul rax, rcx, 24
+    mov rsi, [rbx]
+    add rsi, rax
+.Lg4_node_edge_apply:
+    imul rdi, rcx, 16
+    add rdi, r12
+    call g4_apply_edge
+    test eax, eax
+    jnz .Lg4_node_return
+.Lg4_node_edge_next:
+    inc qword ptr [rsp + 32]
+    jmp .Lg4_node_edge
+.Lg4_node_invalid:
+    mov eax, 3
+    jmp .Lg4_node_return
+.Lg4_node_ok:
+    xor eax, eax
+.Lg4_node_return:
+    add rsp, 48
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+/* Recompute every branch from roots, including all feature facts. Dirty
+ * selected nodes are revisited when incoming features grow. Graph cycles
+ * remain valid; local feature cycles were rejected before search. Stack40
+ * per search depth<=256; RAX0solution1unsat2budget3invalid4discovery. */
 g3_search:
     push rbx
     push r12
@@ -467,96 +807,75 @@ g3_search:
     call g3_tick
     test eax, eax
     jnz .Lg3_search_return
-    lea rdi, [rip + g3_required]
-    mov ecx, G3_CANDIDATES
-    xor eax, eax
-    rep stosb
-    mov qword ptr [rip + g3_queue_read], 0
-    mov qword ptr [rip + g3_queue_write], 0
-    lea r12, [rip + g3_roots]
-    xor r13d, r13d
-.Lg3_search_roots:
-    cmp r13, [rip + g3_root_count]
-    jae .Lg3_closure_candidate
-    mov rdi, [r12]
-    call g3_mark
-    cmp eax, 2
-    je .Lg3_search_return
-    test eax, eax
-    jz .Lg3_search_unsat
-    add r12, 16
-    inc r13
-    jmp .Lg3_search_roots
-.Lg3_closure_candidate:
-    mov rax, [rip + g3_queue_read]
-    cmp rax, [rip + g3_queue_write]
-    jae .Lg3_closure_pass_end
-    lea rdx, [rip + g3_queue]
-    movzx eax, byte ptr [rdx + rax]
-    inc qword ptr [rip + g3_queue_read]
-    imul rax, rax, G3_RECORD
-    lea r12, [rip + g3_candidates]
-    add r12, rax
-    mov r14, [r12 + 16]
-    mov r15, [r12 + 24]
-.Lg3_closure_dep:
-    test r15, r15
-    jz .Lg3_closure_next
-    mov rdi, [r14]
-    call g3_mark
-    cmp eax, 2
-    je .Lg3_search_return
-    test eax, eax
-    jz .Lg3_search_unsat
-    add r14, 16
-    dec r15
-    jmp .Lg3_closure_dep
-.Lg3_closure_next:
-    jmp .Lg3_closure_candidate
-.Lg3_closure_pass_end:
-    lea r12, [rip + g3_roots]
-    xor r13d, r13d
-.Lg3_check_roots:
-    cmp r13, [rip + g3_root_count]
-    jae .Lg3_check_candidates_begin
-    mov rdi, [r12]
-    mov rsi, [r12 + 8]
-    call g3_check
+    call g4_clear_facts
+    mov r12, [rip + g4_requests]
+    mov r13, [rip + g4_request_count]
+.Lg4_search_root_requests:
+    test r13, r13
+    jz .Lg4_search_root_default
+    call g3_tick
     test eax, eax
     jnz .Lg3_search_return
-    add r12, 16
-    inc r13
-    jmp .Lg3_check_roots
-.Lg3_check_candidates_begin:
-    xor r13d, r13d
-.Lg3_check_candidate:
-    cmp r13, [rip + g3_candidate_count]
-    jae .Lg3_find_unresolved
-    lea rax, [rip + g3_solution]
-    cmp byte ptr [rax + r13], 0
-    je .Lg3_check_candidate_next
-    lea rax, [rip + g3_required]
-    cmp byte ptr [rax + r13], 0
-    je .Lg3_check_candidate_next
-    imul rax, r13, G3_RECORD
-    lea r12, [rip + g3_candidates]
-    add r12, rax
-    mov r14, [r12 + 16]
-    mov r15, [r12 + 24]
-.Lg3_check_dep:
-    test r15, r15
-    jz .Lg3_check_candidate_next
-    mov rdi, [r14]
-    mov rsi, [r14 + 8]
-    call g3_check
+    mov rdi, [rip + g4_root_profile]
+    mov rsi, r12
+    lea rdx, [rip + g4_root_features]
+    call g4_activate
     test eax, eax
     jnz .Lg3_search_return
-    add r14, 16
-    dec r15
-    jmp .Lg3_check_dep
-.Lg3_check_candidate_next:
-    inc r13
-    jmp .Lg3_check_candidate
+    mov rdi, r12
+    call g4_next
+    mov r12, rax
+    dec r13
+    jmp .Lg4_search_root_requests
+.Lg4_search_root_default:
+    cmp qword ptr [rip + g4_defaults], 0
+    je .Lg4_search_root
+    mov rdi, [rip + g4_root_profile]
+    lea rsi, [rip + g4_default_name]
+    call g4_feature_index
+    test rax, rax
+    js .Lg4_search_root
+    mov rdi, [rip + g4_root_profile]
+    lea rsi, [rip + g4_default_name]
+    lea rdx, [rip + g4_root_features]
+    call g4_activate
+.Lg4_search_root:
+    mov rdi, [rip + g4_root_profile]
+    lea rsi, [rip + g3_roots]
+    mov rdx, [rip + g3_root_count]
+    lea rcx, [rip + g4_root_features]
+    lea r8, [rip + g4_root_deps]
+    call g4_process_node
+    test eax, eax
+    jnz .Lg3_search_return
+.Lg4_search_dirty:
+    cmp qword ptr [rip + g4_dirty_count], 0
+    je .Lg3_find_unresolved
+    xor ebx, ebx
+    lea rdx, [rip + g4_dirty]
+.Lg4_search_dirty_find:
+    cmp byte ptr [rdx + rbx], 0
+    jne .Lg4_search_dirty_found
+    inc rbx
+    jmp .Lg4_search_dirty_find
+.Lg4_search_dirty_found:
+    mov byte ptr [rdx + rbx], 0
+    dec qword ptr [rip + g4_dirty_count]
+    lea rax, [rip + g4_profiles]
+    mov rdi, [rax + rbx*8]
+    imul rax, rbx, G3_RECORD
+    lea r12, [rip + g3_candidates]
+    add r12, rax
+    mov rsi, [r12 + 16]
+    mov rdx, [r12 + 24]
+    lea rax, [rip + g4_active_features]
+    lea rcx, [rax + rbx*8]
+    lea rax, [rip + g4_active_deps]
+    lea r8, [rax + rbx*8]
+    call g4_process_node
+    test eax, eax
+    jnz .Lg3_search_return
+    jmp .Lg4_search_dirty
 .Lg3_find_unresolved:
     xor r13d, r13d
 .Lg3_unresolved_loop:
@@ -621,11 +940,16 @@ g3_search:
 
 /* Inputs: candidates<=256 records40 {name*,version*,deps*,dep_count,usable};
  * roots<=64 records16 {name*,requirement*}; deps<=64 records16 per candidate.
+ * Optional g4 profiles carry feature definitions and per-edge options. Root
+ * requests<=64 are NUL-separated; defaults is boolean. NULL profiles retain
+ * mandatory/default behavior. Lazy mode yields4 for an unknown required name.
  * All strings/arrays must remain readable during the call. Limit<=100000.
- * Outputs: RAX=0 solved,1 unsatisfiable,2 resource bound,3 malformed graph.
+ * Outputs: RAX=0 solved,1 unsatisfiable,2 resource bound,3 malformed graph,
+ * 4 needs discovery with a borrowed missing-name pointer.
  * solution[i]=1 for exactly the reachable graph on success, all zero on error.
  * Validates every supplied candidate, even inactive ones; rejects duplicates.
- * Sort scratch2048, reachability256, recursion<=256*40 saved bytes. */
+ * Sort scratch2048, reachability256, feature facts4376, dirty nodes256.
+ * Recursion<=256*40 saved bytes plus bounded propagation routine frames. */
 g3_solve:
     push rbx
     push r12
@@ -637,6 +961,8 @@ g3_solve:
     xor eax, eax
     rep stosb
     mov qword ptr [rip + g3_steps], 0
+    mov qword ptr [rip + g4_missing_name], 0
+    call g4_clear_facts
     cmp qword ptr [rip + g3_candidate_count], G3_CANDIDATES
     ja .Lg3_solve_limit
     cmp qword ptr [rip + g3_root_count], G3_ROOTS
@@ -681,6 +1007,19 @@ g3_solve:
     dec r15
     jnz .Lg3_validate_dep
 .Lg3_validate_candidate_next:
+    lea rax, [rip + g4_profiles]
+    mov rdi, [rax + r13*8]
+    mov rsi, [r12 + 16]
+    mov rdx, [r12 + 24]
+    call g4_profile_validate
+    test eax, eax
+    jnz .Lg3_solve_invalid
+    lea rax, [rip + g4_profiles]
+    mov rdi, [rax + r13*8]
+    mov rdx, [r12 + 24]
+    call g4_budget_profile
+    test eax, eax
+    jnz .Lg3_solve_return
     lea rax, [rip + g3_order]
     mov [rax + r13*8], r13
     inc r13
@@ -691,7 +1030,7 @@ g3_solve:
     lea r12, [rip + g3_roots]
 .Lg3_validate_root:
     cmp r13, [rip + g3_root_count]
-    jae .Lg3_sort_begin
+    jae .Lg4_validate_root_profile
     mov rdi, [r12]
     call g3_name
     test eax, eax
@@ -704,6 +1043,58 @@ g3_solve:
     inc r13
     add r12, 16
     jmp .Lg3_validate_root
+.Lg4_validate_root_profile:
+    mov rdi, [rip + g4_root_profile]
+    lea rsi, [rip + g3_roots]
+    mov rdx, [rip + g3_root_count]
+    call g4_profile_validate
+    test eax, eax
+    jnz .Lg3_solve_invalid
+    mov rdi, [rip + g4_root_profile]
+    mov rdx, [rip + g3_root_count]
+    call g4_budget_profile
+    test eax, eax
+    jnz .Lg3_solve_return
+    cmp qword ptr [rip + g4_request_count], 64
+    ja .Lg3_solve_limit
+    cmp qword ptr [rip + g4_defaults], 1
+    ja .Lg3_solve_invalid
+    cmp qword ptr [rip + g4_lazy], 1
+    ja .Lg3_solve_invalid
+    cmp qword ptr [rip + g4_known_count], 256
+    ja .Lg3_solve_limit
+    mov rdi, [rip + g4_requests]
+    mov rsi, [rip + g4_request_count]
+    call g4_names_validate
+    test eax, eax
+    jnz .Lg3_solve_invalid
+    mov r12, [rip + g4_requests]
+    mov r13, [rip + g4_request_count]
+.Lg4_validate_request:
+    test r13, r13
+    jz .Lg4_validate_known_begin
+    mov rdi, [rip + g4_root_profile]
+    mov rsi, r12
+    call g4_feature_index
+    test rax, rax
+    js .Lg3_solve_invalid
+    mov rdi, r12
+    call g4_next
+    mov r12, rax
+    dec r13
+    jmp .Lg4_validate_request
+.Lg4_validate_known_begin:
+    xor r13d, r13d
+.Lg4_validate_known:
+    cmp r13, [rip + g4_known_count]
+    jae .Lg3_sort_begin
+    lea rax, [rip + g4_known_names]
+    mov rdi, [rax + r13*8]
+    call g3_name
+    test eax, eax
+    jz .Lg3_solve_invalid
+    inc r13
+    jmp .Lg4_validate_known
 .Lg3_sort_begin:
     mov r13d, 1
 .Lg3_sort_outer:
@@ -741,6 +1132,19 @@ g3_solve:
 .Lg3_solve_limit:
     mov eax, 2
 .Lg3_solve_return:
+    test eax, eax
+    jz .Lg4_solve_done
+    mov r12, rax
+    lea rdi, [rip + g3_solution]
+    mov ecx, G3_CANDIDATES
+    xor eax, eax
+    rep stosb
+    call g4_clear_facts
+    mov rax, r12
+    cmp eax, 4
+    je .Lg4_solve_done
+    mov qword ptr [rip + g4_missing_name], 0
+.Lg4_solve_done:
     pop r15
     pop r14
     pop r13
@@ -748,12 +1152,28 @@ g3_solve:
     pop rbx
     ret
 
+/* Zero branch-derived facts without changing selections or input metadata.
+ * All registers except RDI/RCX/RAX preserved; stack0. Contiguous private
+ * storage is one owned G4_FACT_BYTES block with fixed field offsets. */
+g4_clear_facts:
+    lea rdi, [rip + g4_facts]
+    mov ecx, G4_FACT_BYTES
+    xor eax, eax
+    rep stosb
+    lea rdi, [rip + g3_required]
+    mov ecx, G3_CANDIDATES
+    rep stosb
+    ret
+
 .section .rodata
+g4_default_name: .asciz "default"
 g3_any: .asciz "*"
 g3_zero: .asciz "0.0.0"
 .section .data
 .balign 8
 g3_limit: .quad 100000
+g4_defaults: .quad 1
+g4_forward_option: .quad 0,0,1
 .section .bss
 .balign 8
 g3_candidate_count: .skip 8
@@ -766,6 +1186,23 @@ g3_required: .skip G3_CANDIDATES
 g3_order: .skip G3_CANDIDATES * 8
 g3_version_numbers: .skip 24
 g3_base_numbers: .skip 24
-g3_queue_read: .skip 8
-g3_queue_write: .skip 8
-g3_queue: .skip G3_CANDIDATES
+
+.balign 8
+g4_profiles: .skip G3_CANDIDATES * 8
+g4_root_profile: .skip 8
+g4_requests: .skip 8
+g4_request_count: .skip 8
+g4_lazy: .skip 8
+g4_known_names: .skip G3_CANDIDATES * 8
+g4_known_count: .skip 8
+g4_missing_name: .skip 8
+g4_facts: .skip G4_FACT_BYTES
+.set g4_active_features, g4_facts
+.set g4_active_deps, g4_facts + 2048
+.set g4_root_features, g4_facts + 4096
+.set g4_root_deps, g4_facts + 4104
+.set g4_dirty, g4_facts + 4112
+.set g4_dirty_count, g4_facts + 4368
+.if 4368 + 8 != G4_FACT_BYTES
+.error "feature fact capacity differs"
+.endif

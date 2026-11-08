@@ -74,6 +74,7 @@ r3_command:
     lea rsi, [rip + pub_hash_buffer]
     call copy_string
     call r3_roots
+    call r4_validate_selection
     call r3_read_lock
     test eax, eax
     jz .Lr3_have_lock
@@ -83,11 +84,14 @@ r3_command:
 .Lr3_have_lock:
     call r3_lock_header
 .Lr3_catalog:
+    cmp qword ptr [rip + r2_mode], 5
+    jne .Lr3_catalog_ready
+    mov qword ptr [rip + r4_format], 4
+.Lr3_catalog_ready:
     call r3_catalog
     cmp qword ptr [rip + r2_mode], 6
     je .Lr3_sync
     call r3_discover
-    call r3_solve
     call r3_render
     call r3_preserve_bindings
     call r3_check_policy
@@ -165,6 +169,10 @@ r3_roots:
     inc rbx
     jmp .Lr3_root_pair
 .Lr3_root_hash:
+    lea rdi, [rip + r4_root_profile]
+    lea rsi, [rip + g4_project_profile]
+    call g4_profile_copy
+    mov [rip + g4_root_profile], rax
     lea rdi, [rip + manifest_path]
     call r2_hash_path
     lea rdi, [rip + r3_manifest_sha]
@@ -297,44 +305,50 @@ r3_name:
     mov rdi, r13
     mov rsi, r12
     call copy_string
+    lea rdx, [rip + g4_known_names]
+    mov [rdx + rbx*8], r13
     inc qword ptr [rip + r3_name_count]
+    inc qword ptr [rip + g4_known_count]
 .Lr3_name_end:
     pop r13
     pop r12
     pop rbx
     ret
 
-/* Eager bounded discovery: all active versions of reached names, then their
- * source-target dependencies. This can read unused candidate metadata.
- * It never reads a blob or runs submitted code. Failure is not unsatisfiability. */
+/* Demand-driven discovery loads all active versions only when an active
+ * solver branch requires that name. Unknown and known-empty names differ.
+ * The aggregate 100000-step budget covers every retry, including validation.
+ * No source blob is read. Network errors never become unsatisfiability. */
 r3_discover:
     push rbx
     push r12
     push r13
     push r14
-    xor ebx, ebx
-    lea r12, [rip + g3_roots]
-.Lr3_discover_roots:
-    cmp rbx, [rip + g3_root_count]
-    jae .Lr3_discover_names
-    mov rdi, [r12]
+    mov qword ptr [rip + g4_lazy], 1
+    mov qword ptr [rip + r4_steps], 0
+.Lr3_discover_solve:
+    mov eax, 100000
+    sub rax, [rip + r4_steps]
+    jbe r3_limit_error
+    mov [rip + g3_limit], rax
+    call g3_solve
+    mov ebx, eax
+    mov rax, [rip + g3_steps]
+    add [rip + r4_steps], rax
+    cmp ebx, 4
+    jne .Lr3_discover_result
+    mov rdi, [rip + g4_missing_name]
     call r3_name
-    add r12, 16
-    inc rbx
-    jmp .Lr3_discover_roots
-.Lr3_discover_names:
-    xor ebx, ebx
-.Lr3_discover_name:
-    cmp rbx, [rip + r3_name_count]
-    jae .Lr3_discover_end
-    imul rax, rbx, 105
+    mov rax, [rip + r3_name_count]
+    dec rax
+    imul rax, rax, 105
     lea r12, [rip + r3_names]
     add r12, rax
     lea r13, [rip + r3_inventory]
     xor r14d, r14d
 .Lr3_discover_version:
     cmp r14, [rip + r3_catalog_count]
-    jae .Lr3_discover_next_name
+    jae .Lr3_discover_solve
     cmp byte ptr [r13 + 204], 1
     jne .Lr3_discover_next_version
     mov rdi, r12
@@ -348,10 +362,13 @@ r3_discover:
     inc r14
     add r13, 256
     jmp .Lr3_discover_version
-.Lr3_discover_next_name:
-    inc rbx
-    jmp .Lr3_discover_name
-.Lr3_discover_end:
+.Lr3_discover_result:
+    cmp ebx, 1
+    je r3_unsatisfiable
+    cmp ebx, 2
+    je r3_limit_error
+    test ebx, ebx
+    jnz r3_metadata_error
     pop r14
     pop r13
     pop r12
@@ -417,8 +434,9 @@ r3_candidate:
     call r2_open_path
     mov rdi, rax
     lea rsi, [rip + r2_envelope]
-    mov edx, INDEX_LIMIT
+    mov edx, R2_CONTROL
     call r2_read_fd
+    mov [rip + r4_envelope_length], rax
     mov rsi, rax
     lea rdi, [rip + r2_envelope]
     call r2_parse_json
@@ -434,6 +452,7 @@ r3_candidate:
     call streq
     test eax, eax
     jz r3_metadata_error
+.Lr4_candidate_record:
     lea rdi, [rbx + 269]
     lea rsi, [rip + r2_manifest_sha]
     call copy_string
@@ -471,6 +490,25 @@ r3_candidate:
     lea rsi, [rip + r2_dependencies]
     imul rcx, [rip + r2_dependency_count], 240
     rep movsb
+    imul rax, r12, G4_PROFILE_SIZE
+    lea rdi, [rip + r4_profiles]
+    add rdi, rax
+    lea rsi, [rip + g4_publication_profile]
+    call g4_profile_copy
+    lea rdx, [rip + g4_profiles]
+    mov [rdx + r12*8], rax
+    cmp qword ptr [rip + r4_format], 3
+    jne .Lr4_candidate_complex_ok
+    mov rdx, [r13 + 24]
+    call r4_legacy_profile
+.Lr4_candidate_complex_ok:
+    cmp qword ptr [rip + r2_mode], 6
+    jne .Lr4_candidate_no_save
+    cmp byte ptr [rip + r3_local], 0
+    jne .Lr4_candidate_no_save
+    mov rdi, r12
+    call r4_metadata_save
+.Lr4_candidate_no_save:
     xor ebp, ebp
 .Lr3_candidate_dep:
     cmp rbp, [r13 + 24]
@@ -478,11 +516,6 @@ r3_candidate:
     mov [r14], r15
     lea rax, [r15 + 105]
     mov [r14 + 8], rax
-    cmp qword ptr [r13 + 32], 1
-    jne .Lr3_candidate_dep_next
-    mov rdi, r15
-    call r3_name
-.Lr3_candidate_dep_next:
     add r14, 16
     add r15, 240
     inc rbp
@@ -501,6 +534,8 @@ r3_candidate:
  * solver; resource failure never reports a graph as unsatisfiable. */
 r3_solve:
     sub rsp, 8
+    mov qword ptr [rip + g4_lazy], 0
+    mov qword ptr [rip + g3_limit], 100000
     call g3_solve
     cmp eax, 1
     je r3_unsatisfiable
@@ -623,11 +658,19 @@ r3_lock_header:
     call r3_line
     cmp eax, 1
     jne r3_lock_error
+    mov qword ptr [rip + r4_format], 3
     mov rdi, [rip + r3_fields]
     lea rsi, [rip + r3_header_line]
     call streq
     test eax, eax
+    jnz .Lr4_header_known
+    mov rdi, [rip + r3_fields]
+    lea rsi, [rip + r4_header_line]
+    call streq
+    test eax, eax
     jz r3_lock_error
+    mov qword ptr [rip + r4_format], 4
+.Lr4_header_known:
     call r3_line
     cmp eax, 5
     jne r3_lock_error
@@ -687,6 +730,17 @@ r3_lock_header:
     test eax, eax
     jz r3_lock_error
 .Lr3_header_done:
+    cmp qword ptr [rip + r2_mode], 5
+    je .Lr4_header_return
+    cmp qword ptr [rip + r4_format], 4
+    je .Lr4_header_selection
+    mov rax, [rip + g4_root_profile]
+    mov rdx, [rip + g3_root_count]
+    call r4_legacy_profile
+    jmp .Lr4_header_return
+.Lr4_header_selection:
+    call r4_read_selection
+.Lr4_header_return:
     pop rbx
     ret
 
@@ -820,6 +874,10 @@ r3_render:
     call r3_sort
     mov qword ptr [rip + r3_length], 0
     lea rsi, [rip + r3_header]
+    cmp qword ptr [rip + r4_format], 3
+    je .Lr4_render_header
+    lea rsi, [rip + r4_header]
+.Lr4_render_header:
     call r3_append
     lea rsi, [rip + r3_registry_word]
     call r3_append
@@ -836,11 +894,17 @@ r3_render:
     lea rsi, [rip + r3_manifest_sha]
     call r3_append
     call r3_lf
+    cmp qword ptr [rip + r4_format], 4
+    jne .Lr4_render_roots
+    call r4_render_selection
+.Lr4_render_roots:
     lea r12, [rip + g3_roots]
     xor ebx, ebx
 .Lr3_render_root:
     cmp rbx, [rip + g3_root_count]
     jae .Lr3_render_nodes_start
+    bt qword ptr [rip + g4_root_deps], rbx
+    jnc .Lr4_render_root_next
     lea rsi, [rip + r3_root_word]
     call r3_append
     call r3_tab
@@ -850,6 +914,7 @@ r3_render:
     mov rsi, [r12 + 8]
     call r3_append
     call r3_lf
+.Lr4_render_root_next:
     add r12, 16
     inc rbx
     jmp .Lr3_render_root
@@ -879,6 +944,10 @@ r3_render:
     inc rbx
     jmp .Lr3_render_node
 .Lr3_render_edges_start:
+    cmp qword ptr [rip + r4_format], 4
+    jne .Lr4_render_edges
+    call r4_render_node_features
+.Lr4_render_edges:
     xor ebx, ebx
 .Lr3_render_parent:
     cmp rbx, [rip + r3_order_count]
@@ -896,6 +965,11 @@ r3_render:
 .Lr3_render_edge:
     cmp rbp, [r13 + 24]
     jae .Lr3_render_parent_next
+    mov rax, [r15 + rbx*8]
+    lea rdx, [rip + g4_active_deps]
+    mov rax, [rdx + rax*8]
+    bt rax, rbp
+    jnc .Lr4_render_edge_next
     lea rsi, [rip + r3_edge_word]
     call r3_append
     call r3_tab
@@ -908,6 +982,7 @@ r3_render:
     mov rsi, [r14 + 8]
     call r3_append
     call r3_lf
+.Lr4_render_edge_next:
     add r14, 16
     inc rbp
     jmp .Lr3_render_edge
@@ -1193,15 +1268,17 @@ r3_cached:
  * project dependency records. Compare those with the signed/locked edges. */
 r3_source_dependencies:
     sub rsp, 8
+    lea rdx, [rip + g4_profiles]
+    mov rdx, [rdx + rdi*8]
     mov rax, rdi
     imul rax, rax, 40
-    lea rdx, [rip + g3_candidates]
-    add rdx, rax
-    mov rsi, [rdx + 24]
+    lea rcx, [rip + g3_candidates]
+    add rcx, rax
+    mov rsi, [rcx + 24]
     imul rax, rdi, R3_DEPS
     lea rdi, [rip + r3_dependency_data]
     add rdi, rax
-    call g3_compare_dependencies
+    call g4_compare_project
     test eax, eax
     jnz r3_lock_error
     add rsp, 8
@@ -1236,7 +1313,7 @@ r3_materialize:
     lea rsi, [rip + r2_name]
     lea rdx, [rip + r2_version]
     mov rcx, [rip + r2_target]
-    call validate_source_package
+    call validate_v2_source_package
     test eax, eax
     jnz dependency_archive_error
     mov rdi, r12
@@ -1266,7 +1343,13 @@ r3_verify_project:
     lea rsi, [rip + r3_header]
     call dependency_prefix
     test rax, rax
+    jnz .Lr4_verify_graph
+    lea rdi, [rip + r3_old_lock]
+    lea rsi, [rip + r4_header]
+    call dependency_prefix
+    test rax, rax
     jz .Lr3_verify_legacy
+.Lr4_verify_graph:
     mov byte ptr [rip + r3_active], 1
     mov byte ptr [rip + r3_local], 1
     lea rax, [rip + package_target]
@@ -1280,6 +1363,8 @@ r3_verify_project:
     jnz r3_lock_error
     call r3_lock_header
     call r3_local_candidates
+    mov qword ptr [rip + g4_lazy], 0
+    mov qword ptr [rip + g3_limit], 100000
     call g3_solve
     test eax, eax
     jnz r3_lock_error
@@ -1303,7 +1388,7 @@ r3_verify_project:
     lea rsi, [rip + r2_name]
     lea rdx, [rip + r2_version]
     mov rcx, [rip + r2_target]
-    call validate_source_package
+    call validate_v2_source_package
     test eax, eax
     jnz dependency_archive_error
     mov rdi, r12
@@ -1320,6 +1405,8 @@ r3_verify_project:
     mov eax, 1
     jmp .Lr3_verify_return
 .Lr3_verify_legacy:
+    cmp qword ptr [rip + g4_project_profile + 16], 0
+    jne r3_lock_error
     cmp qword ptr [rip + g3_project_dep_count], 0
     jne r3_lock_error
     xor eax, eax
@@ -1437,9 +1524,16 @@ r3_local_candidates:
     mov [r13 + 16], rdx
     mov qword ptr [r13 + 24], 0
     mov qword ptr [r13 + 32], 1
+    cmp qword ptr [rip + r4_format], 4
+    jne .Lr4_local_node_done
+    mov rdi, r12
+    call r4_metadata_load
+.Lr4_local_node_done:
     inc qword ptr [rip + g3_candidate_count]
     jmp .Lr3_local_node_line
 .Lr3_local_edges_start:
+    cmp qword ptr [rip + r4_format], 4
+    je .Lr3_local_done
     call r3_parse_reset
     call r3_lock_header
 .Lr3_local_edge_line:

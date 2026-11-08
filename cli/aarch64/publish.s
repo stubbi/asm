@@ -38,6 +38,15 @@
  * Owns the archive/manifest scratch buffers; performs no filesystem mutation.
  * Stack frame: 80 bytes. The compressed artifact digest is the caller's check. */
 validate_source_package:
+    mov w4, #0
+    b .Lpub_package_profile
+.ifdef ASM_REGISTRY_V2
+/* Same archive/name/version/target ABI with V2 graph declarations and8190 bytes.
+ * The legacy entry retains16384 bytes and rejects dependency/feature tables. */
+validate_v2_source_package:
+    mov w4, #1
+.endif
+.Lpub_package_profile:
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
@@ -50,6 +59,7 @@ validate_source_package:
     ldr x10, [x16]
     mov x22, x10
     mov x23, x3
+    mov w24, w4
     ARM_ADDR x16, pub_name
     str x1, [x16]
     ARM_ADDR x16, pub_version
@@ -58,7 +68,15 @@ validate_source_package:
     tst w9, w9
     b.ne .Lpub_package_checked
     mov x0, x23
+.ifdef ASM_REGISTRY_V2
+    cbnz w24, .Lpub_package_v2
+.endif
     ARM_CALL pub_check_project
+    b .Lpub_package_checked
+.ifdef ASM_REGISTRY_V2
+.Lpub_package_v2:
+    ARM_CALL pub_check_project_v2
+.endif
 .Lpub_package_checked:
     ARM_ADDR x16, pub_name
     str x21, [x16]
@@ -929,6 +947,15 @@ pub_source_paths:
  * Validates all entries before accepting the selected target. No extraction,
  * package-global changes, escapes, duplicate fields, or repeated tables. */
 pub_check_project:
+    mov w1, #0
+    b .Lpub_check_profile
+.ifdef ASM_REGISTRY_V2
+/* x0=validated target. Select V2 declarations and8190-byte source bound.
+ * Save the explicit profile in this call's frame; do not infer a global mode. */
+pub_check_project_v2:
+    mov w1, #1
+.endif
+.Lpub_check_profile:
     ARM_SAVE x19
     ARM_SAVE x20
     ARM_SAVE x21
@@ -936,6 +963,7 @@ pub_check_project:
     ARM_SAVE x23
     ARM_SAVE x24
     sub sp, sp, #16
+    str w1, [sp]
     ARM_ADDR x16, pub_project_target
     str x0, [x16]
     ARM_ADDR x16, pub_project_matched
@@ -944,9 +972,12 @@ pub_check_project:
     ARM_CALL pub_source_paths
     cbnz w9, .Lpub_project_bad
 .ifdef ASM_REGISTRY_V2
+    ldr w10, [sp]
+    cbz w10, .Lpub_project_lock_checked
     ARM_ADDR x0, dependency_lock_path
     ARM_CALL source_archive_member
     cbnz x9, .Lpub_project_bad
+.Lpub_project_lock_checked:
 .endif
     ARM_ADDR x19, pub_readme_names
     ARM_CALL pub_any_member
@@ -962,6 +993,14 @@ pub_check_project:
     ARM_IMM x11, PUB_LEGACY_MANIFEST_MAX
     cmp x2, x11
     b.hi .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    ldr w10, [sp]
+    cbz w10, .Lpub_manifest_bound_ready
+    ARM_IMM x11, PUB_TARGET_MANIFEST_MAX
+    cmp x2, x11
+    b.hi .Lpub_project_bad
+.Lpub_manifest_bound_ready:
+.endif
     ARM_ADDR x16, pub_manifest_length
     str x2, [x16]
     mov x1, x9
@@ -976,9 +1015,12 @@ pub_check_project:
     b.lo .Lpub_manifest_copy
     strb wzr, [x0, x3]
 .ifdef ASM_REGISTRY_V2
+    ldr w10, [sp]
+    cbz w10, .Lpub_manifest_graph_parsed
     ARM_ADDR x0, pub_manifest
     ARM_CALL g3_project_dependencies
     cbnz w9, .Lpub_project_bad
+.Lpub_manifest_graph_parsed:
     ARM_ADDR x0, pub_manifest
 .endif
     mov x21, x0
@@ -1113,7 +1155,14 @@ pub_check_project:
     ARM_ADDR x0, pub_key
     ARM_ADDR x1, g3_project_dependency_section
     ARM_CALL streq
+    cbnz w9, .Lpub_manifest_graph_section
+    ARM_ADDR x0, pub_key
+    ARM_ADDR x1, g3_project_feature_section
+    ARM_CALL streq
     cbz w9, .Lpub_manifest_not_dependencies
+.Lpub_manifest_graph_section:
+    ldr w10, [sp]
+    cbz w10, .Lpub_project_bad
     mov w22, #4
     b .Lpub_manifest_line_end
 .Lpub_manifest_not_dependencies:

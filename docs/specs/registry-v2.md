@@ -198,8 +198,10 @@ Committed or published task replay therefore needs no redundant upload.
 | `asm registry resolve` | Resolve source dependencies for one target and write the complete graph lock |
 | `asm registry sync` | Authenticate the exact locked graph and restore its source cache |
 
-`make registry-cli` builds this optional source checkpoint on the supported native CLI hosts.
-The default released command path remains unchanged.
+`make` includes these commands on the supported native CLI hosts.
+`make registry-cli` builds the same full client.
+`make REGISTRY_V2=0` selects the explicit V1-only source profile.
+The official V2 registry still requires independent trust provisioning and deployment qualification.
 Native project preparation is described below.
 Self-service owner enrollment remains outside this profile.
 
@@ -213,12 +215,17 @@ Changing installed versions remains a separate explicit operation.
 
 ## Resolve a bounded dependency graph
 
-This unreleased extension adds mandatory source dependencies from one explicitly selected registry.
+This source profile resolves mandatory and optional source dependencies from one explicitly selected registry.
 The [implementation plan](../superpowers/plans/2026-11-08-v2-dependencies.md) records its scope and qualification work.
 The [dependency evidence record](../v2-dependency-evidence.md) identifies completed checks and remaining limits.
 The released V1 dependency commands and target-aware `asm-lock-v2` format retain their existing behavior.
 
-The optional publication `dependencies` array contains at most 64 closed objects with `name` and `requirement` strings.
+The optional publication `dependencies` array contains at most 64 objects with required `name` and `requirement` strings.
+Optional fields are `optional`, `default_features`, and `features`.
+The first two fields are Boolean; `features` is a sorted array of feature names.
+Their defaults are false, true, and an empty array.
+Unknown fields fail validation.
+Existing two-field objects retain their exact published bytes.
 Names use the existing `owner/name` grammar.
 The array uses name byte order, without duplicates.
 An absent array means no declared dependencies.
@@ -231,15 +238,53 @@ The source manifest declares dependencies with this bounded syntax:
 ```toml
 [dependencies]
 "example/math" = "^1.2.0"
-"example/vector" = ">=2.0.0,<3.0.0"
+"example/vector" = { version = ">=2.0.0,<3.0.0", optional = true, default-features = false, features = ["portable"] }
+
+[features]
+default = ["vectors"]
+vectors = ["dep:example/vector", "example/math/checked"]
 ```
 
-The dependency table requires quoted package names and quoted string requirements.
+The dependency table requires quoted package names.
+A quoted string declares a mandatory requirement with default features enabled.
+An inline table requires a quoted `version` requirement.
+It also permits `optional`, `default-features`, and `features` with the types shown above.
 The source manifest retains its 8190-byte ASCII limit and existing package and build fields.
 No `[resolution]` table is required.
-Duplicate names or tables, inline dependency objects, optional dependencies, feature declarations, and escapes are unsupported.
+Duplicate names, tables, fields, list members, escapes, and multiline declarations are unsupported.
 Unknown or unsupported declarations fail; publication never removes them silently.
 Published source must not contain a consumer `asm.lock`.
+
+### Feature activation
+
+A feature is a named group of dependency selections and other local features.
+Names match `[a-z][a-z0-9_-]{0,31}`.
+A project can declare at most 64 features, with at most 64 members in each group.
+The shared text pool for names, members, and requested child features is limited to 8192 bytes, including string terminators.
+The canonical publication `features` array uses name order and closed objects with `name` and `members` fields.
+Member lists use byte order, without duplicates.
+An absent feature array declares no local features.
+
+A member can name another declared local feature.
+`dep:owner/name` activates a declared optional dependency.
+`owner/name/feature` activates that dependency and requests the named child feature.
+Unknown local references and local feature cycles fail validation, including inactive declarations.
+A dependency's requested feature list does not activate its optional edge by itself.
+Optional dependencies have no implicit feature aliases.
+Features affect graph selection; assembly symbols and source imports remain explicit.
+
+The root enables its `default` group when that group exists.
+`--no-default-features` disables only this implicit root request.
+`--features NAME,NAME` adds explicit root requests.
+An unknown explicit root feature fails before a network request.
+Both options apply only to resolve; sync and build retain the lock's recorded choices.
+
+Each active edge contributes its version requirement, child feature requests, and default-feature setting.
+Requests from different active paths unite; one path cannot subtract another path's enabled defaults.
+A dormant edge contributes nothing, even when another path selects the same package.
+An absent implicit child `default` group is valid.
+A missing explicitly requested child feature makes that candidate incompatible and permits backtracking.
+Cross-package cycles use finite, additive propagation and remain subject to the global search budget.
 
 Requirements contain at most 128 bytes and no whitespace.
 A requirement is `*`, or one through eight comma-separated terms whose constraints must all hold.
@@ -258,16 +303,18 @@ The resolver authenticates the existing lifecycle inventory and immutable releas
 It checks envelope package and release identities against the selected inventory row.
 Every version of one name retains the same package identity, including yanked and revoked rows.
 It considers active source releases for the explicit target tuple.
-The initial discovery procedure eagerly reads candidate metadata for reached package names, including candidates that the solution might not select.
+Discovery reads metadata when an active solver branch first requires a package name.
+It loads that name's active versions, including candidates that the final solution might not select.
+Dormant optional edges do not cause metadata requests.
 It does not download source archives, run builds, or execute packages during resolution.
 Static mirrors require no resolver process or additional database.
 
 The native solver uses deterministic bounded backtracking, rather than a new external runtime or a PubGrub implementation.
 It selects one version per package for one target, with numeric version ordering.
 Consistent dependency cycles remain explicit graph edges; dependency declarations do not execute assembly imports.
-Parallel versions, feature selection, universal target solving, and build hooks remain unsupported.
+Parallel versions, universal target solving, prereleases, and build hooks remain unsupported.
 The profile permits at most 256 reached candidate versions, 256 reached package names, 64 roots, and 64 dependencies per candidate.
-Its search limit is 100,000 steps.
+Its search limit is 100,000 steps across all discovery retries, including profile validation and active feature expansion.
 An exhausted bound fails instead of truncating the candidate set or reporting an unsatisfiable graph.
 Malformed or unavailable metadata remains a separate failure from incompatible constraints.
 
@@ -287,32 +334,47 @@ These checks use the retained project lock; removing it removes those package an
 The canonical lock has this field order:
 
 ```text
-# asm-lock-v3
+# asm-lock-v4
 registry REGISTRY_ID INITIAL_ROOT_SHA256 TARGET ROOT_ASM_TOML_SHA256
+selection ROOT_DEFAULTS_0_OR_1 COMMA_SEPARATED_ROOT_REQUESTS_OR_DASH
+root-feature ENABLED_ROOT_FEATURE
 root NAME REQUIREMENT
 node NAME VERSION PACKAGE_ID RELEASE_ID ENVELOPE_SHA256 MANIFEST_SHA256 SOURCE_COMMIT_DIGEST SOURCE_BYTES SOURCE_SHA256
+feature PACKAGE_NAME ENABLED_FEATURE
 edge PARENT_NAME CHILD_NAME REQUIREMENT
 ```
 
 Actual field separators are single tabs.
 Every row ends with one LF; blank rows, CR, control bytes, and ambiguous encodings are invalid.
-Roots precede nodes; nodes precede edges.
+The selection precedes enabled root features and active roots.
+Nodes precede enabled package features and active edges.
+Each group uses byte order.
+Explicit root requests use a sorted comma-separated list; `-` represents no explicit request.
 Names and parent-child edges use byte order.
 The lock has a 1 MiB limit.
-Every selected node and every declared dependency edge is retained.
+Every selected node, enabled feature, and active dependency edge is retained.
+Dormant declarations remain bound by the root manifest or exact envelope digest.
+Changing feature selection does not change the immutable release bindings.
+Version-three locks remain readable for mandatory graphs without feature declarations or customized dependency options.
+Explicit resolve upgrades those locks to version four.
+Version-three sync and build refuse declarations that require feature semantics.
 Mirrors do not enter the lock's authority binding.
 The envelope digest binds the complete explicit source and artifact metadata, including the source commit algorithm and target dimensions.
 
 Use `asm registry sync` with the same project, target, and explicit trust inputs.
 Sync authenticates each locked exact envelope and reconstructs the canonical graph before cache changes.
-Every reconstructed byte must match the retained lock, including root requirements, node bindings, and edges.
+Every reconstructed byte must match the retained lock, including selection, enabled features, roots, node bindings, and active edges.
 Sync checks current lifecycle policy for every selected identity before and after materialization.
 An artifact transfer cannot extend policy freshness or permit a revoked dependency.
 It restores only checked archive bytes and preserves existing source trees unless their bytes already match.
 Failures retain the previous lock and existing source files.
 Verified cache entries added before a later failure can remain for a subsequent retry.
 
-Normal optional-V2 builds require a graph lock when the project declares dependencies.
+Full-profile builds require a graph lock when the project declares dependencies or features.
+Sync retains exact envelope bytes under `.asm/metadata/ENVELOPE_SHA256.json`.
+Version-four builds require this metadata cache and compare full declarations with the exact archived source manifest.
+They recompute feature closure and regenerate the complete lock, instead of trusting its feature rows.
+Missing or damaged metadata requires another explicit sync.
 Build checking validates the root manifest digest, selected target, graph closure, reachability, version requirements, source declarations, and complete cached source bytes.
 This local check does not fetch metadata, refresh lifecycle policy, or authenticate a project-controlled lock by itself.
 Use sync to authenticate the lock against current registry policy before building.
@@ -377,7 +439,8 @@ Record each tested native host and exact executable digest.
 Run the required CLI, verifier, registry, site, and existing server gates for their affected boundaries.
 For graph qualification, compare bounded native solutions with an independent exhaustive oracle on small generated graphs.
 Test shared dependencies, backtracking, consistent cycles, unsatisfiable constraints, numeric version order, and search exhaustion.
-Test complete lock restoration, stale root manifests, omitted edges, orphan nodes, wrong authorities, unavailable metadata, and source declaration mismatches.
+Test complete lock restoration, stale roots, omitted edges, orphan nodes, wrong authorities, unavailable metadata, and source declaration mismatches.
+Test default and explicit features, additive child requests, dormant edges, backtracking, cycles, forged feature rows, and missing cached envelopes.
 Confirm that resolve transfers no artifact blobs and that sync and builds retain exact versions.
 Test lifecycle changes across all selected nodes, corrupt archives, existing edited sources, target mismatches, and mirror failures.
 Record unresolved and failed graph checks in the dependency evidence record.
@@ -415,7 +478,8 @@ Reject case collisions, file/directory conflicts, links, submodules, and sensiti
 Apply the existing source exclusions for `.git`, `.asm`, `.venv`, `__pycache__`, `build`, and `dist` components.
 Repeated Git blobs at different paths become separate regular members, never TAR hardlinks.
 Validate every declared project target and inactive required input; registry selections still use only six supported tuples.
-Read mandatory dependency declarations from the committed root manifest and retain them in the canonical publication request.
+Read complete dependency options and feature groups from the committed root manifest.
+Retain their normalized declarations in the canonical publication request.
 Reject unsupported feature or optional-dependency declarations and committed `asm.lock` before reading credentials.
 Publication validates declarations without solving or downloading their dependency graph.
 

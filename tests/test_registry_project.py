@@ -86,6 +86,52 @@ class RegistryProjectTests(unittest.TestCase):
         ])
         self.assertEqual(registry.read_archive(self.source)["asm.toml"], self.expected["asm.toml"][0])
 
+    def test_committed_optional_dependencies_and_features_enter_the_canonical_request(self):
+        data, mode = self.expected["asm.toml"]
+        declaration = b'''\n[dependencies]
+"z/math" = { features = ["wide", "portable"], version = "^2.0.0", default-features = false, optional = true }
+"a/math" = ">=1.0.0,<2.0.0"
+[features]
+vectors = ["z/math/portable", "dep:z/math"]
+"default" = ["vectors"]
+'''
+        self.expected["asm.toml"] = (data + declaration, mode)
+        self.commit()
+        self.publish_project()
+        value = json.loads(self.manifest.read_bytes())
+        self.assertEqual(value["dependencies"], [
+            {"default_features": True, "features": [], "name": "a/math", "optional": False,
+             "requirement": ">=1.0.0,<2.0.0"},
+            {"default_features": False, "features": ["portable", "wide"], "name": "z/math",
+             "optional": True, "requirement": "^2.0.0"},
+        ])
+        self.assertEqual(value["features"], [
+            {"members": ["vectors"], "name": "default"},
+            {"members": ["dep:z/math", "z/math/portable"], "name": "vectors"},
+        ])
+        self.assertEqual(self.manifest.read_bytes(), registry.json_bytes(value))
+        self.assertEqual(registry.read_archive(self.source)["asm.toml"], self.expected["asm.toml"][0])
+
+    def test_feature_definitions_without_dependencies_enter_the_canonical_request(self):
+        data, mode = self.expected["asm.toml"]
+        self.expected["asm.toml"] = (data + b'\n[features]\ndefault = ["empty"]\nempty = []\n', mode)
+        self.commit()
+        self.publish_project()
+        value = json.loads(self.manifest.read_bytes())
+        self.assertNotIn("dependencies", value)
+        self.assertEqual(value["features"], [{"members": ["empty"], "name": "default"},
+                                             {"members": [], "name": "empty"}])
+        self.assertEqual(self.manifest.read_bytes(), registry.json_bytes(value))
+
+    def test_explicit_default_options_preserve_the_simple_dependency_request(self):
+        data, mode = self.expected["asm.toml"]
+        self.expected["asm.toml"] = (data + b'\n[dependencies]\n"other/math" = { version = "*", optional = false, default-features = true, features = [] }\n', mode)
+        self.commit()
+        self.publish_project()
+        value = json.loads(self.manifest.read_bytes())
+        self.assertEqual(value["dependencies"], [{"name": "other/math", "requirement": "*"}])
+        self.assertNotIn("features", value)
+
     def test_invalid_dependency_ranges_fail_before_credentials_or_network(self):
         data, mode = self.expected["asm.toml"]
         self.expected["asm.toml"] = (data + b'\n[dependencies]\n"other/math" = ">=1.0.0,invalid"\n', mode)
@@ -95,12 +141,17 @@ class RegistryProjectTests(unittest.TestCase):
         self.assertIn(b"project", result.stderr)
         self.assertEqual(self.requests, [])
 
-    def test_duplicate_optional_or_feature_declarations_fail_before_credentials(self):
+    def test_invalid_optional_or_feature_declarations_fail_before_credentials(self):
         data, mode = self.expected["asm.toml"]
         cases = [
             b'\n[dependencies]\n"other/math" = "1.0.0"\n"other/math" = "2.0.0"\n',
-            b'\n[dependencies]\n"other/math" = { version = "1.0.0", optional = true }\n',
-            b'\n[features]\ndefault = []\n',
+            b'\n[dependencies]\n"other/math" = { version = "1.0.0", optional = "true" }\n',
+            b'\n[dependencies]\n"other/math" = { version = "1.0.0", optional = true, optional = false }\n',
+            b'\n[features]\ndefault = ["missing"]\n',
+            b'\n[features]\na = ["b"]\nb = ["a"]\n',
+            b'\n[features]\ndefault = ["dep:other/math"]\n',
+            b'\n[features]\ndefault = ["other/math/portable"]\n',
+            b'\n[features]\ndefault = ["wide", "wide"]\nwide = []\n',
         ]
         self.credential.unlink()
         for declaration in cases:
@@ -281,7 +332,7 @@ class RegistryProjectTests(unittest.TestCase):
         self.assertIn(b"credential", result.stderr)
         self.assertEqual(self.requests, [])
 
-    def test_filesystem_case_alias_cannot_hide_a_packaged_credential(self):
+    def check_filesystem_case_alias_cannot_hide_a_packaged_credential(self):
         self.expected["grant.txt"] = (self.credential.read_bytes(), 0o644)
         self.commit()
         self.credential = self.project / "grant.txt"

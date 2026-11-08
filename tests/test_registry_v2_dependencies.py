@@ -20,6 +20,26 @@ def canonical(value):
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
 
 
+def dependency_text(dependencies, features):
+    """Encode fixture declarations without using a production manifest writer."""
+    result = ""
+    if dependencies:
+        result += "\n[dependencies]\n"
+        for edge in dependencies:
+            fields = [f'version = {json.dumps(edge["requirement"])}']
+            for key, source_key in (("optional", "optional"), ("default_features", "default-features")):
+                if key in edge:
+                    fields.append(f'{source_key} = {json.dumps(edge[key])}')
+            if "features" in edge:
+                fields.append("features = " + json.dumps(sorted(edge["features"])))
+            value = json.dumps(edge["requirement"]) if len(fields) == 1 else "{ " + ", ".join(fields) + " }"
+            result += json.dumps(edge["name"]) + " = " + value + "\n"
+    if features:
+        result += "\n[features]\n" + "".join(
+            name + " = " + json.dumps(sorted(members)) + "\n" for name, members in sorted(features.items()))
+    return result
+
+
 class RegistryV2DependencyTests(unittest.TestCase):
     setUpClass = classmethod(fixtures.RegistryV2CliTests.setUpClass.__func__)
     tool = fixtures.RegistryV2DistributionTests.tool
@@ -35,22 +55,28 @@ class RegistryV2DependencyTests(unittest.TestCase):
         self.root_requirements = {}
         self.write_project({"fixture/a": "*", "fixture/b": "1.0.0"})
 
-    def write_project(self, roots, *, source=None):
-        self.root_requirements = dict(roots)
+    def write_project(self, roots, *, source=None, features=None):
+        self.root_edges = []
+        for name, value in sorted(roots.items()):
+            edge = {"name": name, "requirement": value} if isinstance(value, str) else {
+                "name": name, "requirement": value["version"], **{key: val for key, val in value.items() if key != "version"}}
+            self.root_edges.append(edge)
+        self.root_requirements = {edge["name"]: edge["requirement"] for edge in self.root_edges}
+        self.root_features = deepcopy(features or {})
         manifest = ('[package]\nname = "consumer"\nversion = "1.0.0"\n'
                     f'[target.{self.native_target}]\nsource = "src/main.s"\n')
-        if roots:
-            manifest += "\n[dependencies]\n" + "".join(
-                f'"{name}" = "{requirement}"\n' for name, requirement in sorted(roots.items()))
+        manifest += dependency_text(self.root_edges, self.root_features)
         (self.project / "asm.toml").write_text(manifest)
         (self.project / "src/main.s").write_text(source or program(
             "mov x0, #0\nbl _exit" if self.native_target == "aarch64-macos" else
             "mov x0, #0\nmov x8, #93\nsvc #0" if self.native_target == "aarch64-linux" else
             "xor edi, edi\nmov eax, 60\nsyscall"))
 
-    def package(self, name, version, dependencies=(), *, target=None, source=None, package_id=None):
+    def package(self, name, version, dependencies=(), *, target=None, source=None, package_id=None, features=None):
         candidate = {"name": name, "version": version,
-                     "dependencies": [{"name": other, "requirement": requirement} for other, requirement in sorted(dependencies)],
+                     "dependencies": sorted([dict(edge) if isinstance(edge, dict) else {"name": edge[0], "requirement": edge[1]}
+                                             for edge in dependencies], key=lambda edge: edge["name"]),
+                     "features": deepcopy(features or {}),
                      "target": target or self.native_target, "source": source}
         if package_id is not None:
             candidate["package_id"] = package_id
@@ -75,9 +101,7 @@ class RegistryV2DependencyTests(unittest.TestCase):
             project = (f'[package]\nname = "{name.split("/")[-1]}"\nversion = "{version}"\n'
                        f'[target.{target}]\nsource = "src/main.s"\n')
             archive_dependencies = candidate.get("archive_dependencies", candidate["dependencies"])
-            if archive_dependencies:
-                project += "\n[dependencies]\n" + "".join(
-                    f'"{edge["name"]}" = "{edge["requirement"]}"\n' for edge in archive_dependencies)
+            project += dependency_text(archive_dependencies, candidate.get("archive_features", candidate.get("features", {})))
             files = {"asm.toml": (project.encode(), 0o644), "LICENSE": (b"Synthetic MIT fixture.\n", 0o644),
                      "README.md": (b"Synthetic dependency graph.\n", 0o644),
                      "src/main.s": ((candidate["source"] or ".text\n").encode(), 0o644)}
@@ -92,7 +116,11 @@ class RegistryV2DependencyTests(unittest.TestCase):
                 "artifacts": [{"isa": isa, "os": system, "abi": abi, "cpu_features": [], "kind": "source",
                                "format": "tar.gz", "sha256": digest, "bytes": len(archive)}]}
             if candidate["dependencies"]:
-                publication["dependencies"] = candidate["dependencies"]
+                publication["dependencies"] = [{**edge, **({"features": sorted(edge["features"])} if "features" in edge else {})}
+                                               for edge in candidate["dependencies"]]
+            if candidate.get("features"):
+                publication["features"] = [{"members": sorted(members), "name": name}
+                                           for name, members in sorted(candidate["features"].items())]
             package_id = candidate.get("package_id", hashlib.sha256(name.encode()).hexdigest()[:32])
             release_id = hashlib.sha256((name + "@" + version).encode()).hexdigest()[:32]
             envelope = {"schema": 2, "registry_id": self.registry_id, "package_id": package_id,
@@ -131,12 +159,17 @@ class RegistryV2DependencyTests(unittest.TestCase):
                 self.package("fixture/b", "1.0.0", [("fixture/c", "^1.0.0")]),
                 self.package("fixture/c", "1.0.0"), self.package("fixture/c", "2.0.0")]
 
-    def graph_cli(self, command, *, code=0, mirrors=None, target=None):
+    def graph_cli(self, command, *, code=0, mirrors=None, target=None, features=None, defaults=True, options=()):
         arguments = [command, "--project", self.project, "--registry-id", self.registry_id,
                      "--root", self.anchor, "--state", self.state,
                      "--target", target or self.native_target, "--ca", self.ca, "--json"]
         for mirror in mirrors or [self.api]:
             arguments.extend(("--mirror", mirror))
+        if features is not None:
+            arguments.extend(("--features", ",".join(features)))
+        if not defaults:
+            arguments.append("--no-default-features")
+        arguments.extend(options)
         result = self.cli(*arguments, code=code)
         if code:
             self.assertEqual(result.stdout, b"")
@@ -145,12 +178,17 @@ class RegistryV2DependencyTests(unittest.TestCase):
     def assert_no_blob_reads(self):
         self.assertFalse(any(path.startswith("/blobs/") for _, path in self.requests))
 
-    def expected_lock(self, selection):
+    def expected_lock(self, selection, *, defaults=True, requested=(), root_features=(),
+                      features=None, active_roots=None, active_edges=None, legacy=False):
         """Encode the public lock contract from an explicit hand-selected graph."""
-        lines = ["# asm-lock-v3\n",
+        lines = ["# asm-lock-v3\n" if legacy else "# asm-lock-v4\n",
                  "\t".join(("registry", self.registry_id, hashlib.sha256(self.anchor.read_bytes()).hexdigest(),
                              self.native_target, hashlib.sha256((self.project / "asm.toml").read_bytes()).hexdigest())) + "\n"]
-        lines.extend(f"root\t{name}\t{requirement}\n" for name, requirement in sorted(self.root_requirements.items()))
+        if not legacy:
+            lines.append(f"selection\t{int(defaults)}\t" + (",".join(sorted(requested)) or "-") + "\n")
+            lines.extend("root-feature\t" + name + "\n" for name in sorted(root_features))
+        roots = {edge["name"] for edge in self.root_edges if not edge.get("optional", False)} if active_roots is None else set(active_roots)
+        lines.extend(f"root\t{name}\t{requirement}\n" for name, requirement in sorted(self.root_requirements.items()) if name in roots)
         edges = []
         for name, version in sorted(selection):
             envelope = self.envelopes[(name, version)]
@@ -158,7 +196,11 @@ class RegistryV2DependencyTests(unittest.TestCase):
                 envelope["sha256"], envelope["manifest_sha256"], "a" * 40,
                 str(envelope["source_bytes"]), envelope["archive_sha256"])) + "\n")
             candidate = next(item for item in self.graph if (item["name"], item["version"]) == (name, version))
-            edges.extend((name, edge["name"], edge["requirement"]) for edge in candidate["dependencies"])
+            edges.extend((name, edge["name"], edge["requirement"]) for edge in candidate["dependencies"]
+                         if (not edge.get("optional", False) if active_edges is None else (name, edge["name"]) in active_edges))
+        if not legacy:
+            lines.extend("feature\t" + name + "\t" + feature + "\n"
+                         for name, names in sorted((features or {}).items()) for feature in sorted(names))
         lines.extend("edge\t" + "\t".join(edge) + "\n" for edge in sorted(edges))
         return "".join(lines).encode()
 
@@ -173,6 +215,278 @@ class RegistryV2DependencyTests(unittest.TestCase):
                                 env=self.environment, capture_output=True, timeout=30)
         self.assertEqual(result.returncode, code, (result.stdout, result.stderr))
         return result
+
+    def test_root_default_features_off_and_explicit_requests_complete_sync_and_local_build(self):
+        self.write_project({"fixture/a": "*", "fixture/b": {"version": "*", "optional": True}},
+                           features={"default": ["bundle"], "bundle": ["dep:fixture/b"]})
+        self.publish_graph([self.package("fixture/a", "1.0.0"), self.package("fixture/b", "1.0.0")], fresh=True)
+        self.graph_cli("resolve", defaults=False)
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock({("fixture/a", "1.0.0")}, defaults=False))
+        self.assertFalse(any("/fixture/b/" in path for _, path in self.requests))
+        self.assert_no_blob_reads()
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        self.assertFalse(self.package_cache("fixture/b").exists())
+        self.graph_cli("resolve", mirrors=[self.api + "/unavailable", self.api])
+        selected = {("fixture/a", "1.0.0"), ("fixture/b", "1.0.0")}
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(selected,
+            root_features=["bundle", "default"], active_roots=["fixture/a", "fixture/b"]))
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        self.assertTrue(self.package_cache("fixture/b").is_dir())
+        result = subprocess.run([str(self.project / "build/app")], capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+        self.graph_cli("resolve", defaults=False, features=["bundle"])
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(selected, defaults=False,
+            requested=["bundle"], root_features=["bundle"], active_roots=["fixture/a", "fixture/b"]))
+        self.requests.clear()
+        self.graph_cli("sync")
+        self.assert_no_blob_reads()
+        self.native_cli("build", "--locked")
+
+    def test_child_feature_union_adds_defaults_and_activates_only_its_optional_edge(self):
+        self.write_project({"fixture/a": "*", "fixture/b": "*"})
+        nodes = [self.package("fixture/a", "1.0.0", [dict(name="fixture/shared", requirement="*", default_features=False, features=["left"])]),
+                 self.package("fixture/b", "1.0.0", [dict(name="fixture/shared", requirement="*", features=["right"])]),
+                 self.package("fixture/shared", "1.0.0", [dict(name="fixture/leaf", requirement="*", optional=True)],
+                              features={"default": [], "left": ["dep:fixture/leaf"], "right": []}),
+                 self.package("fixture/leaf", "1.0.0")]
+        self.publish_graph(nodes, fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(
+            {(node["name"], "1.0.0") for node in nodes}, features={"fixture/shared": ["default", "left", "right"]},
+            active_edges={("fixture/a", "fixture/shared"), ("fixture/b", "fixture/shared"), ("fixture/shared", "fixture/leaf")}))
+        self.assert_no_blob_reads()
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+
+    def test_later_feature_request_expands_a_previously_reached_transitive_package(self):
+        self.write_project({"fixture/a": "*", "fixture/c": "*"})
+        nodes = [self.package("fixture/a", "1.0.0", [("fixture/b", "*")]),
+                 self.package("fixture/b", "1.0.0", [dict(name="fixture/d", requirement="*", optional=True)], features={"unlock": ["dep:fixture/d"]}),
+                 self.package("fixture/c", "1.0.0", [dict(name="fixture/b", requirement="*", features=["unlock"])]),
+                 self.package("fixture/d", "1.0.0")]
+        self.publish_graph(nodes, fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(
+            {(node["name"], "1.0.0") for node in nodes}, features={"fixture/b": ["unlock"]},
+            active_edges={("fixture/a", "fixture/b"), ("fixture/c", "fixture/b"), ("fixture/b", "fixture/d")}))
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+
+    def test_dormant_optional_constraints_and_unknown_child_features_fetch_no_missing_metadata(self):
+        self.write_project({"fixture/a": "*"})
+        node = self.package("fixture/a", "1.0.0", [dict(name="fixture/missing", requirement="999.0.0", optional=True, features=["unavailable"])],
+                            features={"bundle": ["dep:fixture/missing"]})
+        self.publish_graph([node], fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock({("fixture/a", "1.0.0")}))
+        self.assertFalse(any("/fixture/missing/" in path for _, path in self.requests))
+        self.assert_no_blob_reads()
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+
+    def test_missing_child_feature_backtracks_to_an_older_release(self):
+        self.write_project({"fixture/a": "*"})
+        nodes = [self.package("fixture/a", "1.0.0", [dict(name="fixture/b", requirement="*", features=["ready"])]),
+                 self.package("fixture/b", "2.0.0"), self.package("fixture/b", "1.0.0", features={"ready": []})]
+        self.publish_graph(nodes, fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(
+            {("fixture/a", "1.0.0"), ("fixture/b", "1.0.0")}, features={"fixture/b": ["ready"]}))
+        self.graph_cli("sync")
+        self.assertFalse(self.package_cache("fixture/b", "2.0.0").exists())
+        self.native_cli("build", "--locked")
+
+    def test_feature_dependency_cycle_is_retained_without_duplicate_packages(self):
+        self.write_project({"fixture/a": "*"})
+        nodes = [self.package("fixture/a", "1.0.0", [dict(name="fixture/b", requirement="*", optional=True)],
+                              features={"default": ["start"], "start": ["dep:fixture/b"]}),
+                 self.package("fixture/b", "1.0.0", [dict(name="fixture/a", requirement="*", features=["start"])])]
+        self.publish_graph(nodes, fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock(
+            {("fixture/a", "1.0.0"), ("fixture/b", "1.0.0")}, features={"fixture/a": ["default", "start"]},
+            active_edges={("fixture/a", "fixture/b"), ("fixture/b", "fixture/a")}))
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+
+    def test_feature_conflict_backtracking_drops_failed_branch_activation(self):
+        self.write_project({"fixture/a": "*"})
+        nodes = [self.package("fixture/a", "2.0.0", [dict(name="fixture/missing", requirement="*", optional=True)],
+                              features={"default": ["dep:fixture/missing"]}),
+                 self.package("fixture/a", "1.0.0", features={"default": []})]
+        self.publish_graph(nodes, fresh=True)
+        self.graph_cli("resolve")
+        self.assertEqual((self.project / "asm.lock").read_bytes(), self.expected_lock({("fixture/a", "1.0.0")},
+            features={"fixture/a": ["default"]}))
+        self.assert_no_blob_reads()
+
+    def test_unknown_root_features_and_local_cycles_fail_before_network_and_preserve_lock(self):
+        self.write_project({"fixture/a": "*"}, features={"ready": []})
+        self.publish_graph([self.package("fixture/a", "1.0.0")], fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        before = lock.read_bytes()
+        self.requests.clear()
+        self.graph_cli("resolve", features=["unknown"], code=1)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(lock.read_bytes(), before)
+        self.write_project({"fixture/a": "*"}, features={"a": ["b"], "b": ["a"]})
+        self.graph_cli("resolve", code=1)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(lock.read_bytes(), before)
+
+    def test_feature_lock_and_missing_or_modified_metadata_refuse_local_build_without_replacing_output(self):
+        self.write_project({"fixture/a": "*"})
+        self.publish_graph([self.package("fixture/a", "1.0.0", features={"default": []})], fresh=True)
+        self.graph_cli("resolve")
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        executable = self.project / "build/app"
+        output = executable.read_bytes()
+        lock = self.project / "asm.lock"
+        original = lock.read_bytes()
+        for forged in (original.replace(b"feature\tfixture/a\tdefault\n", b"feature\tfixture/a\tunknown\n"),
+                       original.replace(b"feature\tfixture/a\tdefault\n", b""),
+                       original.replace(b"selection\t1\t-", b"selection\t2\t-")):
+            with self.subTest(lock=forged):
+                lock.write_bytes(forged)
+                self.requests.clear()
+                self.native_cli("build", "--locked", code=1)
+                self.assertEqual(self.requests, [])
+                self.assertEqual(lock.read_bytes(), forged)
+                self.assertEqual(executable.read_bytes(), output)
+        lock.write_bytes(original)
+        cache = self.project / ".asm/metadata" / (self.envelopes[("fixture/a", "1.0.0")]["sha256"] + ".json")
+        self.assertTrue(cache.is_file())
+        metadata = cache.read_bytes()
+        for replacement in (None, metadata + b" "):
+            with self.subTest(metadata_missing=replacement is None):
+                if replacement is None:
+                    cache.unlink()
+                else:
+                    cache.write_bytes(replacement)
+                    cache.chmod(0o600)
+                self.requests.clear()
+                self.native_cli("build", "--locked", code=1)
+                self.assertEqual(self.requests, [])
+                self.assertEqual(lock.read_bytes(), original)
+                self.assertEqual(executable.read_bytes(), output)
+        cache.write_bytes(metadata)
+        cache.chmod(0o600)
+        self.native_cli("build", "--locked")
+
+    def test_source_feature_declarations_must_equal_signed_metadata_before_exposure(self):
+        self.write_project({"fixture/a": "*"})
+        node = self.package("fixture/a", "1.0.0", features={"default": [], "unused": []})
+        node["archive_features"] = {"default": []}
+        self.publish_graph([node], fresh=True)
+        self.graph_cli("resolve")
+        before = (self.project / "asm.lock").read_bytes()
+        self.graph_cli("sync", code=1)
+        self.assertEqual((self.project / "asm.lock").read_bytes(), before)
+        self.assertFalse(self.package_cache("fixture/a").exists())
+
+    def test_legacy_v3_basic_lock_is_readable_and_explicit_resolve_upgrades_it(self):
+        self.publish_graph(self.diamond(), fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        lock.write_bytes(self.expected_lock(self.selected_diamond(), legacy=True))
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        self.assertTrue(lock.read_bytes().startswith(b"# asm-lock-v3\n"))
+        self.graph_cli("resolve")
+        self.assertEqual(lock.read_bytes(), self.expected_lock(self.selected_diamond()))
+
+    def test_legacy_v3_cannot_erase_feature_declarations_during_sync_or_local_build(self):
+        self.write_project({"fixture/a": "*"})
+        self.publish_graph([self.package("fixture/a", "1.0.0", features={"default": []})], fresh=True)
+        self.graph_cli("resolve")
+        self.graph_cli("sync")
+        self.native_cli("build", "--locked")
+        executable = self.project / "build/app"
+        output = executable.read_bytes()
+        lock = self.project / "asm.lock"
+        legacy = self.expected_lock({("fixture/a", "1.0.0")}, legacy=True)
+        lock.write_bytes(legacy)
+        self.requests.clear()
+        self.graph_cli("sync", code=1)
+        self.assert_no_blob_reads()
+        self.native_cli("build", "--locked", code=1)
+        self.assertEqual(lock.read_bytes(), legacy)
+        self.assertEqual(executable.read_bytes(), output)
+
+    def test_sync_refuses_selection_flags_before_network(self):
+        self.write_project({"fixture/a": "*"}, features={"ready": []})
+        self.publish_graph([self.package("fixture/a", "1.0.0")], fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        before = lock.read_bytes()
+        self.requests.clear()
+        self.graph_cli("sync", defaults=False, code=2)
+        self.graph_cli("sync", features=["ready"], code=2)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(lock.read_bytes(), before)
+
+    def test_metadata_cache_symlink_preserves_unrelated_files_and_lock(self):
+        self.write_project({"fixture/a": "*"})
+        self.publish_graph([self.package("fixture/a", "1.0.0", features={"default": []})], fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        before = lock.read_bytes()
+        outside = self.work / "unrelated metadata"
+        outside.mkdir()
+        sentinel = outside / "keep"
+        sentinel.write_bytes(b"preserve unrelated files")
+        (self.project / ".asm").mkdir(exist_ok=True)
+        (self.project / ".asm/metadata").symlink_to(outside, target_is_directory=True)
+        self.graph_cli("sync", code=1)
+        self.assertEqual(lock.read_bytes(), before)
+        self.assertEqual(list(outside.iterdir()), [sentinel])
+        self.assertEqual(sentinel.read_bytes(), b"preserve unrelated files")
+        self.assertFalse(self.package_cache("fixture/a").exists())
+
+    def test_existing_metadata_cache_with_wrong_length_is_preserved_without_package_exposure(self):
+        self.write_project({"fixture/a": "*"})
+        self.publish_graph([self.package("fixture/a", "1.0.0")], fresh=True)
+        self.graph_cli("resolve")
+        lock = self.project / "asm.lock"
+        before = lock.read_bytes()
+        directory = self.project / ".asm/metadata"
+        directory.mkdir(mode=0o700, parents=True)
+        cache = directory / (self.envelopes[("fixture/a", "1.0.0")]["sha256"] + ".json")
+        content = b"not the exact cached envelope\n"
+        cache.write_bytes(content)
+        cache.chmod(0o600)
+        self.requests.clear()
+        result = self.graph_cli("sync", code=1)
+        self.assertIn(b"wrong length", result.stderr.lower())
+        self.assertEqual(cache.read_bytes(), content)
+        self.assertEqual(lock.read_bytes(), before)
+        self.assertFalse(self.package_cache("fixture/a").exists())
+        self.assert_no_blob_reads()
+
+    def test_signed_feature_text_pool_accepts_8192_bytes_and_rejects_8193_bytes(self):
+        self.write_project({"fixture/a": "*"})
+        names = ["f" + str(index).zfill(30) for index in range(64)]
+        dependencies = [dict(name="fixture/" + name, requirement="*", features=list(names)) for name in "bcde"]
+        node = self.package("fixture/a", "1.0.0", dependencies)
+        # This metadata-only fixture deliberately stops before source reads.
+        # Its unused source archive does not claim this large declaration set.
+        node["archive_dependencies"] = []
+        self.publish_graph([node], fresh=True)
+        result = self.graph_cli("resolve", code=1)
+        self.assertIn(b"no compatible dependency graph", result.stderr.lower())
+        self.assertFalse((self.project / "asm.lock").exists())
+        self.assert_no_blob_reads()
+        node["dependencies"][-1]["features"][-1] += "0"
+        self.publish_graph([node], fresh=True)
+        self.requests.clear()
+        result = self.graph_cli("resolve", code=1)
+        self.assertIn(b"metadata", result.stderr.lower())
+        self.assertFalse((self.project / "asm.lock").exists())
+        self.assert_no_blob_reads()
 
     def test_diamond_backtracks_and_resolve_downloads_only_metadata(self):
         self.publish_graph(self.diamond(), fresh=True)

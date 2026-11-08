@@ -1044,7 +1044,13 @@ read_manifest:
     lea rsi, [rip + g3_project_dependency_section]
     call streq
     test eax, eax
+    jnz .Lsection_graph_declarations
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + g3_project_feature_section]
+    call streq
+    test eax, eax
     jz .Lsection_not_dependencies
+.Lsection_graph_declarations:
     mov r13d, 4
     jmp .Lline_end
 .Lsection_not_dependencies:
@@ -1936,10 +1942,10 @@ err_build_io: .asciz "cannot write build artifacts; build must be a real directo
 err_test: .asciz "test program failed"
 err_clean: .asciz "cannot clean artifacts; build must be a real directory"
 
-version_text: .asciz "asm 0.6.0 (x86_64-linux)\n"
-version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"host\":\"x86_64-linux\"}\n"
-license_text: .asciz "asm 0.6.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.6.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
-license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.6.0\"}\n"
+version_text: .asciz "asm 0.7.0 (x86_64-linux)\n"
+version_json: .asciz "{\"name\":\"asm\",\"version\":\"0.7.0\",\"host\":\"x86_64-linux\"}\n"
+license_text: .asciz "asm 0.7.0\nCopyright (c) 2026 ASM contributors\nLicense: AGPL-3.0-or-later\nYou may copy, modify, and redistribute Asm under this license.\nAsm is provided without warranty.\nTerms: https://www.gnu.org/licenses/agpl-3.0.html\nSource: https://github.com/stubbi/asm/tree/v0.7.0\nStarter code and examples: MIT. Packages retain their own licenses.\n"
+license_json: .asciz "{\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\",\"copyright\":\"Copyright (c) 2026 ASM contributors\",\"warranty\":false,\"terms\":\"https://www.gnu.org/licenses/agpl-3.0.html\",\"source\":\"https://github.com/stubbi/asm/tree/v0.7.0\"}\n"
 targets_text: .asciz "x86_64-linux (host; GNU as + ld)\naarch64-linux (cross; GNU target binutils)\nriscv64-linux (cross; GNU target binutils)\n"
 targets_json: .asciz "{\"host\":\"x86_64-linux\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"]}\n"
 doctor_gzip_path: .asciz "/usr/bin/gzip"
@@ -1955,7 +1961,7 @@ test_json_end: .asciz "}\n"
 clean_text: .asciz "Removed Asm build artifacts.\n"
 clean_json: .asciz "{\"ok\":true,\"cleaned\":true}\n"
 help_text:
-    .ascii "asm 0.6.0 - build assembly projects\n\n"
+    .ascii "asm 0.7.0 - build assembly projects\n\n"
     .ascii "Usage: asm [--json] [--no-color] <command> [options]\n\n"
     .ascii "  new <path>       Create a project in a new directory\n"
     .ascii "  init [path]      Initialize an existing directory (default: .)\n"
@@ -1978,6 +1984,9 @@ help_text:
     .ascii "  lock             Check every locked archive and source file\n"
     .ascii "  sync             Fetch and extract exact locked source artifacts\n"
     .ascii "  publish          Prepare a local release record; do not upload\n"
+.ifdef ASM_REGISTRY_V2
+    .ascii "  registry         Publish, resolve, sync, fetch, or install signed V2 packages\n"
+.endif
     .ascii "  doctor           Check required tools\n"
     .ascii "  targets          List supported targets\n"
     .ascii "  status           Print machine-readable command availability\n"
@@ -1996,9 +2005,17 @@ help_text:
     .ascii "License: AGPL-3.0-or-later. No warranty. Use asm license for terms.\n"
     .byte 0
 help_json:
-    .asciz "{\"name\":\"asm\",\"version\":\"0.6.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":[\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .ascii "{\"name\":\"asm\",\"version\":\"0.7.0\",\"usage\":\"asm [--json] <command> [options]\",\"commands\":["
+.ifdef ASM_REGISTRY_V2
+    .ascii "\"registry\","
+.endif
+    .asciz "\"new\",\"init\",\"build\",\"run\",\"test\",\"clean\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"doctor\",\"targets\",\"status\",\"version\",\"help\",\"publish\",\"license\",\"self\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 status_json:
-    .asciz "{\"version\":\"0.6.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":[\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
+    .ascii "{\"version\":\"0.7.0\",\"implementation\":\"x86_64 assembly\",\"targets\":[\"x86_64-linux\",\"aarch64-linux\",\"riscv64-linux\"],\"implemented\":["
+.ifdef ASM_REGISTRY_V2
+    .ascii "\"registry\","
+.endif
+    .asciz "\"help\",\"version\",\"doctor\",\"init\",\"new\",\"build\",\"run\",\"test\",\"clean\",\"targets\",\"status\",\"search\",\"info\",\"versions\",\"fetch\",\"install\",\"installed\",\"upgrade\",\"uninstall\",\"add\",\"update\",\"remove\",\"lock\",\"sync\",\"publish\",\"license\",\"self\"],\"unimplemented\":[\"login\",\"yank\"],\"license\":\"AGPL-3.0-or-later\",\"template_license\":\"MIT\"}\n"
 .include "cli/templates.s"
 
 .section .bss
@@ -2061,10 +2078,12 @@ made_test: .skip 1
 .include "cli/self_update_verify.s"
 .include "cli/self_update_metadata.s"
 .ifdef ASM_REGISTRY_V2
+.include "cli/registry_features.s"
 .include "cli/registry_v2.s"
 .include "cli/registry_solver.s"
 .include "cli/project_dependencies.s"
 .include "cli/registry_graph.s"
+.include "cli/registry_feature_lock.s"
 .endif
 
 .ifdef ASM_TRUSTED_DISTRIBUTION

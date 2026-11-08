@@ -129,11 +129,11 @@ class PublicationCheckerTests(unittest.TestCase):
         self.write()
         self.assertEqual(self.check()["outcome"], "fail")
 
-    def test_dependency_metadata_rejects_duplicates_features_and_invalid_ranges(self):
+    def test_dependency_metadata_rejects_duplicates_bad_flags_and_invalid_ranges(self):
         cases = [
             [{"name": "other/math", "requirement": "^1.2"}],
             [{"name": "other/math", "requirement": ">=1.0.0,invalid"}],
-            [{"name": "other/math", "requirement": "1.0.0", "optional": True}],
+            [{"name": "other/math", "requirement": "1.0.0", "optional": "true"}],
             [{"name": "other/math", "requirement": "1.0.0"}] * 2,
             [{"name": "z/math", "requirement": "1.0.0"}, {"name": "a/math", "requirement": "*"}],
         ]

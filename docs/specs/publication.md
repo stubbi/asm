@@ -163,13 +163,18 @@ One digest cannot declare different byte lengths.
 Every object uses a lowercase SHA-256 and a length from one byte through 64 MiB.
 Count the source archive and distinct artifact digests once toward the 128 MiB task limit.
 There are at most fifteen distinct uploaded objects.
-The optional `dependencies` array contains mandatory same-registry declarations, sorted by package name without duplicates.
-Each object contains only `name` and `requirement`; an absent array means no declared dependencies.
-The array has at most 64 entries.
-The [native dependency contract](registry-v2.md#resolve-a-bounded-dependency-graph) defines the bounded source syntax and canonical version constraints.
-The checker compares these declarations with the archived root manifest without resolving, fetching, or executing dependencies.
-Published source must not contain a consumer lock.
-Optional dependencies, features, publisher-supplied check results, executable validation commands, and artifact URLs remain unsupported.
+The optional `dependencies` array contains same-registry declarations, sorted by package name without duplicates.
+Each object requires `name` and `requirement`.
+It permits Boolean `optional` and `default_features`, plus a sorted requested `features` array.
+Their defaults are false, true, and an empty array.
+The optional top-level `features` array contains sorted closed objects with `name` and `members`.
+All lists have at most 64 entries; native feature text has an 8192-byte limit.
+The [V2 feature contract](registry-v2.md#feature-activation) defines activation and the source-manifest syntax.
+The checker compares full declarations with the exact archived source manifest, including inactive declarations.
+Missing child features are a resolver compatibility decision, not a publication identity check.
+Unknown fields, duplicate names or members, invalid references, and local feature cycles fail validation.
+Existing feature-free publication bytes remain unchanged.
+Publisher-supplied check results, executable validation commands, and artifact URLs remain unsupported.
 Unsupported fields are errors rather than ignored input.
 Asm constructs retained object locations under its configured storage origin.
 

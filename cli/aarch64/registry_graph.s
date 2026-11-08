@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Native V2 dependency metadata, complete graph locks and exact source sync.
- * Native AArch64 ABI: x0/x1/x2/x3 inputs, x9 result. Preserve x19-x24.
- * ARM_CALL preserves LR. Each saved register uses a 16-byte stack slot.
- * x0-x7, x8/x10-x17 and flags are scratch. x18 is never used.
+ * Native AArch64 ABI: x0/x1/x2/x3 inputs, x9 result. Preserve x19-x24 and SP.
  * Serial process-owned state; no package code or shell is executed.
  * Bounds: 4095 inventory rows, 256 reached versions/names, 64 edges/version,
  * 64 roots, 1 MiB lock. Existing transport/archive limits remain in force.
@@ -110,6 +108,7 @@ r3_command:
     mov x1, x16
     ARM_CALL copy_string
     ARM_CALL r3_roots
+    ARM_CALL r4_validate_selection
     ARM_CALL r3_read_lock
     mov w10, w9
     mov w11, w9
@@ -124,6 +123,15 @@ r3_command:
 .Lr3_have_lock:
     ARM_CALL r3_lock_header
 .Lr3_catalog:
+    ARM_ADDR x16, r2_mode
+    ldr x10, [x16]
+    ARM_IMM x11, 5
+    cmp x10, x11
+    b.ne .Lr3_catalog_ready
+    ARM_IMM x10, 4
+    ARM_ADDR x16, r4_format
+    str x10, [x16]
+.Lr3_catalog_ready:
     ARM_CALL r3_catalog
     ARM_ADDR x16, r2_mode
     ldr x10, [x16]
@@ -131,7 +139,6 @@ r3_command:
     cmp x10, x11
     b.eq .Lr3_sync
     ARM_CALL r3_discover
-    ARM_CALL r3_solve
     ARM_CALL r3_render
     ARM_CALL r3_preserve_bindings
     ARM_CALL r3_check_policy
@@ -262,6 +269,13 @@ r3_roots:
     adds x19, x19, x11
     b .Lr3_root_pair
 .Lr3_root_hash:
+    ARM_ADDR x16, r4_root_profile
+    mov x0, x16
+    ARM_ADDR x16, g4_project_profile
+    mov x1, x16
+    ARM_CALL g4_profile_copy
+    ARM_ADDR x16, g4_root_profile
+    str x9, [x16]
     ARM_ADDR x16, manifest_path
     mov x0, x16
     ARM_CALL r2_hash_path
@@ -488,11 +502,22 @@ r3_name:
     mov x0, x22
     mov x1, x21
     ARM_CALL copy_string
+    ARM_ADDR x16, g4_known_names
+    mov x2, x16
+    mov x16, x2
+    add x16, x16, x19, lsl #3
+    str x22, [x16]
     ARM_ADDR x16, r3_name_count
     ldr x10, [x16]
     ARM_IMM x11, 1
     adds x10, x10, x11
     ARM_ADDR x16, r3_name_count
+    str x10, [x16]
+    ARM_ADDR x16, g4_known_count
+    ldr x10, [x16]
+    ARM_IMM x11, 1
+    adds x10, x10, x11
+    ARM_ADDR x16, g4_known_count
     str x10, [x16]
 .Lr3_name_end:
     ARM_RESTORE x22
@@ -500,44 +525,51 @@ r3_name:
     ARM_RESTORE x19
     ret
 
-/* Eager bounded discovery: all active versions of reached names, then their
- * source-target dependencies. This can read unused candidate metadata.
- * It never reads a blob or runs submitted code. Failure is not unsatisfiability. */
+/* Demand-driven discovery loads all active versions only when an active
+ * solver branch requires that name. Unknown and known-empty names differ.
+ * The aggregate 100000-step budget covers every retry, including validation.
+ * No source blob is read. Network errors never become unsatisfiability. */
 r3_discover:
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
     ARM_SAVE x23
-    mov w11, w19
-    eor w19, w19, w11
-    tst w19, w19
-    ARM_ADDR x16, g3_roots
-    mov x21, x16
-.Lr3_discover_roots:
-    mov x10, x19
-    ARM_ADDR x16, g3_root_count
+    ARM_IMM x10, 1
+    ARM_ADDR x16, g4_lazy
+    str x10, [x16]
+    ARM_IMM x10, 0
+    ARM_ADDR x16, r4_steps
+    str x10, [x16]
+.Lr3_discover_solve:
+    ARM_IMM w9, 100000
+    ARM_ADDR x16, r4_steps
     ldr x11, [x16]
-    cmp x10, x11
-    b.hs .Lr3_discover_names
-    mov x16, x21
+    subs x9, x9, x11
+    b.ls r3_limit_error
+    ARM_ADDR x16, g3_limit
+    str x9, [x16]
+    ARM_CALL g3_solve
+    mov w19, w9
+    ARM_ADDR x16, g3_steps
+    ldr x9, [x16]
+    ARM_ADDR x16, r4_steps
+    ldr x10, [x16]
+    mov x11, x9
+    adds x10, x10, x11
+    ARM_ADDR x16, r4_steps
+    str x10, [x16]
+    mov w10, w19
+    ARM_IMM w11, 4
+    cmp w10, w11
+    b.ne .Lr3_discover_result
+    ARM_ADDR x16, g4_missing_name
     ldr x0, [x16]
     ARM_CALL r3_name
-    ARM_IMM x11, 16
-    adds x21, x21, x11
-    ARM_IMM x11, 1
-    adds x19, x19, x11
-    b .Lr3_discover_roots
-.Lr3_discover_names:
-    mov w11, w19
-    eor w19, w19, w11
-    tst w19, w19
-.Lr3_discover_name:
-    mov x10, x19
     ARM_ADDR x16, r3_name_count
-    ldr x11, [x16]
-    cmp x10, x11
-    b.hs .Lr3_discover_end
-    mov x10, x19
+    ldr x9, [x16]
+    ARM_IMM x11, 1
+    subs x9, x9, x11
+    mov x10, x9
     ARM_IMM x11, 105
     smulh x12, x10, x11
     mul x9, x10, x11
@@ -557,7 +589,7 @@ r3_discover:
     ARM_ADDR x16, r3_catalog_count
     ldr x11, [x16]
     cmp x10, x11
-    b.hs .Lr3_discover_next_name
+    b.hs .Lr3_discover_solve
     mov x16, x22
     ARM_IMM x17, 204
     add x16, x16, x17
@@ -582,11 +614,19 @@ r3_discover:
     ARM_IMM x11, 256
     adds x22, x22, x11
     b .Lr3_discover_version
-.Lr3_discover_next_name:
-    ARM_IMM x11, 1
-    adds x19, x19, x11
-    b .Lr3_discover_name
-.Lr3_discover_end:
+.Lr3_discover_result:
+    mov w10, w19
+    ARM_IMM w11, 1
+    cmp w10, w11
+    b.eq r3_unsatisfiable
+    mov w10, w19
+    ARM_IMM w11, 2
+    cmp w10, w11
+    b.eq r3_limit_error
+    mov w10, w19
+    mov w11, w19
+    tst w10, w11
+    b.ne r3_metadata_error
     ARM_RESTORE x23
     ARM_RESTORE x22
     ARM_RESTORE x21
@@ -706,8 +746,10 @@ r3_candidate:
     mov x0, x9
     ARM_ADDR x16, r2_envelope
     mov x1, x16
-    ARM_IMM w2, INDEX_LIMIT
+    ARM_IMM w2, R2_CONTROL
     ARM_CALL r2_read_fd
+    ARM_ADDR x16, r4_envelope_length
+    str x9, [x16]
     mov x1, x9
     ARM_ADDR x16, r2_envelope
     mov x0, x16
@@ -736,6 +778,7 @@ r3_candidate:
     mov w11, w9
     tst w10, w11
     b.eq r3_metadata_error
+.Lr4_candidate_record:
     mov x16, x19
     ARM_IMM x17, 269
     add x16, x16, x17
@@ -837,6 +880,50 @@ r3_candidate:
     sub x3, x3, #1
     cbnz x3, .Lr3_arm_copy_2
 .Lr3_arm_copy_2_end:
+    mov x10, x21
+    ARM_IMM x11, G4_PROFILE_SIZE
+    smulh x12, x10, x11
+    mul x9, x10, x11
+    asr x13, x9, #63
+    cmp x12, x13
+    ARM_ADDR x16, r4_profiles
+    mov x0, x16
+    mov x11, x9
+    adds x0, x0, x11
+    ARM_ADDR x16, g4_publication_profile
+    mov x1, x16
+    ARM_CALL g4_profile_copy
+    ARM_ADDR x16, g4_profiles
+    mov x2, x16
+    mov x16, x2
+    add x16, x16, x21, lsl #3
+    str x9, [x16]
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 3
+    cmp x10, x11
+    b.ne .Lr4_candidate_complex_ok
+    mov x16, x22
+    ARM_IMM x17, 24
+    add x16, x16, x17
+    ldr x2, [x16]
+    ARM_CALL r4_legacy_profile
+.Lr4_candidate_complex_ok:
+    ARM_ADDR x16, r2_mode
+    ldr x10, [x16]
+    ARM_IMM x11, 6
+    cmp x10, x11
+    b.ne .Lr4_candidate_no_save
+    ARM_ADDR x16, r3_local
+    ldrb w10, [x16]
+    ARM_IMM w11, 0
+    lsl w10, w10, #24
+    lsl w11, w11, #24
+    cmp w10, w11
+    b.ne .Lr4_candidate_no_save
+    mov x0, x21
+    ARM_CALL r4_metadata_save
+.Lr4_candidate_no_save:
     mov w11, w20
     eor w20, w20, w11
     tst w20, w20
@@ -858,16 +945,6 @@ r3_candidate:
     ARM_IMM x17, 8
     add x16, x16, x17
     str x9, [x16]
-    mov x16, x22
-    ARM_IMM x17, 32
-    add x16, x16, x17
-    ldr x10, [x16]
-    ARM_IMM x11, 1
-    cmp x10, x11
-    b.ne .Lr3_candidate_dep_next
-    mov x0, x24
-    ARM_CALL r3_name
-.Lr3_candidate_dep_next:
     ARM_IMM x11, 16
     adds x23, x23, x11
     ARM_IMM x11, 240
@@ -894,6 +971,12 @@ r3_candidate:
  * solver; resource failure never reports a graph as unsatisfiable. */
 r3_solve:
     sub sp, sp, #16
+    ARM_IMM x10, 0
+    ARM_ADDR x16, g4_lazy
+    str x10, [x16]
+    ARM_IMM x10, 100000
+    ARM_ADDR x16, g3_limit
+    str x10, [x16]
     ARM_CALL g3_solve
     mov w10, w9
     ARM_IMM w11, 1
@@ -1134,6 +1217,9 @@ r3_lock_header:
     ARM_IMM w11, 1
     cmp w10, w11
     b.ne r3_lock_error
+    ARM_IMM x10, 3
+    ARM_ADDR x16, r4_format
+    str x10, [x16]
     ARM_ADDR x16, r3_fields
     ldr x0, [x16]
     ARM_ADDR x16, r3_header_line
@@ -1142,7 +1228,20 @@ r3_lock_header:
     mov w10, w9
     mov w11, w9
     tst w10, w11
+    b.ne .Lr4_header_known
+    ARM_ADDR x16, r3_fields
+    ldr x0, [x16]
+    ARM_ADDR x16, r4_header_line
+    mov x1, x16
+    ARM_CALL streq
+    mov w10, w9
+    mov w11, w9
+    tst w10, w11
     b.eq r3_lock_error
+    ARM_IMM x10, 4
+    ARM_ADDR x16, r4_format
+    str x10, [x16]
+.Lr4_header_known:
     ARM_CALL r3_line
     mov w10, w9
     ARM_IMM w11, 5
@@ -1247,6 +1346,25 @@ r3_lock_header:
     tst w10, w11
     b.eq r3_lock_error
 .Lr3_header_done:
+    ARM_ADDR x16, r2_mode
+    ldr x10, [x16]
+    ARM_IMM x11, 5
+    cmp x10, x11
+    b.eq .Lr4_header_return
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 4
+    cmp x10, x11
+    b.eq .Lr4_header_selection
+    ARM_ADDR x16, g4_root_profile
+    ldr x9, [x16]
+    ARM_ADDR x16, g3_root_count
+    ldr x2, [x16]
+    ARM_CALL r4_legacy_profile
+    b .Lr4_header_return
+.Lr4_header_selection:
+    ARM_CALL r4_read_selection
+.Lr4_header_return:
     ARM_RESTORE x19
     ret
 
@@ -1463,6 +1581,14 @@ r3_render:
     str x10, [x16]
     ARM_ADDR x16, r3_header
     mov x1, x16
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 3
+    cmp x10, x11
+    b.eq .Lr4_render_header
+    ARM_ADDR x16, r4_header
+    mov x1, x16
+.Lr4_render_header:
     ARM_CALL r3_append
     ARM_ADDR x16, r3_registry_word
     mov x1, x16
@@ -1484,6 +1610,13 @@ r3_render:
     mov x1, x16
     ARM_CALL r3_append
     ARM_CALL r3_lf
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 4
+    cmp x10, x11
+    b.ne .Lr4_render_roots
+    ARM_CALL r4_render_selection
+.Lr4_render_roots:
     ARM_ADDR x16, g3_roots
     mov x21, x16
     mov w11, w19
@@ -1495,6 +1628,12 @@ r3_render:
     ldr x11, [x16]
     cmp x10, x11
     b.hs .Lr3_render_nodes_start
+    ARM_ADDR x16, g4_root_deps
+    ldr x10, [x16]
+    lsrv x11, x10, x19
+    and x11, x11, #1
+    cmp x11, #0
+    b.eq .Lr4_render_root_next
     ARM_ADDR x16, r3_root_word
     mov x1, x16
     ARM_CALL r3_append
@@ -1509,6 +1648,7 @@ r3_render:
     ldr x1, [x16]
     ARM_CALL r3_append
     ARM_CALL r3_lf
+.Lr4_render_root_next:
     ARM_IMM x11, 16
     adds x21, x21, x11
     ARM_IMM x11, 1
@@ -1561,6 +1701,13 @@ r3_render:
     adds x19, x19, x11
     b .Lr3_render_node
 .Lr3_render_edges_start:
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 4
+    cmp x10, x11
+    b.ne .Lr4_render_edges
+    ARM_CALL r4_render_node_features
+.Lr4_render_edges:
     mov w11, w19
     eor w19, w19, w11
     tst w19, w19
@@ -1604,6 +1751,19 @@ r3_render:
     ldr x11, [x16]
     cmp x10, x11
     b.hs .Lr3_render_parent_next
+    mov x16, x24
+    add x16, x16, x19, lsl #3
+    ldr x9, [x16]
+    ARM_ADDR x16, g4_active_deps
+    mov x2, x16
+    mov x16, x2
+    add x16, x16, x9, lsl #3
+    ldr x9, [x16]
+    mov x10, x9
+    lsrv x11, x10, x20
+    and x11, x11, #1
+    cmp x11, #0
+    b.eq .Lr4_render_edge_next
     ARM_ADDR x16, r3_edge_word
     mov x1, x16
     ARM_CALL r3_append
@@ -1621,6 +1781,7 @@ r3_render:
     ldr x1, [x16]
     ARM_CALL r3_append
     ARM_CALL r3_lf
+.Lr4_render_edge_next:
     ARM_IMM x11, 16
     adds x23, x23, x11
     ARM_IMM x11, 1
@@ -2133,6 +2294,11 @@ r3_cached:
  * project dependency records. Compare those with the signed/locked edges. */
 r3_source_dependencies:
     sub sp, sp, #16
+    ARM_ADDR x16, g4_profiles
+    mov x2, x16
+    mov x16, x2
+    add x16, x16, x0, lsl #3
+    ldr x2, [x16]
     mov x9, x0
     mov x10, x9
     ARM_IMM x11, 40
@@ -2141,10 +2307,10 @@ r3_source_dependencies:
     asr x13, x9, #63
     cmp x12, x13
     ARM_ADDR x16, g3_candidates
-    mov x2, x16
+    mov x3, x16
     mov x11, x9
-    adds x2, x2, x11
-    mov x16, x2
+    adds x3, x3, x11
+    mov x16, x3
     ARM_IMM x17, 24
     add x16, x16, x17
     ldr x1, [x16]
@@ -2158,7 +2324,7 @@ r3_source_dependencies:
     mov x0, x16
     mov x11, x9
     adds x0, x0, x11
-    ARM_CALL g3_compare_dependencies
+    ARM_CALL g4_compare_project
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -2211,7 +2377,7 @@ r3_materialize:
     mov x2, x16
     ARM_ADDR x16, r2_target
     ldr x3, [x16]
-    ARM_CALL validate_source_package
+    ARM_CALL validate_v2_source_package
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -2250,7 +2416,17 @@ r3_verify_project:
     mov x10, x9
     mov x11, x9
     tst x10, x11
+    b.ne .Lr4_verify_graph
+    ARM_ADDR x16, r3_old_lock
+    mov x0, x16
+    ARM_ADDR x16, r4_header
+    mov x1, x16
+    ARM_CALL dependency_prefix
+    mov x10, x9
+    mov x11, x9
+    tst x10, x11
     b.eq .Lr3_verify_legacy
+.Lr4_verify_graph:
     ARM_IMM w10, 1
     ARM_ADDR x16, r3_active
     strb w10, [x16]
@@ -2272,6 +2448,12 @@ r3_verify_project:
     b.ne r3_lock_error
     ARM_CALL r3_lock_header
     ARM_CALL r3_local_candidates
+    ARM_IMM x10, 0
+    ARM_ADDR x16, g4_lazy
+    str x10, [x16]
+    ARM_IMM x10, 100000
+    ARM_ADDR x16, g3_limit
+    str x10, [x16]
     ARM_CALL g3_solve
     mov w10, w9
     mov w11, w9
@@ -2313,7 +2495,7 @@ r3_verify_project:
     mov x2, x16
     ARM_ADDR x16, r2_target
     ldr x3, [x16]
-    ARM_CALL validate_source_package
+    ARM_CALL validate_v2_source_package
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -2337,6 +2519,11 @@ r3_verify_project:
     ARM_IMM w9, 1
     b .Lr3_verify_return
 .Lr3_verify_legacy:
+    ARM_ADDR x16, g4_project_profile + 16
+    ldr x10, [x16]
+    ARM_IMM x11, 0
+    cmp x10, x11
+    b.ne r3_lock_error
     ARM_ADDR x16, g3_project_dep_count
     ldr x10, [x16]
     ARM_IMM x11, 0
@@ -2568,6 +2755,14 @@ r3_local_candidates:
     ARM_IMM x17, 32
     add x16, x16, x17
     str x10, [x16]
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 4
+    cmp x10, x11
+    b.ne .Lr4_local_node_done
+    mov x0, x21
+    ARM_CALL r4_metadata_load
+.Lr4_local_node_done:
     ARM_ADDR x16, g3_candidate_count
     ldr x10, [x16]
     ARM_IMM x11, 1
@@ -2576,6 +2771,11 @@ r3_local_candidates:
     str x10, [x16]
     b .Lr3_local_node_line
 .Lr3_local_edges_start:
+    ARM_ADDR x16, r4_format
+    ldr x10, [x16]
+    ARM_IMM x11, 4
+    cmp x10, x11
+    b.eq .Lr3_local_done
     ARM_CALL r3_parse_reset
     ARM_CALL r3_lock_header
 .Lr3_local_edge_line:

@@ -59,9 +59,10 @@ The native dependency commands use exact versions and a project lock file. The c
 
 **Acceptance gate:** add a library and call its exported routine. Rebuild from the lock without network access. Restore missing cache data with sync. Reject changed archives, changed source files, and unexpected cache entries. Preserve the previous lock after a failed update.
 
-The unreleased V2 source profile adds bounded mandatory transitive resolution, numeric ranges, and complete graph locks for one explicit target.
+The V2 source profile adds bounded transitive resolution, optional dependencies, additive features, numeric ranges, and complete graph locks for one explicit target.
 Its [contract](specs/registry-v2.md) and [evidence](v2-dependency-evidence.md) remain separate from the released V1 capability.
-Feature selection, optional dependencies, parallel versions, universal target solving, and richer conflict explanations remain future work.
+Parallel versions, universal target solving, and richer conflict explanations remain future work.
+The [feature qualification record](v2-feature-evidence.md) separates local checks from release and deployment evidence.
 
 ## Unreleased V2 distribution
 

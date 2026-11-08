@@ -185,21 +185,27 @@ These mechanisms establish scoped metadata authority and integrity, not package 
 
 Dependency declarations are authenticated release metadata bound to immutable package, release, source, and envelope identities.
 Native validation and the private checker compare each declaration with the exact archived source manifest.
-The first graph profile permits mandatory same-registry source dependencies for one explicit target.
-It selects one version per package; optional dependencies, features, parallel versions, and universal target solving are unsupported.
+The graph profile permits mandatory and optional same-registry source dependencies for one explicit target.
+Feature requests unite across active paths; dormant edges contribute no constraint or request.
+All declarations remain validated, including inactive references and local feature cycles.
+It selects one version per package; parallel versions and universal target solving are unsupported.
 The source requirement grammar uses bounded full numeric versions without whitespace, prereleases, alternatives, or implicit registry fallback.
 Version compatibility remains a publisher declaration; the solver does not establish ABI compatibility.
 
 Resolve authenticates the signed lifecycle inventory and candidate envelopes before solving.
 Every envelope must match the inventory's immutable package and release identities.
 Versions of one name must retain one package identity, including inactive policy rows.
-It eagerly reads at most 256 reached candidate versions, without downloading archives or executing package code.
+It reads at most 256 reached candidate versions when active solver branches require their names.
+Dormant optional edges cause no metadata request.
+Resolve downloads no archive and executes no package code.
 The native backtracking solver also bounds roots and per-candidate dependencies to 64, with a 100,000-step search limit.
 Exhaustion and unavailable or malformed metadata must not become false unsatisfiability reports.
 Mirrors remain byte origins for the same explicit registry and initial root; they cannot replace package authority.
 No new public resolver service or synchronous database query is required.
 
-The canonical `asm-lock-v3` binds the registry, initial root, selected target, exact root manifest, every selected node, and all dependency edges.
+The canonical `asm-lock-v4` binds registry, initial root, target, root manifest, selection, enabled features, selected nodes, and active edges.
+Exact envelope digests retain inactive declarations.
+Version-three mandatory locks remain readable; customized feature declarations require explicit resolution into version four.
 Resolve refuses automatic replacement of legacy locks or locks from another authority or target.
 An explicit resolve can change selected versions within the declared constraints.
 It preserves the package identity of retained names and every node binding for an unchanged version.
@@ -210,7 +216,9 @@ It checks current lifecycle policy for every selected node before and after sour
 Source length, digest, archive structure, and dependency declarations must match before extraction.
 Existing source files and the previous lock survive failure; verified cache additions can remain after a later graph operation fails.
 
-Build checks validate local graph closure, reachability, requirements, root freshness, source declarations, and exact cache bytes.
+Build checks validate local graph closure, feature propagation, reachability, requirements, root freshness, source declarations, and exact cache bytes.
+Version-four builds also require the exact digest-addressed envelope bytes retained by sync.
+A locally edited feature row cannot replace recomputation from those declarations.
 They do not refresh signatures or lifecycle policy and do not independently authenticate a locally edited lock.
 Use sync before building when current registry authentication is required.
 A correct graph does not make assembler imports hermetic or establish that package code is safe.

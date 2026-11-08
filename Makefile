@@ -31,7 +31,29 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 REPLACE ?= 0
 GO ?= go
+GO_TOOL_ENV := GOENV=off GOWORK=off GOTOOLCHAIN=local GOFLAGS= GOAMD64=v1 GOARM64=v8.0 GOEXPERIMENT= GOFIPS140=off
 TRUSTED_DISTRIBUTION ?= 0
+REGISTRY_V2 ?= 1
+
+ifneq ($(REGISTRY_V2),0)
+ifneq ($(REGISTRY_V2),1)
+$(error REGISTRY_V2 must be 0 or 1)
+endif
+endif
+ifneq ($(TRUSTED_DISTRIBUTION),0)
+ifneq ($(TRUSTED_DISTRIBUTION),1)
+$(error TRUSTED_DISTRIBUTION must be 0 or 1)
+endif
+endif
+
+CLI_PROFILE := v$(if $(filter 1,$(REGISTRY_V2)),2,1)$(if $(filter 1,$(TRUSTED_DISTRIBUTION)),-trusted)
+CLI_BUILD := build/$(CLI_PROFILE)
+CLI_BINARY := $(CLI_BUILD)/asm-$(CLI_TARGET)
+CLI_AS_DEFINES := $(if $(filter 1,$(REGISTRY_V2)),--defsym ASM_REGISTRY_V2=1) $(if $(filter 1,$(TRUSTED_DISTRIBUTION)),--defsym ASM_TRUSTED_DISTRIBUTION=1)
+CLI_COMMA := ,
+CLI_MAC_DEFINES := $(if $(filter 1,$(REGISTRY_V2)),'.set ASM_REGISTRY_V2$(CLI_COMMA) 1') $(if $(filter 1,$(TRUSTED_DISTRIBUTION)),'.set ASM_TRUSTED_DISTRIBUTION$(CLI_COMMA) 1')
+CLI_ADAPTER := $(if $(filter 1,$(REGISTRY_V2) $(TRUSTED_DISTRIBUTION)),build/asm-verify-$(CLI_TARGET))
+CLI_ROOT_CHECK := $(if $(filter 1,$(TRUSTED_DISTRIBUTION)),check-trust-root)
 
 .PHONY: all test package-test clean install uninstall check build/asm
 all: build/asm
@@ -46,36 +68,32 @@ CLI_INPUTS := $(wildcard cli/*.s)
 CLI_AS_FLAGS := --64 --fatal-warnings
 endif
 
-build/$(ARCH):
+$(CLI_BUILD)/$(ARCH):
 	mkdir -p $@
 
-build/$(ARCH)/asm.o: $(CLI_INPUTS) | build/$(ARCH)
-	$(AS) $(CLI_AS_FLAGS) -o $@ $(CLI_SOURCE)
+$(CLI_BUILD)/$(ARCH)/asm.o: $(CLI_INPUTS) Makefile $(CLI_ADAPTER) | $(CLI_BUILD)/$(ARCH)
+	$(AS) $(CLI_AS_FLAGS) $(CLI_AS_DEFINES) -o $@ $(CLI_SOURCE)
 
-build/asm-$(ARCH)-linux: build/$(ARCH)/asm.o
-	$(LD) -z noexecstack -z relro -z now --build-id=none -o $@ $^
+ifeq ($(HOST_OS),Linux)
+$(CLI_BINARY): $(CLI_BUILD)/$(ARCH)/asm.o $(CLI_ROOT_CHECK)
+	$(LD) -z noexecstack -z relro -z now --build-id=none -o $@ $<
+endif
 
 # Keep target artifacts separate. Selecting another ARCH must not reuse the
 # previous host's binary just because its timestamp is newer.
 ifeq ($(HOST_OS),Darwin)
-build/macos/asm.s: $(CLI_INPUTS) tools/macos.py $(wildcard cli/macos/*.s)
-	$(PYTHON) tools/macos.py --output $@
+$(CLI_BUILD)/macos/asm.s: $(CLI_INPUTS) Makefile tools/macos.py $(wildcard cli/macos/*.s)
+	$(PYTHON) tools/macos.py --output $@.body
+	{ printf '%s\n' $(CLI_MAC_DEFINES); cat $@.body; } > $@
 
-build/asm-aarch64-macos: build/macos/asm.s
+$(CLI_BINARY): $(CLI_BUILD)/macos/asm.s $(CLI_ADAPTER) $(CLI_ROOT_CHECK)
 	/usr/bin/clang -arch arm64 -mmacosx-version-min=15.0 -Wl,-no_uuid -o $@ $<
 	/usr/bin/codesign --verify --strict $@
 
 endif
 
-ifeq ($(TRUSTED_DISTRIBUTION),1)
-build/asm: trusted-cli
-	cp -- build/asm-trusted $@
-else
-ifeq ($(HOST_OS),Darwin)
-build/asm: build/asm-aarch64-macos
-else
-build/asm: build/asm-$(ARCH)-linux
-endif
+.PHONY: build/asm-$(CLI_TARGET)
+build/asm build/asm-$(CLI_TARGET): $(CLI_BINARY)
 ifeq ($(HOST_OS),Darwin)
 	@asm_copy=$$(mktemp build/.asm-copy.XXXXXXXX) && \
 	trap 'rm -f -- "$$asm_copy"' EXIT HUP INT TERM && \
@@ -83,16 +101,27 @@ ifeq ($(HOST_OS),Darwin)
 else
 	cp -- $< $@
 endif
-endif
 
+# Native release qualification requires one complete unittest result without
+# skipped provider gates. Provider and operator suites have explicit gates below.
+NATIVE_OPERATOR_MODULES := test_registry_storage test_registry_storage_s3 test_registry_mirror test_registry_log_import test_registry_v2_stats test_registry_infrastructure_site test_registry_v2_site test_registry_v2_pages test_registry_v2_build
+NATIVE_V2_MODULES := test_registry_solver test_registry_v2_dependencies test_registry_v2_cli test_registry_project test_registry_v2_arm
+ifeq ($(REGISTRY_V2),1)
+NATIVE_TEST_ENV := ASM_REGISTRY_TEST_BINARY="$(CURDIR)/build/asm" ASM_REGISTRY_TRUST="$(CURDIR)/build/asm-trust"
+test: build/asm-trust
+else
+NATIVE_EXCLUDED_MODULES := $(NATIVE_V2_MODULES)
+endif
+ifneq ($(ARCH),aarch64)
+NATIVE_EXCLUDED_MODULES += test_registry_v2_arm
+endif
 ifeq ($(HOST_OS),Darwin)
 test: build/asm
-	$(PYTHON) -m unittest discover -s tests/macos -p 'test_*.py' -v
+	$(NATIVE_TEST_ENV) $(PYTHON) -m unittest discover -s tests/macos -p 'test_*.py' -v
 else
-# Select every root module without recursing into cross-host package suites.
-CLI_TEST_MODULES := $(patsubst tests/%.py,%,$(wildcard tests/test_*.py))
+CLI_TEST_MODULES := $(filter-out $(NATIVE_OPERATOR_MODULES) $(NATIVE_EXCLUDED_MODULES),$(patsubst tests/%.py,%,$(wildcard tests/test_*.py)))
 test: build/asm
-	PYTHONPATH="tests$${PYTHONPATH:+:$$PYTHONPATH}" $(PYTHON) -m unittest -v $(CLI_TEST_MODULES)
+	$(NATIVE_TEST_ENV) PYTHONPATH="tests$${PYTHONPATH:+:$$PYTHONPATH}" $(PYTHON) -m unittest -v $(CLI_TEST_MODULES)
 endif
 
 package-test:
@@ -130,7 +159,7 @@ registry-storage-s3-test:
 
 .PHONY: publisher-tools-test publisher-authority-test publisher-test
 publisher-tools-test:
-	PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_admin test_checker test_worker -v
+	PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_admin test_checker test_features test_worker -v
 
 publisher-authority-test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/publisher -p test_authority.py -v
@@ -148,13 +177,14 @@ uninstall: build/asm
 
 clean:
 	rm -f build/asm build/asm.o build/registry.o build/x86_64/asm.o build/aarch64/asm.o build/asm-x86_64-linux build/asm-aarch64-linux build/asm-aarch64-macos build/macos/asm.s
+	rm -rf -- build/v1 build/v2 build/v1-trusted build/v2-trusted
 
 # Provisioned distribution is a separate activation gate during migration.
 # The current release path stays available until the offline root is reviewed.
 # Go builds only the transport/cryptography adapter. Package logic stays native.
 .PHONY: verifier-test trusted-cli check-trust-root
 verifier-test:
-	cd verifier && $(GO) test -race ./...
+	cd verifier && $(GO_TOOL_ENV) $(GO) test -race ./...
 
 VERIFIER_TARGETS := build/asm-verify-x86_64-linux build/asm-verify-aarch64-linux build/asm-verify-aarch64-macos
 build/asm-verify-x86_64-linux: VERIFIER_GOOS := linux
@@ -166,30 +196,22 @@ build/asm-verify-aarch64-macos: VERIFIER_GOARCH := arm64
 
 $(VERIFIER_TARGETS): Makefile $(wildcard verifier/*.go verifier/internal/securefs/*.go) verifier/go.mod verifier/go.sum verifier/trust/asm-root.json tools/verifier_notices.py
 	mkdir -p build
-	cd verifier && CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
-	CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
+	cd verifier && CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO_TOOL_ENV) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ .
+	CGO_ENABLED=0 GOOS=$(VERIFIER_GOOS) GOARCH=$(VERIFIER_GOARCH) $(GO_TOOL_ENV) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
 
-# Registry V2 is explicit during native qualification. It does not activate the
-# separate self-update trust profile or change the released V1 command path.
+# Registry V2 uses the ordinary full build. Self-update trust remains separate.
 .PHONY: registry-cli registry-v2-test registry-v2-tools-test registry-v2-authority-test registry-v2-full-flow-test
-registry-cli: build/asm-registry-v2
+registry-cli:
+	$(MAKE) REGISTRY_V2=1 TRUSTED_DISTRIBUTION=0 build/asm
+	cp -- build/asm build/asm-registry-v2
 
-build/asm-registry-v2: $(CLI_INPUTS) build/asm-verify-$(CLI_TARGET) Makefile tools/macos.py $(wildcard cli/macos/*.s)
-ifeq ($(HOST_OS),Darwin)
-	$(PYTHON) tools/macos.py --output build/macos/asm-registry-v2-body.s
-	{ printf '.set ASM_REGISTRY_V2, 1\n'; cat build/macos/asm-registry-v2-body.s; } > build/macos/asm-registry-v2.s
-	/usr/bin/clang -arch arm64 -mmacosx-version-min=15.0 -Wl,-no_uuid -o $@ build/macos/asm-registry-v2.s
-	/usr/bin/codesign --verify --strict $@
-else
-	mkdir -p build/$(ARCH)
-	$(AS) $(CLI_AS_FLAGS) --defsym ASM_REGISTRY_V2=1 -o build/$(ARCH)/asm-registry-v2.o $(CLI_SOURCE)
-	$(LD) --fatal-warnings -z noexecstack -z relro -z now --build-id=none -o $@ build/$(ARCH)/asm-registry-v2.o
-endif
+.PHONY: build/asm-registry-v2
+build/asm-registry-v2: registry-cli
 
 build/asm-trust: $(wildcard verifier/cmd/asm-trust/*.go verifier/internal/securefs/*.go) verifier/go.mod verifier/go.sum
 	mkdir -p build
-	cd verifier && CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ ./cmd/asm-trust
-	CGO_ENABLED=0 $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
+	cd verifier && CGO_ENABLED=0 $(GO_TOOL_ENV) $(GO) build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o ../$@ ./cmd/asm-trust
+	CGO_ENABLED=0 $(GO_TOOL_ENV) $(PYTHON) tools/verifier_notices.py --go "$(GO)" --output $@.LICENSES.txt
 
 registry-v2-tools-test: build/asm-trust
 	ASM_REGISTRY_TRUST="$(CURDIR)/build/asm-trust" PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_distribution -v
@@ -211,13 +233,6 @@ check-trust-root:
 	$(MAKE) build/asm-verify-$(HOST_ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux) ARCH=$(HOST_ARCH)
 	build/asm-verify-$(HOST_ARCH)-$(if $(filter Darwin,$(HOST_OS)),macos,linux) check-root verifier/trust/asm-root.json
 
-trusted-cli: check-trust-root build/asm-verify-$(CLI_TARGET)
-ifeq ($(HOST_OS),Darwin)
-	$(PYTHON) tools/macos.py --output build/macos/asm-trusted.s
-	{ printf '.set ASM_TRUSTED_DISTRIBUTION, 1\n'; cat build/macos/asm-trusted.s; } > build/macos/asm-trusted-complete.s
-	/usr/bin/clang -arch arm64 -mmacosx-version-min=15.0 -Wl,-no_uuid -o build/asm-trusted build/macos/asm-trusted-complete.s
-	/usr/bin/codesign --verify --strict build/asm-trusted
-else
-	$(AS) $(CLI_AS_FLAGS) --defsym ASM_TRUSTED_DISTRIBUTION=1 -o build/asm-trusted.o $(CLI_SOURCE)
-	$(LD) -z noexecstack -z relro -z now --build-id=none -o build/asm-trusted build/asm-trusted.o
-endif
+trusted-cli:
+	$(MAKE) TRUSTED_DISTRIBUTION=1 build/asm
+	cp -- build/asm build/asm-trusted

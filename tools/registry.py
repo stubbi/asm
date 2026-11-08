@@ -54,6 +54,7 @@ MAX_RESOLUTION_MANIFEST_BYTES = 8190
 MAX_DEPENDENCIES = 64
 MAX_FEATURES = 64
 MAX_FEATURE_ENTRIES = 64
+MAX_FEATURE_TEXT_BYTES = 8192
 MAX_REQUIREMENT_BYTES = 128
 MAX_REQUIREMENT_TERMS = 8
 MAX_PROJECT_BYTES = 8190
@@ -612,40 +613,137 @@ def validate_v2_requirement(value: object) -> None:
         version_tuple(match[2])
 
 
-def v2_project_dependencies(data: bytes, project: dict) -> list[dict[str, str]]:
-    """Read mandatory same-registry declarations without running or resolving them."""
+def v2_declarations(publication: dict) -> tuple[list[dict], list[dict]]:
+    """Validate and normalize graph metadata without changing signed bytes.
+
+    Missing fields retain mandatory dependencies with defaults enabled. Child
+    feature existence belongs to resolution; local references are checked here.
+    """
+    require(isinstance(publication, dict), "publication metadata must be an object")
+    dependencies, features = publication.get("dependencies", []), publication.get("features", [])
+    require(isinstance(dependencies, list) and len(dependencies) <= MAX_DEPENDENCIES, "invalid dependency count")
+    require(isinstance(features, list) and len(features) <= MAX_FEATURES, "invalid feature count")
+    result, names, optional, text_bytes = [], [], set(), 0
+    for dependency in dependencies:
+        exact_keys(dependency, {"name", "requirement", "optional", "default_features", "features"},
+                   {"name", "requirement"}, "dependency")
+        name = package_name(dependency["name"])
+        validate_v2_requirement(dependency["requirement"])
+        flags = [dependency.get("optional", False), dependency.get("default_features", True)]
+        require(all(type(flag) is bool for flag in flags), "dependency options must be booleans")
+        requested = feature_entries(dependency.get("features", []), "dependency features")
+        for feature in requested:
+            feature_name(feature)
+        require(requested == sorted(requested), "dependency features are unordered")
+        text_bytes += sum(len(feature) + 1 for feature in requested)
+        names.append(name)
+        if flags[0]:
+            optional.add(name)
+        result.append({"name": name, "requirement": dependency["requirement"], "optional": flags[0],
+                       "default_features": flags[1], "features": list(requested)})
+    require(names == sorted(set(names)), "dependencies are duplicated or unordered")
+    definitions, edges = [], {}
+    for feature in features:
+        exact_keys(feature, {"name", "members"}, {"name", "members"}, "feature")
+        name = feature_name(feature["name"])
+        members = feature_entries(feature["members"], "feature members")
+        require(members == sorted(members), "feature members are unordered")
+        require(name not in edges, "feature definitions are duplicated")
+        text_bytes += len(name) + 1 + sum(len(member) + 1 for member in members)
+        edges[name] = []
+        for member in members:
+            require(len(member) <= 137, "feature member exceeds its byte limit")
+            if member.startswith("dep:"):
+                package_name(member[4:])
+                require(member[4:] in optional, "dep: feature must select a declared optional dependency")
+            elif "/" in member:
+                dependency, _, child = member.rpartition("/")
+                package_name(dependency)
+                feature_name(child)
+                require(dependency in names, "feature selects an undeclared dependency")
+            else:
+                edges[name].append(feature_name(member))
+        definitions.append({"name": name, "members": list(members)})
+    require([feature["name"] for feature in definitions] == sorted(edges), "feature definitions are unordered")
+    require(text_bytes <= MAX_FEATURE_TEXT_BYTES, "feature text exceeds the native profile limit")
+    visited, active = set(), set()
+
+    def visit(name):
+        require(name in edges, "feature selects an undeclared local feature")
+        require(name not in active, "local feature references contain a cycle")
+        if name in visited:
+            return
+        active.add(name)
+        for child in edges[name]:
+            visit(child)
+        active.remove(name)
+        visited.add(name)
+
+    for name in edges:
+        visit(name)
+    return result, definitions
+
+
+def v2_project_declarations(data: bytes, project: dict) -> tuple[list[dict], list[dict]]:
+    """Read the native single-line source subset and normalize its declarations."""
     require(0 < len(data) <= MAX_PROJECT_BYTES, "source asm.toml exceeds 8190 bytes")
     require(all(byte in (9, 10, 13) or 32 <= byte <= 126 for byte in data), "source manifest must use ASCII text")
-    require(not ({"resolution", "features"} & project.keys()), "V2 does not support resolution or feature tables")
-    dependencies = project.get("dependencies", {})
-    require(isinstance(dependencies, dict) and len(dependencies) <= MAX_DEPENDENCIES,
-            "project can declare at most 64 dependencies")
-    active = False
-    parsed = []
+    require("resolution" not in project, "V2 does not use a resolution table")
+    dependencies, features = project.get("dependencies", {}), project.get("features", {})
+    require(isinstance(dependencies, dict) and len(dependencies) <= MAX_DEPENDENCIES, "invalid dependency count")
+    require(isinstance(features, dict) and len(features) <= MAX_FEATURES, "invalid feature count")
+    quoted, bare, space = r'"[\x20-\x21\x23-\x5b\x5d-\x7e]*"', r"[a-z][a-z0-9_-]*", r"[ \t\r]*"
+    array = rf"\[{space}(?:{quoted}(?:{space},{space}{quoted})*{space},?{space})?\]"
+    item = rf"{bare}{space}={space}(?:{quoted}|true|false|{array})"
+    inline = rf"\{{{space}{item}(?:{space},{space}{item})*{space}\}}"
+    section, parsed_dependencies, parsed_features, seen = None, [], [], set()
     for line in data.decode("ascii").splitlines():
-        quoted = False
+        quoted_text = False
         for offset, char in enumerate(line):
             if char == '"':
-                quoted = not quoted
-            elif char == "#" and not quoted:
+                quoted_text = not quoted_text
+            elif char == "#" and not quoted_text:
                 line = line[:offset]
                 break
-        line = line.strip(" \t")
+        line = line.strip(" \t\r")
+        if not line:
+            continue
         if line.startswith("["):
-            active = line == "[dependencies]"
-        elif line and active:
-            match = re.fullmatch(r'"([a-z][a-z0-9-]*/[a-z][a-z0-9-]*)"[ \t]*=[ \t]*"([^"\\]*)"', line)
-            require(match is not None,
-                    "V2 dependencies need quoted names and string requirements")
-            parsed.append({"name": match[1], "requirement": match[2]})
-    result = []
-    for name, requirement in sorted(dependencies.items()):
-        package_name(name)
-        validate_v2_requirement(requirement)
-        result.append({"name": name, "requirement": requirement})
-    require(sorted(parsed, key=lambda item: item["name"]) == result,
-            "V2 dependencies need one explicit declaration for each dependency")
-    return result
+            section = line[1:-1] if line in ("[dependencies]", "[features]") else None
+            if section is not None:
+                seen.add(section)
+            continue
+        if section is None:
+            continue
+        key = quoted if section == "dependencies" else rf"(?:{bare}|{quoted})"
+        value = rf"(?:{quoted}|{inline})" if section == "dependencies" else array
+        require(re.fullmatch(rf"{key}{space}={space}{value}", line) is not None,
+                "V2 declarations use unsupported TOML syntax")
+        # The syntax check excludes escapes and dotted keys. tomllib checked
+        # duplicate declarations before this function receives the project.
+        key_text = line.split("=", 1)[0].strip(" \t\r").strip('"')
+        (parsed_dependencies if section == "dependencies" else parsed_features).append(key_text)
+    require(all((name in project) == (name in seen) for name in ("dependencies", "features")),
+            "V2 declarations need explicit source sections")
+    require(sorted(parsed_dependencies) == sorted(dependencies) and sorted(parsed_features) == sorted(features),
+            "V2 declarations need explicit source entries")
+    normalized = []
+    for name, declaration in sorted(dependencies.items()):
+        if isinstance(declaration, str):
+            declaration = {"version": declaration}
+        exact_keys(declaration, {"version", "optional", "default-features", "features"}, {"version"}, "dependency")
+        requested = feature_entries(declaration.get("features", []), "dependency features")
+        normalized.append({"name": name, "requirement": declaration["version"],
+            "optional": declaration.get("optional", False), "default_features": declaration.get("default-features", True),
+            "features": sorted(requested)})
+    definitions = [{"name": name, "members": sorted(feature_entries(members, "feature members"))}
+                   for name, members in sorted(features.items())]
+    return v2_declarations({"dependencies": normalized, "features": definitions})
+
+
+def v2_project_dependencies(data: bytes, project: dict) -> list[dict]:
+    """Return normalized dependency records; complete source checks use both tables."""
+    return v2_project_declarations(data, project)[0]
 
 
 def validate_requirement(value: object) -> None:

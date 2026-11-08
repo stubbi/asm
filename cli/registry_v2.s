@@ -65,6 +65,10 @@ cmd_registry_v2:
     test eax, eax
     jnz .Lr2_mirror_option
     mov rdi, r12
+    call r4_option
+    test eax, eax
+    jnz .Lr2_options
+    mov rdi, r12
     call r2p_option
     test eax, eax
     jnz .Lr2_options
@@ -1216,7 +1220,7 @@ r2_validate_manifest:
     mov r12, rdi
     lea rsi, [rip + r2_fields_manifest]
     mov edx, 8
-    mov ecx, 9
+    mov ecx, 10
     call r2_keys
     mov rdi, r12
     call g3_manifest_dependencies
@@ -1715,12 +1719,13 @@ r2_publish:
     lea rdi, [rip + r2_object_path]
     lea rsi, [rip + r2_name]
     lea rdx, [rip + r2_version]
-    call validate_source_package
+    call validate_v2_source_package
     test eax, eax
     jnz r2_invalid
     lea rdi, [rip + r2_dependencies]
     mov rsi, [rip + r2_dependency_count]
-    call g3_compare_dependencies
+    lea rdx, [rip + g4_publication_profile]
+    call g4_compare_project
     test eax, eax
     jnz r2_invalid
 .Lr2_publish_project_next:
@@ -1980,12 +1985,13 @@ r2_receive:
     lea rsi, [rip + r2_name]
     lea rdx, [rip + r2_version]
     mov rcx, [rip + r2_target]
-    call validate_source_package
+    call validate_v2_source_package
     test eax, eax
     jnz r2_invalid
     lea rdi, [rip + r2_dependencies]
     mov rsi, [rip + r2_dependency_count]
-    call g3_compare_dependencies
+    lea rdx, [rip + g4_publication_profile]
+    call g4_compare_project
     test eax, eax
     jnz r2_invalid
     jmp .Lr2_receive_finalize
@@ -3260,7 +3266,7 @@ r2_k_isa: .asciz "isa"
 r2_k_os: .asciz "os"
 r2_k_abi: .asciz "abi"
 r2_k_format: .asciz "format"
-r2_fields_manifest: .asciz "artifacts\0license\0name\0owner_id\0schema\0source\0summary\0version\0dependencies\0"
+r2_fields_manifest: .asciz "artifacts\0license\0name\0owner_id\0schema\0source\0summary\0version\0dependencies\0features\0"
 r2_fields_source: .asciz "archive\0commit\0path\0repository\0"
 r2_fields_commit: .asciz "algorithm\0digest\0"
 r2_fields_archive: .asciz "bytes\0sha256\0"
@@ -3312,6 +3318,7 @@ r2_err_upgrade: .asciz "this installation uses registry V2; V1 upgrade cannot ch
 r2_help_text:
     .ascii "Usage: asm registry resolve|sync --project DIR --registry-id ID --root FILE\n"
     .ascii "  --state DIR --mirror HTTPS_BASE --target TARGET [--ca FILE] [--json]\n"
+    .ascii "Resolve accepts [--features NAME,NAME] [--no-default-features].\n"
     .ascii "Resolve writes a complete graph lock. Sync restores exact source packages.\n"
     .ascii "Build checks local locked bytes; sync checks current registry policy.\n\n"
     .ascii "Usage: asm registry publish --project REPO_ROOT --name OWNER/NAME --owner-id 32HEX\n"

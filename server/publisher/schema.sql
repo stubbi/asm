@@ -264,13 +264,17 @@ END $$;
 CREATE FUNCTION asm_publication.manifest(raw text) RETURNS jsonb
 LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog,pg_temp AS $$
 DECLARE d jsonb; s jsonb; c jsonb; a jsonb; parts text[]; dep jsonb; previous_dependency text;
+    requested jsonb; features jsonb; feature jsonb; entry jsonb; member text; feature_name text;
+    previous_feature text; previous_member text; text_bytes integer:=0; progress boolean;
+    dependency_names text[]:=ARRAY[]::text[]; optional_names text[]:=ARRAY[]::text[];
+    feature_names text[]:=ARRAY[]::text[]; resolved text[]:=ARRAY[]::text[];
 BEGIN
     IF raw IS NULL OR octet_length(raw) NOT BETWEEN 1 AND 65536 OR raw COLLATE "C" ~ E'[^\\n -~]' THEN
         RAISE EXCEPTION 'Manifest encoding is invalid' USING ERRCODE='22023'; END IF;
     PERFORM asm_catalog.check_json(raw::json);
     d:=raw::jsonb;
     IF jsonb_typeof(d)<>'object' OR NOT d ?& ARRAY['schema','owner_id','name','version','summary','license','source','artifacts']
-        OR d-ARRAY['schema','owner_id','name','version','summary','license','source','artifacts','dependencies']<>'{}'::jsonb
+        OR d-ARRAY['schema','owner_id','name','version','summary','license','source','artifacts','dependencies','features']<>'{}'::jsonb
         OR d->'schema'<>'2'::jsonb OR jsonb_typeof(d->'owner_id')<>'string' OR d->>'owner_id' COLLATE "C" !~ '^[0-9a-f]{32}$'
         OR jsonb_typeof(d->'name')<>'string' OR d->>'name' COLLATE "C" !~ '^[a-z][a-z0-9-]{0,38}/[a-z][a-z0-9-]{0,63}$'
         OR d->>'name' LIKE '%--%' OR d->>'name' LIKE '%-/%' OR right(d->>'name',1)='-'
@@ -280,21 +284,88 @@ BEGIN
         RAISE EXCEPTION 'Manifest fields are invalid' USING ERRCODE='22023'; END IF;
     parts:=string_to_array(d->>'version','.');
     IF parts[1]::bigint>2147483647 OR parts[2]::bigint>2147483647 OR parts[3]::bigint>2147483647 THEN RAISE EXCEPTION 'Version is invalid' USING ERRCODE='22023'; END IF;
+    -- Validate inactive graph metadata too. No child feature or version is
+    -- selected here; the native resolver owns those decisions.
     IF d ? 'dependencies' THEN
         IF jsonb_typeof(d->'dependencies') IS DISTINCT FROM 'array' OR jsonb_array_length(d->'dependencies')>64 THEN
             RAISE EXCEPTION 'Dependency count is invalid' USING ERRCODE='22023'; END IF;
         FOR dep IN SELECT value FROM jsonb_array_elements(d->'dependencies') LOOP
             IF jsonb_typeof(dep) IS DISTINCT FROM 'object' OR NOT dep ?& ARRAY['name','requirement']
-                OR dep-ARRAY['name','requirement']<>'{}'::jsonb OR jsonb_typeof(dep->'name') IS DISTINCT FROM 'string'
+                OR dep-ARRAY['name','requirement','optional','default_features','features']<>'{}'::jsonb
+                OR jsonb_typeof(dep->'name') IS DISTINCT FROM 'string'
                 OR dep->>'name' COLLATE "C" !~ '^[a-z][a-z0-9-]{0,38}/[a-z][a-z0-9-]{0,63}$'
                 OR dep->>'name' LIKE '%--%' OR dep->>'name' LIKE '%-/%' OR right(dep->>'name',1)='-'
                 OR jsonb_typeof(dep->'requirement') IS DISTINCT FROM 'string'
                 OR NOT asm_publication.dependency_requirement(dep->>'requirement')
+                OR (dep ? 'optional' AND jsonb_typeof(dep->'optional') IS DISTINCT FROM 'boolean')
+                OR (dep ? 'default_features' AND jsonb_typeof(dep->'default_features') IS DISTINCT FROM 'boolean')
                 OR (previous_dependency IS NOT NULL AND previous_dependency COLLATE "C">=dep->>'name' COLLATE "C") THEN
                 RAISE EXCEPTION 'Dependency fields are invalid' USING ERRCODE='22023'; END IF;
             previous_dependency:=dep->>'name';
+            dependency_names:=array_append(dependency_names,previous_dependency);
+            IF dep->'optional'='true'::jsonb THEN optional_names:=array_append(optional_names,previous_dependency); END IF;
+            requested:=coalesce(dep->'features','[]'::jsonb);
+            IF jsonb_typeof(requested) IS DISTINCT FROM 'array' OR jsonb_array_length(requested)>64 THEN
+                RAISE EXCEPTION 'Requested feature count is invalid' USING ERRCODE='22023'; END IF;
+            previous_member:=NULL;
+            FOR entry IN SELECT value FROM jsonb_array_elements(requested) LOOP
+                member:=entry#>>'{}';
+                IF jsonb_typeof(entry) IS DISTINCT FROM 'string' OR member COLLATE "C" !~ '^[a-z][a-z0-9_-]{0,31}$'
+                    OR (previous_member IS NOT NULL AND previous_member COLLATE "C">=member COLLATE "C") THEN
+                    RAISE EXCEPTION 'Requested feature is invalid' USING ERRCODE='22023'; END IF;
+                previous_member:=member; text_bytes:=text_bytes+octet_length(member)+1;
+            END LOOP;
         END LOOP;
     END IF;
+    features:=coalesce(d->'features','[]'::jsonb);
+    IF jsonb_typeof(features) IS DISTINCT FROM 'array' OR jsonb_array_length(features)>64 THEN
+        RAISE EXCEPTION 'Feature count is invalid' USING ERRCODE='22023'; END IF;
+    FOR feature IN SELECT value FROM jsonb_array_elements(features) LOOP
+        feature_name:=feature->>'name';
+        IF jsonb_typeof(feature) IS DISTINCT FROM 'object' OR NOT feature ?& ARRAY['name','members']
+            OR feature-ARRAY['name','members']<>'{}'::jsonb OR jsonb_typeof(feature->'name') IS DISTINCT FROM 'string'
+            OR feature_name COLLATE "C" !~ '^[a-z][a-z0-9_-]{0,31}$'
+            OR (previous_feature IS NOT NULL AND previous_feature COLLATE "C">=feature_name COLLATE "C")
+            OR jsonb_typeof(feature->'members') IS DISTINCT FROM 'array' OR jsonb_array_length(feature->'members')>64 THEN
+            RAISE EXCEPTION 'Feature definition is invalid' USING ERRCODE='22023'; END IF;
+        previous_feature:=feature_name; feature_names:=array_append(feature_names,feature_name);
+        text_bytes:=text_bytes+octet_length(feature_name)+1;
+    END LOOP;
+    FOR feature IN SELECT value FROM jsonb_array_elements(features) LOOP
+        previous_member:=NULL;
+        FOR entry IN SELECT value FROM jsonb_array_elements(feature->'members') LOOP
+            member:=entry#>>'{}';
+            IF jsonb_typeof(entry) IS DISTINCT FROM 'string' OR octet_length(member) NOT BETWEEN 1 AND 137
+                OR (previous_member IS NOT NULL AND previous_member COLLATE "C">=member COLLATE "C") THEN
+                RAISE EXCEPTION 'Feature member is invalid' USING ERRCODE='22023'; END IF;
+            previous_member:=member; text_bytes:=text_bytes+octet_length(member)+1;
+            IF left(member,4)='dep:' THEN
+                IF NOT substring(member FROM 5)=ANY(optional_names) THEN
+                    RAISE EXCEPTION 'Feature needs a declared optional dependency' USING ERRCODE='22023'; END IF;
+            ELSIF strpos(member,'/')>0 THEN
+                parts:=regexp_match(member,'^(.+)/([^/]+)$');
+                IF parts IS NULL OR NOT parts[1]=ANY(dependency_names) OR parts[2] COLLATE "C" !~ '^[a-z][a-z0-9_-]{0,31}$' THEN
+                    RAISE EXCEPTION 'Feature needs a declared dependency and child name' USING ERRCODE='22023'; END IF;
+            ELSIF member COLLATE "C" !~ '^[a-z][a-z0-9_-]{0,31}$' OR NOT member=ANY(feature_names) THEN
+                RAISE EXCEPTION 'Feature needs a declared local feature' USING ERRCODE='22023';
+            END IF;
+        END LOOP;
+    END LOOP;
+    IF text_bytes>8192 THEN RAISE EXCEPTION 'Feature text exceeds the native profile limit' USING ERRCODE='22023'; END IF;
+    -- A bounded topological pass rejects local cycles without enumerating paths.
+    -- At most64 passes inspect64 definitions and64 members each.
+    WHILE cardinality(resolved)<cardinality(feature_names) LOOP
+        progress:=false;
+        FOR feature IN SELECT value FROM jsonb_array_elements(features) LOOP
+            feature_name:=feature->>'name';
+            IF feature_name=ANY(resolved) THEN CONTINUE; END IF;
+            IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(feature->'members') AS m(value)
+                WHERE strpos(value,'/')=0 AND NOT value=ANY(resolved)) THEN
+                resolved:=array_append(resolved,feature_name); progress:=true;
+            END IF;
+        END LOOP;
+        IF NOT progress THEN RAISE EXCEPTION 'Local feature references contain a cycle' USING ERRCODE='22023'; END IF;
+    END LOOP;
     s:=d->'source'; c:=s->'commit';
     IF jsonb_typeof(s) IS DISTINCT FROM 'object' OR NOT s ?& ARRAY['commit','path','archive']
         OR s-ARRAY['commit','path','archive','repository']<>'{}'::jsonb OR jsonb_typeof(s->'path') IS DISTINCT FROM 'string'

@@ -33,10 +33,10 @@ def prepare(source: Path) -> str:
         text = re.sub(r'^targets_json:.*$', lambda match: line, text, flags=re.M)
         target_text = 'aarch64-macos (host; Apple clang + libSystem)\nx86_64-linux (cross; LLVM)\naarch64-linux (cross; LLVM)\nriscv64-linux (cross; LLVM)\n'
         text = re.sub(r'^targets_text:.*$', lambda match: 'targets_text: .asciz ' + json.dumps(target_text), text, flags=re.M)
-        match = re.search(r'(status_json:\n\s*\.asciz )(.+)', text)
-        status = json.loads(json.loads(match[2]))
+        match = re.search(r'(status_json:\n\s*\.ascii )(.+)', text)
+        status = json.loads(json.loads(match[2]) + ']}')
         status['targets'] = build_targets
-        text = text[:match.start(2)] + json.dumps(json.dumps(status, separators=(',', ':')) + '\n') + text[match.end(2):]
+        text = text[:match.start(2)] + json.dumps(json.dumps(status, separators=(',', ':')).removesuffix(']}')) + text[match.end(2):]
         start = '''_main:
     ARM_ADDR x16, argc
     str x0, [x16]

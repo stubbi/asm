@@ -70,7 +70,7 @@ def manifest(data: bytes):
     registry.require(0 < len(data) <= MAX_MANIFEST, "invalid manifest size")
     value = registry.strict_json(data)
     fields = {"schema", "owner_id", "name", "version", "summary", "license", "source", "artifacts"}
-    registry.exact_keys(value, fields | {"dependencies"}, fields, "publication manifest")
+    registry.exact_keys(value, fields | {"dependencies", "features"}, fields, "publication manifest")
     registry.require(type(value["schema"]) is int and value["schema"] == 2, "unsupported publication schema")
     registry.require(isinstance(value["owner_id"], str) and re.fullmatch("[0-9a-f]{32}", value["owner_id"]), "invalid owner identity")
     registry.package_name(value["name"])
@@ -78,15 +78,7 @@ def manifest(data: bytes):
     registry.plain_text(value["summary"], 160, "summary")
     registry.require(value["summary"] == value["summary"].strip() and isinstance(value["license"], str)
         and value["license"] in registry.LICENSES, "invalid publication description")
-    dependencies = value.get("dependencies", [])
-    registry.require(isinstance(dependencies, list) and len(dependencies) <= registry.MAX_DEPENDENCIES,
-                     "invalid dependency count")
-    names = []
-    for dependency in dependencies:
-        registry.exact_keys(dependency, {"name", "requirement"}, {"name", "requirement"}, "dependency")
-        names.append(registry.package_name(dependency["name"]))
-        registry.validate_v2_requirement(dependency["requirement"])
-    registry.require(names == sorted(set(names)), "dependencies are duplicated or unordered")
+    registry.v2_declarations(value)
     source = registry.exact_keys(value["source"], {"commit", "path", "archive", "repository"}, {"commit", "path", "archive"}, "source")
     commit = registry.exact_keys(source["commit"], {"algorithm", "digest"}, {"algorithm", "digest"}, "source commit")
     length = {"git-sha1": 40, "git-sha256": 64}.get(commit["algorithm"]) if isinstance(commit["algorithm"], str) else None
@@ -147,8 +139,8 @@ def check(task_id: str, manifest_file: Path, objects_root: Path, checker_revisio
                          "source manifest exceeds this profile's byte limit")
         for target in sorted({TARGETS[(item["isa"], item["os"], item["abi"])][0] for item in value["artifacts"]}):
             project = registry.validate_project(files, value["name"], value["version"], target, v2_dependencies=True)
-            registry.require(registry.v2_project_dependencies(files["asm.toml"], project) == value.get("dependencies", []),
-                             "source dependencies differ from the signed declaration")
+            registry.require(registry.v2_project_declarations(files["asm.toml"], project) == registry.v2_declarations(value),
+                             "source dependency and feature declarations differ from the signed metadata")
         del files
     except InputUnavailable:
         results[source_digest] = "error"

@@ -33,6 +33,15 @@
  * Owns the archive/manifest scratch buffers; performs no filesystem mutation.
  * Stack frame:40 bytes. The compressed artifact digest is the caller's check. */
 validate_source_package:
+    xor r8d, r8d
+    jmp .Lpub_package_profile
+.ifdef ASM_REGISTRY_V2
+/* Same archive/name/version/target ABI, with the V2 graph and8190-byte bound.
+ * The legacy entry keeps its16384-byte archive limit and rejects graph tables. */
+validate_v2_source_package:
+    mov r8d, 1
+.endif
+.Lpub_package_profile:
     push rbx
     push r12
     push r13
@@ -41,13 +50,23 @@ validate_source_package:
     mov r12, [rip + pub_name]
     mov r13, [rip + pub_version]
     mov r14, rcx
+    mov r15d, r8d
     mov [rip + pub_name], rsi
     mov [rip + pub_version], rdx
     call validate_source_archive
     test eax, eax
     jnz .Lpub_package_checked
     mov rdi, r14
+.ifdef ASM_REGISTRY_V2
+    test r15d, r15d
+    jnz .Lpub_package_v2
+.endif
     call pub_check_project
+    jmp .Lpub_package_checked
+.ifdef ASM_REGISTRY_V2
+.Lpub_package_v2:
+    call pub_check_project_v2
+.endif
 .Lpub_package_checked:
     mov [rip + pub_name], r12
     mov [rip + pub_version], r13
@@ -581,6 +600,15 @@ pub_source_paths:
  * Optional values and the field mask reset before each artifact. The stateless
  * native-link validator never changes build-command package globals. */
 pub_check_project:
+    xor esi, esi
+    jmp .Lpub_check_profile
+.ifdef ASM_REGISTRY_V2
+/* RDI=validated target. Select V2 source declarations and8190-byte bound.
+ * The profile is explicit, saved in this call's stack frame, never inferred. */
+pub_check_project_v2:
+    mov esi, 1
+.endif
+.Lpub_check_profile:
     push rbx
     push rbp
     push r12
@@ -588,6 +616,7 @@ pub_check_project:
     push r14
     push r15
     sub rsp, 8
+    mov [rsp], esi
     mov [rip + pub_project_target], rdi
     mov byte ptr [rip + pub_project_matched], 0
     xor r14d, r14d
@@ -595,10 +624,13 @@ pub_check_project:
     test eax, eax
     jnz .Lpub_project_bad
 .ifdef ASM_REGISTRY_V2
+    cmp dword ptr [rsp], 0
+    je .Lpub_project_lock_checked
     lea rdi, [rip + dependency_lock_path]
     call source_archive_member
     test rax, rax
     jnz .Lpub_project_bad
+.Lpub_project_lock_checked:
 .endif
     lea rbx, [rip + pub_readme_names]
     call pub_any_member
@@ -618,6 +650,13 @@ pub_check_project:
     jz .Lpub_project_bad
     cmp rdx, PUB_LEGACY_MANIFEST_MAX
     ja .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    cmp dword ptr [rsp], 0
+    je .Lpub_manifest_bound_ready
+    cmp rdx, PUB_TARGET_MANIFEST_MAX
+    ja .Lpub_project_bad
+.Lpub_manifest_bound_ready:
+.endif
     mov [rip + pub_manifest_length], rdx
     mov rsi, rax
     lea rdi, [rip + pub_manifest]
@@ -633,10 +672,13 @@ pub_check_project:
     jb .Lpub_manifest_copy
     mov byte ptr [rdi + rcx], 0
 .ifdef ASM_REGISTRY_V2
+    cmp dword ptr [rsp], 0
+    je .Lpub_manifest_graph_parsed
     lea rdi, [rip + pub_manifest]
     call g3_project_dependencies
     test eax, eax
     jnz .Lpub_project_bad
+.Lpub_manifest_graph_parsed:
     lea rdi, [rip + pub_manifest]
 .endif
     mov r12, rdi
@@ -775,7 +817,15 @@ pub_check_project:
     lea rsi, [rip + g3_project_dependency_section]
     call streq
     test eax, eax
+    jnz .Lpub_manifest_graph_section
+    lea rdi, [rip + pub_key]
+    lea rsi, [rip + g3_project_feature_section]
+    call streq
+    test eax, eax
     jz .Lpub_manifest_not_dependencies
+.Lpub_manifest_graph_section:
+    cmp dword ptr [rsp], 0
+    je .Lpub_project_bad
     mov r13d, 4
     jmp .Lpub_manifest_line_end
 .Lpub_manifest_not_dependencies:

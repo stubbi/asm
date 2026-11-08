@@ -234,8 +234,8 @@ Use the repository root for `--project`.
 For a monorepo, add `--source-path packages/example` to select its committed project subtree.
 The source manifest, required files, and version must exist in that subtree.
 Uncommitted version or source edits do not enter the release.
-Project mode retains mandatory dependency declarations from the committed manifest.
-It refuses features, optional dependencies, and a committed consumer `asm.lock`.
+Project mode retains dependency options and feature groups from the committed manifest.
+It refuses malformed declarations and a committed consumer `asm.lock`.
 Known sensitive filenames, links, submodules, path conflicts, and exceeded bounds fail before credentials or HTTP.
 This filename policy cannot detect arbitrary secrets committed under ordinary names.
 
@@ -303,7 +303,7 @@ Project publication also requires Git.
 Obtain the initial root and registry identity independently of artifact mirrors.
 No publisher credential or account is required for dependency resolution.
 
-Add mandatory source dependencies to the consumer's `asm.toml`:
+Add source dependencies to the consumer's `asm.toml`:
 
 ```toml
 [dependencies]
@@ -314,8 +314,27 @@ Add mandatory source dependencies to the consumer's `asm.toml`:
 Keep the existing package and build or target tables.
 Requirements accept exact numeric versions, `*`, caret, tilde, and at most eight comma-separated comparisons.
 Use full `major.minor.patch` versions without whitespace inside requirements.
-Prereleases, optional dependencies, features, and dependencies from another registry are unsupported.
+Prereleases and dependencies from another registry are unsupported.
 Each component must fit the documented numeric version limit.
+
+Declare optional dependencies and feature groups when needed:
+
+```toml
+[dependencies]
+"owner/math" = "^1.2.0"
+"owner/vector" = { version = "~2.0.0", optional = true, default-features = false, features = ["portable"] }
+
+[features]
+default = ["vectors"]
+vectors = ["dep:owner/vector", "owner/math/checked"]
+```
+
+A feature groups dependency selections; it does not define assembly symbols or import source files.
+A dormant optional edge contributes no version constraint, default, or child feature request.
+Requests from active paths combine.
+A disabled default on one edge cannot remove a default enabled by another edge.
+Unknown local references, duplicate members, and local feature cycles fail validation.
+The [feature contract](specs/registry-v2.md#feature-activation) defines names, activation, and bounds.
 
 Resolve the complete graph for one declared target:
 
@@ -327,7 +346,10 @@ build/asm-registry-v2 registry resolve --project /absolute/project \
   --target x86_64-linux
 ```
 
-Success is quiet and creates `asm.lock` atomically.
+Success is quiet and creates a version-four `asm.lock` atomically.
+Add `--no-default-features` to disable the root's implicit default group.
+Add `--features vectors` to request that root feature explicitly.
+Use only names declared in the root project; an unknown name fails before a network request.
 Resolve reads signed metadata without downloading artifacts or executing package code.
 An explicit resolve can select newer permitted versions.
 Keep the lock with the consumer project when repeatable selections are required.
@@ -347,14 +369,17 @@ build/asm-registry-v2 registry sync --project /absolute/project \
 ```
 
 Success is quiet and restores checked source trees under `.asm/packages/OWNER/NAME/VERSION/TARGET`.
+Sync retains exact metadata envelopes under `.asm/metadata/ENVELOPE_SHA256.json`.
+Sync uses the lock's recorded feature choices; it does not accept feature selection options.
 Repeated sync reuses checked digest archives without another artifact transfer.
 Sync authenticates exact metadata and checks every selected release against fresh lifecycle policy.
 It never replaces the lock or selects newer versions.
 Use explicit source imports through the existing package include directory.
 Sync does not build or execute a package.
 
-Run `asm build --locked` with the V2 preview binary from the consumer directory.
-The build checks the root manifest, complete graph, cached archives, source declarations, and extracted files.
+Run `asm build --locked` with the full client from the consumer directory.
+The build checks the root manifest, feature closure, complete graph, cached metadata, archives, declarations, and extracted files.
+Run sync again when required cached metadata is missing or damaged.
 It does not refresh remote lifecycle policy or establish current registry authentication.
 Run sync when current registry policy is required.
 Local builds remain ordinary trusted project builds, not isolated execution environments.
@@ -363,12 +388,13 @@ The first graph profile selects one version per package for one explicit target.
 It supports consistent dependency cycles and records every edge.
 It reads at most 256 reached candidate versions and 64 dependencies per release.
 The solver stops after 100,000 operations and reports exhaustion separately from incompatible constraints.
-Eager discovery can fetch metadata for unused versions; it does not fetch their artifacts.
+Discovery fetches metadata only when an active solver branch requires a package name.
+It can read unused versions of that name; it does not fetch their artifacts.
 This bounded source profile does not establish global resolver capacity.
 
 Mirrors still need only storage synchronization and HTTPS serving.
 Resolution adds no database, resolver service, publisher secret, or signing key to a mirror.
-The [contract](specs/registry-v2.md) and [evidence](v2-dependency-evidence.md) state the implementation and qualification limits.
+The [contract](specs/registry-v2.md) and [feature evidence](v2-feature-evidence.md) state the implementation and qualification limits.
 
 ## Collect V2 download observations
 

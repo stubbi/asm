@@ -1,6 +1,7 @@
 # V2 dependency evidence
 
-Status: local unreleased source qualification, 8 November 2026.
+Status: historical mandatory-only source qualification, 8 November 2026.
+The [feature qualification record](v2-feature-evidence.md) describes the subsequent optional dependency and feature work.
 The affected native, publisher, database, infrastructure, verifier, and website gates passed locally.
 No public deployment, production key, or release is activated.
 

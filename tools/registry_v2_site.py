@@ -82,8 +82,8 @@ def _checked_artifacts(store, publication):
     for artifact in publication["artifacts"]:
         target = publication_check.TARGETS[(artifact["isa"], artifact["os"], artifact["abi"])][0]
         project = registry.validate_project(files, publication["name"], publication["version"], target, v2_dependencies=True)
-        registry.require(registry.v2_project_dependencies(files["asm.toml"], project) == publication.get("dependencies", []),
-                         "source dependencies differ from the signed declaration")
+        registry.require(registry.v2_project_declarations(files["asm.toml"], project) == registry.v2_declarations(publication),
+                         "source dependency and feature declarations differ from the signed metadata")
         if artifact["kind"] == "executable":
             registry.validate_executable(store.get_blob(artifact["sha256"], artifact["bytes"]), target)
 

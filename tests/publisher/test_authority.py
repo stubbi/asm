@@ -186,12 +186,52 @@ class PublisherAuthorityTests(unittest.TestCase):
         self.assertEqual(self.admin.execute("SELECT manifest FROM asm_publication.tasks WHERE id=$1", [task]),
                          [[registry.json_bytes(manifest).decode()]])
 
+    def test_optional_features_are_validated_and_retained_without_rewriting_bytes(self):
+        manifest = deepcopy(self.manifest)
+        manifest["dependencies"] = [{"name": "other/math", "requirement": "*", "optional": True,
+                                     "default_features": False, "features": ["portable"]}]
+        manifest["features"] = [{"name": "default", "members": ["bundle"]},
+                                {"name": "bundle", "members": ["dep:other/math", "other/math/portable"]}]
+        manifest["features"].sort(key=lambda value: value["name"])
+        status, task, _ = self.create(manifest=manifest)
+        self.assertEqual(status, 202)
+        self.assertEqual(self.admin.execute("SELECT manifest FROM asm_publication.tasks WHERE id=$1", [task]),
+                         [[registry.json_bytes(manifest).decode()]])
+
+    def test_invalid_unused_features_create_no_task(self):
+        for features in ([{"name": "unused", "members": ["missing"]}],
+                         [{"name": "a", "members": ["b"]}, {"name": "b", "members": ["a"]}],
+                         [{"name": "unused", "members": ["dep:other/math"]}],
+                         [{"name": "unused", "members": ["other/math/portable"]}],
+                         [{"name": "a", "members": []}, {"name": "a", "members": []}],
+                         [{"name": "unused", "members": ["wide", "portable"]}]):
+            manifest = deepcopy(self.manifest)
+            manifest["features"] = features
+            with self.subTest(features=features):
+                self.assertEqual(self.create(manifest=manifest)[0], 400)
+                self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_publication.tasks"), [["0"]])
+
+    def test_feature_text_budget_matches_the_native_profile(self):
+        manifest = deepcopy(self.manifest)
+        requested = ["f" + str(index).zfill(30) for index in range(64)]
+        manifest["dependencies"] = [{"name": "other/" + name, "requirement": "*", "features": list(requested)}
+                                     for name in "abcd"]
+        self.assertLess(len(registry.json_bytes(manifest)), 65536)
+        self.assertEqual(self.create(manifest=manifest)[0], 202)
+        manifest["dependencies"][-1]["features"][-1] += "a"
+        self.assertEqual(self.create(manifest=manifest, key="2" * 32)[0], 400)
+        self.assertEqual(self.admin.execute("SELECT count(*) FROM asm_publication.tasks"), [["1"]])
+
     def test_invalid_dependency_declarations_create_no_task(self):
         cases = [
             [{"name": "other/math", "requirement": ">=1.0.0,invalid"}],
             [{"name": "other/math", "requirement": ">=1.0.0, <2.0.0"}],
             [{"name": "other/math", "requirement": "2147483648.0.0"}],
-            [{"name": "other/math", "requirement": "*", "optional": True}],
+            [{"name": "other/math", "requirement": "*", "optional": "true"}],
+            [{"name": "other/math", "requirement": "*", "default_features": 0}],
+            [{"name": "other/math", "requirement": "*", "features": ["wide", "portable"]}],
+            [{"name": "other/math", "requirement": "*", "features": ["portable", "portable"]}],
+            [{"name": "other/math", "requirement": "*", "features": ["invalid/name"]}],
             [{"name": "other/math", "requirement": "1.0.0"}] * 2,
             [{"name": "z/math", "requirement": "1.0.0"}, {"name": "a/math", "requirement": "*"}],
         ]

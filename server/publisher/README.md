@@ -161,8 +161,13 @@ An exact migration replay preserves its installed state.
 The reviewed migration SHA-384 is:
 
 ```text
-6865173570e0ea1aafc519facfe9ba1a052bdb655f64df1f15474250d5d6d6180c62fcb530ef7766592e4c2afbb592f4
+e78431a236e7d51945ab767b4318d62f2f04f2cb0289988ed8df930d5fb4ba4604fd8ec0b35d5ef2ecffe7bb4b95ba44
 ```
+
+These bytes replace the unpublished V2 fixture schema.
+Rebuild an older fixture database before testing this schema.
+For an installed database, prepare a reviewed upgrade migration.
+Do not change its installed migration history.
 
 The runtime embeds the digest of its selected migration file.
 `asm_publication.publisher_ready(EXPECTED_SHA384)` returns exactly `1` only when the inspected request boundary passes.
@@ -241,7 +246,9 @@ All six existing compatibility targets are accepted: Linux x86-64, AArch64, and 
 The initial CPU feature array must be empty.
 Source and executable container checks do not prove instruction compatibility or general safety.
 Each unique object permits 64 MiB; each task permits 128 MiB and fifteen unique objects.
-The profile accepts no dependencies, publisher-supplied check results, or artifact URLs.
+The profile accepts bounded dependency and feature declarations.
+It rejects publisher-supplied check results and artifact URLs.
+Metadata validation does not resolve dependencies or run package code.
 
 | Request | Successful result |
 | --- | --- |
@@ -389,7 +396,7 @@ An exact replay preserves installed state; a changed installed pin refuses the o
 The reviewed distribution migration SHA-384 is:
 
 ```text
-235cdae69afec2e6f9c6e9ebe76ccb8ff47049021b1ce0296831ae39a770b12c50f95742ae3134602e3f8e8e70139e04
+647baa6b9167e978e16990f51c7e5a8396e710be170dc4c16045e49dfff806fb30e5579827a16b972efda25fbc0dc126
 ```
 
 Bind one immutable registry identity and HTTPS origin:

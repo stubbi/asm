@@ -214,6 +214,30 @@ class RegistryV2SiteTests(unittest.TestCase):
                 with self.assertRaises(registry.RegistryError):
                     self.catalog(self.stage([envelope]), verify_artifacts=True)
 
+    def test_checked_features_bind_all_source_options_and_preserve_signed_metadata(self):
+        project = b'[package]\nname = "one"\nversion = "1.0.0"\n[build]\ntarget = "x86_64-linux"\nsource = "main.s"\n'
+        project += b'\n[dependencies]\n"fixture/leaf" = { version = "*", optional = true, default-features = false, features = ["portable"] }\n[features]\ndefault = ["bundle"]\nbundle = ["dep:fixture/leaf"]\n'
+        self.object = registry.make_archive({"asm.toml": (project, 0o644), "main.s": (b"nop\n", 0o644),
+            "README.md": (b"Synthetic fixture.\n", 0o644), "LICENSE": (b"Synthetic fixture license.\n", 0o644)})
+        envelope = self.envelope()
+        publication = envelope["publication"]
+        publication["dependencies"] = [{"name": "fixture/leaf", "requirement": "*", "optional": True,
+                                         "default_features": False, "features": ["portable"]}]
+        publication["features"] = [{"name": "bundle", "members": ["dep:fixture/leaf"]},
+                                   {"name": "default", "members": ["bundle"]}]
+        envelope["manifest_sha256"] = hashlib.sha256(registry.json_bytes(publication)).hexdigest()
+        store = self.stage([envelope])
+        release = self.catalog(store, verify_artifacts=True)["packages"][0]["versions"][0]
+        self.assertEqual(release["publication"], publication)
+        for change in (lambda item: item["dependencies"][0].update(default_features=True),
+                       lambda item: item["dependencies"][0].update(features=[]),
+                       lambda item: item["features"][1].update(members=[])):
+            altered = deepcopy(envelope)
+            change(altered["publication"])
+            altered["manifest_sha256"] = hashlib.sha256(registry.json_bytes(altered["publication"])).hexdigest()
+            with self.assertRaises(registry.RegistryError):
+                self.catalog(self.stage([altered]), verify_artifacts=True)
+
     def test_checked_source_archive_cannot_contain_a_consumer_lock(self):
         envelope = self.dependency_envelope(consumer_lock=True)
         store = self.stage([envelope])

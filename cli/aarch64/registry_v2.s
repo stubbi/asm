@@ -99,6 +99,10 @@ cmd_registry_v2:
     tst w10, w11
     b.ne .Lr2_mirror_option
     mov x0, x21
+    ARM_CALL r4_option
+    tst w9, w9
+    b.ne .Lr2_options
+    mov x0, x21
     ARM_CALL r2p_option
     mov w10, w9
     mov w11, w9
@@ -2139,7 +2143,7 @@ r2_validate_manifest:
     ARM_ADDR x16, r2_fields_manifest
     mov x1, x16
     ARM_IMM w2, 8
-    ARM_IMM w3, 9
+    ARM_IMM w3, 10
     ARM_CALL r2_keys
     mov x0, x21
     ARM_CALL g3_manifest_dependencies
@@ -2962,7 +2966,7 @@ r2_publish:
     mov x1, x16
     ARM_ADDR x16, r2_version
     mov x2, x16
-    ARM_CALL validate_source_package
+    ARM_CALL validate_v2_source_package
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -2970,7 +2974,8 @@ r2_publish:
     ARM_ADDR x0, r2_dependencies
     ARM_ADDR x16, r2_dependency_count
     ldr x1, [x16]
-    ARM_CALL g3_compare_dependencies
+    ARM_ADDR x2, g4_publication_profile
+    ARM_CALL g4_compare_project
     cbnz w9, r2_invalid
 .Lr2_publish_project_next:
     ARM_IMM w11, 1
@@ -3426,7 +3431,7 @@ r2_receive:
     mov x2, x16
     ARM_ADDR x16, r2_target
     ldr x3, [x16]
-    ARM_CALL validate_source_package
+    ARM_CALL validate_v2_source_package
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -3434,7 +3439,8 @@ r2_receive:
     ARM_ADDR x0, r2_dependencies
     ARM_ADDR x16, r2_dependency_count
     ldr x1, [x16]
-    ARM_CALL g3_compare_dependencies
+    ARM_ADDR x2, g4_publication_profile
+    ARM_CALL g4_compare_project
     cbnz w9, r2_invalid
     b .Lr2_receive_finalize
 .Lr2_receive_executable:
@@ -5661,7 +5667,7 @@ r2_k_isa: .asciz "isa"
 r2_k_os: .asciz "os"
 r2_k_abi: .asciz "abi"
 r2_k_format: .asciz "format"
-r2_fields_manifest: .asciz "artifacts\0license\0name\0owner_id\0schema\0source\0summary\0version\0dependencies\0"
+r2_fields_manifest: .asciz "artifacts\0license\0name\0owner_id\0schema\0source\0summary\0version\0dependencies\0features\0"
 r2_fields_source: .asciz "archive\0commit\0path\0repository\0"
 r2_fields_commit: .asciz "algorithm\0digest\0"
 r2_fields_archive: .asciz "bytes\0sha256\0"
@@ -5713,6 +5719,7 @@ r2_err_upgrade: .asciz "this installation uses registry V2; V1 upgrade cannot ch
 r2_help_text:
     .ascii "Usage: asm registry resolve|sync --project DIR --registry-id ID --root FILE\n"
     .ascii "  --state DIR --mirror HTTPS_BASE --target TARGET [--ca FILE] [--json]\n"
+    .ascii "Resolve accepts [--features NAME,NAME] [--no-default-features].\n"
     .ascii "Resolve writes a complete graph lock. Sync restores exact source packages.\n"
     .ascii "Build checks local locked bytes; sync checks current registry policy.\n\n"
     .ascii "Usage: asm registry publish --project REPO_ROOT --name OWNER/NAME --owner-id 32HEX\n"

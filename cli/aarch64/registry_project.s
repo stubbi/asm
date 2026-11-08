@@ -929,7 +929,7 @@ r2_project_prepare:
     mov x16, x2
     add x16, x16, x9
     ldr x0, [x16]
-    ARM_CALL pub_check_project
+    ARM_CALL pub_check_project_v2
     ARM_IMM w10, 0
     ARM_ADDR x16, pub_project_inspect_version
     strb w10, [x16]
@@ -981,7 +981,7 @@ r2_project_prepare:
     mov x16, x2
     add x16, x16, x9
     ldr x0, [x16]
-    ARM_CALL pub_check_project
+    ARM_CALL pub_check_project_v2
     mov w10, w9
     mov w11, w9
     tst w10, w11
@@ -2806,9 +2806,119 @@ r2p_number:
     add sp, sp, #16
     ret
 
+/* w9=1 for metadata requiring expanded dependency objects. Preserve simple
+ * source request bytes for replay across CLI upgrades. Stack:none. */
+g4_project_complex:
+    ARM_ADDR x16, g4_project_profile + 16
+    ldr x10, [x16]
+    ARM_IMM x11, 0
+    cmp x10, x11
+    b.ne .Lg4_complex_yes
+    mov w11, w3
+    eor w3, w3, w11
+    tst w3, w3
+    ARM_ADDR x16, g4_project_profile + G4_OPTIONS
+    mov x2, x16
+.Lg4_complex_option:
+    mov x10, x3
+    ARM_ADDR x16, g3_project_dep_count
+    ldr x11, [x16]
+    cmp x10, x11
+    b.hs .Lg4_complex_no
+    mov x16, x2
+    ldr x10, [x16]
+    ARM_IMM x11, 2
+    cmp x10, x11
+    b.ne .Lg4_complex_yes
+    mov x16, x2
+    ARM_IMM x17, 16
+    add x16, x16, x17
+    ldr x10, [x16]
+    ARM_IMM x11, 0
+    cmp x10, x11
+    b.ne .Lg4_complex_yes
+    ARM_IMM x11, 24
+    adds x2, x2, x11
+    ARM_IMM x11, 1
+    adds x3, x3, x11
+    b .Lg4_complex_option
+.Lg4_complex_yes:
+    ARM_IMM w9, 1
+    ret
+.Lg4_complex_no:
+    mov w11, w9
+    eor w9, w9, w11
+    tst w9, w9
+    ret
+
+/* x0=boolean0/1. Append a JSON literal to the bounded native writer. */
+g4_emit_bool:
+    ARM_ADDR x16, g4_false
+    mov x9, x16
+    mov x10, x0
+    mov x11, x0
+    tst x10, x11
+    b.eq .Lg4_emit_bool_append
+    ARM_ADDR x16, g4_true
+    mov x9, x16
+.Lg4_emit_bool_append:
+    mov x0, x9
+    b pub_append
+
+/* x0=NUL-separated list,x1=count0..64. Append a canonical array used in
+ * six-space-indented object fields. Nonempty members use eight spaces.
+ * Owns no input; strings were bounded and sorted before credential access.
+ * Callee registers preserved. Stack 48 plus bounded writer calls. */
+g4_emit_array:
+    ARM_SAVE x19
+    ARM_SAVE x21
+    ARM_SAVE x22
+    mov x21, x0
+    mov x22, x1
+    mov x10, x22
+    mov x11, x22
+    tst x10, x11
+    b.eq .Lg4_emit_array_empty
+    R2P_APPEND g4_json_array_open
+    mov w11, w19
+    eor w19, w19, w11
+    tst w19, w19
+.Lg4_emit_array_item:
+    mov w10, w19
+    mov w11, w19
+    tst w10, w11
+    b.eq .Lg4_emit_array_first
+    R2P_APPEND g4_json_array_comma
+.Lg4_emit_array_first:
+    R2P_APPEND g4_json_array_indent
+    mov x0, x21
+    ARM_CALL pub_quote
+    mov x0, x21
+    ARM_CALL strlen
+    mov x16, x21
+    add x16, x16, x9
+    ARM_IMM x17, 1
+    add x16, x16, x17
+    mov x21, x16
+    ARM_IMM x11, 1
+    adds x19, x19, x11
+    mov x10, x19
+    mov x11, x22
+    cmp x10, x11
+    b.lo .Lg4_emit_array_item
+    R2P_APPEND g4_json_array_close
+    b .Lg4_emit_array_return
+.Lg4_emit_array_empty:
+    R2P_APPEND g4_json_array_empty
+.Lg4_emit_array_return:
+    ARM_RESTORE x22
+    ARM_RESTORE x21
+    ARM_RESTORE x19
+    ret
+
 /* Build the exact sorted-key, two-space canonical publication JSON from owned
  * metadata. Arrays use stable tuple/kind order independent of option order.
- * Max12 selections and all string bounds fit the existing16KiB writer. Stack 112. */
+ * Max12 selections and source metadata use the bounded64KiB V2 writer. Stack 112. */
 r2p_json:
     ARM_SAVE x19
     ARM_SAVE x20
@@ -2932,29 +3042,127 @@ r2p_json:
     adds w19, w19, w11
     b .Lr2p_json_selection
 .Lr2p_json_metadata:
+    ARM_CALL g4_project_complex
+    mov w23, w9
     ARM_ADDR x16, g3_project_dep_count
-    ldr x9, [x16]
-    cbz x9, .Lr2p_json_license
+    ldr x10, [x16]
+    ARM_IMM x11, 0
+    cmp x10, x11
+    b.eq .Lr2p_json_definitions
     R2P_APPEND r2p_json_dependencies
-    ARM_ADDR x21, g3_project_deps
-    mov x19, #0
+    ARM_ADDR x16, g3_project_deps
+    mov x21, x16
+    ARM_ADDR x16, g4_project_profile + G4_OPTIONS
+    mov x22, x16
+    mov w11, w19
+    eor w19, w19, w11
+    tst w19, w19
 .Lr2p_json_dependency:
-    cbz x19, .Lr2p_json_dependency_first
+    mov w10, w19
+    mov w11, w19
+    tst w10, w11
+    b.eq .Lr2p_json_dependency_first
     R2P_APPEND r2p_json_comma_lf
 .Lr2p_json_dependency_first:
+    mov w10, w23
+    mov w11, w23
+    tst w10, w11
+    b.eq .Lr2p_json_simple_dependency
+    R2P_APPEND g4_json_dep_begin
+    mov x16, x22
+    ldr x0, [x16]
+    lsr x0, x0, #1
+    ARM_IMM w11, 1
+    and w0, w0, w11
+    tst w0, w0
+    ARM_CALL g4_emit_bool
+    R2P_APPEND g4_json_dep_features
+    mov x16, x22
+    ARM_IMM x17, 8
+    add x16, x16, x17
+    ldr x0, [x16]
+    mov x16, x22
+    ARM_IMM x17, 16
+    add x16, x16, x17
+    ldr x1, [x16]
+    ARM_CALL g4_emit_array
+    R2P_APPEND g4_json_dep_name
+    mov x0, x21
+    ARM_CALL pub_quote
+    R2P_APPEND g4_json_dep_optional
+    mov x16, x22
+    ldr x0, [x16]
+    ARM_IMM w11, 1
+    and w0, w0, w11
+    tst w0, w0
+    ARM_CALL g4_emit_bool
+    b .Lr2p_json_dependency_range
+.Lr2p_json_simple_dependency:
     R2P_APPEND r2p_json_dependency_name
     mov x0, x21
     ARM_CALL pub_quote
+.Lr2p_json_dependency_range:
     R2P_APPEND r2p_json_requirement
-    add x0, x21, #105
+    mov x16, x21
+    ARM_IMM x17, 105
+    add x16, x16, x17
+    mov x0, x16
     ARM_CALL pub_quote
     R2P_APPEND r2p_json_artifact_end
-    add x21, x21, #240
-    add x19, x19, #1
+    ARM_IMM x11, 240
+    adds x21, x21, x11
+    ARM_IMM x11, 24
+    adds x22, x22, x11
+    ARM_IMM w11, 1
+    adds w19, w19, w11
+    mov x10, x19
     ARM_ADDR x16, g3_project_dep_count
-    ldr x9, [x16]
-    cmp x19, x9
+    ldr x11, [x16]
+    cmp x10, x11
     b.lo .Lr2p_json_dependency
+.Lr2p_json_definitions:
+    ARM_ADDR x16, g4_project_profile + 16
+    ldr x10, [x16]
+    ARM_IMM x11, 0
+    cmp x10, x11
+    b.eq .Lr2p_json_license
+    R2P_APPEND g4_json_definitions
+    ARM_ADDR x16, g4_project_profile + G4_DEFINITIONS
+    mov x21, x16
+    mov w11, w19
+    eor w19, w19, w11
+    tst w19, w19
+.Lr2p_json_definition:
+    mov w10, w19
+    mov w11, w19
+    tst w10, w11
+    b.eq .Lr2p_json_definition_first
+    R2P_APPEND r2p_json_comma_lf
+.Lr2p_json_definition_first:
+    R2P_APPEND g4_json_def_members
+    mov x16, x21
+    ARM_IMM x17, 8
+    add x16, x16, x17
+    ldr x0, [x16]
+    mov x16, x21
+    ARM_IMM x17, 16
+    add x16, x16, x17
+    ldr x1, [x16]
+    ARM_CALL g4_emit_array
+    R2P_APPEND g4_json_def_name
+    mov x16, x21
+    ldr x0, [x16]
+    ARM_CALL pub_quote
+    R2P_APPEND r2p_json_artifact_end
+    ARM_IMM x11, 24
+    adds x21, x21, x11
+    ARM_IMM w11, 1
+    adds w19, w19, w11
+    mov x10, x19
+    ARM_ADDR x16, g4_project_profile + 16
+    ldr x11, [x16]
+    cmp x10, x11
+    b.lo .Lr2p_json_definition
 .Lr2p_json_license:
     R2P_APPEND r2p_json_license
     R2P_QUOTE r2_license
@@ -3108,6 +3316,18 @@ r2p_json_sha: .asciz ",\n      \"sha256\": "
 r2p_json_artifact_end: .asciz "\n    }"
 r2p_json_license: .asciz "\n  ],\n  \"license\": "
 r2p_json_dependencies: .asciz "\n  ],\n  \"dependencies\": [\n"
+g4_json_dep_begin: .asciz "    {\n      \"default_features\": "
+g4_json_dep_features: .asciz ",\n      \"features\": "
+g4_json_dep_name: .asciz ",\n      \"name\": "
+g4_json_dep_optional: .asciz ",\n      \"optional\": "
+g4_json_definitions: .asciz "\n  ],\n  \"features\": [\n"
+g4_json_def_members: .asciz "    {\n      \"members\": "
+g4_json_def_name: .asciz ",\n      \"name\": "
+g4_json_array_open: .asciz "[\n"
+g4_json_array_empty: .asciz "[]"
+g4_json_array_indent: .asciz "        "
+g4_json_array_comma: .asciz ",\n"
+g4_json_array_close: .asciz "\n      ]"
 r2p_json_dependency_name: .asciz "    {\n      \"name\": "
 r2p_json_requirement: .asciz ",\n      \"requirement\": "
 r2p_json_name: .asciz ",\n  \"name\": "

@@ -590,7 +590,7 @@ r2_project_prepare:
     imul rax, rbx, 40
     lea rdx, [rip + r2_tuples]
     mov rdi, [rdx + rax]
-    call pub_check_project
+    call pub_check_project_v2
     mov byte ptr [rip + pub_project_inspect_version], 0
     test eax, eax
     jnz r2p_bad
@@ -615,7 +615,7 @@ r2_project_prepare:
     imul rax, rbx, 40
     lea rdx, [rip + r2_tuples]
     mov rdi, [rdx + rax]
-    call pub_check_project
+    call pub_check_project_v2
     test eax, eax
     jnz r2p_bad
 .Lr2p_validate_next:
@@ -1661,9 +1661,81 @@ r2p_number:
     add rsp, 8
     ret
 
+/* EAX=1 for metadata requiring expanded dependency objects. Preserve simple
+ * source request bytes for replay across CLI upgrades. Stack:none. */
+g4_project_complex:
+    cmp qword ptr [rip + g4_project_profile + 16], 0
+    jne .Lg4_complex_yes
+    xor ecx, ecx
+    lea rdx, [rip + g4_project_profile + G4_OPTIONS]
+.Lg4_complex_option:
+    cmp rcx, [rip + g3_project_dep_count]
+    jae .Lg4_complex_no
+    cmp qword ptr [rdx], 2
+    jne .Lg4_complex_yes
+    cmp qword ptr [rdx + 16], 0
+    jne .Lg4_complex_yes
+    add rdx, 24
+    inc rcx
+    jmp .Lg4_complex_option
+.Lg4_complex_yes:
+    mov eax, 1
+    ret
+.Lg4_complex_no:
+    xor eax, eax
+    ret
+
+/* RDI=boolean0/1. Append a JSON literal to the bounded native writer. */
+g4_emit_bool:
+    lea rax, [rip + g4_false]
+    test rdi, rdi
+    jz .Lg4_emit_bool_append
+    lea rax, [rip + g4_true]
+.Lg4_emit_bool_append:
+    mov rdi, rax
+    jmp pub_append
+
+/* RDI=NUL-separated list,RSI=count0..64. Append a canonical array used in
+ * six-space-indented object fields. Nonempty members use eight spaces.
+ * Owns no input; strings were bounded and sorted before credential access.
+ * Callee registers preserved. Stack24 plus bounded writer calls. */
+g4_emit_array:
+    push rbx
+    push r12
+    push r13
+    mov r12, rdi
+    mov r13, rsi
+    test r13, r13
+    jz .Lg4_emit_array_empty
+    R2P_APPEND g4_json_array_open
+    xor ebx, ebx
+.Lg4_emit_array_item:
+    test ebx, ebx
+    jz .Lg4_emit_array_first
+    R2P_APPEND g4_json_array_comma
+.Lg4_emit_array_first:
+    R2P_APPEND g4_json_array_indent
+    mov rdi, r12
+    call pub_quote
+    mov rdi, r12
+    call strlen
+    lea r12, [r12 + rax + 1]
+    inc rbx
+    cmp rbx, r13
+    jb .Lg4_emit_array_item
+    R2P_APPEND g4_json_array_close
+    jmp .Lg4_emit_array_return
+.Lg4_emit_array_empty:
+    R2P_APPEND g4_json_array_empty
+.Lg4_emit_array_return:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
 /* Build the exact sorted-key, two-space canonical publication JSON from owned
  * metadata. Arrays use stable tuple/kind order independent of option order.
- * Max12 selections and all string bounds fit the existing16KiB writer. Stack56. */
+ * Max12 selections and source metadata use the bounded64KiB V2 writer. Stack56. */
 r2p_json:
     push rbx
     push rbp
@@ -1735,27 +1807,75 @@ r2p_json:
     inc ebx
     jmp .Lr2p_json_selection
 .Lr2p_json_metadata:
+    call g4_project_complex
+    mov r14d, eax
     cmp qword ptr [rip + g3_project_dep_count], 0
-    je .Lr2p_json_license
+    je .Lr2p_json_definitions
     R2P_APPEND r2p_json_dependencies
     lea r12, [rip + g3_project_deps]
+    lea r13, [rip + g4_project_profile + G4_OPTIONS]
     xor ebx, ebx
 .Lr2p_json_dependency:
     test ebx, ebx
     jz .Lr2p_json_dependency_first
     R2P_APPEND r2p_json_comma_lf
 .Lr2p_json_dependency_first:
+    test r14d, r14d
+    jz .Lr2p_json_simple_dependency
+    R2P_APPEND g4_json_dep_begin
+    mov rdi, [r13]
+    shr rdi, 1
+    and edi, 1
+    call g4_emit_bool
+    R2P_APPEND g4_json_dep_features
+    mov rdi, [r13 + 8]
+    mov rsi, [r13 + 16]
+    call g4_emit_array
+    R2P_APPEND g4_json_dep_name
+    mov rdi, r12
+    call pub_quote
+    R2P_APPEND g4_json_dep_optional
+    mov rdi, [r13]
+    and edi, 1
+    call g4_emit_bool
+    jmp .Lr2p_json_dependency_range
+.Lr2p_json_simple_dependency:
     R2P_APPEND r2p_json_dependency_name
     mov rdi, r12
     call pub_quote
+.Lr2p_json_dependency_range:
     R2P_APPEND r2p_json_requirement
     lea rdi, [r12 + 105]
     call pub_quote
     R2P_APPEND r2p_json_artifact_end
     add r12, 240
+    add r13, 24
     inc ebx
     cmp rbx, [rip + g3_project_dep_count]
     jb .Lr2p_json_dependency
+.Lr2p_json_definitions:
+    cmp qword ptr [rip + g4_project_profile + 16], 0
+    je .Lr2p_json_license
+    R2P_APPEND g4_json_definitions
+    lea r12, [rip + g4_project_profile + G4_DEFINITIONS]
+    xor ebx, ebx
+.Lr2p_json_definition:
+    test ebx, ebx
+    jz .Lr2p_json_definition_first
+    R2P_APPEND r2p_json_comma_lf
+.Lr2p_json_definition_first:
+    R2P_APPEND g4_json_def_members
+    mov rdi, [r12 + 8]
+    mov rsi, [r12 + 16]
+    call g4_emit_array
+    R2P_APPEND g4_json_def_name
+    mov rdi, [r12]
+    call pub_quote
+    R2P_APPEND r2p_json_artifact_end
+    add r12, 24
+    inc ebx
+    cmp rbx, [rip + g4_project_profile + 16]
+    jb .Lr2p_json_definition
 .Lr2p_json_license:
     R2P_APPEND r2p_json_license
     R2P_QUOTE r2_license
@@ -1889,6 +2009,18 @@ r2p_json_sha: .asciz ",\n      \"sha256\": "
 r2p_json_artifact_end: .asciz "\n    }"
 r2p_json_license: .asciz "\n  ],\n  \"license\": "
 r2p_json_dependencies: .asciz "\n  ],\n  \"dependencies\": [\n"
+g4_json_dep_begin: .asciz "    {\n      \"default_features\": "
+g4_json_dep_features: .asciz ",\n      \"features\": "
+g4_json_dep_name: .asciz ",\n      \"name\": "
+g4_json_dep_optional: .asciz ",\n      \"optional\": "
+g4_json_definitions: .asciz "\n  ],\n  \"features\": [\n"
+g4_json_def_members: .asciz "    {\n      \"members\": "
+g4_json_def_name: .asciz ",\n      \"name\": "
+g4_json_array_open: .asciz "[\n"
+g4_json_array_empty: .asciz "[]"
+g4_json_array_indent: .asciz "        "
+g4_json_array_comma: .asciz ",\n"
+g4_json_array_close: .asciz "\n      ]"
 r2p_json_dependency_name: .asciz "    {\n      \"name\": "
 r2p_json_requirement: .asciz ",\n      \"requirement\": "
 r2p_json_name: .asciz ",\n  \"name\": "

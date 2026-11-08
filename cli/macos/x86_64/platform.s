@@ -105,6 +105,9 @@ MAC_SIMPLE mac_mkdir, mkdir
 MAC_SIMPLE mac_unlink, unlink
 MAC_SIMPLE mac_rmdir, rmdir
 MAC_SIMPLE mac_rename, rename
+.ifdef ASM_REGISTRY_V2
+MAC_SIMPLE mac_link, link
+.endif
 MAC_SIMPLE mac_chmod, chmod
 MAC_SIMPLE mac_fchmod, fchmod
 MAC_SIMPLE mac_fsync, fsync
@@ -678,6 +681,9 @@ mac_syscall_table:
     .quad 82, mac_rename
     .quad 83, mac_mkdir
     .quad 84, mac_rmdir
+.ifdef ASM_REGISTRY_V2
+    .quad 86, mac_link
+.endif
     .quad 87, mac_unlink
     .quad 89, mac_readlink
     .quad 90, mac_chmod

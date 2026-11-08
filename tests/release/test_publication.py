@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -165,6 +166,107 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             self.validate(trusted=True)
 
+    def v2_profile(self):
+        profile = {"registry_v2": True, "trusted_distribution": False}
+        notices = b"Synthetic dependency notices for the embedded adapter.\n"
+        name = self.name + ".LICENSES.txt"
+        (self.directory / name).write_bytes(notices)
+        asset = {"file": name, "bytes": len(notices), "sha256": hashlib.sha256(notices).hexdigest()}
+        self.manifest["client_profile"] = profile
+        self.manifest["tool_versions"] = {"go": "go version go1.27.3 linux/amd64; synthetic fixture"}
+        self.manifest["builds"]["asm"]["client_profile"] = profile.copy()
+        self.manifest["builds"]["asm"]["adapter"] = {"bytes": 4096, "sha256": "b" * 64, "notices": asset}
+        self.manifest["assets"].append(asset)
+        self.write()
+
+    def test_v2_handoff_binds_embedded_adapter_and_notices_without_trusted_bootstrap(self):
+        self.v2_profile()
+        with patch.object(release, "command", side_effect=AssertionError("Never execute artifact bytes")):
+            self.assertEqual(self.validate(registry_v2=True), self.manifest)
+        self.assertNotIn("distribution", self.manifest)
+        self.assertFalse(any(asset["file"].startswith("asm-verify-") for asset in self.manifest["assets"]))
+
+    def test_v2_handoff_refuses_missing_mixed_or_ambiguous_profile_receipts(self):
+        self.v2_profile()
+        original = copy.deepcopy(self.manifest)
+        for location in (self.manifest, self.manifest["builds"]["asm"]):
+            for profile in (None, {"registry_v2": False, "trusted_distribution": False},
+                            {"registry_v2": 1, "trusted_distribution": False},
+                            {"registry_v2": True, "trusted_distribution": True}):
+                saved = location.pop("client_profile")
+                if profile is not None:
+                    location["client_profile"] = profile
+                self.write()
+                with self.subTest(profile=profile), self.assertRaises(registry.RegistryError):
+                    self.validate(registry_v2=True)
+                location["client_profile"] = saved
+        self.manifest = original
+        for mutation in ({"bytes": 0}, {"bytes": True}, {"sha256": "invalid"}, {"notices": None}):
+            self.manifest = copy.deepcopy(original)
+            self.manifest["builds"]["asm"]["adapter"].update(mutation)
+            self.write()
+            with self.subTest(mutation=mutation), self.assertRaises(registry.RegistryError):
+                self.validate(registry_v2=True)
+
+    def test_v2_handoff_refuses_notice_identity_changes_and_a_v1_workflow(self):
+        self.v2_profile()
+        with self.assertRaises(registry.RegistryError):
+            self.validate()
+        self.manifest["builds"]["asm"]["adapter"]["notices"]["sha256"] = "c" * 64
+        self.write()
+        with self.assertRaises(registry.RegistryError):
+            self.validate(registry_v2=True)
+
+
+class SourceProfileTests(unittest.TestCase):
+    def test_source_archive_retains_hosting_recipes_and_locked_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary)
+            expected = {"requirements-storage.in": b"storage dependency input\n",
+                        "requirements-storage.txt": b"locked storage dependency fixture\n",
+                        "deploy/mirror/nginx.conf": b"synthetic origin recipe\n",
+                        "blog/README.md": b"maintained article instructions\n",
+                        "verifier/go.mod": b"module synthetic\n"}
+            for name, data in expected.items():
+                path = repository / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            for arguments in (("init", "-q"), ("add", "."), ("commit", "-qm", "Record hostable source fixture")):
+                subprocess.run(["git", "-C", str(repository), "-c", "user.name=Source fixture",
+                                "-c", "user.email=fixture@example.invalid", "-c", "core.hooksPath=/dev/null",
+                                "-c", "commit.gpgSign=false", *arguments], check=True, capture_output=True, timeout=10)
+            commit = subprocess.check_output(["git", "-C", str(repository), "rev-parse", "HEAD"], timeout=10).decode().strip()
+            selected = registry.git_files(repository, commit, ".", release.SOURCE_INCLUDES)
+            archive = registry.read_archive(registry.make_archive(selected))
+            self.assertEqual(archive, expected)
+
+    def test_source_contract_selects_v2_and_rejects_ambiguous_values(self):
+        self.assertFalse(release.source_registry_v2({}))
+        self.assertTrue(release.source_registry_v2({"registry_v2": True}))
+        for value in (None, 1, "1", [], {}):
+            with self.subTest(value=value), self.assertRaises(registry.RegistryError):
+                release.source_registry_v2({"registry_v2": value})
+
+    def test_ambient_profile_cannot_override_the_recorded_source(self):
+        with patch.dict(os.environ, {"REGISTRY_V2": "1", "TRUSTED_DISTRIBUTION": "1"}):
+            minimal = release.build_environment()
+            full = release.build_environment(registry_v2=True)
+        self.assertEqual(minimal["REGISTRY_V2"], "0")
+        self.assertEqual(full["REGISTRY_V2"], "1")
+        self.assertNotIn("TRUSTED_DISTRIBUTION", full)
+
+    def test_release_environment_keeps_baseline_cpu_features_and_unmodified_cryptography(self):
+        ambient = {"GOAMD64": "v4", "GOARM64": "v9.5,lse,crypto",
+                   "GOEXPERIMENT": "invalid-ambient-experiment", "GOFIPS140": "latest",
+                   "PATH": "/preserved-sdk-path", "GOCACHE": "/preserved-cache"}
+        with patch.dict(os.environ, ambient):
+            for full in (False, True):
+                environment = release.build_environment(registry_v2=full)
+                with self.subTest(registry_v2=full):
+                    self.assertEqual({name: environment.get(name) for name in ambient},
+                                     {**ambient, "GOAMD64": "v1", "GOARM64": "v8.0",
+                                      "GOEXPERIMENT": "", "GOFIPS140": "off"})
+
 
 class ExactNativeTests(unittest.TestCase):
     def test_failures_skips_and_changed_final_bytes_cannot_qualify(self):
@@ -216,6 +318,8 @@ class FinalBuildQualificationTests(unittest.TestCase):
 
     def test_trusted_profile_reaches_the_same_final_byte_test_gate(self):
         output = self.directory / "trusted"
+        self.evidence["client_profile"] = {"registry_v2": False, "trusted_distribution": True}
+        (self.native / release.NATIVE_EVIDENCE).write_bytes(registry.json_bytes(self.evidence))
         with patch.object(release, "qualify_native_tests", side_effect=registry.RegistryError("stop at native gate")) as qualify, \
              self.assertRaisesRegex(registry.RegistryError, "stop at native gate"):
             self.build(output, trusted=True)

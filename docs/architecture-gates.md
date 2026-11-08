@@ -18,6 +18,7 @@ The [published assembly source experiment](../experiments/assembly-server/README
 | Replay and rebuild | Local publisher has a transactional outbox and fenced acknowledgments; no production projection lifecycle | Consistent source revisions, tombstones, and replay converge; conflicting equal revisions fail; rebuild preserves active queries |
 | Event positions | Local SQL tests retain late allocated events after newer acknowledgments; no production consumer qualification | Early sequence allocation and late commit cannot skip an event; acknowledgments survive worker failure |
 | Installation metadata | Released V1 uses a bounded whole catalog; opt-in V2 retrieves authenticated exact release and policy targets | Exact installs retrieve bounded authenticated package data without search or a full catalog |
+| Dependency selection | Native V2 optional dependencies, additive features, complete v4 locks, and local failure checks; no global capacity claim | Exact-source native gates, complete graph restoration, bounded hostile metadata, immutable bindings, and explicit exhaustion failures |
 | Metadata trust | Released alpha uses HTTPS; opt-in V2 has registry/root-bound TUF, rollback, expiry, rotation, and mixed-role regressions | Reviewed TUF profile rejects invalid signatures, rollback, expiry, cross-registry confusion, and mixed snapshots |
 | Trust scaling | No measured delegation or snapshot profile | Cold and warm dependency tests establish bounded trust requests, bytes, validation time, and rotation behavior |
 | Artifact storage | GitHub assets and checked first-party bootstrap copies; local conditional filesystem/S3 operator stores; 64 MiB object limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
@@ -39,6 +40,7 @@ The [published assembly source experiment](../experiments/assembly-server/README
 The [V2 evidence record](registry-v2-evidence.md) gives exact artifacts, checks, failures, and remaining gates.
 The [project publication extension](project-publication-evidence.md) adds native archives and identity-scoped V2 origin observations.
 The [website extension](v2-website-evidence.md) records the explicit V2 static build and its qualification limits.
+The [feature extension](v2-feature-evidence.md) records graph activation, compatibility, and release qualification boundaries.
 The flat V2 profile has bounded roles and 4,095 releases; it does not meet the proposed global workload by assertion.
 Production custody, provider semantics, ingress, spending, isolation, and restoration need deployment evidence.
 

@@ -41,7 +41,6 @@ if IS_MACOS:
     TRIPLE = "arm64-apple-macos" if IS_ARM64 else "x86_64-apple-macos"
     CLI_SOURCE = "cli/macos/asm.s" if IS_ARM64 else "cli/macos/x86_64/asm.s"
 MAC_ARCH = "arm64" if IS_ARM64 else "x86_64"
-MAC_PREPARED = "build/macos/asm.s" if IS_ARM64 else "build/macos-x86_64/asm.s"
 
 SYS_RENAMEAT = 38 if IS_ARM64 else 264
 SYS_SIGPROCMASK = 135 if IS_ARM64 else 14

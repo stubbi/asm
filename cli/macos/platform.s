@@ -81,6 +81,8 @@ MAC_SIMPLE arm_mkdir, mkdir
 MAC_SIMPLE arm_unlink, unlink
 MAC_SIMPLE arm_rmdir, rmdir
 MAC_SIMPLE arm_rename, rename
+/* link preserves an existing destination and reports Linux-contract errno. */
+MAC_SIMPLE arm_link, link
 MAC_SIMPLE arm_chmod, chmod
 MAC_SIMPLE arm_fchmod, fchmod
 MAC_SIMPLE arm_fsync, fsync
