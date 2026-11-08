@@ -9,7 +9,12 @@ def source_files: [
   "LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py",
   "tools/operator_entrypoint.py", "tools/prepare_operator.py",
   "tools/registry_mirror.py", "tools/registry_storage.py",
-  "server/catalog/schema.sql", "server/catalog/reader-guard.sql", "server/catalog/read-exports.sql"
+  "tools/image_source.py", "tools/prepare_signers.py", "tools/publisher_admin.py",
+  "tools/publication_worker.py", "tools/kubernetes_checker.py", "tools/publication_check.py",
+  "tools/checker_entrypoint.py", "tools/registry_distribution.py", "tools/verifier_notices.py",
+  "requirements-storage.txt", "verifier/go.mod", "verifier/go.sum",
+  "server/catalog/schema.sql", "server/catalog/reader-guard.sql", "server/catalog/read-exports.sql",
+  "server/publisher/schema.sql", "server/publisher/distribution.sql"
 ];
 def routes: ["/registry/v1/index.tsv", "/registry/v1/index-macos.tsv",
   "/registry/v1/index-all.tsv", "/registry/v1/index.json"];

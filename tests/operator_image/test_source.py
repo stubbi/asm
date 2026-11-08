@@ -18,8 +18,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 import operator_source
 FILES = ("LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
          "tools/prepare_operator.py", "tools/registry_mirror.py", "tools/registry_storage.py",
+         "tools/image_source.py", "tools/prepare_signers.py", "tools/publisher_admin.py",
+         "tools/publication_worker.py", "tools/kubernetes_checker.py", "tools/publication_check.py",
+         "tools/checker_entrypoint.py", "tools/registry_distribution.py", "tools/verifier_notices.py",
+         "requirements-storage.txt", "verifier/go.mod", "verifier/go.sum",
          "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
-         "server/catalog/read-exports.sql")
+         "server/catalog/read-exports.sql", "server/publisher/schema.sql", "server/publisher/distribution.sql")
 
 
 class SourceBundleTests(unittest.TestCase):
@@ -70,7 +74,8 @@ class SourceBundleTests(unittest.TestCase):
         self.assertEqual(manifest["source_revision"], self.commit)
         self.assertEqual(manifest["bundle_sha256"], hashlib.sha256((self.output / "source.bundle").read_bytes()).hexdigest())
         self.assertEqual(set(manifest["files"]), set(FILES))
-        for name in ("tools/registry_mirror.py", "tools/registry_storage.py"):
+        for name in ("tools/registry_mirror.py", "tools/registry_storage.py", "tools/publication_check.py",
+                     "tools/registry_distribution.py", "server/publisher/schema.sql", "verifier/go.sum"):
             self.assertEqual(manifest["files"][name], hashlib.sha256((self.repo / name).read_bytes()).hexdigest())
         destination = self.base / "accepted.git"
         restored = self.restore(destination)
@@ -86,7 +91,8 @@ class SourceBundleTests(unittest.TestCase):
 
     def test_missing_distribution_source_refuses_packaging(self):
         complete = self.commit
-        for name in ("tools/registry_mirror.py", "tools/registry_storage.py"):
+        for name in ("tools/registry_mirror.py", "tools/registry_storage.py", "tools/publication_check.py",
+                     "tools/registry_distribution.py", "server/publisher/schema.sql", "verifier/go.sum"):
             with self.subTest(name=name):
                 self.git("checkout", "-q", complete)
                 self.output = self.base / (Path(name).stem + "-bundle")

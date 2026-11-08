@@ -112,10 +112,15 @@ make build/asm-trust
 ```
 
 Success creates `build/asm-trust` and its license notices.
-Provision production trust through the separate [root ceremony](trusted-distribution.md).
+Provision package-registry trust through the [registry root ceremony](registry-key-ceremony.md).
 Do not use fixture keys or generate production keys in an agent workspace.
 Create owned mode-`0700` work and key directories before use.
 Keep the trusted root file in an owned private directory.
+
+The [V2 image procedure](operator-images.md) packages separate publisher, operator, and credential-free checker targets.
+The [publisher proxy](../deploy/publisher/README.md) preserves the assembly server's loopback boundary and supplies a separate internal probe listener.
+The [Kubernetes checker procedure](kubernetes-checker.md) states its storage, admission, runtime, network, and recovery prerequisites.
+Source tests and image smoke checks do not qualify those deployment boundaries.
 
 Complete one distribution batch from retained local objects:
 

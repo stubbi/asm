@@ -142,6 +142,12 @@ func exclusive(path string, data []byte) error {
 }
 
 func run(args []string) error {
+	if len(args) == 3 && args[0] == "check-online-keys" {
+		return checkOnlineKeys(args[1], args[2])
+	}
+	if len(args) == 9 && args[0] == "prepare-next-root" {
+		return prepareNextRoot(args[1], args[2], args[3:])
+	}
 	if len(args) == 4 && args[0] == "inspect" {
 		return inspect(args[1], args[2], args[3])
 	}
@@ -231,7 +237,7 @@ func run(args []string) error {
 		}
 		return err
 	}
-	return errors.New("expected prepare-root OUTPUT ROOT1.pub ROOT2.pub ROOT3.pub TARGETS.pub SNAPSHOT.pub TIMESTAMP.pub; sign-root INPUT KEY OUTPUT; publish ROOT KEYS PREVIOUS MAP OUTPUT; inspect ROOT PUBLICATION MAP; publish-registry ROOT KEYS PREVIOUS MAP OUTPUT ID VERSION; refresh-registry ROOT KEYS PREVIOUS OUTPUT ID VERSION; or inspect-registry ROOT PUBLICATION MAP ID")
+	return errors.New("expected check-online-keys ROOT KEYS; prepare-next-root CURRENT OUTPUT ROOT1.pub ROOT2.pub ROOT3.pub TARGETS.pub SNAPSHOT.pub TIMESTAMP.pub; prepare-root OUTPUT ROOT1.pub ROOT2.pub ROOT3.pub TARGETS.pub SNAPSHOT.pub TIMESTAMP.pub; sign-root INPUT KEY OUTPUT; publish ROOT KEYS PREVIOUS MAP OUTPUT; inspect ROOT PUBLICATION MAP; publish-registry ROOT KEYS PREVIOUS MAP OUTPUT ID VERSION; refresh-registry ROOT KEYS PREVIOUS OUTPUT ID VERSION; or inspect-registry ROOT PUBLICATION MAP ID")
 }
 
 // Inspect a staged publication with the same maintained TUF client. A local

@@ -54,7 +54,9 @@ def run_one(connection, store, staging: Path, worker_id: str, checker, *, work_r
     registry.require(hashlib.sha256(raw).hexdigest() == lease["manifest_sha256"], "worker manifest binding differs")
     expected = [{"sha256": digest, "bytes": objects[digest]} for digest in sorted(objects)]
     registry.require(lease["objects"] == expected, "worker object declarations differ")
-    with tempfile.TemporaryDirectory(prefix="asm-check-input-", dir=work_root) as directory:
+    directory = tempfile.mkdtemp(prefix="asm-check-input-", dir=work_root)
+    checked = False
+    try:
         manifest = Path(directory) / "manifest.json"
         descriptor = os.open(manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
@@ -73,6 +75,12 @@ def run_one(connection, store, staging: Path, worker_id: str, checker, *, work_r
                 stream.write(data)
             del data
         receipt = checker(task, manifest, view)
+        checked = True
+    finally:
+        # An unknown remote outcome can leave a checker using this view.
+        # Preserve it for operator reconciliation, together with staged bytes.
+        if checked:
+            shutil.rmtree(directory)
     fields = {"schema", "task_id", "manifest_sha256", "checker_revision", "policy_sha256", "outcome", "objects"}
     registry.exact_keys(receipt, fields, fields, "check receipt")
     registry.require(type(receipt["schema"]) is int and receipt["schema"] == 1
@@ -159,24 +167,47 @@ def isolated_checker(docker, socket, image, revision):
     return run
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, fixed_tools=None, checker_revision=None):
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--connection-file", type=Path, required=True)
-    parser.add_argument("--psql", required=True)
     parser.add_argument("--staging", type=Path, required=True)
     parser.add_argument("--work-root", type=Path, required=True,
-                        help="Private work directory visible at the same path to the selected Docker daemon")
+                        help="Private task directory; Kubernetes requires the dedicated input PVC root")
     parser.add_argument("--worker-id", required=True)
-    parser.add_argument("--docker", default="docker")
-    parser.add_argument("--docker-socket", required=True)
     parser.add_argument("--checker-image", required=True)
-    parser.add_argument("--checker-revision", required=True)
+    if fixed_tools is None:
+        parser.add_argument("--psql", required=True)
+        parser.add_argument("--executor", choices=("docker", "kubernetes"), default="docker")
+        parser.add_argument("--docker", default="docker")
+        parser.add_argument("--docker-socket")
+        parser.add_argument("--kubectl", type=Path)
+        parser.add_argument("--checker-revision", required=True)
+    else:
+        registry.require(set(fixed_tools) == {"psql", "kubectl"} and checker_revision is not None,
+                         "invalid fixed worker tools")
+        parser.set_defaults(psql=fixed_tools["psql"], kubectl=fixed_tools["kubectl"],
+                            checker_revision=checker_revision, executor="kubernetes")
+    parser.add_argument("--kubeconfig", type=Path)
+    parser.add_argument("--checker-namespace")
+    parser.add_argument("--checker-claim")
+    parser.add_argument("--checker-node")
+    parser.add_argument("--checker-runtime")
     registry_mirror._store_arguments(parser)
     args = parser.parse_args(argv)
     try:
-        executable = shutil.which(args.docker)
-        registry.require(executable is not None, "install the selected Docker client before running a check job")
-        checker = isolated_checker(executable, args.docker_socket, args.checker_image, args.checker_revision)
+        if args.executor == "docker":
+            registry.require(args.docker_socket is not None, "select the local Docker socket")
+            executable = shutil.which(args.docker)
+            registry.require(executable is not None, "install the selected Docker client before running a check job")
+            checker = isolated_checker(executable, args.docker_socket, args.checker_image, args.checker_revision)
+        else:
+            import kubernetes_checker
+            registry.require(all(value is not None for value in (args.kubectl, args.kubeconfig,
+                args.checker_namespace, args.checker_claim, args.checker_node, args.checker_runtime)),
+                "select the Kubernetes client, private configuration, namespace, input claim, node, and runtime")
+            checker = kubernetes_checker.kubernetes_checker(args.kubectl, args.kubeconfig, args.checker_image,
+                args.checker_revision, namespace=args.checker_namespace, claim=args.checker_claim,
+                node=args.checker_node, runtime=args.checker_runtime, work_root=args.work_root)
         with _directory(args.work_root, private=True):
             pass
         store = registry_mirror._store(args)
@@ -185,7 +216,8 @@ def main(argv=None):
         if result is not None:
             sys.stdout.buffer.write(registry.json_bytes(result))
         return 0
-    except (registry.RegistryError, registry_admin.AdminError, OSError, UnicodeError, TypeError):
+    except (registry.RegistryError, registry_admin.AdminError, publication_check.InputUnavailable,
+            OSError, UnicodeError, TypeError):
         print("Asm worker: the operation failed or its result is unknown. Inspect the task before retrying.", file=sys.stderr)
         return 1
 

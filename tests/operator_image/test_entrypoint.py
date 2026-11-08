@@ -16,6 +16,44 @@ import operator_entrypoint as entrypoint
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_v2_help_and_privileged_overrides(self):
+        script = str(ROOT / "tools/operator_entrypoint.py")
+        for command in (["publisher-admin", "--help"], ["distribution", "publish", "--help"], ["prepare-signers", "--help"]):
+            result = subprocess.run([sys.executable, script, *command], capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertNotIn(b"--psql", result.stdout)
+            self.assertNotIn(b"--trust-tool", result.stdout)
+            self.assertNotIn(b"--checker-revision", result.stdout)
+        for command in (["publisher-admin", "--connection-file", "/private/db", "check-policy",
+                         "--reference", "audit", "--checker-revision", "2" * 40],
+                        ["distribution", "publish", "--psql", "/untrusted"]):
+            result = subprocess.run([sys.executable, script, *command], capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 2, result.stderr.decode())
+            self.assertEqual(result.stdout, b"")
+
+    def test_policy_registration_uses_bundled_checker_identity(self):
+        import publisher_admin
+        import publication_check
+        with patch.object(entrypoint, "source_revision", return_value="1" * 40), \
+                patch.object(publisher_admin, "main", return_value=0) as delegate:
+            self.assertEqual(entrypoint.main(["publisher-admin", "--connection-file", "/private/db", "check-policy",
+                                              "--reference", "audit/1"]), 0)
+        self.assertEqual(delegate.call_args.args[0], ["--connection-file", "/private/db", "--psql",
+            "/opt/asm/postgres/bin/psql", "check-policy", "--reference", "audit/1", "--checker-revision",
+            "1" * 40, "--policy-sha256", publication_check.policy_digest()])
+
+    def test_signed_distribution_fixes_the_trust_tool(self):
+        import registry_distribution
+        with patch.object(entrypoint, "source_revision", return_value="1" * 40), \
+                patch.object(registry_distribution, "main", return_value=0) as delegate:
+            self.assertEqual(entrypoint.main(["distribution", "publish", "--connection-file", "/private/db",
+                "--worker-id", "a" * 32, "--trust-root", "/private/root.json", "--keys-dir", "/private/signers",
+                "--work-root", "/private/work", "--store", "local", "--root", "/public",
+                "--source-store", "local", "--source-root", "/retained"]), 0)
+        args = delegate.call_args.args[0]
+        self.assertEqual(args[args.index("--psql") + 1], "/opt/asm/postgres/bin/psql")
+        self.assertEqual(args[args.index("--trust-tool") + 1], "/app/bin/asm-trust")
+
     def test_import_help_exposes_the_optional_local_distribution_gate(self):
         result = subprocess.run([sys.executable, str(ROOT / "tools/operator_entrypoint.py"), "import", "--help"],
                                 capture_output=True, timeout=5)

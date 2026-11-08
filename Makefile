@@ -157,9 +157,12 @@ registry-storage-s3-test:
 	test -n "$(ASM_S3_TEST_CONFIG)"
 	ASM_S3_TEST_CONFIG="$(ASM_S3_TEST_CONFIG)" PYTHONPATH=tests $(PYTHON) -m unittest test_registry_storage_s3 -v
 
-.PHONY: publisher-tools-test publisher-authority-test publisher-test
+.PHONY: publisher-tools-test publisher-proxy-test publisher-authority-test publisher-test
 publisher-tools-test:
 	PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_admin test_checker test_features test_worker -v
+
+publisher-proxy-test:
+	ASM_TEST_NGINX="$(NGINX)" PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_proxy -v
 
 publisher-authority-test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/publisher -p test_authority.py -v
@@ -236,3 +239,16 @@ check-trust-root:
 trusted-cli:
 	$(MAKE) TRUSTED_DISTRIBUTION=1 build/asm
 	cp -- build/asm build/asm-trusted
+
+# The optional 18.6 server is owned by the launcher. It never selects an
+# existing database. libpq and operator psql remain pinned to 16.15.
+.PHONY: publisher-pg18-fixture-test publisher-pg18-test
+publisher-pg18-fixture-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tests/publisher $(PYTHON) -m unittest test_pg18_fixture -v
+
+publisher-pg18-test: publisher-pg18-fixture-test
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) tests/publisher/run_pg18.py --check-only
+	test -n "$(ASM_PUBLISHER_BINARY)"
+	test -n "$(ASM_SERVER_SOURCE_REVISION)"
+	$(MAKE) registry-cli build/asm-trust
+	ASM_REGISTRY_TEST_BINARY="$(CURDIR)/build/asm-registry-v2" ASM_REGISTRY_TRUST="$(CURDIR)/build/asm-trust" ASM_PUBLISHER_BINARY="$(ASM_PUBLISHER_BINARY)" ASM_SERVER_SOURCE_REVISION="$(ASM_SERVER_SOURCE_REVISION)" ASM_TEST_NGINX="$(NGINX)" PYTHONDONTWRITEBYTECODE=1 $(PYTHON) tests/publisher/run_pg18.py authority distribution runtime full-flow

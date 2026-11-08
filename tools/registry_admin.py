@@ -244,7 +244,7 @@ class Connection:
     def __init__(self, path, executable, role):
         self.descriptors = []
         try:
-            require(role in {"asm_migrator", "asm_operator", "asm_reader", "asm_publication_worker", "asm_distributor"},
+            require(role in {"asm_migrator", "asm_operator", "asm_reader", "asm_publisher", "asm_publication_worker", "asm_distributor"},
                     "Select one fixed registry role.")
             fd, body = open_checked(path, 8192, private=True)
             self.descriptors.append(fd)

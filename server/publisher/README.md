@@ -87,8 +87,11 @@ make -C server publisher-test \
 Replace `FULL_COMMIT_ID` with the declared source revision.
 The dependency paths above reproduce the owned Debian Bookworm fixture; other installations need their reviewed paths.
 `CC` and its paths are trusted operator configuration, never package input.
-`DT_RPATH` selects the same private prefix for libpq's indirect `libssl.so.3` dependency.
-An executable-only `DT_RUNPATH` does not establish that indirect selection.
+`libpq` can have its own `DT_RUNPATH`.
+That path can prevent an executable `DT_RPATH` from selecting an indirect `libssl.so.3`.
+The publisher retains `libssl.so.3` directly in both the ABI check and application.
+The documented private `-L` and `DT_RPATH` settings apply to that direct dependency.
+Qualification still requires both actual OpenSSL library paths.
 Use `PUBLISHER_OPENSSL_PROFILE=3.0.22-fixture` only to reproduce the earlier unsupported-library fixture.
 
 On 7 November 2026, the supported-library gate passed all 16 HTTP methods in 101.810 seconds.
@@ -97,6 +100,7 @@ The methods included the actual 60-second upload deadline, interrupted transfers
 The separately retained ABI compile and runtime check exited with status zero.
 The final process mappings contained both libraries under `/opt/asm-openssl-3.5.9/lib/`.
 `ldd` and the ELF `DT_RPATH` record agreed with those live mappings.
+These observations apply to that retained Debian fixture, not every `libpq` build.
 
 | Retained handoff artifact | SHA-256 |
 | --- | --- |
@@ -554,3 +558,33 @@ The required helper and database fixtures fail closed when missing.
 Use `make -C server publisher-test` with the reviewed dependency paths for the assembly HTTP checks.
 Their runtime result, container isolation, published images, TLS, recovery, and external client evidence remain separate from the SQL result.
 No production resource, credential, DNS record, package release, or public endpoint was created by these local checks.
+
+### Qualify the separate PostgreSQL 18 server
+
+The optional gate creates a new private PostgreSQL 18.6 cluster for each fixture.
+It accepts no existing database address or database credential.
+It requires verified TLS, an owned data directory, and actual server version `180006` before fixture SQL runs.
+The default server fixture remains PostgreSQL 16.15.
+Both `psql` and libpq remain version 16.15 in this separate gate.
+
+1. Build the Linux x86-64 publisher with the reviewed library profile above.
+2. Supply a separate directory containing PostgreSQL 18.6 `initdb` and `postgres` executables.
+3. Run the gate from the repository root.
+
+```sh
+ASM_PROTO_PG_BINDIR=PG16_BIN_DIRECTORY ASM_PROTO_LIBPQ=LIBPQ16_FILE \
+  ASM_PROTO_PG18_BINDIR=PG18_BIN_DIRECTORY \
+  ASM_PUBLISHER_BINARY="$PWD/build/server/asm-publisher" \
+  ASM_SERVER_SOURCE_REVISION="$(git rev-parse HEAD)" \
+  make publisher-pg18-test NGINX=nginx
+```
+
+The gate runs publisher authority, distribution authority, native publisher HTTP, and native V2 publication flows.
+Missing binary profiles, failed checks, and skipped cases fail the gate.
+The dedicated launcher selects the owned server before it imports these suites.
+Ordinary authority and runtime commands retain their original server selection.
+
+Use `make publisher-pg18-fixture-test` for the source contract checks without database binaries.
+Those checks do not establish database, TLS, or native runtime compatibility.
+The complete gate checks configured binaries; it does not identify or qualify a deployed database image.
+No PostgreSQL 18 runtime result is recorded here.
