@@ -125,8 +125,11 @@ class DocsTests(unittest.TestCase):
         page = Page(content)
         items = page.structured[0]["mainEntity"]["itemListElement"]
         self.assertEqual([item["name"] for item in items], [card["name"] for card in page.cards])
-        self.assertEqual(items[0]["name"], "Build the V2 preview")
-        self.assertEqual(items[0]["url"], "https://github.com/stubbi/asm/blob/main/docs/hosting.md#use-the-native-v2-preview")
+        self.assertEqual(items[0]["name"], "Use the V2 client")
+        self.assertEqual(items[0]["url"], "https://github.com/stubbi/asm/blob/main/docs/hosting.md#use-the-native-v2-client")
+        hosting = (ROOT / "docs/hosting.md").read_text()
+        self.assertIn("## Use the native V2 client", hosting)
+        self.assertIn('<a id="use-the-native-v2-preview"></a>', hosting)
         self.assertIn("Publish a committed project", [item["name"] for item in items])
         self.assertIn("V2 registry format", [item["name"] for item in items])
         self.assertNotIn("Prepare a package release", [item["name"] for item in items])

@@ -1,6 +1,7 @@
 # Provider-independent publication
 
-Status: unreleased source implementation, 8 November 2026. No public service is activated.
+Status: source included in published Asm 0.7.0, 8 November 2026.
+Official hosted activation and deployment qualification remain pending.
 
 This contract develops the [architecture](../architecture.md) and its [acceptance gates](../architecture-gates.md).
 The user outcome is submitting exact package bytes from Entire, a local machine, or any CI system.
@@ -81,7 +82,7 @@ Disable token-bearing parameter logging before using the publisher route.
 V1 records and native clients require GitHub URLs.
 Keep their published bytes and parser unchanged.
 Never invent a GitHub locator for an Entire package.
-The following JSON is the exact field shape of the source checkpoint's V2 publication manifest:
+The following JSON is the exact field shape of the V2 publication manifest:
 
 ```json
 {
@@ -395,7 +396,7 @@ Do not claim an implemented publisher from SQL tests or a successful operator im
 The first publisher execution checkpoint may qualify Linux x86-64 separately from later server ports.
 Its host scope does not change package target support.
 
-The unreleased signed V2 source reuses the maintained TUF boundary in `asm-verify`.
+The signed V2 source included in published Asm 0.7.0 reuses the maintained TUF boundary in `asm-verify`.
 Production signing custody, independent root delivery, critical-policy operation, and restoration still require activation evidence.
 An air-gapped mirror cannot learn new revocations; it needs an explicit offline policy and visible last policy checkpoint.
 A digest match cannot establish freshness or publisher identity.

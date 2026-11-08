@@ -20,7 +20,7 @@ The native CLI parses the bounded index and verifies fetched bytes. Fetch does n
 
 The released V1 index relies on HTTPS and control of the registry origin.
 It has no separate signature, expiry, rollback protection, or authenticated namespace service.
-The unreleased [signed V2 profile](registry-v2.md) has separate trust, ownership, and freshness boundaries described below.
+The released [signed V2 client](registry-v2.md) has separate trust, ownership, and freshness boundaries described below.
 No public V2 service is activated.
 Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services.
 Their status must remain `not-run`.
@@ -92,13 +92,13 @@ The initial alpha used reviewed pull requests for publication records.
 That intake route is retired; `registry/` retains compatibility records and bootstrap input.
 The [hosted publication boundary](../hosted-registry.md#publication-boundary) defines the intended replacement and remaining gates.
 There is no deployed public publisher endpoint.
-The unreleased [assembly publisher](../../server/publisher/README.md) has a loopback-only task API with expiring, package-scoped credentials.
+The [assembly publisher source](../../server/publisher/README.md) has a loopback-only task API with expiring, package-scoped credentials.
 It rechecks authorization at upload receipt and immutable intent commit.
 It does not expose the catalog operator's whole-catalog import authority.
 Its first migration stops at immutable `committed` intent.
 The separate distribution migration adds fenced `published` receipts and audited lifecycle operations.
-The optional native `asm registry` commands authenticate that distribution through maintained TUF verification.
-These local source checkpoints do not qualify public ingress, deployed storage, signing custody, or recovery.
+The native `asm registry` commands authenticate that distribution through maintained TUF verification.
+The released client and source checks do not qualify public ingress, deployed storage, signing custody, or recovery.
 
 The check coordinator can place bytes before final intent authorization.
 Its retained store must remain private and separate from public serving, CDN aliases, and bucket listings.
@@ -142,14 +142,15 @@ A checksum served beside an archive is useful against accidental corruption. It 
 
 Use GitHub artifact attestations or a Sigstore bundle for release provenance. Verify the artifact digest, certificate identity, OIDC issuer, expected repository/workflow, and the relevant transparency evidence. Verification against any valid signer is insufficient. [GitHub documents artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations); [Sigstore documents identity-bound blob verification](https://docs.sigstore.dev/quickstart/quickstart-cosign/). A valid attestation establishes origin, not code safety, as [PyPI explicitly explains](https://docs.pypi.org/attestations/security-model/).
 
-The unreleased verifier reuses a maintained TUF client for separate registry and self-update profiles.
-Activation still requires independent root delivery, offline root custody, separate signing roles, native qualification, and compromise-recovery tests.
+The bundled verifier reuses a maintained TUF client for separate registry and self-update profiles.
+The self-update trust profile remains disabled; production trust is not provisioned.
+Hosted activation still requires independent root delivery, offline root custody, separate signing roles, native qualification, and compromise-recovery tests.
 Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots.
 A custom signature over one JSON file is not a substitute for that protocol.
 
 Never silently downgrade verification after an unavailable service, expired metadata, or invalid signature. A future explicit offline mode may use already-verified, locked artifacts; it must show which freshness checks could not be performed.
 
-### Unreleased signed registry V2
+### Signed registry V2
 
 Assembly owns package parsing, dependency resolution, complete graph locks, target selection, lifecycle policy, mirror retries, and local installation.
 The Go adapter returns only bounded, TUF-authenticated target bytes through a fixed command interface.
@@ -181,7 +182,7 @@ Database authorization and storage writes do not share a transaction; uncertain 
 Mirrors need storage access and HTTPS serving, without database credentials, publisher tokens, or signing keys.
 These mechanisms establish scoped metadata authority and integrity, not package safety or source provenance.
 
-### Unreleased V2 dependency graphs
+### V2 dependency graphs
 
 Dependency declarations are authenticated release metadata bound to immutable package, release, source, and envelope identities.
 Native validation and the private checker compare each declaration with the exact archived source manifest.
@@ -226,7 +227,7 @@ The [V2 dependency contract](registry-v2.md#resolve-a-bounded-dependency-graph) 
 
 ### Native committed-project preparation
 
-The optional V2 CLI prepares source archives and canonical manifests in assembly.
+The V2 CLI prepares source archives and canonical manifests in assembly.
 It reads selected local commit objects through fixed, bounded Git plumbing and uses fixed gzip compression.
 It disables ambient global/system Git configuration, replacement objects, lazy fetches, network protocols, hooks, and filters.
 It does not build, test, or execute submitted package code.
@@ -348,7 +349,7 @@ Use OSV for known-advisory checks where a dependency has a supported ecosystem i
 
 Yanking removes a version from the released V1 native index without changing its recorded bytes.
 V1 has no authenticated client revocation policy.
-The unreleased V2 profile separately enforces signed yank and emergency-revocation records.
+The V2 profile separately enforces signed yank and emergency-revocation records.
 Any legal or secret-removal exception must retain a tombstone; an old version must never become assignable to different content.
 
 ## Lean and Kraken

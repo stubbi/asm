@@ -16,7 +16,7 @@ The [assembly server experiment](../experiments/assembly-server/README.md) is pu
 The Rust behavioral reference remains unpublished.
 The proposed latency and workload targets are not measured capacity.
 
-## Current release: 0.6.0
+## Current release: 0.7.0
 
 The code now contains:
 
@@ -27,10 +27,12 @@ The code now contains:
 - Registry search, package information, version lists, checked downloads, and explicit executable installation.
 - Local installation inventory, upgrades, and uninstall for recorded executables.
 - Native source-archive validation, extraction, and cache comparison.
-- Native preparation of local publication records without uploading files.
+- Native preparation of local V1 publication records without uploading files.
+- Signed V2 clients for scoped publishing, mirror selection, complete dependency graphs, optional dependencies, and additive features.
 - Immutable registry metadata, source archive checks, ELF and Mach-O checks, and deterministic index generation.
 - Package records with version history, target details, and check status.
-- Download counts from GitHub release assets, with unavailable values marked explicitly.
+- V1 download counts from GitHub release assets, with unavailable values marked explicitly.
+- Registry-scoped V2 download observations, with missing and incomplete measurements explicit.
 - GNU assembly examples for x86-64, AArch64, and RISC-V Linux.
 
 The release checks build the AArch64 and RISC-V examples with cross tools and run them under QEMU user-mode emulation.
@@ -55,18 +57,19 @@ Preserve existing files after corrupt downloads and failed commits.
 
 ## Direct dependencies
 
-The native dependency commands use exact versions and a project lock file. The cache retains the locked archive and extracted source files.
+The V1 dependency commands use exact versions and a project lock file. The cache retains the locked archive and extracted source files.
 
 **Acceptance gate:** add a library and call its exported routine. Rebuild from the lock without network access. Restore missing cache data with sync. Reject changed archives, changed source files, and unexpected cache entries. Preserve the previous lock after a failed update.
 
-The V2 source profile adds bounded transitive resolution, optional dependencies, additive features, numeric ranges, and complete graph locks for one explicit target.
-Its [contract](specs/registry-v2.md) and [evidence](v2-dependency-evidence.md) remain separate from the released V1 capability.
+The released V2 client adds bounded transitive resolution, optional dependencies, additive features, numeric ranges, and complete graph locks for one explicit target.
+Its [contract](specs/registry-v2.md) and [evidence](v2-dependency-evidence.md) remain separate from the V1 compatibility workflow.
 Parallel versions, universal target solving, and richer conflict explanations remain future work.
 The [feature qualification record](v2-feature-evidence.md) separates local checks from release and deployment evidence.
 
-## Unreleased V2 distribution
+## Signed V2 clients; hosted activation pending
 
-The [V2 source profile](specs/registry-v2.md) provides direct scoped publishing, signed exact installation, and explicit mirror selection.
+The released [V2 client](specs/registry-v2.md) provides direct scoped publishing, signed exact installation, and explicit mirror selection.
+Official hosted V2 publication is not activated.
 Local tests compose the assembly API, PostgreSQL, private signing jobs, a second mirror, and the native client.
 The [evidence record](registry-v2-evidence.md) identifies artifacts and failed checks.
 A mirror needs static storage, synchronization, and HTTPS; it needs no database or signing keys.
@@ -75,7 +78,7 @@ Prepared canonical manifests and digest-named objects remain an alternative.
 V2 observations use normalized private logs and identity-scoped snapshots; missing or unreported traffic remains unknown.
 An explicit static website build connects that registry and its observations to package pages, local search, and statistics.
 Native commands still authenticate current metadata independently of the cached pages.
-Self-service enrollment, dependency integration, production custody, and deployed recovery remain separate work.
+Self-service enrollment, production key custody, and deployed recovery remain separate work.
 
 ## Authenticated distribution
 

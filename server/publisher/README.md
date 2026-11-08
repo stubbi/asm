@@ -1,6 +1,7 @@
 # Direct publication source checkpoint
 
-Status: unreleased source implementation, 8 November 2026. No public service is activated.
+Status: source included in published Asm 0.7.0, 8 November 2026.
+Official hosted activation and deployment qualification remain pending.
 
 The user outcome is submitting exact package bytes without depending on GitHub, GitHub Actions, or a particular source host.
 Entire repositories and local projects use the same scoped Asm credential contract.
@@ -19,13 +20,13 @@ The existing [assembly reader](../README.md) retains its read-only role and four
 The first migration implements task creation, private uploads, scoped task reads, leased checks, immutable intent, and a transactional outbox.
 It stops at `committed`; that state is not a published package.
 The separate distribution migration adds fenced signed-distribution receipts, published state, and audited lifecycle operations.
-The optional `asm registry` client publishes, reads tasks, fetches, and installs under the [signed V2 contract](../../docs/specs/registry-v2.md).
+The published 0.7.0 `asm registry` client publishes, reads tasks, fetches, and installs under the [signed V2 contract](../../docs/specs/registry-v2.md).
 Public accounts and ownership transfer remain outside this checkpoint.
 The existing `asm publish` command still prepares a local record; `asm registry publish` invokes this API with prepared files.
 
 Publisher status reports `source-build-only`, `declared_source_revision`, and `declared_source_url`.
 The source values are operator declarations; they do not establish a clean source commit, release, or provenance.
-Use the executable SHA-256 and exact source-file SHA-256 records to identify this uncommitted checkpoint.
+Use the executable SHA-256 and exact source-file SHA-256 records to identify each local source build.
 `/health/ready` checks the current request role, pinned schema, and database read boundary.
 It does not establish published distribution, native V2 verification, worker isolation, deployment qualification, or recovery.
 
@@ -173,7 +174,7 @@ The runtime embeds the digest of its selected migration file.
 `asm_publication.publisher_ready(EXPECTED_SHA384)` returns exactly `1` only when the inspected request boundary passes.
 That marker establishes neither deployment health nor storage recovery.
 Do not edit an installed migration in place.
-This unreleased source revision adds optional dependency declarations and changes the earlier fixture migration digest.
+The published 0.7.0 source adds optional dependency declarations and changes the earlier fixture migration digest.
 An older installed fixture does not pass the new pin.
 Use a separate migration before adopting this revision in an existing installation.
 The earlier evidence retains its measured migration digests.
@@ -268,14 +269,14 @@ The native client checks task identity, manifest digest, and each object's diges
 It uploads only objects without a durable receipt and finishes with a task read.
 Replay after commit or publication therefore sends no redundant PUT.
 
-`make registry-cli` builds the optional native client on supported native CLI hosts.
+`make registry-cli` builds the full native client included in published Asm 0.7.0 on supported CLI hosts.
 Root, retained trust state, and optional CA paths for fetch or install must be protected, clean absolute paths.
 The client selects an exact package version, explicit target, artifact kind, and at most three ordered HTTPS mirrors.
 It never executes a downloaded package or falls back to V1 after V2 verification fails.
-Native project mode prepares committed dependency-free source archives and a canonical manifest before using the same publication API.
+Native project mode prepares committed source archives and a canonical manifest before using the same publication API.
 It requires Git and accepts prepared executable files without building or executing package code.
-The [hosting guide](../../docs/hosting.md#use-the-native-v2-preview) defines its inputs and recovery procedure.
-Dependency support and self-service enrollment remain outside this profile.
+The [hosting guide](../../docs/hosting.md#use-the-native-v2-client) defines its inputs and recovery procedure.
+Self-service enrollment remains outside this profile.
 
 The source publisher binds only to loopback and requires an owned `0700` upload directory.
 Configure `ASM_BIND`, `ASM_DATABASE_URL_FILE`, and `ASM_UPLOAD_ROOT` before starting `asm-publisher serve`.

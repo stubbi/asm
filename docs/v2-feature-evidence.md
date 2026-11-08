@@ -139,3 +139,59 @@ The maintainer reported no known location for those records.
 Treat official V2 activation as unprovisioned.
 Do not resume Flux or promote fixture identities as production authority.
 The CLI and hostable service source can be released independently of that activation.
+
+## Published 0.7.0 acceptance
+
+[Asm 0.7.0](https://github.com/stubbi/asm/releases/tag/v0.7.0) was published on 8 November 2026 as an immutable prerelease.
+[Release run 42499673815](https://github.com/stubbi/asm/actions/runs/42499673815) used source `11f526c2f4264b8c33c4865ff03862857424c184`.
+The default client profile includes V2; the separate self-update trust profile remains disabled.
+All source gates passed on that exact main commit before the single release dispatch.
+
+All 17 assets were downloaded from public release URLs without account credentials.
+Their sizes and public API digests matched.
+Every declared asset also matched `release.json` and `SHA256SUMS`.
+All 16 signed subjects passed bundle verification without account credentials.
+Verification fixed repository ID `1441332955`, the main release workflow, OIDC issuer, source digest, and signer digest.
+Self-hosted runners were refused.
+
+The [release manifest](https://github.com/stubbi/asm/releases/download/v0.7.0/release.json) has SHA-256 `fd54400d743042f3430b8364da4da23eb6816b70307649ef678dd9c7a515ec76`.
+Its native receipts bind these exact tested executables, with zero skipped CLI tests:
+
+| Native host | CLI tests | Executable SHA-256 |
+| --- | ---: | --- |
+| Linux x86-64 | 818 | `4eaa03e83b0462bb217dc10b60919c99cfbabacb6c83e7c698dd0ebc0a1cbf07` |
+| Linux ARM64 | 819 | `4d6a6f6b966811b54b00f693cf8340b4c6cc0f4da5c1ce968a292dc3108bccc5` |
+| Apple Silicon macOS | 411 | `5e134bdd48dedaa156f95674014ecb2ed8d91de8461580899aa784b5959656ab` |
+
+Downloaded macOS and native Linux ARM64 clients each passed `version`, `new`, `run`, and `test` in a fresh directory.
+Both printed `Hello from asm!` and passed the starter test.
+A second `new` refused the existing destination and preserved every generated file's bytes and mode.
+The executable digests remained unchanged after these checks.
+
+The proposed compatibility records came from the same release run's artifact ID `13625192454`.
+Its archive digest was `sha256:1339d2d633a77ff1e7aaeb57cd9c4d61b400520656a8141060bc753e6d22593e`.
+All three records matched the public bytes, source commit, licenses, and targets.
+Each published source archive reproduced exactly from the recorded Git objects.
+The admitted files retain those original record bytes; earlier records remain unchanged.
+
+Catalog admission uses a separate protected pull request.
+That pull request records public website and installer results after deployment.
+Official hosted V2 activation remains unprovisioned.
+These results do not qualify production key custody, provider storage, public ingress, recovery, capacity, or comparative cost savings.
+
+All three unchanged full-flow methods also passed with the downloaded Linux x86-64 client, without skips, in 155.280 seconds.
+They covered native project publication, feature selections, complete locks, sync, build, deliberate execution, mirrors, website observations, and failure preservation.
+The client digest above stayed unchanged before and after the run.
+This local run used Rosetta on an ARM virtual machine and the retained OpenSSL 3.0.22 development fixture over `4709591`.
+It does not establish native x86 hardware or deployed-service qualification.
+The fixture publisher digest was `ade416ae6f381341774487ba5b1ee7388cc1b74311dd316241b635d92aae17c1`.
+The fixture signing-helper digest was `501787c8984a8ff58b8f8d27018b40100d603e13aeee36b0b062c19b1a5ae1a7`.
+
+The initial container-copy setup failed before tests because capability restrictions prevented root from traversing a private directory.
+The existing directory owner created an exclusive file through standard input instead.
+No capability, permission boundary, test assertion, or CLI bytes changed.
+The failed setup record remains separate from the passing test record.
+
+The catalog follow-up passed 98 registry tests, 136 JavaScript tests, and 443 Python website tests, without skips.
+Metadata immutability validation accepted 21 releases against the prior main commit.
+These checks do not substitute for the deployed website's public installer checks.

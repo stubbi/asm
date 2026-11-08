@@ -1,6 +1,7 @@
 # Hosted Asm registry and agent access
 
-Status: unreleased source and deployment qualification work, 8 November 2026.
+Status: source included in published Asm 0.7.0, 8 November 2026.
+Official hosted activation and deployment qualification remain pending.
 
 Asm must run as a hosted registry through the existing ScienceHub Kubernetes infrastructure.
 The skill and MCP integration must connect to that service.
@@ -28,9 +29,9 @@ Plain import does not fetch or check artifact bytes.
 The optional `--distribution-root` gate verifies a matching local snapshot and its artifacts before opening database credentials.
 It does not change the stored catalog evidence or authenticate a publisher.
 No deployed public write endpoint or self-service publisher enrollment is implemented.
-The separate, unreleased [assembly publisher checkpoint](../server/publisher/README.md) supports direct credentials, private uploads, and durable checks.
+The separate [assembly publisher source](../server/publisher/README.md) supports direct credentials, private uploads, and durable checks.
 Private jobs retain checked immutable intent and complete signed distribution through a separate scoped identity.
-The opt-in assembly CLI publishes tasks, retrieves signed exact releases, and selects explicit mirrors.
+The published 0.7.0 assembly CLI publishes tasks, retrieves signed exact releases, and selects explicit mirrors.
 The [V2 profile](specs/registry-v2.md) defines the trust, lifecycle, and retry contract.
 The [local evidence](registry-v2-evidence.md) binds tested artifacts; it does not establish a public deployment.
 The [project publication extension](project-publication-evidence.md) adds committed-source preparation and V2 download observations with separate qualification evidence.
@@ -81,7 +82,7 @@ The existing assembly experiment remains evidence for its narrower tested scope.
 Production service work must preserve its regression checks and identify additional behavior separately.
 
 The native CLI remains assembly.
-Released V1 behavior and opt-in V2 source behavior have separate contracts.
+V1 compatibility commands and explicit V2 registry operations have separate contracts.
 The MCP SDK remains a separate protocol adapter.
 It receives no database write credential, cluster token, publication credential, or backup identity.
 Its read-only tool annotations do not replace enforced access boundaries.
@@ -132,6 +133,6 @@ Do not activate resources through manual cluster or DNS mutations.
 Keep internal and public activation separate.
 Never interpret manifest validation as runtime qualification.
 
-Public publication, authenticated metadata, account recovery, revocation, and isolated build/proof workers retain their architecture gates.
+Official hosted publication, authenticated distribution, account recovery, revocation operations, and isolated build/proof workers retain their deployment gates.
 Serving a read-only registry does not establish those capabilities.
 Every release report must state which gates actually passed and which remain open.
