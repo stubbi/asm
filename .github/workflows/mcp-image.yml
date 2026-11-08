@@ -159,7 +159,7 @@ jobs:
           PY
       - name: Retain successful and failed MCP evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-image-evidence-${{ matrix.arch }}-${{ github.sha }}
           path: |
@@ -168,7 +168,7 @@ jobs:
             mcp-image-${{ matrix.arch }}.sha256
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-image-qualification-${{ matrix.arch }}-${{ github.sha }}
           path: |
@@ -247,7 +247,7 @@ jobs:
           push-to-registry: true
       - name: Retain the publication identity
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-image-digest-${{ matrix.arch }}-${{ github.sha }}
           path: |
