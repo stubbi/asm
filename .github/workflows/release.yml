@@ -48,7 +48,7 @@ jobs:
           if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
           python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist $ASM_TRUSTED_FLAG
       - name: Retain exact native bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-macos-${{ github.sha }}
           path: native-dist/*
@@ -110,7 +110,7 @@ jobs:
           sudo chmod 755 "$ASM_NATIVE_ROOT"
           printf 'ASM_NATIVE_ARM_OUTPUT=%s/native-dist\n' "$ASM_NATIVE_ROOT" >> "$GITHUB_ENV"
       - name: Retain exact native ARM64 bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-arm64-${{ github.sha }}
           path: ${{ env.ASM_NATIVE_ARM_OUTPUT }}/*
@@ -203,7 +203,7 @@ jobs:
           printf 'manifest_sha256=%s\n' "$ASM_MANIFEST_SHA256" >> "$GITHUB_OUTPUT"
       - name: Retain only the qualified publication bytes
         id: release_artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-release-${{ github.sha }}
           path: |
