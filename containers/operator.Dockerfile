@@ -162,9 +162,8 @@ RUN ./configure --prefix=/opt/asm/mhd --disable-https --disable-examples --disab
     && mkdir -p /build/mhd-notices \
     && for notice in COPYING COPYING.* LICENSE LICENSE.* NOTICE AUTHORS; do \
          if test -f "$notice"; then cp "$notice" /build/mhd-notices/; fi; done
-# libpq has its own RUNPATH. Retain libssl directly so the publisher's private RPATH selects it.
 RUN make -C /accepted/server publisher MHD_PREFIX=/opt/asm/mhd PG_PREFIX=/opt/asm/postgres BUILD=/build/publisher \
-      'CC=cc -I/opt/asm/openssl/include -L/opt/asm/openssl/lib -Wl,--disable-new-dtags,-rpath,/opt/asm/openssl/lib -Wl,--no-as-needed -lssl -Wl,--as-needed' \
+      'CC=cc -I/opt/asm/openssl/include -L/opt/asm/openssl/lib -Wl,--disable-new-dtags,-rpath,/opt/asm/openssl/lib' \
       PUBLISHER_OPENSSL_PROFILE=3.5.9 SOURCE_REVISION="$ASM_SOURCE_REVISION"
 
 FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS publisher

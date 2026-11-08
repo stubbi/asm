@@ -16,6 +16,8 @@ override PUBLISHER_OPENSSL_DEFINE := ASM_OPENSSL_PROFILE_3_5_9
 else ifeq ($(PUBLISHER_OPENSSL_PROFILE),3.0.22-fixture)
 override PUBLISHER_OPENSSL_DEFINE := ASM_OPENSSL_PROFILE_3_0_22_FIXTURE
 endif
+# libpq can have its own RUNPATH. Retain libssl directly in both publisher links.
+override PUBLISHER_CRYPTO_LIBRARIES := -Wl,--no-as-needed -lssl -Wl,--as-needed -lcrypto
 LIBRARIES := -L"$(MHD_PREFIX)/lib" -Wl,-rpath,"$(MHD_PREFIX)/lib" \
   -L"$(PG_LIB_DIR)" -Wl,-rpath,"$(PG_LIB_DIR)" -lmicrohttpd -l:libpq.so.5 -pthread
 HOST_SYSTEM := $(shell uname -s)
@@ -74,13 +76,13 @@ publisher:
 	  trap 'rm -rf -- "$$stage"' EXIT HUP INT TERM; \
 	  $(CC) -std=c11 -Wall -Wextra -Werror -D$(PUBLISHER_OPENSSL_DEFINE) \
 	    -I"$(MHD_PREFIX)/include" -I"$(PG_INCLUDE_DIR)" \
-	    -o "$$stage/abi-check" publisher/abi-check.c $(LIBRARIES) -lcrypto; \
+	    -o "$$stage/abi-check" publisher/abi-check.c $(LIBRARIES) $(PUBLISHER_CRYPTO_LIBRARIES); \
 	  "$$stage/abi-check"; \
 	  schema_line=$$(sha384sum publisher/schema.sql); schema_hash=$${schema_line%% *}; \
 	  $(CC) -g -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack -x assembler-with-cpp \
 	    -DASM_PUBLISHER -DASM_SOURCE_REVISION='"$(SOURCE_REVISION)"' \
 	    -DASM_PUBLISHER_SCHEMA_HASH=\"$$schema_hash\" \
-	    -o "$$stage/asm-publisher" runtime.s config.s $(LIBRARIES) -lcrypto; \
+	    -o "$$stage/asm-publisher" runtime.s config.s $(LIBRARIES) $(PUBLISHER_CRYPTO_LIBRARIES); \
 	  mv -fT -- "$$stage/asm-publisher" "$(BUILD)/asm-publisher"
 
 publisher-test: publisher

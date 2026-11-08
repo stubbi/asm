@@ -87,8 +87,11 @@ make -C server publisher-test \
 Replace `FULL_COMMIT_ID` with the declared source revision.
 The dependency paths above reproduce the owned Debian Bookworm fixture; other installations need their reviewed paths.
 `CC` and its paths are trusted operator configuration, never package input.
-`DT_RPATH` selects the same private prefix for libpq's indirect `libssl.so.3` dependency.
-An executable-only `DT_RUNPATH` does not establish that indirect selection.
+`libpq` can have its own `DT_RUNPATH`.
+That path can prevent an executable `DT_RPATH` from selecting an indirect `libssl.so.3`.
+The publisher retains `libssl.so.3` directly in both the ABI check and application.
+The documented private `-L` and `DT_RPATH` settings apply to that direct dependency.
+Qualification still requires both actual OpenSSL library paths.
 Use `PUBLISHER_OPENSSL_PROFILE=3.0.22-fixture` only to reproduce the earlier unsupported-library fixture.
 
 On 7 November 2026, the supported-library gate passed all 16 HTTP methods in 101.810 seconds.
@@ -97,6 +100,7 @@ The methods included the actual 60-second upload deadline, interrupted transfers
 The separately retained ABI compile and runtime check exited with status zero.
 The final process mappings contained both libraries under `/opt/asm-openssl-3.5.9/lib/`.
 `ldd` and the ELF `DT_RPATH` record agreed with those live mappings.
+These observations apply to that retained Debian fixture, not every `libpq` build.
 
 | Retained handoff artifact | SHA-256 |
 | --- | --- |
