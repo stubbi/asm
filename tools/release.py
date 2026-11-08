@@ -24,8 +24,8 @@ SOURCE_INCLUDES = [
     "AGENTS.md", "LICENSE", "README.md", "Makefile", "asm.toml", "design.md",
     ".editorconfig", ".gitignore", ".github", "CHANGELOG.md", "CONTRIBUTING.md",
     "SECURITY.md", "CODE_OF_CONDUCT.md", "LICENSING.md", "LICENSES", "cli", "docs", "examples",
-    "registry", "site", "tests", "tools", "benchmarks", "verifier", "skills", "server", "containers",
-    "requirements-mcp.in", "requirements-mcp.txt", ".dockerignore",
+    "registry", "site", "tests", "tools", "benchmarks", "verifier", "skills", "server", "containers", "blog", "deploy",
+    "requirements-mcp.in", "requirements-mcp.txt", "requirements-storage.in", "requirements-storage.txt", ".dockerignore",
     "experiments/assembly-server/local_postgres.py", "experiments/assembly-server/guard.sql",
     "experiments/assembly-server/fixtures/0001_registry.sql", "experiments/assembly-server/DEPENDENCIES.md",
 ]
@@ -92,11 +92,34 @@ def publish_directory(stage: Path, output: Path) -> None:
         raise OSError(error, os.strerror(error), str(output))
 
 
-def build_environment() -> dict[str, str]:
+def source_registry_v2(commands: dict) -> bool:
+    """Historical sources omit this capability; current sources declare it explicitly."""
+    value = commands.get("registry_v2", False)
+    registry.require(type(value) is bool, "source registry profile must be a Boolean")
+    return value
+
+
+def client_profile(registry_v2: bool, trusted: bool) -> dict:
+    return {"registry_v2": registry_v2, "trusted_distribution": trusted}
+
+
+def require_client_profile(receipt: dict, registry_v2: bool, trusted: bool) -> None:
+    # Legacy receipts predate this field. Their explicit verifier indicates the
+    # separate trusted profile; they never qualify a V2 source contract.
+    value = receipt.get("client_profile", client_profile(False, "verifier" in receipt or "distribution" in receipt))
+    registry.require(isinstance(value, dict) and set(value) == {"registry_v2", "trusted_distribution"} and
+                     all(type(flag) is bool for flag in value.values()) and
+                     value == client_profile(registry_v2, trusted), "native client profile differs from the source contract")
+
+
+def build_environment(*, registry_v2: bool = False) -> dict[str, str]:
     env = dict(os.environ)
-    for key in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "AS", "LD", "ASFLAGS", "LDFLAGS", "TRUSTED_DISTRIBUTION"):
+    for key in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "AS", "LD", "ASFLAGS", "LDFLAGS", "GO", "GOOS", "GOARCH",
+                "TRUSTED_DISTRIBUTION", "REGISTRY_V2"):
         env.pop(key, None)
-    env.update({"LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0"})
+    env.update({"LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0", "REGISTRY_V2": "1" if registry_v2 else "0",
+                "GOENV": "off", "GOWORK": "off", "GOTOOLCHAIN": "local", "GOFLAGS": "",
+                "GOAMD64": "v1", "GOARM64": "v8.0", "GOEXPERIMENT": "", "GOFIPS140": "off"})
     return env
 
 
@@ -116,7 +139,7 @@ def command(arguments: list[str], cwd: Path, env: dict[str, str], timeout: int =
 
 def tool_version(name: str, cwd: Path, env: dict[str, str]) -> str:
     registry.require(shutil.which(name, path=env.get("PATH")) is not None, f"required tool is missing: {name}")
-    output = command([name, "--version"], cwd, env, 15).decode("utf-8", "replace").splitlines()
+    output = command([name, "version" if name == "go" else "--version"], cwd, env, 15).decode("utf-8", "replace").splitlines()
     registry.require(bool(output), f"tool did not report its version: {name}")
     return output[0].strip()
 
@@ -127,6 +150,33 @@ def read_binary(path: Path, target: str) -> bytes:
     data = path.read_bytes()
     registry.validate_executable(data, target)
     return data
+
+
+def adapter_notices_name(version: str, target: str, trusted: bool) -> str:
+    return f"asm-{'verify-' if trusted else ''}{version}-{target}.LICENSES.txt"
+
+
+def adapter_evidence(snapshot: Path, version: str, target: str, trusted: bool) -> tuple[bytes, bytes, dict]:
+    helper = read_binary(snapshot / f"build/asm-verify-{target}", target)
+    notices = registry.read_regular(snapshot / "build", f"asm-verify-{target}.LICENSES.txt", 1 << 20)
+    registry.require(bool(notices), "verifier dependency notices are empty")
+    return helper, notices, {"bytes": len(helper), "sha256": hashlib.sha256(helper).hexdigest(),
+        "notices": {"file": adapter_notices_name(version, target, trusted), "bytes": len(notices),
+                    "sha256": hashlib.sha256(notices).hexdigest()}}
+
+
+def require_adapter(adapter: dict, version: str, target: str, trusted: bool) -> dict:
+    registry.require(isinstance(adapter, dict) and set(adapter) == {"bytes", "sha256", "notices"} and
+                     type(adapter["bytes"]) is int and 0 < adapter["bytes"] <= registry.MAX_ARTIFACT_BYTES and
+                     isinstance(adapter["sha256"], str) and registry.HEX64.fullmatch(adapter["sha256"]),
+                     "embedded adapter identity is invalid")
+    notices = adapter["notices"]
+    registry.require(isinstance(notices, dict) and set(notices) == {"file", "bytes", "sha256"} and
+                     notices["file"] == adapter_notices_name(version, target, trusted) and
+                     type(notices["bytes"]) is int and 0 < notices["bytes"] <= 1 << 20 and
+                     isinstance(notices["sha256"], str) and registry.HEX64.fullmatch(notices["sha256"]),
+                     "embedded adapter notices are invalid")
+    return notices
 
 
 def native_test_result(output: bytes, suite: str = "tests/macos") -> dict:
@@ -141,7 +191,9 @@ def native_test_result(output: bytes, suite: str = "tests/macos") -> dict:
 
 def qualify_native_tests(snapshot: Path, env: dict[str, str], target: str, binary: bytes) -> dict:
     """Test the final clean executable and reject any mutation by the suite."""
-    output = command(["make", "test"], snapshot, env, 300, include_stderr=True)
+    # Full V2 includes the native graph, feature, publication, and trust suites.
+    timeout = 600 if env.get("REGISTRY_V2") == "1" else 300
+    output = command(["make", "test"], snapshot, env, timeout, include_stderr=True)
     tests = native_test_result(output, "tests/macos" if target == "aarch64-macos" else "tests")
     registry.require(binary == read_binary(snapshot / "build/asm", target),
                      "native tests changed the qualified executable")
@@ -197,7 +249,8 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
     commands = registry.strict_json(files["cli/commands.json"][0])
     version = commands["version"]
     registry.version_tuple(version)
-    env = build_environment()
+    registry_v2 = source_registry_v2(commands)
+    env = build_environment(registry_v2=registry_v2)
     if trusted:
         env["TRUSTED_DISTRIBUTION"] = "1"
     with tempfile.TemporaryDirectory(prefix=".asm-native-release-", dir=output.parent) as temporary:
@@ -206,7 +259,7 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
         materialize(files, first)
         materialize(files, second)
         for snapshot in (first, second):
-            command(["make", "build/asm"], snapshot, env, 600 if trusted else 120)
+            command(["make", "build/asm"], snapshot, env, 600 if trusted or registry_v2 else 120)
         binary = read_binary(first / "build/asm", target)
         registry.require(binary == read_binary(second / "build/asm", target),
                          "the two clean native CLI builds do not match")
@@ -228,7 +281,7 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
                     "command": ["make", "build/asm"], "reproducibility": "Two clean builds produced identical bytes.",
                     "version_check": {"status": "pass", "runner": "native", "stdout": actual.decode("ascii"), "exit_code": 0},
                     "targets_check": {"status": "pass", "runner": "native", "result": targets, "exit_code": 0},
-                    "tests": tests}
+                    "tests": tests, "client_profile": client_profile(registry_v2, trusted)}
         if macos:
             evidence.update({"code_signature": "ad-hoc; verified with codesign --verify --strict",
                              "developer_id": "not-run", "notarization": "not-run",
@@ -238,10 +291,18 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
         else:
             evidence["tool_versions"] = {name: tool_version(name, first, env) for name in ("make", "as", "ld", "git")}
             evidence["tool_versions"]["python"] = platform.python_version()
+        if registry_v2 or trusted:
+            evidence["tool_versions"]["go"] = tool_version("go", first, env)
         stage = work / "native"
         stage.mkdir()
         (stage / filename).write_bytes(binary)
         (stage / filename).chmod(0o755)
+        if registry_v2:
+            helper, notices, adapter = adapter_evidence(first, version, target, trusted)
+            registry.require((helper, notices, adapter) == adapter_evidence(second, version, target, trusted),
+                             "native adapter bytes or notices differ")
+            evidence["adapter"] = adapter
+            (stage / adapter["notices"]["file"]).write_bytes(notices)
         if trusted:
             helper = read_binary(first / f"build/asm-verify-{target}", target)
             registry.require(helper == read_binary(second / f"build/asm-verify-{target}", target), "native verifier builds differ")
@@ -256,7 +317,8 @@ def build_native_release(repo: Path, output: Path, reference: str = "HEAD",
 
 
 def read_native_release(directory: Path, commit: str, version: str, target: str = "aarch64-macos", *,
-                        expected_build_targets: list[str] | None = None) -> tuple[bytes, dict]:
+                        expected_build_targets: list[str] | None = None,
+                        registry_v2: bool = False, trusted: bool = False) -> tuple[bytes, dict]:
     """Validate a same-workflow native job's bytes and recorded runtime evidence."""
     registry.require(target in NATIVE_CLI_TARGETS, "unsupported native release target")
     macos = target == "aarch64-macos"
@@ -268,12 +330,18 @@ def read_native_release(directory: Path, commit: str, version: str, target: str 
     registry.require(isinstance(evidence, dict) and type(evidence.get("schema")) is int and evidence["schema"] in (1, 2) and
                      evidence.get("source_commit") == commit and evidence.get("version") == version and
                      evidence.get("target") == target, "native evidence has a different source, version, or target")
+    require_client_profile(evidence, registry_v2, trusted)
     filename = f"asm-{version}-{target}"
     asset = evidence.get("asset")
     registry.require(isinstance(asset, dict) and asset.get("file") == filename, "native asset name does not match")
     binary = read_binary(directory / filename, target)
     registry.require(type(asset.get("bytes")) is int and asset["bytes"] == len(binary) and
                      asset.get("sha256") == hashlib.sha256(binary).hexdigest(), "native asset digest or size does not match")
+    if registry_v2:
+        notices = require_adapter(evidence.get("adapter"), version, target, trusted)
+        data = registry.read_regular(directory, notices["file"], 1 << 20)
+        registry.require(len(data) == notices["bytes"] and hashlib.sha256(data).hexdigest() == notices["sha256"],
+                         "native adapter notices differ")
     registry.require(evidence.get("version_check") == {"status": "pass", "runner": "native",
                      "stdout": f"asm {version} ({target})\n", "exit_code": 0} and
                      type(evidence["version_check"]["exit_code"]) is int, "native version evidence did not pass")
@@ -306,6 +374,9 @@ def read_native_release(directory: Path, commit: str, version: str, target: str 
     registry.require(isinstance(tools, dict) and all(isinstance(tools.get(name), str) and
                      0 < len(tools[name]) <= 1024 for name in (("clang", "sdk", "python") if macos else ("make", "as", "ld", "git", "python"))),
                      "native tool version evidence is missing")
+    if registry_v2:
+        registry.require(isinstance(tools.get("go"), str) and 0 < len(tools["go"]) <= 1024,
+                         "native adapter SDK identity is missing")
     if macos:
         registry.require(evidence.get("code_signature") == "ad-hoc; verified with codesign --verify --strict" and
                          evidence.get("developer_id") == "not-run" and evidence.get("notarization") == "not-run",
@@ -323,7 +394,8 @@ def target_runner(name: str | None, env: dict[str, str]) -> str | None:
 
 def build_cli(snapshot: Path, env: dict[str, str], target: str = "x86_64-linux") -> bytes:
     architecture, assembler, linker, _ = CLI_TARGETS[target]
-    command(["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"], snapshot, env, 600 if env.get("TRUSTED_DISTRIBUTION") == "1" else 120)
+    command(["make", "build/asm", f"ARCH={architecture}", f"AS={assembler}", f"LD={linker}"], snapshot, env,
+            600 if env.get("TRUSTED_DISTRIBUTION") == "1" or env.get("REGISTRY_V2") == "1" else 120)
     return read_binary(snapshot / "build/asm", target)
 
 
@@ -434,6 +506,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     registry.require(isinstance(commands, dict), "CLI command metadata must be an object")
     source_version = commands.get("version")
     registry.version_tuple(source_version)
+    registry_v2 = source_registry_v2(commands)
     license_id = core_license(files, commands)
     version = version or source_version
     registry.version_tuple(version)
@@ -456,7 +529,8 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         registry.require("aarch64-macos" not in inputs, "duplicate native input for aarch64-macos")
         inputs["aarch64-macos"] = native_input
     native = {target: read_native_release(directory, commit, version, target,
-                                        expected_build_targets=cli_build_targets(commands, target))
+                                        expected_build_targets=cli_build_targets(commands, target),
+                                        registry_v2=registry_v2, trusted=trusted)
               for target, directory in inputs.items()}
     for target in cli_hosts:
         registry.require(target not in NATIVE_CLI_TARGETS or target in native,
@@ -464,7 +538,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
     owner = repository.split("/")[-2].lower()
     tag = "v" + version
     base = repository + "/releases/download/" + tag
-    env = build_environment()
+    env = build_environment(registry_v2=registry_v2)
     if trusted:
         env["TRUSTED_DISTRIBUTION"] = "1"
     with tempfile.TemporaryDirectory(prefix=".asm-release-", dir=output.parent) as temporary:
@@ -477,6 +551,8 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         stage.mkdir()
         tools = {name: tool_version(name, first, env) for name in ("make", "as", "ld", "git")}
         tools["python"] = platform.python_version()
+        if registry_v2 or trusted:
+            tools["go"] = tool_version("go", first, env)
         cli = build_cli(first, env)
         registry.require(cli == build_cli(second, env), "the two clean CLI builds do not match")
         x86_tests = qualify_native_tests(first, env, "x86_64-linux", cli) if qualify_x86 else None
@@ -508,6 +584,7 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
                         "license": "MIT", "source": {"repository": repository, "commit": commit, "path": hello_source_path},
                         "yanked": False, "artifacts": []}
         builds = {"asm": {"target": "x86_64-linux", "command": ["make", "build/asm", "ARCH=x86_64", "AS=as", "LD=ld"],
+                           "client_profile": client_profile(registry_v2, trusted),
                            "reproducibility": "Two clean builds produced identical bytes.",
                            "version_check": {"status": "pass", "stdout": cli_version_output.decode("ascii"), "exit_code": 0}}, "hello": {}}
         if x86_tests is not None:
@@ -576,6 +653,17 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
             cli_record["artifacts"].append(artifact(binary, filename, target, "executable", base))
             builds["asm_targets"][target] = evidence
             tools["native_" + target] = evidence["tool_versions"]
+        if registry_v2:
+            for target in cli_hosts:
+                if target in native:
+                    adapter = native[target][1]["adapter"]
+                    notices = registry.read_regular(inputs[target], adapter["notices"]["file"], 1 << 20)
+                else:
+                    helper, notices, adapter = adapter_evidence(first, version, target, trusted)
+                    registry.require((helper, notices, adapter) == adapter_evidence(second, version, target, trusted),
+                                     "adapter bytes or notices differ")
+                    builds["asm"]["adapter"] = adapter
+                payloads[adapter["notices"]["file"]] = notices
         records = registry.check_records(records)
         for record in records:
             for item in record["artifacts"]:
@@ -604,9 +692,10 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
         for filename, data in sorted(payloads.items()):
             path = stage / filename
             path.write_bytes(data)
-            path.chmod(0o644 if filename.endswith(".tar.gz") else 0o755)
+            path.chmod(0o644 if filename.endswith((".tar.gz", ".LICENSES.txt")) else 0o755)
             assets.append({"file": filename, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
         release = {"schema": 1, "project": "asm", "version": version, "tag": tag,
+                   "client_profile": client_profile(registry_v2, trusted),
                    "repository": repository, "source_commit": commit,
                    "license": license_id, "template_license": "MIT",
                    "package_licenses": {record["name"]: record["license"] for record in records},
@@ -635,7 +724,8 @@ def build_release(repo: Path, output: Path, reference: str = "HEAD", version: st
 
 def validate_release(directory: Path, commit: str, version: str, manifest_sha256: str, *,
                      trusted: bool = False, repository: str = "https://github.com/stubbi/asm",
-                     cli_hosts: list[str] | None = None, trust_root_sha256: str | None = None) -> dict:
+                     cli_hosts: list[str] | None = None, trust_root_sha256: str | None = None,
+                     registry_v2: bool = False) -> dict:
     """Check same-run handoff bytes before signing; never execute artifact input."""
     registry.require(directory.is_dir() and not directory.is_symlink(), "release input must be a regular directory")
     registry.require(isinstance(manifest_sha256, str) and registry.HEX64.fullmatch(manifest_sha256),
@@ -655,6 +745,11 @@ def validate_release(directory: Path, commit: str, version: str, manifest_sha256
     distribution = result.get("distribution")
     registry.require((isinstance(distribution, dict) and distribution.get("profile") == "asm-tuf-v1") if trusted
                      else distribution is None, "release distribution profile differs from the workflow")
+    require_client_profile(result, registry_v2, trusted)
+    if registry_v2:
+        tools = result.get("tool_versions")
+        registry.require(isinstance(tools, dict) and isinstance(tools.get("go"), str) and
+                         0 < len(tools["go"]) <= 1024, "release adapter SDK identity is missing")
     hosts = result.get("cli_hosts")
     registry.require(isinstance(hosts, list) and "x86_64-linux" in hosts and
                      all(isinstance(host, str) and host in {"x86_64-linux", *NATIVE_CLI_TARGETS} for host in hosts) and
@@ -688,10 +783,23 @@ def validate_release(directory: Path, commit: str, version: str, manifest_sha256
         receipt = builds.get("asm") if host == "x86_64-linux" else (
             target_builds.get(host) if isinstance(target_builds, dict) else None)
         registry.require(isinstance(receipt, dict), f"release has no native qualification for {host}")
+        # Legacy x86 receipts used only the manifest-level trusted profile.
+        if "client_profile" not in receipt and trusted and not registry_v2:
+            receipt_profile = {**receipt, "distribution": distribution}
+        else:
+            receipt_profile = receipt
+        require_client_profile(receipt_profile, registry_v2, trusted)
         require_native_tests(receipt.get("tests"), "tests/macos" if host == "aarch64-macos" else "tests")
         name = f"asm-{version}-{host}"
         registry.require(name in by_name and receipt.get("asset") == by_name[name],
                          f"native qualification covers different bytes for {host}")
+        if registry_v2:
+            notices = require_adapter(receipt.get("adapter"), version, host, trusted)
+            registry.require(by_name.get(notices["file"]) == notices, "embedded adapter notice bytes differ")
+            if host != "x86_64-linux":
+                tools = receipt.get("tool_versions")
+                registry.require(isinstance(tools, dict) and isinstance(tools.get("go"), str) and
+                                 0 < len(tools["go"]) <= 1024, "native adapter SDK identity is missing")
     if trusted:
         root = distribution.get("root_sha256")
         registry.require(isinstance(root, str) and registry.HEX64.fullmatch(root) and
@@ -740,6 +848,7 @@ def main(argv: list[str] | None = None) -> int:
             commands = registry.strict_json(source["cli/commands.json"][0])
             validate_release(args.validate_release, commit, commands["version"], args.manifest_sha256,
                              trusted=args.trusted_distribution, repository=args.repository,
+                             registry_v2=source_registry_v2(commands),
                              cli_hosts=commands.get("hosts", ["x86_64-linux"]),
                              trust_root_sha256=hashlib.sha256(source["verifier/trust/asm-root.json"][0]).hexdigest()
                              if args.trusted_distribution else None)

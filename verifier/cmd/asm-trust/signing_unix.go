@@ -6,16 +6,38 @@ package main
 
 import (
 	"errors"
+	"io"
 	"os"
+	"syscall"
+
+	"github.com/stubbi/asm/verifier/internal/securefs"
+	"golang.org/x/sys/unix"
 )
 
 func readPrivateKey(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
-	if info.Mode().Perm()&0077 != 0 {
-		return nil, errors.New("private key permissions must be 0600 or stricter")
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
 	}
-	return read(path, 16384)
+	st := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || st.Nlink != 1 || st.Uid != uint32(os.Getuid()) || info.Mode().Perm()&0077 != 0 || info.Size() < 1 || info.Size() > 16384 {
+		return nil, errors.New("private key must be an owned single-link regular file with mode 0600 or stricter")
+	}
+	if err := securefs.CheckPermissions(file); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 16385))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != info.Size() {
+		return nil, errors.New("private key changed while reading")
+	}
+	return data, nil
 }

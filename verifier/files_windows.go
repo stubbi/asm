@@ -24,5 +24,5 @@ func atomicWrite(path string, data []byte) error           { return securefs.Ato
 func acquireStateLock(file *os.File) (func() error, error) { return securefs.LockFile(file) }
 func syncOpenedFile(file *os.File) error                   { return securefs.SyncFile(file) }
 func (d *stateDirectory) Sync() error {
-	return securefs.SyncDirectory(d.Directory, append([]string{"clock", "rotation-root.json"}, roles...))
+	return securefs.SyncDirectory(d.Directory, append([]string{"clock", "rotation-root.json", registryProfileFile}, roles...))
 }

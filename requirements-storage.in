@@ -1,0 +1,2 @@
+# Optional S3 operator storage. The native CLI and local mirrors do not use it.
+boto3==1.43.123

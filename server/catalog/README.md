@@ -31,12 +31,19 @@ An acceptance commit identifies the imported source; it does not prove that revi
 Namespace bindings contain a numeric GitHub identity and their acceptance commit.
 These bindings are operator assertions, not authenticated publisher identities.
 Import does not authenticate GitHub users or transfer ownership.
-It does not download, execute, or verify artifact bytes.
+Plain import does not download, execute, or verify artifact bytes.
+An optional local distribution gate verifies artifact bytes before opening database credentials.
+It never executes a package or changes the catalog's retained evidence claims.
 
 Website evidence reports metadata validation.
 Artifact, provenance, formal proof, and agent review results remain `not-run`.
 The component supplies no download counts.
 An unknown count remains unknown.
+
+Use `import --distribution-root DIRECTORY` to require a matching private [distribution snapshot](../../docs/hosting.md).
+The gate checks the selected commit, canonical records, every artifact, and an unchanged head before credential access.
+The result includes a snapshot receipt and `artifact_bytes_checked: true` for that invocation.
+Database failure retains the snapshot for retry; it cannot replace published bytes.
 It preserves v1 target strings without inferring an ABI, ISA, or CPU feature declaration.
 
 | Role | Authority |

@@ -147,6 +147,14 @@ class PublicationGateTests(unittest.TestCase):
         self.assertLess(text.index("--image image.json"), text.index("docker load --input runtime.tar"))
         self.assertEqual(result.stdout, b"")
 
+    def test_distribution_modules_must_match_the_immutable_source_and_runtime(self):
+        for name in ("tools/registry_mirror.py", "tools/registry_storage.py"):
+            for location in (("source", "files", name), ("runtime_files", "/app/" + name)):
+                with self.subTest(location=location):
+                    report, image = evidence()
+                    put(report, location, "0" * 64)
+                    self.assertNotEqual(self.gate(report, image).returncode, 0)
+
     def test_malformed_schema_counts_exclusions_and_isolation_are_refused(self):
         report, image = evidence()
         cases = [(("schema",), 999), (("os",), "windows"), (("architecture",), "arm64"), (("execution",), "emulated"),

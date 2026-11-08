@@ -1,5 +1,35 @@
 # Change log
 
+## Unreleased
+
+## 0.7.0
+
+This section describes the prerelease. Host qualification and artifact digests accompany the release assets.
+
+- Add conditional filesystem and S3 storage with commit-bound byte-mirror snapshots.
+- Gate catalog imports on an optional verified local distribution before credential access.
+- Import private origin logs asynchronously and preserve unknown or incomplete reporting coverage.
+- Add a separate, loopback-only assembly publisher with scoped credentials and durable upload tasks.
+- Check task-bound objects in an isolated worker and retain immutable publication intent with a fenced outbox.
+- Add explicit native V2 publication, task recovery, signed exact fetch and installation, and ordered mirror selection.
+- Bind client trust state to the registry and initial root; enforce short-lived lifecycle policy through maintained TUF verification.
+- Complete fenced distribution through private signing jobs with immutable inventories, timestamp-only renewal, and recoverable public writes.
+- Include V2 in the default source build and retain an explicit minimal V1-only profile.
+- Keep self-update trust disabled; production custody, deployment, provider access rules, capacity, and restoration require qualification.
+- Publish committed projects through native archive and manifest preparation, with supplied-credential file isolation and explicit executable inputs.
+- Attribute V2 transfers through public selection tags and delayed private log imports without duplicating stored blobs.
+- Keep unknown and unattributed traffic explicit in registry-scoped package and release statistics.
+- Connect an explicit static website build to V2 releases, native fetch commands, lifecycle states, and identity-scoped download observations.
+- Resolve V2 source dependencies in assembly and retain complete target-specific graph locks, with exact synchronization and local build checks.
+- Add optional dependency tables, named features, additive child-feature requests, and explicit root default selection.
+- Record complete feature selections and active edges in v4 graph locks; retain feature-free v3 lock compatibility.
+- Validate inactive feature declarations and reject local feature cycles, unknown requests, duplicate entries, and bounded-input overflows.
+- Document hosting costs, provider-independent publishing requirements, and remaining activation gates.
+- Bind the full client profile, embedded adapter identity, SDK version, and dependency notices through native release receipts.
+- Include mirror deployment files, locked storage dependencies, and maintained website inputs in the source archive.
+
+See the [release notes](docs/releases/0.7.0.md). Earlier published records, artifact bytes, and licenses remain unchanged.
+
 ## 0.6.0
 
 - Consolidate hello and math into one project each, with seven target subdirectories and one manifest.

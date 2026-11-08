@@ -194,6 +194,11 @@ class InstalledProgramTests(unittest.TestCase):
         declared = json.loads((ROOT / "cli/commands.json").read_text())["implemented"]
         help_commands = json.loads(self.cli("help", "--json").stdout)["commands"]
         status_commands = json.loads(self.cli("status").stdout)["implemented"]
+        if "registry" in declared and "registry" not in help_commands:
+            # The explicit minimal profile and the separate Intel source port
+            # retain V1. They must refuse the command instead of advertising it.
+            self.cli("registry", "--help", code=2)
+            declared.remove("registry")
         self.assertEqual(set(help_commands), set(declared))
         self.assertEqual(set(status_commands), set(declared))
         help_text = self.cli("help").stdout

@@ -64,10 +64,10 @@ class DocsTests(unittest.TestCase):
         (self.stage / "reference").mkdir()
         (self.stage / "reference/index.html").write_text("fixture")
 
-    def generate(self):
+    def generate(self, *, registry_version=1):
         self.assertTrue((ROOT / "tools/site_docs.py").is_file(), "Docs hub is not implemented")
         module = importlib.import_module("site_docs")
-        routes = module.write_docs(self.repo, self.stage)
+        routes = module.write_docs(self.repo, self.stage, registry_version=registry_version)
         return routes, (self.stage / "docs/index.html").read_text()
 
     def test_native_hub_has_canonical_metadata_shared_chrome_and_only_navigation_script(self):
@@ -119,6 +119,17 @@ class DocsTests(unittest.TestCase):
         self.assertIn("https://asm.build/agents.md", destinations)
         for item in items:
             self.assertTrue({"author", "publisher", "datePublished", "dateModified", "aggregateRating"}.isdisjoint(item))
+
+    def test_v2_directory_schema_describes_its_rendered_v2_tasks(self):
+        _, content = self.generate(registry_version=2)
+        page = Page(content)
+        items = page.structured[0]["mainEntity"]["itemListElement"]
+        self.assertEqual([item["name"] for item in items], [card["name"] for card in page.cards])
+        self.assertEqual(items[0]["name"], "Build the V2 preview")
+        self.assertEqual(items[0]["url"], "https://github.com/stubbi/asm/blob/main/docs/hosting.md#use-the-native-v2-preview")
+        self.assertIn("Publish a committed project", [item["name"] for item in items])
+        self.assertIn("V2 registry format", [item["name"] for item in items])
+        self.assertNotIn("Prepare a package release", [item["name"] for item in items])
 
     def test_guide_metadata_identifies_the_real_walkthrough_without_invented_dates_or_authors(self):
         content = (ROOT / "site/guide.html").read_text()

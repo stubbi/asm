@@ -29,13 +29,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        if: inputs.trusted_distribution
         with:
           go-version-file: verifier/go.mod
           cache-dependency-path: verifier/go.sum
-      - name: Check the provisioned verifier
+      - name: Check the transport and cryptography adapter
+        run: make verifier-test
+      - name: Check the provisioned self-update root
         if: inputs.trusted_distribution
-        run: make verifier-test check-trust-root
+        run: make check-trust-root
       - name: Install Linux cross-build test tools
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -69,13 +70,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        if: inputs.trusted_distribution
         with:
           go-version-file: verifier/go.mod
           cache-dependency-path: verifier/go.sum
-      - name: Check the provisioned verifier
+      - name: Check the transport and cryptography adapter
+        run: make verifier-test
+      - name: Check the provisioned self-update root
         if: inputs.trusted_distribution
-        run: make verifier-test check-trust-root
+        run: make check-trust-root
       - name: Install Linux cross-build test tools
         run: |
           sudo apt-get update
@@ -135,13 +137,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        if: inputs.trusted_distribution
         with:
           go-version-file: verifier/go.mod
           cache-dependency-path: verifier/go.sum
-      - name: Check the provisioned verifier
+      - name: Check the transport and cryptography adapter
+        run: make verifier-test
+      - name: Check the provisioned self-update root
         if: inputs.trusted_distribution
-        run: make verifier-test check-trust-root
+        run: make check-trust-root
       - name: Check the version tag
         run: |
           set -euo pipefail
@@ -213,6 +216,14 @@ jobs:
             ${{ env.ASM_RELEASE_OUTPUT }}/SHA256SUMS
             ${{ env.ASM_RELEASE_OUTPUT }}/release.json
             ${{ env.ASM_RELEASE_OUTPUT }}/install.sh
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain proposed compatibility records for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proposed-registry-${{ github.sha }}
+          path: ${{ env.ASM_RELEASE_OUTPUT }}/registry/packages/
           if-no-files-found: error
           retention-days: 7
 

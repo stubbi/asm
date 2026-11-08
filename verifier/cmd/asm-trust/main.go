@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,6 +145,12 @@ func run(args []string) error {
 	if len(args) == 4 && args[0] == "inspect" {
 		return inspect(args[1], args[2], args[3])
 	}
+	if len(args) == 5 && args[0] == "inspect-registry" {
+		if !registryIdentity.MatchString(args[4]) {
+			return errors.New("invalid registry identity")
+		}
+		return inspectProfile(args[1], args[2], args[3], args[4])
+	}
 	if len(args) == 8 && args[0] == "prepare-root" {
 		r := metadata.Root(time.Now().UTC().Add(365 * 24 * time.Hour))
 		for i, role := range []string{"root", "root", "root", "targets", "snapshot", "timestamp"} {
@@ -202,7 +209,29 @@ func run(args []string) error {
 	if len(args) == 6 && args[0] == "publish" {
 		return publish(args[1], args[2], args[3], args[4], args[5])
 	}
-	return errors.New("expected prepare-root OUTPUT ROOT1.pub ROOT2.pub ROOT3.pub TARGETS.pub SNAPSHOT.pub TIMESTAMP.pub; sign-root INPUT KEY OUTPUT; publish ROOT KEY_DIRECTORY PREVIOUS_DIRECTORY_OR_DASH TARGET_MAP OUTPUT_DIRECTORY; or inspect ROOT PUBLICATION TARGET_MAP")
+	if len(args) == 8 && args[0] == "publish-registry" {
+		version, err := strconv.ParseInt(args[7], 10, 64)
+		if err != nil || version < 1 || strconv.FormatInt(version, 10) != args[7] {
+			return errors.New("registry publication requires a positive canonical version")
+		}
+		return publishProfile(args[1], args[2], args[3], args[4], args[5], args[6], version)
+	}
+	if len(args) == 7 && args[0] == "refresh-registry" {
+		version, err := strconv.ParseInt(args[6], 10, 64)
+		if err != nil || version < 1 || strconv.FormatInt(version, 10) != args[6] {
+			return errors.New("registry refresh requires a positive canonical timestamp version")
+		}
+		err = refreshRegistry(args[1], args[2], args[3], args[4], args[5], version)
+		if errors.Is(err, errFullRegistryRefresh) {
+			fmt.Println(`{"status":"full-refresh-required"}`)
+			return nil
+		}
+		if err == nil {
+			fmt.Println(`{"status":"refreshed"}`)
+		}
+		return err
+	}
+	return errors.New("expected prepare-root OUTPUT ROOT1.pub ROOT2.pub ROOT3.pub TARGETS.pub SNAPSHOT.pub TIMESTAMP.pub; sign-root INPUT KEY OUTPUT; publish ROOT KEYS PREVIOUS MAP OUTPUT; inspect ROOT PUBLICATION MAP; publish-registry ROOT KEYS PREVIOUS MAP OUTPUT ID VERSION; refresh-registry ROOT KEYS PREVIOUS OUTPUT ID VERSION; or inspect-registry ROOT PUBLICATION MAP ID")
 }
 
 // Inspect a staged publication with the same maintained TUF client. A local
@@ -210,9 +239,22 @@ func run(args []string) error {
 // mandatory. This command accepts a maintainer-selected root, never a key from
 // the staged publication. It does not install or run an artifact.
 func inspect(rootPath, repository, targetMap string) error {
+	return inspectProfile(rootPath, repository, targetMap, "")
+}
+
+func inspectProfile(rootPath, repository, targetMap, registryID string) error {
 	anchor, err := readJSON(rootPath, 1<<20)
 	if err != nil {
 		return err
+	}
+	if registryID != "" {
+		root, err := metadata.Root().FromBytes(anchor)
+		if err != nil {
+			return err
+		}
+		if err := registryRootProfile(root.Signed); err != nil {
+			return err
+		}
 	}
 	cfg, err := config.New("https://publication.invalid/metadata", anchor)
 	if err != nil {
@@ -222,6 +264,9 @@ func inspect(rootPath, repository, targetMap string) error {
 	cfg.RootMaxLength, cfg.TimestampMaxLength = 1<<20, 16384
 	cfg.SnapshotMaxLength, cfg.TargetsMaxLength = 1<<20, 1<<20
 	cfg.MaxDelegations = 0
+	if registryID != "" {
+		cfg.MaxRootRotations = 32
+	}
 	cfg.Fetcher = localMirror(repository)
 	u, err := updater.New(cfg)
 	if err != nil {
@@ -238,8 +283,11 @@ func inspect(rootPath, repository, targetMap string) error {
 	if err := json.Unmarshal(data, &files); err != nil {
 		return err
 	}
+	if registryID != "" && (len(files) == 0 || len(files) > 4096 || len(files) != len(u.GetTopLevelTargets())) {
+		return errors.New("registry inspection requires the complete bounded target map")
+	}
 	for name, path := range files {
-		if !allowedTarget.MatchString(name) {
+		if (registryID == "" && !allowedTarget.MatchString(name)) || (registryID != "" && !safeRegistryTarget(registryID, name)) {
 			return errors.New("invalid target name")
 		}
 		target, err := u.GetTargetInfo(name)
@@ -249,19 +297,23 @@ func inspect(rootPath, repository, targetMap string) error {
 		if target == nil {
 			return errors.New("target is absent")
 		}
-		data, err := read(path, 64<<20)
+		limit := int64(64 << 20)
+		if registryID != "" {
+			limit = 1 << 20
+		}
+		data, err := read(path, limit)
 		if err != nil {
 			return err
 		}
 		if err := target.VerifyLengthHashes(data); err != nil {
 			return err
 		}
-		if name == "index.tsv" || name == "index-macos.tsv" {
+		if registryID != "" || name == "index.tsv" || name == "index-macos.tsv" {
 			digest := target.Hashes["sha256"]
 			if len(digest) != 32 {
 				return errors.New("index requires SHA-256")
 			}
-			stored, err := read(filepath.Join(repository, "targets", hex.EncodeToString(digest)+"."+name), 1<<20)
+			stored, err := read(filepath.Join(repository, "targets", filepath.Dir(name), hex.EncodeToString(digest)+"."+filepath.Base(name)), 1<<20)
 			if err != nil {
 				return err
 			}
@@ -288,6 +340,13 @@ func (dir localMirror) DownloadFile(address string, limit int64, _ time.Duration
 }
 
 func publish(rootPath, keys, previous, targetMap, output string) error {
+	return publishProfile(rootPath, keys, previous, targetMap, output, "", 0)
+}
+
+func publishProfile(rootPath, keys, previous, targetMap, output, registryID string, forcedVersion int64) error {
+	if registryID != "" && !registryIdentity.MatchString(registryID) {
+		return errors.New("invalid registry identity")
+	}
 	rootBytes, err := readJSON(rootPath, 1<<20)
 	if err != nil {
 		return err
@@ -302,6 +361,11 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 	if !r.Signed.ConsistentSnapshot || !r.Signed.Expires.After(time.Now()) || r.Signed.Roles["root"].Threshold < 2 {
 		return errors.New("expected current threshold root with consistent snapshots")
 	}
+	if registryID != "" {
+		if err := registryRootProfile(r.Signed); err != nil {
+			return err
+		}
+	}
 	if _, err := os.Lstat(output); !os.IsNotExist(err) {
 		return errors.New("output must be a new directory")
 	}
@@ -309,6 +373,10 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 	targets := metadata.Targets(now.Add(30 * 24 * time.Hour))
 	snapshot := metadata.Snapshot(now.Add(7 * 24 * time.Hour))
 	timestamp := metadata.Timestamp(now.Add(24 * time.Hour))
+	if registryID != "" {
+		setRegistryCheckpoint(&timestamp.Signed, registryID, now)
+	}
+	var previousTargets map[string]*metadata.TargetFiles
 	if previous != "-" {
 		oldRootBytes, err := readJSON(filepath.Join(previous, "metadata/root.json"), 1<<20)
 		if err != nil {
@@ -338,6 +406,20 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		if err := oldRoot.VerifyDelegate("targets", oldTargets); err != nil {
 			return err
 		}
+		if registryID != "" {
+			if forcedVersion <= oldTargets.Signed.Version {
+				return errors.New("reserved version must exceed previous targets version")
+			}
+			if len(oldTargets.Signed.Targets) == 0 {
+				return errors.New("previous registry publication has no targets")
+			}
+			for name := range oldTargets.Signed.Targets {
+				if !safeRegistryTarget(registryID, name) {
+					return errors.New("previous publication belongs to another registry profile")
+				}
+			}
+		}
+		previousTargets = oldTargets.Signed.Targets
 		targets.Signed.Version = oldTargets.Signed.Version + 1
 		data, err = readJSON(filepath.Join(previous, "metadata/snapshot.json"), 1<<20)
 		if err != nil {
@@ -349,6 +431,9 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		}
 		if err := oldRoot.VerifyDelegate("snapshot", oldSnapshot); err != nil {
 			return err
+		}
+		if registryID != "" && forcedVersion <= oldSnapshot.Signed.Version {
+			return errors.New("reserved version must exceed previous snapshot version")
 		}
 		snapshot.Signed.Version = oldSnapshot.Signed.Version + 1
 		data, err = readJSON(filepath.Join(previous, "metadata/timestamp.json"), 1<<20)
@@ -362,7 +447,13 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		if err := oldRoot.VerifyDelegate("timestamp", oldTimestamp); err != nil {
 			return err
 		}
+		if registryID != "" && forcedVersion <= oldTimestamp.Signed.Version {
+			return errors.New("reserved version must exceed previous timestamp version")
+		}
 		timestamp.Signed.Version = oldTimestamp.Signed.Version + 1
+	}
+	if registryID != "" {
+		targets.Signed.Version, snapshot.Signed.Version, timestamp.Signed.Version = forcedVersion, forcedVersion, forcedVersion
 	}
 	data, err := readJSON(targetMap, 1<<20)
 	if err != nil {
@@ -372,15 +463,20 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 	if err := json.Unmarshal(data, &files); err != nil {
 		return err
 	}
-	if files["index.tsv"] == "" || len(files) > 4096 {
-		return errors.New("target map requires an index and at most 4096 targets")
+	if len(files) == 0 || (registryID == "" && files["index.tsv"] == "") || len(files) > 4096 {
+		return errors.New("target map requires one through 4096 targets and the profile's required entries")
 	}
 	stage, err := os.MkdirTemp(filepath.Dir(output), ".asm-trust-publication-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	if previous != "-" {
+	if previous != "-" && registryID != "" {
+		if err := retainRegistryRoots(previous, stage); err != nil {
+			return err
+		}
+	}
+	if previous != "-" && registryID == "" {
 		if err := filepath.WalkDir(previous, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -408,20 +504,32 @@ func publish(rootPath, keys, previous, targetMap, output string) error {
 		}
 	}
 	for name, path := range files {
-		if !allowedTarget.MatchString(name) {
+		if (registryID == "" && !allowedTarget.MatchString(name)) || (registryID != "" && !safeRegistryTarget(registryID, name)) {
 			return errors.New("invalid target name")
 		}
-		data, err := read(path, 64<<20)
+		limit := int64(64 << 20)
+		if registryID != "" {
+			limit = 1 << 20
+		}
+		data, err := read(path, limit)
 		if err != nil {
 			return err
 		}
+		if registryID != "" && name != "registries/"+registryID+"/policy.tsv" && previousTargets[name] != nil {
+			if err := previousTargets[name].VerifyLengthHashes(data); err != nil {
+				return errors.New("immutable registry target changed")
+			}
+		}
 		h := sha256.Sum256(data)
 		targets.Signed.Targets[name] = &metadata.TargetFiles{Length: int64(len(data)), Hashes: metadata.Hashes{"sha256": h[:]}}
-		if name == "index.tsv" || name == "index-macos.tsv" {
+		if registryID != "" || name == "index.tsv" || name == "index-macos.tsv" {
 			if len(data) > 1<<20 {
 				return errors.New("index exceeds client limit")
 			}
-			dest := filepath.Join(stage, "targets", hex.EncodeToString(h[:])+"."+name)
+			dest := filepath.Join(stage, "targets", filepath.Dir(name), hex.EncodeToString(h[:])+"."+filepath.Base(name))
+			if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+				return err
+			}
 			if old, err := os.ReadFile(dest); err == nil {
 				if string(old) != string(data) {
 					return errors.New("immutable target changed")

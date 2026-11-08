@@ -573,6 +573,9 @@ registry_workspace:
  * and checksum, then removes the empty directory. Clears the ownership flag.
  * Does not replace an original error with a cleanup error. Stack: none. */
 registry_cleanup:
+.ifdef ASM_REGISTRY_V2
+    ARM_CALL r2_clean_files
+.endif
     ARM_CALL program_cleanup
     ARM_ADDR x16, self_active
     ldrb w10, [x16]

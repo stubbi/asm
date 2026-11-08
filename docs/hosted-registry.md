@@ -1,6 +1,6 @@
 # Hosted Asm registry and agent access
 
-Status: implementation and qualification work, 5 November 2026.
+Status: unreleased source and deployment qualification work, 8 November 2026.
 
 Asm must run as a hosted registry through the existing ScienceHub Kubernetes infrastructure.
 The skill and MCP integration must connect to that service.
@@ -23,8 +23,17 @@ The database checks the operator identity and commits the records and all four e
 
 This is a credentialed operator import, not authenticated public package publication.
 Namespace bindings remain operator assertions about numeric GitHub identities.
-The importer does not verify those identities or fetch artifact bytes.
-No public write endpoint or self-service publisher workflow is implemented.
+The importer does not verify those identities.
+Plain import does not fetch or check artifact bytes.
+The optional `--distribution-root` gate verifies a matching local snapshot and its artifacts before opening database credentials.
+It does not change the stored catalog evidence or authenticate a publisher.
+No deployed public write endpoint or self-service publisher enrollment is implemented.
+The separate, unreleased [assembly publisher checkpoint](../server/publisher/README.md) supports direct credentials, private uploads, and durable checks.
+Private jobs retain checked immutable intent and complete signed distribution through a separate scoped identity.
+The opt-in assembly CLI publishes tasks, retrieves signed exact releases, and selects explicit mirrors.
+The [V2 profile](specs/registry-v2.md) defines the trust, lifecycle, and retry contract.
+The [local evidence](registry-v2-evidence.md) binds tested artifacts; it does not establish a public deployment.
+The [project publication extension](project-publication-evidence.md) adds committed-source preparation and V2 download observations with separate qualification evidence.
 Local `asm publish` prepares a record and uploads nothing.
 Its released pull-request instructions describe the former intake route.
 
@@ -32,6 +41,11 @@ Public publication remains unavailable until publisher authorization, artifact c
 The [architecture gates](architecture-gates.md) retain those requirements.
 The operator procedure can qualify catalog imports without claiming that public publication exists.
 No deployment or publisher credential is required for local packaging or an offline import plan.
+
+The [storage and hosting guide](hosting.md) covers conditional object storage, mirrors, and asynchronous origin observations.
+The [provider-independent publication contract](specs/publication.md) separates ownership, source hosting, and CI identity.
+Entire, GitHub, GitLab, Codeberg, and omitted source locators use the same native publication contract.
+The source locator is descriptive metadata; enrolled ownership and scoped credentials authorize publication.
 
 ## Component and target scope
 
@@ -66,7 +80,8 @@ Mature libraries handle HTTP, PostgreSQL, transport security, and cryptography.
 The existing assembly experiment remains evidence for its narrower tested scope.
 Production service work must preserve its regression checks and identify additional behavior separately.
 
-The native CLI remains assembly and keeps its existing distribution contract.
+The native CLI remains assembly.
+Released V1 behavior and opt-in V2 source behavior have separate contracts.
 The MCP SDK remains a separate protocol adapter.
 It receives no database write credential, cluster token, publication credential, or backup identity.
 Its read-only tool annotations do not replace enforced access boundaries.

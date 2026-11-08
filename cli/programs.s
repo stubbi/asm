@@ -168,6 +168,13 @@ program_before_load:
     test rax, rax
     jz program_not_managed
     mov rbx, rax
+.ifdef ASM_REGISTRY_V2
+    mov rdi, [rbx + 48]
+    lea rsi, [rip + r2_origin_prefix]
+    call self_prefix
+    test rax, rax
+    jnz r2_legacy_upgrade
+.endif
     mov r8, qword ptr [rbx + 40]
     mov qword ptr [rip + registry_output], r8
     movzx r8d, byte ptr [rip + registry_origin_seen]
@@ -1148,6 +1155,12 @@ program_validate_row:
     test eax, eax
     jnz .Lp_validate_unique
     mov rdi, qword ptr [rbx + 48]
+.ifdef ASM_REGISTRY_V2
+    call r2_inventory_origin
+    test eax, eax
+    jnz .Lp_validate_unique
+    mov rdi, qword ptr [rbx + 48]
+.endif
     call registry_https_url
     test eax, eax
     jz program_state_error

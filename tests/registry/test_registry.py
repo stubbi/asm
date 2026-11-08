@@ -187,6 +187,12 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaises(registry.RegistryError):
                 registry.read_archive(data)
 
+    def test_invalid_deflate_stream_returns_a_controlled_archive_error(self):
+        # Valid gzip header followed by the reserved DEFLATE block type.
+        data = b"\x1f\x8b\x08\x00" + b"\x00" * 6 + b"\x07" + b"\x00" * 16
+        with self.assertRaises(registry.RegistryError):
+            registry.read_archive(data)
+
     def test_sensitive_paths_are_not_packaged(self):
         for path in (".env", "keys/private.key", "config/.npmrc"):
             with self.assertRaises(registry.RegistryError):

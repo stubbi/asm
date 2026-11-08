@@ -47,6 +47,11 @@ jobs:
             fi
           fi
           printf 'reuse=%s\n' "$ASM_REUSE" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.source.outputs.reuse != 'true'
+        with:
+          go-version-file: verifier/go.mod
+          cache-dependency-path: verifier/go.sum
       - name: Install cross-architecture verification tools
         if: steps.source.outputs.reuse != 'true'
         run: |

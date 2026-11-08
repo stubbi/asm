@@ -21,6 +21,9 @@ SITE_PYTHON = ("test_site", "test_site_assets", "test_site_info", "test_site_rou
                "test_discovery_metadata", "test_download_data", "test_registry_explore", "test_registry_stats",
                "test_release_blog", "test_blog_posts", "test_site_docs", "test_count_format", "test_repository_stars",
                "test_target_metadata", "test_artifact_delivery", "test_serve_site", "test_bootstrap", "test_trusted_site")
+SITE_PROVIDER = ("test_registry_infrastructure_site", "test_registry_v2_site", "test_registry_v2_pages", "test_registry_v2_build")
+SITE_PYTHON += SITE_PROVIDER
+NATIVE_V2 = ("test_registry_solver", "test_registry_v2_dependencies", "test_registry_v2_cli", "test_registry_project", "test_registry_v2_arm")
 SITE_NODE = (("site.test.cjs", "site"), ("package-demo.test.cjs", "site-demo"),
              ("package-navigation.test.cjs", "site-package-navigation"), ("discovery.test.cjs", "site-discovery"),
              ("navigation.test.cjs", "site-navigation"), ("repository-stars.test.cjs", "site-stars"))
@@ -37,6 +40,7 @@ class TestSuiteSelectionTests(unittest.TestCase):
                     ("tests/macos/test_native.py", "macos-cli"), ("tests/packages/test_reference.py", "package"),
                     ("tests/registry/test_format.py", "registry"), ("tests/release/test_release.py", "release")]
         fixtures.extend(("tests/" + module + ".py", "site-python:" + module) for module in SITE_PYTHON)
+        fixtures.extend(("tests/" + module + ".py", "native-v2:" + module) for module in NATIVE_V2)
         for relative, name in fixtures:
             path = self.directory / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,7 +75,7 @@ test({name!r}, () => {{
 }});
 ''')
 
-    def make(self, target, *, operating_system="Linux", fail=None, pythonpath=None):
+    def make(self, target, *, operating_system="Linux", fail=None, pythonpath=None, registry_v2=1):
         environment = dict(os.environ, ASM_SUITE_EVENTS=str(self.events))
         for name in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "ASM_SUITE_FAIL"):
             environment.pop(name, None)
@@ -81,9 +85,9 @@ test({name!r}, () => {{
             environment["PYTHONPATH"] = pythonpath
         # Exercise the actual recipes with small real unittest/Node suites.
         # The CLI build is outside this fixture's suite-selection contract.
-        return subprocess.run(["make", "--no-print-directory", "-o", "build/asm",
+        return subprocess.run(["make", "--no-print-directory", "-o", "build/asm", "-o", "build/asm-trust",
                                f"HOST_OS={operating_system}", "HOST_ARCH=aarch64", "ARCH=aarch64",
-                               f"PYTHON={sys.executable}", "TRUSTED_DISTRIBUTION=0", target],
+                               f"PYTHON={sys.executable}", "TRUSTED_DISTRIBUTION=0", f"REGISTRY_V2={registry_v2}", target],
                               cwd=self.directory, env=environment, capture_output=True,
                               text=True, timeout=30)
 
@@ -93,8 +97,10 @@ test({name!r}, () => {{
     def site_python_events(self):
         return Counter({"site-python:" + module: 1 for module in SITE_PYTHON})
 
-    def linux_events(self):
-        return Counter({"first-cli": 1, "second-cli": 1}) + self.site_python_events()
+    def linux_events(self, *, registry_v2=True):
+        old_site = Counter({"site-python:" + module: 1 for module in SITE_PYTHON if module not in SITE_PROVIDER})
+        native_v2 = Counter({"native-v2:" + module: 1 for module in NATIVE_V2}) if registry_v2 else Counter()
+        return Counter({"first-cli": 1, "second-cli": 1}) + old_site + native_v2
 
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
@@ -104,7 +110,15 @@ test({name!r}, () => {{
         self.assert_success(result)
         self.assertEqual(self.executed(), self.linux_events())
         evidence = release.native_test_result((result.stdout + result.stderr).encode(), "tests")
-        self.assertEqual(evidence["tests_run"], 2 + len(SITE_PYTHON))
+        self.assertEqual(evidence["tests_run"], sum(self.linux_events().values()))
+        self.assertEqual(evidence["skipped"], 0)
+
+    def test_minimal_profile_excludes_only_native_v2_modules(self):
+        result = self.make("test", registry_v2=0)
+        self.assert_success(result)
+        self.assertEqual(self.executed(), self.linux_events(registry_v2=False))
+        evidence = release.native_test_result((result.stdout + result.stderr).encode(), "tests")
+        self.assertEqual(evidence["tests_run"], sum(self.linux_events(registry_v2=False).values()))
         self.assertEqual(evidence["skipped"], 0)
 
     def test_darwin_keeps_the_native_suite(self):

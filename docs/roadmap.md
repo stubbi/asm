@@ -59,14 +59,30 @@ The native dependency commands use exact versions and a project lock file. The c
 
 **Acceptance gate:** add a library and call its exported routine. Rebuild from the lock without network access. Restore missing cache data with sync. Reject changed archives, changed source files, and unexpected cache entries. Preserve the previous lock after a failed update.
 
-Transitive resolution, version ranges, feature selection, and solver diagnostics remain future work. They require a separate resolver specification and adversarial graph tests.
+The V2 source profile adds bounded transitive resolution, optional dependencies, additive features, numeric ranges, and complete graph locks for one explicit target.
+Its [contract](specs/registry-v2.md) and [evidence](v2-dependency-evidence.md) remain separate from the released V1 capability.
+Parallel versions, universal target solving, and richer conflict explanations remain future work.
+The [feature qualification record](v2-feature-evidence.md) separates local checks from release and deployment evidence.
+
+## Unreleased V2 distribution
+
+The [V2 source profile](specs/registry-v2.md) provides direct scoped publishing, signed exact installation, and explicit mirror selection.
+Local tests compose the assembly API, PostgreSQL, private signing jobs, a second mirror, and the native client.
+The [evidence record](registry-v2-evidence.md) identifies artifacts and failed checks.
+A mirror needs static storage, synchronization, and HTTPS; it needs no database or signing keys.
+Native project preparation reads committed Git objects and writes archives and manifests in assembly.
+Prepared canonical manifests and digest-named objects remain an alternative.
+V2 observations use normalized private logs and identity-scoped snapshots; missing or unreported traffic remains unknown.
+An explicit static website build connects that registry and its observations to package pages, local search, and statistics.
+Native commands still authenticate current metadata independently of the cached pages.
+Self-service enrollment, dependency integration, production custody, and deployed recovery remain separate work.
 
 ## Authenticated distribution
 
 - Bind artifact provenance to expected repository and workflow identities.
-- Add narrowly scoped OIDC trusted publishers.
-- Authenticate registry metadata and detect rollback or expiry.
-- Test key rotation and compromise recovery.
+- Add optional OIDC publisher adapters with exact scopes.
+- Qualify signed metadata, rollback, and expiry through the deployed distribution path.
+- Exercise operational key rotation and compromise recovery with the selected custody procedure.
 - Verify these properties in the client before unattended updates.
 
 **Acceptance gate:** reject signature substitution, stale metadata, and unauthorized publisher changes. Complete a documented key-recovery exercise.

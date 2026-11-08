@@ -207,6 +207,27 @@ Packages can provide separate artifacts for other targets, including RISC-V Linu
 Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
 The [roadmap](docs/roadmap.md) tracks that work.
 
+The source prepares [Asm 0.7.0](docs/releases/0.7.0.md); its publication and final qualification remain pending.
+Ordinary source builds include [signed V2 distribution](docs/specs/registry-v2.md), publishing from committed projects, and explicit mirror selection.
+Its [hosting guide](docs/hosting.md#operate-signed-v2-distribution) describes the minimal components and build commands.
+Application and package logic remain assembly; maintained libraries provide transport and cryptography.
+Private registry operations and tests use suitable other languages.
+The [signed distribution evidence](docs/registry-v2-evidence.md) records the baseline artifacts and deployment gates.
+The [project and statistics evidence](docs/project-publication-evidence.md) records the subsequent source extension.
+An [explicit V2 website build](docs/hosting.md#build-the-v2-website) connects package pages, native fetch commands, and download observations without another service.
+The [website evidence](docs/v2-website-evidence.md) records its checks and limits.
+The V2 source profile also adds transitive source dependencies and complete graph locks for one explicit target.
+Native `registry resolve` selects versions; `registry sync` restores those exact selections.
+Optional dependencies remain dormant until a feature activates them.
+Use `registry resolve --features NAME[,NAME]` to select root features.
+Use `--no-default-features` to disable the root's implicit default feature.
+Incoming dependency requests combine additively for each selected package.
+New resolutions write `asm-lock-v4`, including the root selection, enabled features, and active edges.
+Feature-free `asm-lock-v3` files remain readable; feature declarations require a new resolution.
+The [dependency workflow](docs/hosting.md#resolve-and-restore-v2-dependencies) states the supported ranges, limits, and local build checks.
+The [dependency evidence](docs/v2-dependency-evidence.md) records qualification separately from the published release.
+This source profile does not change the published 0.6.0 binaries.
+
 ## Prepare a release record
 
 A package release records its source repository, exact Git commit, target, and artifact digests.
@@ -217,6 +238,8 @@ Public publisher authentication and hosted deployment remain unqualified.
 
 Use the [packaging and compatibility guide](registry/README.md) to prepare artifacts and records.
 The [hosted publication boundary](docs/hosted-registry.md#publication-boundary) states the remaining requirements.
+The [hosting guide](docs/hosting.md) covers conditional storage, byte mirrors, and asynchronous origin observations.
+The source build's [`asm registry publish` command](docs/hosting.md#use-the-native-v2-preview) accepts a committed project or prepared V2 manifests and digest-named objects.
 
 ## Build with an AI
 
@@ -237,7 +260,8 @@ The [security model](docs/specs/security.md) explains the checks, trust boundari
 
 ## Build from source
 
-Install Git, Make, and Python 3.11 or later.
+Install Git, Make, Python 3.11 or later, and the Go SDK declared in [verifier/go.mod](verifier/go.mod).
+The Go SDK must be available directly; builds disable automatic toolchain switching and ambient Go workspace configuration.
 Linux also requires GNU Binutils, curl, GNU Coreutils, and gzip.
 Apple Silicon macOS requires Xcode Command Line Tools.
 
@@ -251,9 +275,12 @@ asm version
 ```
 
 `make` selects the native implementation for your machine.
-It runs the assembler and linker to create the executable.
-It also provides test and installation commands.
-The root `asm.toml` describes the Linux x86-64 reference build.
+It builds the transport and cryptography adapter, then assembles and links the full native CLI.
+Go supplies no package selection, feature evaluation, project parsing, or installation policy.
+Make also provides test and installation commands.
+Use `make REGISTRY_V2=0` for an explicit V1-only build without the adapter or Go prerequisite.
+This minimal build cannot use `asm registry` commands.
+The root `asm.toml` describes the minimal Linux x86-64 reference build.
 The [CLI source guide](cli/README.md) explains the layout and installation helper.
 The [ARM64 notes](cli/aarch64/README.md) cover cross-assembly; the [macOS guide](docs/macos.md) covers Apple Silicon builds.
 
@@ -273,7 +300,8 @@ Follow the [design guide](design.md), [writing guide](docs/writing.md), and [cod
 The CLI uses assembly for project and package logic, with system tools for assembly, linking, transport, and cryptographic checks.
 Python handles registry operations, release automation, and the separate MCP protocol adapter; JavaScript supports the website.
 The hosted registry runtime foundation uses assembly with mature protocol and database libraries.
-The [bundled-verifier migration](docs/trusted-distribution.md) uses Go for the Sigstore and TUF adapter.
+The native V2 client embeds the Go transport and cryptography adapter.
+The separate [self-update trust migration](docs/trusted-distribution.md) remains gated on production key provisioning and recovery qualification.
 
 On Linux, run `make check` from the repository root.
 On macOS, run `make test`.
@@ -296,6 +324,10 @@ Asm is provided without warranty.
 | Reference packages under `examples/` | Each package's included MIT license |
 | Independently published packages | The license declared by that package version |
 | Earlier published versions | The license included with that version |
+
+Executables that embed the Go adapter include dependencies under their upstream license terms.
+Each such release provides the matching `.LICENSES.txt` file.
+The adapter's own source uses AGPL-3.0-or-later.
 
 Starter assembly files contain the complete MIT notice.
 The same notice remains in [examples/hello/LICENSE](examples/hello/LICENSE) and [examples/math/LICENSE](examples/math/LICENSE).

@@ -910,6 +910,9 @@ dependency_accept_payload:
     ARM_CALL validate_source_package
     tst w9, w9
     b.ne dependency_archive_error
+/* The graph caller has already checked this private payload and its signed
+ * declarations. Keep validation before this entry for all ordinary callers. */
+dependency_accept_validated_payload:
     ARM_ADDR x16, dependency_package_path
     mov x0, x16
     ARM_ADDR x16, dependency_stat
@@ -1163,6 +1166,10 @@ dependency_write_string:
  * Output: returns with a shared project lock held until build completion.
  * Does not fetch, resolve new versions, execute code or modify source caches. */
 verify_project_dependencies:
+.ifdef ASM_REGISTRY_V2
+    ARM_CALL r3_verify_project
+    cbnz w9, .Ldep_graph_verified
+.endif
     ARM_SAVE x19
     ARM_SAVE x21
     ARM_SAVE x22
@@ -1662,3 +1669,9 @@ dependency_temp_lock: .skip 96
 dependency_number: .skip 32
 dependency_lock_buffer: .skip 1048578
 .section .note.GNU-stack,"",%progbits
+
+.ifdef ASM_REGISTRY_V2
+.section .text
+.Ldep_graph_verified:
+    ret
+.endif
