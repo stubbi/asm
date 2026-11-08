@@ -7,10 +7,11 @@ import resource
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 
-from host import IS_MACOS, TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE, MAC_PREPARED
+from host import IS_MACOS, IS_ARM64, TARGET, OTHER_TARGET, TRIPLE, VERSION, CLI_SOURCE
 from host import exit_source, argc_source, illegal_source, undefined_symbol_source
 
 
@@ -61,6 +62,14 @@ class NativeCliTests(unittest.TestCase):
         status = json.loads(self.cli("status").stdout)
         self.assertIn("build", status["implemented"])
         self.assertIn("yank", status["unimplemented"])
+
+    def test_machine_command_lists_match_the_selected_registry_profile(self):
+        available = subprocess.run([str(ASM), "registry", "--help"], cwd=self.work,
+                                   capture_output=True, text=True, timeout=10)
+        self.assertIn(available.returncode, (0, 2), available.stderr)
+        expected = available.returncode == 0
+        self.assertEqual("registry" in json.loads(self.cli("help", "--json").stdout)["commands"], expected)
+        self.assertEqual("registry" in json.loads(self.cli("status", "--json").stdout)["implemented"], expected)
 
     def test_closed_stdout_is_an_error_in_plain_and_json_modes(self):
         commands = [
@@ -443,7 +452,12 @@ class NativeCliTests(unittest.TestCase):
     def test_cli_builds_its_own_assembly_sources(self):
         shutil.copytree(ROOT / "cli", self.work / "cli")
         if IS_MACOS:
-            shutil.copyfile(ROOT / MAC_PREPARED, self.work / CLI_SOURCE)
+            # The reference manifest builds minimal CLI sources, as on Linux.
+            # Generate them without borrowing a cached full-profile Make output.
+            preparer = "macos.py" if IS_ARM64 else "macos_x86_64.py"
+            subprocess.run([sys.executable, str(ROOT / "tools" / preparer),
+                            "--output", str(self.work / CLI_SOURCE)],
+                           check=True, capture_output=True, timeout=30)
         (self.work / "asm.toml").write_text(
             '[package]\nname = "asm"\nversion = "0.1.0"\n\n'
             f'[build]\nsource = "{CLI_SOURCE}"\ntarget = "{TARGET}"\n'
@@ -453,7 +467,9 @@ class NativeCliTests(unittest.TestCase):
             [str(self.work / "build/app"), "status"],
             capture_output=True, text=True, timeout=10, check=True,
         )
-        self.assertIn("fetch", json.loads(result.stdout)["implemented"])
+        commands = json.loads(result.stdout)["implemented"]
+        self.assertIn("fetch", commands)
+        self.assertNotIn("registry", commands)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,22 @@
+{
+  "artifacts": [
+    {
+      "bytes": 23547,
+      "kind": "source",
+      "sha256": "b2f5c260bba9fc01fae49cd99f40864436bc3599218d11cc25ccaa99330d46fb",
+      "target": "x86_64-linux",
+      "url": "https://github.com/stubbi/asm/releases/download/v0.7.0/math-0.7.0-x86_64-linux-source.tar.gz"
+    }
+  ],
+  "license": "MIT",
+  "name": "stubbi/math",
+  "schema": 1,
+  "source": {
+    "commit": "11f526c2f4264b8c33c4865ff03862857424c184",
+    "path": "examples/math",
+    "repository": "https://github.com/stubbi/asm"
+  },
+  "summary": "An unsigned 64-bit minimum routine for the System V AMD64 ABI.",
+  "version": "0.7.0",
+  "yanked": false
+}

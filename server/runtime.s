@@ -12,14 +12,25 @@
 .equ CONFIG_LIMIT, 4096
 
 .section .rodata
+#ifdef ASM_PUBLISHER
+usage: .asciz "Usage: asm-publisher serve\nSet ASM_BIND, ASM_DATABASE_URL_FILE, and ASM_UPLOAD_ROOT before starting the runtime.\n"
+#else
 usage: .asciz "Usage: asm-hub serve\nSet ASM_BIND and ASM_DATABASE_URL_FILE before starting the runtime.\n"
+#endif
 serve_command: .asciz "serve"
 env_bind: .asciz "ASM_BIND"
 env_database: .asciz "ASM_DATABASE_URL_FILE"
+#ifdef ASM_PUBLISHER
+config_error: .asciz "asm-publisher: invalid private configuration; check loopback binding, TLS database configuration, and the private upload root.\n"
+db_error: .asciz "asm-publisher: the database role or publication schema is not ready.\n"
+listen_error: .asciz "asm-publisher: the HTTP listener could not start.\n"
+started: .asciz "asm-publisher: listening on loopback.\n"
+#else
 config_error: .asciz "asm-hub: invalid configuration. Check ASM_BIND and the private TLS connection file against server/README.md.\n"
 db_error: .asciz "asm-hub: the database role, schema, or catalog is not ready.\n"
 listen_error: .asciz "asm-hub: the HTTP listener could not start.\n"
 started: .asciz "asm-hub: listening.\n"
+#endif
 get_method: .asciz "GET"
 path_live: .asciz "/health/live"
 path_ready: .asciz "/health/ready"
@@ -43,9 +54,17 @@ close_value: .asciz "close"
 live_body: .asciz "{\"status\":\"alive\"}\n"
 ready_body: .asciz "{\"status\":\"ready\"}\n"
 status_body:
+#ifdef ASM_PUBLISHER
+.ascii "{\"service\":\"asm-publisher\",\"status\":\"source-build-only\",\"application_language\":\"assembly\",\"declared_source_revision\":\""
+#else
 .ascii "{\"service\":\"asm-hub\",\"application_language\":\"assembly\",\"source_revision\":\""
+#endif
 .ascii ASM_SOURCE_REVISION
+#ifdef ASM_PUBLISHER
+.ascii "\",\"declared_source_url\":\"https://github.com/stubbi/asm/tree/"
+#else
 .ascii "\",\"source_url\":\"https://github.com/stubbi/asm/tree/"
+#endif
 .ascii ASM_SOURCE_REVISION
 .asciz "\"}\n"
 bad_query_body: .asciz "{\"error\":{\"code\":\"invalid_query\",\"message\":\"This endpoint accepts no query fields.\"}}\n"
@@ -64,12 +83,24 @@ db_key_timeout: .asciz "connect_timeout"
 db_key_options: .asciz "options"
 db_key_application: .asciz "application_name"
 timeout_value: .asciz "2"
+#ifdef ASM_PUBLISHER
+db_options: .asciz "-c statement_timeout=1000 -c lock_timeout=200 -c search_path=pg_catalog,public"
+application_name: .asciz "asm-publisher"
+begin_read_only: .asciz "BEGIN ISOLATION LEVEL READ COMMITTED"
+commit_sql: .asciz "COMMIT"
+commit_tag: .asciz "COMMIT"
+guard_sql:
+.ascii "SELECT asm_publication.publisher_ready('"
+.ascii ASM_PUBLISHER_SCHEMA_HASH
+.asciz "');"
+#else
 db_options: .asciz "-c default_transaction_read_only=on -c statement_timeout=1000 -c lock_timeout=200 -c search_path=pg_catalog,public"
 application_name: .asciz "asm-hub"
 begin_read_only: .asciz "BEGIN READ ONLY"
 guard_sql:
 .incbin "catalog/reader-guard.sql"
 .byte 0
+#endif
 export_sql:
 .incbin "catalog/read-exports.sql"
 .byte 0
@@ -86,6 +117,9 @@ mhd_options:
     .quad 29, 1, 0                /* strict client parsing */
     .quad 40, 16, listen_address  /* exact sockaddr length */
     .quad 7, uri_bound, 0         /* raw URI bound before decoding */
+#ifdef ASM_PUBLISHER
+    .quad 4, publisher_completed, 0 /* release request ownership on every termination */
+#endif
     .quad 0, 0, 0
 
 .section .data
@@ -131,6 +165,13 @@ main:
     call parse_bind
     test eax, eax
     jz .Lconfig_fail
+#ifdef ASM_PUBLISHER
+    cmp dword ptr [rip + listen_address + 4], 0x0100007f
+    jne .Lconfig_fail
+    call publisher_open_root
+    test eax, eax
+    jz .Lconfig_fail
+#endif
     lea rdi, [rip + env_database]
     call getenv@PLT
     test rax, rax
@@ -463,7 +504,13 @@ database_query:
     push r13
     push r14
     push r15
+#ifdef ASM_PUBLISHER
+    sub rsp, 72
+    mov qword ptr [rbp - 72], 0 /* retain operation result while COMMIT drains */
+    mov [rbp - 80], r8          /* optional request deadline */
+#else
     sub rsp, 56
+#endif
     mov rbx, rdi
     mov r12d, esi
     mov r13, rdx
@@ -479,6 +526,13 @@ database_query:
     test rax, rax
     js .Ldb_failed
     lea r14, [rax + DB_DEADLINE_MS]
+#ifdef ASM_PUBLISHER
+    cmp qword ptr [rbp - 80], 0
+    je .Lpublisher_db_deadline
+    cmp r14, [rbp - 80]
+    cmova r14, [rbp - 80]
+.Lpublisher_db_deadline:
+#endif
     lea rdi, [rip + db_keys]
     lea rsi, [rip + db_values]
     mov edx, 1
@@ -538,6 +592,11 @@ database_query:
     lea rsi, [rip + guard_sql]
     cmp dword ptr [rbp - 56], 1
     je .Ldb_send_selected
+#ifdef ASM_PUBLISHER
+    lea rsi, [rip + commit_sql]
+    cmp dword ptr [rbp - 56], 3
+    je .Ldb_send_selected
+#endif
     mov rsi, rbx
     mov edx, r12d
     mov r8, r13
@@ -595,9 +654,27 @@ database_query:
     mov rdi, rax
     call PQresultStatus@PLT
     cmp dword ptr [rbp - 56], 0
+#ifdef ASM_PUBLISHER
+    je .Lpublisher_db_command
+    cmp dword ptr [rbp - 56], 3
     jne .Ldb_tuple_status
+.Lpublisher_db_command:
+#else
+    jne .Ldb_tuple_status
+#endif
     cmp eax, 1                   /* PGRES_COMMAND_OK for BEGIN */
     jne .Ldb_failed
+#ifdef ASM_PUBLISHER
+    cmp dword ptr [rbp - 56], 3
+    jne .Ldb_read
+    mov rdi, [rbp - 48]
+    call PQcmdStatus@PLT
+    mov rdi, rax
+    lea rsi, [rip + commit_tag]
+    call strcmp@PLT
+    test eax, eax
+    jnz .Ldb_failed
+#endif
     jmp .Ldb_read
 .Ldb_tuple_status:
     cmp eax, 2                   /* PGRES_TUPLES_OK */
@@ -608,6 +685,18 @@ database_query:
     jne .Ldb_failed
     mov rdi, [rbp - 48]
     call PQnfields@PLT
+#ifdef ASM_PUBLISHER
+    cmp dword ptr [rbp - 56], 2
+    jne .Lpublisher_guard_field
+    cmp eax, 3
+    jne .Ldb_failed
+    mov rdi, [rbp - 48]
+    call publisher_result_valid
+    test eax, eax
+    jz .Ldb_failed
+    jmp .Ldb_read
+.Lpublisher_guard_field:
+#endif
     cmp eax, 1
     jne .Ldb_failed
     mov rdi, [rbp - 48]
@@ -645,6 +734,24 @@ database_query:
     cmp qword ptr [rbp - 48], 0
     je .Ldb_failed
     cmp dword ptr [rbp - 56], 2
+#ifdef ASM_PUBLISHER
+    jne .Lpublisher_db_not_operation
+    mov rax, [rbp - 48]
+    mov [rbp - 72], rax
+    mov qword ptr [rbp - 48], 0
+    inc dword ptr [rbp - 56]
+    jmp .Ldb_send
+.Lpublisher_db_not_operation:
+    cmp dword ptr [rbp - 56], 3
+    jne .Lpublisher_db_not_commit
+    mov rdi, r15
+    call PQtransactionStatus@PLT
+    test eax, eax               /* PQTRANS_IDLE after a fully drained COMMIT */
+    jnz .Ldb_failed
+    jmp .Ldb_finish
+.Lpublisher_db_not_commit:
+    cmp dword ptr [rbp - 56], 3
+#endif
     je .Ldb_finish
     cmp dword ptr [rbp - 56], 1
     jne .Ldb_next
@@ -659,6 +766,15 @@ database_query:
 .Ldb_finish:
     mov rdi, r15
     call PQfinish@PLT
+#ifdef ASM_PUBLISHER
+    cmp qword ptr [rbp - 72], 0
+    je .Lpublisher_db_guard_return
+    mov rdi, [rbp - 48]
+    call PQclear@PLT
+    mov rax, [rbp - 72]
+    jmp .Ldb_return
+.Lpublisher_db_guard_return:
+#endif
     mov rax, [rbp - 48]
     jmp .Ldb_return
 .Ldb_failed:
@@ -667,6 +783,13 @@ database_query:
     jz .Ldb_close
     call PQclear@PLT
 .Ldb_close:
+#ifdef ASM_PUBLISHER
+    mov rdi, [rbp - 72]
+    test rdi, rdi
+    jz .Lpublisher_db_result_clear
+    call PQclear@PLT
+.Lpublisher_db_result_clear:
+#endif
     test r15, r15
     jz .Ldb_null
     mov rdi, r15
@@ -674,7 +797,11 @@ database_query:
 .Ldb_null:
     xor eax, eax
 .Ldb_return:
+#ifdef ASM_PUBLISHER
+    add rsp, 72
+#else
     add rsp, 56
+#endif
     pop r15
     pop r14
     pop r13
@@ -693,6 +820,9 @@ database_ready:
     xor esi, esi
     xor edx, edx
     mov ecx, 1
+#ifdef ASM_PUBLISHER
+    xor r8d, r8d
+#endif
     call database_query
     test rax, rax
     jz .Lready_no
@@ -719,6 +849,9 @@ database_ready:
 
 /* MHD raw-URI callback: returns opaque marker 1 if the URI is too long. */
 uri_bound:
+#ifdef ASM_PUBLISHER
+    jmp publisher_uri_bound
+#endif
     mov rdi, rsi
     mov esi, 2049
     sub rsp, 8
@@ -757,6 +890,9 @@ query_value:
  * Each database operation owns its own connection; global data is immutable.
  * No request body, file path, database error, or query text enters a log. */
 handle_request:
+#ifdef ASM_PUBLISHER
+    jmp publisher_request
+#endif
     push rbp
     mov rbp, rsp
     push rbx
@@ -1004,8 +1140,16 @@ queue_response:
     mov r12d, esi
     mov r13, rdx
     mov [rsp], r8
+#ifdef ASM_PUBLISHER
+    mov [rsp + 8], r9
+    cmp esi, 204
+    je .Lpublisher_empty_response
+#endif
     test rcx, rcx
     jz .Lqueue_no
+#ifdef ASM_PUBLISHER
+.Lpublisher_empty_response:
+#endif
     cmp rcx, MAX_JSON
     ja .Lqueue_no
     mov rdi, rcx
@@ -1015,6 +1159,38 @@ queue_response:
     test rax, rax
     jz .Lqueue_no
     mov r14, rax
+#ifdef ASM_PUBLISHER
+    cmp qword ptr [rsp + 8], 0
+    je .Lpublisher_no_location
+    mov rdi, r14
+    lea rsi, [rip + publisher_header_location]
+    mov rdx, [rsp + 8]
+    call MHD_add_response_header@PLT
+    cmp eax, 1
+    jne .Lqueue_destroy_no
+.Lpublisher_no_location:
+    cmp r12d, 401
+    jne .Lpublisher_no_challenge
+    mov rdi, r14
+    lea rsi, [rip + publisher_header_challenge]
+    lea rdx, [rip + publisher_challenge_value]
+    call MHD_add_response_header@PLT
+    cmp eax, 1
+    jne .Lqueue_destroy_no
+.Lpublisher_no_challenge:
+    cmp r12d, 429
+    je .Lpublisher_retry_after
+    cmp r12d, 503
+    jne .Lpublisher_no_retry
+.Lpublisher_retry_after:
+    mov rdi, r14
+    lea rsi, [rip + publisher_header_retry]
+    lea rdx, [rip + publisher_retry_value]
+    call MHD_add_response_header@PLT
+    cmp eax, 1
+    jne .Lqueue_destroy_no
+.Lpublisher_no_retry:
+#endif
     mov rdi, r14
     lea rsi, [rip + header_type]
     mov rdx, [rsp]
@@ -1061,5 +1237,9 @@ queue_response:
     pop r12
     pop rbx
     ret
+
+#ifdef ASM_PUBLISHER
+#include "publisher/handlers.s"
+#endif
 
 .section .note.GNU-stack,"",@progbits

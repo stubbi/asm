@@ -10,6 +10,8 @@
 !tools/agent_workflow.py
 !tools/registry.py
 !tools/registry_admin.py
+!tools/registry_mirror.py
+!tools/registry_storage.py
 !tools/test_server_image.py
 !tools/operator_source.py
 !tools/operator_entrypoint.py

@@ -30,7 +30,7 @@ The MCP planning tools describe those three targets and `riscv64-linux`.
 The registry also accepts two Windows artifact labels; the MCP target filters do not expose them.
 Catalog target support does not mean native CLI support.
 RISC-V development needs the documented cross tools.
-Asm 0.6.0 selects its native host by default and supports explicit standalone Linux cross builds.
+Asm 0.7.0 selects its native host by default and supports explicit standalone Linux cross builds.
 The [project contract](https://github.com/stubbi/asm/blob/main/docs/multi-target-projects.md) defines the required GNU or LLVM tools.
 Emulated execution does not establish physical-target performance.
 

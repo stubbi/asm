@@ -78,6 +78,13 @@ func withRepository(ctx context.Context, state string, operation func(*trustedRe
 }
 
 func useRepository(anchor []byte, state string, transport fetcher.Fetcher, operation func(*trustedRepository) error) error {
+	return useRepositoryAt(anchor, state, metadataURL, targetsURL, transport, nil, operation)
+}
+
+// Profiles share the maintained updater and retained recovery rules. Transport
+// URLs do not select authority; the caller supplies the independently trusted
+// anchor and a durable profile binding before any cached root can be read.
+func useRepositoryAt(anchor []byte, state, metadataBase, targetsBase string, transport fetcher.Fetcher, binding []byte, operation func(*trustedRepository) error) error {
 	directory, err := openState(state)
 	if err != nil {
 		return err
@@ -93,6 +100,9 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 		return errors.New("another trust refresh is in progress")
 	}
 	defer unlock()
+	if err := bindRepositoryProfile(state, directory, binding); err != nil {
+		return err
+	}
 	// Validate every existing fixed role before the library reads or replaces it.
 	// No pathname supplied by remote metadata is used for persistent state.
 	// MaxDelegations=0 prevents delegated-role persistence. The pinned updater
@@ -159,15 +169,15 @@ func useRepository(anchor []byte, state string, transport fetcher.Fetcher, opera
 	if current.Root.Signed.Version < previous.Root.Signed.Version {
 		return errors.New("cached root predates its recovery checkpoint")
 	}
-	cfg, err := config.New(metadataURL, anchor)
+	cfg, err := config.New(metadataBase, anchor)
 	if err != nil {
 		return err
 	}
 	cfg.LocalMetadataDir = state
 	cfg.LocalTargetsDir = state
-	cfg.RemoteTargetsURL = targetsURL
+	cfg.RemoteTargetsURL = targetsBase
 	var u *updater.Updater
-	cfg.Fetcher = &checkpointFetcher{checkpoint: directory.Sync, Fetcher: &rotationFetcher{Fetcher: transport, beforeTimestamp: func() error {
+	cfg.Fetcher = &checkpointFetcher{checkpoint: directory.Sync, Fetcher: &rotationFetcher{Fetcher: transport, timestampURL: metadataBase + "/timestamp.json", beforeTimestamp: func() error {
 		verified := u.GetTrustedMetadataSet()
 		if verified.Root.Signed.IsExpired(verified.RefTime) {
 			return &metadata.ErrExpiredMetadata{Msg: "final root.json is expired"}
@@ -238,11 +248,12 @@ var errOnlineKeyRotation = errors.New("online signing keys rotated")
 // retried: this sentinel only discards the updater's obsolete in-memory state.
 type rotationFetcher struct {
 	fetcher.Fetcher
+	timestampURL    string
 	beforeTimestamp func() error
 }
 
 func (f *rotationFetcher) DownloadFile(address string, limit int64, timeout time.Duration) ([]byte, error) {
-	if address == metadataURL+"/timestamp.json" {
+	if address == f.timestampURL {
 		if err := f.beforeTimestamp(); err != nil {
 			return nil, err
 		}

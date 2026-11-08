@@ -2,8 +2,9 @@
 // Copyright (c) 2026 ASM contributors
 package main
 
-import "os"
+import (
+	"github.com/stubbi/asm/verifier/internal/securefs"
+	"os"
+)
 
-// Linux access ACL permissions are constrained by the group-class mode mask.
-// The common checks reject writable masks, and state directories require 0700.
-func platformPermissions(_ *os.File) error { return nil }
+func platformPermissions(file *os.File) error { return securefs.CheckPermissions(file) }

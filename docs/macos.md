@@ -28,6 +28,7 @@ A missing security operation must stop the command.
 Use an Apple Silicon Mac with macOS 15 or later.
 Install Apple's Xcode Command Line Tools before building.
 The build also requires Git, Make, and Python 3.11 or later.
+The full CLI build requires the Go SDK declared in `verifier/go.mod`.
 Use the revision that contains the macOS implementation.
 
 From its source directory, run:
@@ -37,7 +38,8 @@ make build/asm &&
 make test
 ```
 
-The native build creates `build/asm-aarch64-macos` and copies those bytes to `build/asm`.
+The default native build creates `build/v2/asm-aarch64-macos` and copies those bytes to `build/asm`.
+The `build/asm-aarch64-macos` target retains a copy of the selected profile when explicitly requested.
 The native test command runs `tests/macos` against that executable.
 It must exercise a real Mach-O program without a Linux emulator or translated executable.
 A passing local test is evidence for its cases and host, not a published support claim.

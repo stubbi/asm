@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Schedule retained Asm artifact synchronization
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=1h
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=asm-mirror.service
+
+[Install]
+WantedBy=timers.target

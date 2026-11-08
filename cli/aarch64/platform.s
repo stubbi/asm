@@ -158,6 +158,21 @@ arm_rename:
     mov x9, x0
     ARM_SYSCALL_RETURN
 
+/* link(old,new) -> linkat(AT_FDCWD,old,AT_FDCWD,new,0). x0/x1 are
+ * borrowed bounded paths; x9=0 or negative errno. No replacement occurs.
+ * Preserve x0-x7; stack64; scratch x8/x10-x17/NZCV as other adapters. */
+arm_link:
+    ARM_SYSCALL_SAVE
+    mov x3, x1
+    mov x1, x0
+    mov x0, #-100
+    mov x2, #-100
+    mov x4, #0
+    mov x8, #37
+    svc #0
+    mov x9, x0
+    ARM_SYSCALL_RETURN
+
 arm_chmod:
     ARM_SYSCALL_SAVE
     mov x2, x1

@@ -230,7 +230,9 @@ class NativeBuilderTests(unittest.TestCase):
             self.assertEqual(result["source_commit"], commit)
             self.assertGreater(result["tests"]["tests_run"], 0)
             self.assertEqual(result["tests"]["skipped"], 0)
-            binary, evidence = release.read_native_release(output, commit, result["version"])
+            binary, evidence = release.read_native_release(output, commit, result["version"],
+                                                           registry_v2=release.source_registry_v2(
+                                                               json.loads((repo / "cli/commands.json").read_text())))
             self.assertEqual(evidence, result)
             self.assertEqual(hashlib.sha256(binary).hexdigest(), result["asset"]["sha256"])
             installed = output / result["asset"]["file"]
