@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Reviewed with Squirrelscan 0.0.173 on 8 November 2026.
+# These are scoring waivers, not website fixes. Keep a --no-ignore audit.
+# Review each waiver when its page purpose or supported metadata changes.
+
+[rules]
+enable = ["*"]
+disable = []
+
+[[ignore]]
+rule = "schema/expected-type"
+checks = ["expected-type"]
+urls = ['regex:^/(docs|reference)$']
+reason = "Docs and the source index are collections with ItemList metadata, not articles."
+
+[[ignore]]
+rule = "schema/expected-type"
+checks = ["expected-type"]
+urls = ['regex:^/packages/stubbi/hello/0\.[1-5]\.0$']
+reason = "These five exact historical source paths have no root README. Their SoftwareSourceCode metadata does not describe an article."
+
+[[ignore]]
+rule = "schema/json-ld-valid"
+checks = ["json-ld-valid"]
+urls = ['regex:^/guide$']
+# Match missing-property labels, not IDs shared with invalid-property errors.
+items = [
+  "Article missing author",
+  "Article missing datePublished",
+  "Article missing image",
+]
+reason = "These recommended Article facts are unavailable. Keep syntax errors, invalid values, and other missing properties active."

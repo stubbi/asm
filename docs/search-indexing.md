@@ -14,10 +14,11 @@ See the [Google technical requirements](https://developers.google.com/search/doc
 
 ## Audit findings and useful fixes
 
-The 8 November review uses Squirrelscan 0.0.172 with a fresh, full, offline crawl.
+The initial 8 November review used Squirrelscan 0.0.172 with a fresh, full, offline crawl.
 Keep the original report and failed checks beside subsequent results.
 Its warning count includes repeated checks across pages, rather than distinct defects.
-Do not disable checks or change the crawl scope to imply an improvement.
+Do not disable genuine checks or reduce crawl coverage to imply an improvement.
+Keep an unfiltered result when applying reviewed scoring waivers.
 
 Give titles useful package, version, and task context.
 Keep descriptions concise without removing exact release facts from the page or its structured data.
@@ -50,7 +51,7 @@ Registry identifiers, targets, filters, and private search fragments retain lite
 
 ### Schema review, 8 November 2026
 
-Squirrelscan reports eight failed page checks, with ten underlying complaints.
+The unfiltered Squirrelscan audit reports eight failed page checks, with ten underlying complaints.
 Seven expect article metadata on `/docs`, `/reference`, and `stubbi/hello` versions `0.1.0` through `0.5.0`.
 One guide check groups missing `author`, `datePublished`, and `image` fields.
 
@@ -70,6 +71,38 @@ Keep unsupported values absent and preserve the raw scanner findings.
 See [Article guidance](https://developers.google.com/search/docs/appearance/structured-data/article),
 [CollectionPage](https://schema.org/CollectionPage), [ItemList](https://schema.org/ItemList), and
 [sha256](https://schema.org/sha256), reviewed on 8 November 2026.
+
+### Local audit configuration
+
+The repository's [squirrel.toml](../squirrel.toml) keeps all default audit rules enabled and sets no crawl exclusions.
+The local waiver configuration was validated with Squirrelscan 0.0.173.
+Its reviewed waivers affect only the seven exact page-type complaints and the guide's three missing-property labels.
+The seven page-type checks are reported as ignored and excluded from the configured score.
+All other checks remain active on those pages.
+The guide's JSON-LD validator still reports syntax errors, supported invalid-value errors, and other missing properties.
+
+Use exact missing-property labels, not property identifiers shared with invalid-value errors.
+Keep package versions outside `0.1.0` through `0.5.0`, other guide paths, and authored blog pages outside these waivers.
+Review the waivers when a page's purpose changes or actual authorship, publication, or image metadata becomes available.
+Existing site tests require collection metadata, exact source bindings, and truthful historical README states.
+These waivers do not expand Squirrelscan's property validation; exact source URLs remain covered by the site checks.
+
+1. Validate the configuration with `squirrel config validate`.
+2. Record the CLI version with `squirrel --version`.
+3. Create the output directory with `mkdir -p build/seo-audit`.
+4. Run an unfiltered audit and a configured audit with the same CLI version.
+
+```sh
+squirrel audit https://asm.build/ --level full --max-pages 500 --concurrency 2 --per-host 2 --offline --passive --refresh --no-ignore --format llm --output build/seo-audit/raw.llm
+squirrel audit https://asm.build/ --level full --max-pages 500 --concurrency 2 --per-host 2 --offline --passive --refresh --format llm --output build/seo-audit/configured.llm
+```
+
+The configured report states which findings were waived and why.
+A configured score measures applicability adjustments; it does not establish a website improvement or ranking change.
+Offline audits do not check external-link availability, cloud rendering, or real-user Core Web Vitals.
+Cloud audits do not read this local file and currently have no equivalent item-level waiver configuration.
+Do not replace these local waivers with cloud-wide rule exclusions.
+See [Squirrelscan's ignore configuration](https://docs.squirrelscan.com/configuration/ignore), reviewed on 8 November 2026.
 
 ## Page intent and keyword hypotheses
 
