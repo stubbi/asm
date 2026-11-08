@@ -43,6 +43,23 @@ class HeadPolicy(HTMLParser):
 
 
 class SiteAssetTests(unittest.TestCase):
+    @staticmethod
+    def fixture_repo(directory):
+        """Give checkout and source-archive runs the same recorded CLI input."""
+        repo = Path(directory) / "repo"
+        repo.mkdir()
+        for name in ("site", "cli", "docs", "skills/asm-build"):
+            shutil.copytree(ROOT / name, repo / name)
+        for name in ("README.md", "CHANGELOG.md"):
+            shutil.copyfile(ROOT / name, repo / name)
+        for arguments in (("init", "-q"), ("add", "--force", "--", "cli"),
+                          ("commit", "-qm", "Record source reference fixture")):
+            subprocess.run(["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null",
+                            "-c", "commit.gpgSign=false", "-c", "user.name=asm site test fixture",
+                            "-c", "user.email=fixture@example.invalid", *arguments],
+                           check=True, capture_output=True, timeout=10)
+        return repo
+
     def require_minifier(self):
         self.assertIsNotNone(site_assets, "The production asset minifier is not implemented")
         return site_assets
@@ -153,11 +170,12 @@ class SiteAssetTests(unittest.TestCase):
         self.require_minifier()
         import build_site
         with tempfile.TemporaryDirectory(prefix="asm-site-assets-failure-") as temporary:
+            repo = self.fixture_repo(temporary)
             destination = Path(temporary) / "site"
             original = (ROOT / "site/app.js").read_bytes()
             with patch.object(site_assets, "minify_scripts", side_effect=ValueError("asset fixture failure")):
                 with self.assertRaisesRegex(ValueError, "asset fixture failure"):
-                    build_site.build_site(ROOT, ROOT / "registry", destination)
+                    build_site.build_site(repo, ROOT / "registry", destination)
             self.assertFalse(destination.exists())
             self.assertEqual((ROOT / "site/app.js").read_bytes(), original)
 
@@ -166,8 +184,9 @@ class SiteAssetTests(unittest.TestCase):
         self.assertTrue(callable(getattr(assets, "with_content_policy", None)), "The document policy is not implemented")
         import build_site
         with tempfile.TemporaryDirectory(prefix="asm-site-csp-") as temporary:
+            repo = self.fixture_repo(temporary)
             stage = Path(temporary) / "site"
-            build_site.build_site(ROOT, ROOT / "registry", stage)
+            build_site.build_site(repo, ROOT / "registry", stage)
             pages = list(stage.rglob("*.html"))
             self.assertGreaterEqual(len(pages), 63)
             for path in pages:

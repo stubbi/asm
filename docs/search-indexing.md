@@ -1,7 +1,7 @@
 # Search indexing
 
 Asm publishes a [sitemap](https://asm.build/sitemap.xml) and [crawl rules](https://asm.build/robots.txt).
-The sitemap contained 60 unique HTML page URLs before the 8 November 2026 audit changes.
+The sitemap contains 63 unique HTML page URLs after the 8 November 2026 audit changes.
 It includes packages, exact versions, documentation, blog releases, Explore, statistics, browse directories, sponsorship, and the CLI source reference.
 Each page declares its preferred URL with a canonical link.
 Public page URLs have no extension or trailing slash; the homepage uses `/`.
@@ -78,7 +78,7 @@ Popularity does not establish safety.
 ## Titles, descriptions, and the site name
 
 Use a concise title for each page with the suffix ` | Asm`.
-Examples include `Installation and package documentation | Asm`, `stubbi/math | Asm`, and `stubbi/math@0.6.0 | Asm`.
+Examples include `Installation and package documentation | Asm`, `stubbi/math assembly package | Asm`, and `stubbi/math@0.6.0 assembly package | Asm`.
 Keep package identity and exact version visible in titles for version pages.
 Keep titles, main headings, and social metadata consistent with the page's content.
 Do not repeat keyword variants or the full product description in every title.
