@@ -68,6 +68,8 @@
 .package-readme-content h4 { font-size: var(--text-lg); }
 .package-readme-content h5, .package-readme-content h6 { font-size: var(--text-base); }
 .package-readme-content p { margin: var(--space-4) 0; }
+.package-readme-content .readme-disclosure { margin-block: var(--space-4); }
+.package-readme-content .readme-disclosure > summary { min-height: var(--control-height); padding-block: var(--space-2); cursor: pointer; }
 .package-readme-content :where(ul,ol) { margin: var(--space-4) 0; padding-left: var(--space-6); }
 .package-readme-content li + li { margin-top: var(--space-2); }
 .package-readme-content :not(pre) > code { border-radius: var(--radius-control); padding-inline: var(--space-1); background: var(--surface); font-size: var(--text-sm); }

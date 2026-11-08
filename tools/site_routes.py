@@ -18,6 +18,8 @@ SITE = "https://asm.build"
 MAX_HTML_BYTES = 4 * 1024 * 1024
 MAX_PAGES = 32768
 URL_ATTRIBUTES = {"href", "src", "action", "data-activity-url"}
+# Page spelling is independent of the registry's literal architecture ID.
+PUBLIC_NAMES = {"/browse/architectures/x86_64": "/browse/architectures/x86-64"}
 ATTRIBUTE = re.compile(r'''(?P<name>[^\s"'<>/=]+)(?:(?P<equals>\s*=\s*)(?:(?P<quote>["'])(?P<quoted>.*?)(?P=quote)|(?P<bare>[^\s"'=<>`]+)))?''', re.S)
 
 
@@ -106,15 +108,19 @@ class PageRoutes:
             legacy = raw[:-10] if raw.endswith("index.html") and (raw == "/index.html" or raw.endswith("/index.html")) else raw
             canonical = legacy.rstrip("/") if legacy.endswith("/") else legacy[:-5]
             canonical = canonical or "/"
+            original = canonical
+            canonical = PUBLIC_NAMES.get(original, original)
             existing = result.pages.get(canonical)
             registry.require(existing is None or existing["data"] == data, "different pages claim the same canonical route")
             if existing is None:
-                result.pages[canonical] = {"data": data, "files": [], "legacy": legacy, "file": relative}
+                result.pages[canonical] = {"data": data, "files": [], "legacy": legacy, "file": relative, "original_names": set()}
             page = result.pages[canonical]
+            page["original_names"].add(original)
             page["files"].append(relative)
             if relative.name == "index.html":
                 page.update(legacy=legacy, file=relative)
-            aliases = {canonical, raw, legacy}
+            aliases = {canonical, original, raw, legacy}
+            if original != "/": aliases.update({original + "/", original + "/index.html", original + ".html"})
             if canonical != "/": aliases.update({canonical + "/", canonical + "/index.html", canonical + ".html"})
             else: aliases.add("/index.html")
             for alias in aliases:
@@ -192,6 +198,8 @@ class PageRoutes:
                                  "HTML page changed before export")
                 planned[relative] = rewritten
             if canonical != "/": planned[Path(canonical.lstrip("/") + ".html")] = rewritten
+            for original in page["original_names"] - {canonical, "/"}:
+                planned[Path(original.lstrip("/") + ".html")] = rewritten
         for relative, kind in ((Path("sitemap.xml"), "sitemap"), (Path("blog/atom.xml"), "atom")):
             path = self.root / relative
             if path.exists() or path.is_symlink():

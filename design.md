@@ -80,7 +80,7 @@ The deeper story connects AI, assembly, reuse, and human judgment.
 AI may reduce the work of creating assembly; useful reuse still needs explicit targets and inspectable evidence.
 People set the intent and decide what to trust.
 Keep this explanation in the guide and motivation documents, where readers choose to learn more.
-The shared Why Asm footer link opens the guide's story section.
+The shared About Asm footer link opens the project page, which retains a link to the guide's story section.
 
 ### Identity decisions
 
@@ -513,6 +513,7 @@ Keep purpose, architecture, and methodology on the dedicated Explore and statist
 Use a 24-pixel Browse packages heading, 16-pixel group headings, and the existing compact package type.
 Give each activity list one twelve-pixel enclosing panel and a consistent header with its scope and View all link.
 Use borderless package rows inside each panel, with rounded hover surfaces, underlined names, and visible keyboard focus.
+Make each discovery heading the group's native destination link instead of adding a separate View all action.
 Keep dates, exact targets, unavailable states, and incomplete-download explanations beside their data.
 Do not add nested card borders or use explanatory text as a section separator.
 Keep stale, failed, unavailable, and incomplete-data warnings visible.
@@ -534,6 +535,7 @@ Resolve relative links against their original page before exporting root-relativ
 Update canonical metadata, sitemap locations, and clickable feed links.
 Retain old page addresses as working aliases; preserve existing Atom entry identities.
 Keep literal section fragments and private search/return fragments unchanged.
+Use the human-readable architecture path `x86-64`, retaining underscore page addresses as aliases and `x86_64` in machine data.
 JSON feeds, installer paths, source filenames, and artifact routes keep their existing addresses.
 The local server must match the deployed host's flat-HTML lookup before directory redirects.
 Verify exact-version paths containing dots and nested flat files beside same-name directories.
@@ -715,6 +717,8 @@ Missing commits, external repositories, absent files, invalid UTF-8, and oversiz
 The rest of the release page remains available.
 Bound readme input and render only the supported Markdown subset.
 Escape source HTML, reject executable link schemes, and avoid automatic remote images.
+Only balanced, attribute-free details and summary syntax receives the tested native disclosure treatment.
+Group README headings into labelled sections while preserving their text and anchor identities.
 Use recorded-commit links for relative documentation references.
 
 Namespace prefixes are not authenticated publisher profiles.
@@ -849,6 +853,8 @@ Keep Explore, Stats, Blog, and Docs in the same navigation order.
 The wordmark returns to search; installation remains in the footer and documentation.
 Mark the current page with a selected surface, stronger text, and `aria-current`.
 Keep the same Learn, Registry, Project, and Help link groups and support row in every footer.
+Keep four Help rows: issue reporting, security, contact, and privacy.
+Contribution remains in the support row; supported hosts remain in Docs and the installation instructions.
 The Source code footer link retains the GitHub route while Packages provides explicit return navigation.
 
 Use the shared type tokens for metadata, body text, controls, titles, and page and section headings.

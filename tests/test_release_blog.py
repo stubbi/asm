@@ -152,13 +152,13 @@ class ReleaseBlogTests(unittest.TestCase):
         self.build(dates=self.dates)
         for version, license_id in (("0.1.0", "MIT"), ("0.2.0", "AGPL-3.0-or-later")):
             head = self.post(version).split("</head>", 1)[0]
-            self.assertIn("<title>Release " + version + " notes", head)
+            self.assertIn("<title>Assembly CLI " + version + " release notes", head)
             title = head.split("<title>", 1)[1].split("</title>", 1)[0]
-            self.assertEqual(title.count("Asm"), 1)
+            self.assertTrue(title.endswith(" | Asm"))
             self.assertIn(license_id, head)
             self.assertIn("source commit", head)
-        for route, title in (("blog", "Project blog and release notes"), ("blog/articles", "Project articles"),
-                             ("blog/releases", "CLI release notes")):
+        for route, title in (("blog", "Project blog and release notes"), ("blog/articles", "Assembly software article archive"),
+                             ("blog/releases", "Assembly CLI release notes")):
             content = (self.stage / route / "index.html").read_text()
             self.assertIn("<title>" + title, content)
         article_head = (self.stage / "blog/articles/index.html").read_text().split("</head>", 1)[0]

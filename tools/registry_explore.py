@@ -153,7 +153,7 @@ def _download_note(snapshot, prefix, *, retained=False):
     complete = snapshot.get("complete") if retained else snapshot.get("coverage", {}).get("complete")
     note += ('The stated period is fully covered.' if complete else 'Coverage is incomplete. Counts are observed minimums.')
     if snapshot.get("stale"): note += ' These observations are stale.'
-    note += ' ' + package_pages._anchor("How counts work", prefix + "discovery/")
+    note += ' ' + package_pages._anchor("Discovery data and coverage", prefix + "discovery/")
     return '<p class="package-note">' + note + '</p>'
 
 
@@ -202,7 +202,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
         "categories": "Browse purpose categories for active assembly packages. Category counts describe distinct package membership rather than popularity or compatibility.",
         "keywords": "Browse declared keywords attached to active assembly packages. Keyword counts describe package membership rather than search activity.",
         "architectures": "Browse active assembly packages by the architecture of their declared artifacts. Operating systems and artifact formats remain explicit.",
-        "depended-on": "Inspect assembly packages referenced by declared direct dependencies of active releases. Missing declarations remain unavailable and partial counts remain observed minima.",
+        "depended-on": "Find assembly packages used as direct dependencies of active releases. Check declared dependency coverage and source-bound package versions.",
         "downloaded": "Inspect Asm completed transfers since collection began. Rankings retain collection coverage and exclude unknown earlier or external-host activity.",
     }
     if architecture:
@@ -217,7 +217,8 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
         page_title, description = page_titles[kind], descriptions[kind]
     body = '<header class="package-heading"><h1>' + escape(title) + '</h1><p>' + escape(caption) + '</p></header>'
     body += '<nav class="package-section-nav" aria-label="Explore packages">' + ''.join(
-        package_pages._anchor(label, prefix + target, attrs=' aria-current="page"' if selected == kind else '')
+        package_pages._anchor(label, prefix + target, attrs=(' aria-current="page"' if selected == kind else '')
+                              + (' aria-label="Explore assembly packages"' if label == "Explore" else ''))
         for label, target, selected in (("Explore", "explore/", "explore"), ("All packages", "packages/", "all"),
             ("Categories", "browse/categories/", "categories"), ("Keywords", "browse/keywords/", "keywords"),
             ("Architectures", "browse/architectures/", "architectures"),
@@ -229,8 +230,8 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                          (' dependent' if dependents[name]["count"] == 1 else ' dependents') for name in depended}
     if kind == "explore":
         def group(key, heading, caption, destination, content, note=""):
-            return ('<section class="discovery-group" aria-labelledby="explore-' + key + '"><div class="discovery-group-header"><div class="discovery-group-heading"><h2 id="explore-' + key + '">' + heading + '</h2>' +
-                    package_pages._anchor("View all", prefix + destination, attrs=' class="discovery-more" aria-label="View all ' + heading.lower() + '"') + '</div>'
+            return ('<section class="discovery-group" aria-labelledby="explore-' + key + '"><div class="discovery-group-header"><div class="discovery-group-heading"><h2 id="explore-' + key + '">' +
+                    package_pages._anchor(heading, prefix + destination, attrs=' class="discovery-heading-link" aria-label="View all ' + heading.lower() + '"') + '</h2></div>'
                     '<p class="discovery-group-caption">' + caption + '</p></div>' + content + note + '</section>')
         groups = []
         for key, heading, feed_caption in (("new", "New packages", "First GitHub release"), ("popular", "Most downloaded", "Last 30 days"), ("updated", "Recently updated", "Latest GitHub release")):
@@ -298,7 +299,7 @@ def explore_page(stage: Path, index: dict, snapshot: dict | None, metadata: dict
                    (' download' if values[name] == 1 else ' downloads') for name in names}
         body += _package_cards(prefix, names, active, signals) if names else '<p class="package-empty">No positive completed transfers are available for this observation period.</p>'
         body += '<p class="package-note">These cumulative observations cover configured Asm delivery sources since collection began. Unreported earlier or external transfers are outside this metric. Transfers do not measure people or installations.</p>'
-    body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("How counts work", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
+    body += '<p class="package-note">' + package_pages._anchor("Browse all packages", prefix + "packages/") + ' · ' + package_pages._anchor("Discovery data and coverage", prefix + "discovery/") + '. Sponsorship does not influence ranking.</p>'
     return package_pages._page(route, page_title, description, body, package_pages._chrome(stage), active_nav="Explore", scripts=False)
 
 

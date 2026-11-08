@@ -60,8 +60,10 @@ def write_docs(repo: Path, stage: Path) -> list[str]:
             body += ('<a class="directory-card" href="' + escape(href, quote=True) + '"><h3>'
                      + escape(title) + '</h3><p>' + escape(description) + '</p></a>')
         body += '</div></section>'
-    content = package_pages._page("docs/", "Installation and package documentation",
-                                  "Find installation, first-project, package, target, and security guides. Detailed instructions open in the maintained repository documentation.",
-                                  body, package_pages._chrome(stage), active_nav="Docs", scripts=False)
+    description = "Find installation, first-project, package, target, and security guides. Detailed instructions open in the maintained repository documentation."
+    structured = {"@context": "https://schema.org", "@type": "CollectionPage", "url": "https://asm.build/docs",
+                  "name": "Documentation", "description": description, "inLanguage": "en"}
+    content = package_pages._page("docs/", "Installation and package documentation", description,
+                                  body, package_pages._chrome(stage), active_nav="Docs", scripts=False, structured_data=structured)
     registry.write_atomic(stage / "docs/index.html", content.encode("utf-8"))
     return ["docs/"]

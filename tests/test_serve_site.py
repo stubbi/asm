@@ -160,7 +160,7 @@ class LocalSiteTests(unittest.TestCase):
         self.record_deliveries(2)
         self.service.refresh()
         self.start_server(self.index, self.service)
-        for route in routes:
+        for route in routes + ("/browse/architectures/x86-64",):
             with self.subTest(route=route):
                 status, headers, body = self.request(route)
                 self.assertEqual(status, 200)
@@ -169,11 +169,10 @@ class LocalSiteTests(unittest.TestCase):
                 self.assertNotIn(b"Old staged page", body)
                 page = SiteParser()
                 page.feed(body.decode())
-                self.assertEqual(page.canonicals, ["https://asm.build" + route])
+                expected_canonical = "/browse/architectures/x86-64" if route == "/browse/architectures/x86_64" else route
+                self.assertEqual(page.canonicals, ["https://asm.build" + expected_canonical])
                 scripts = [element["attrs"]["src"] for element in page.elements if element["tag"] == "script"]
                 expected_scripts = ["/navigation.js", "/repository-stars.js"]
-                if route in {"/discovery", "/browse/popular", "/browse/new", "/browse/updated"}:
-                    expected_scripts.extend(["/app.js", "/package-page.js"])
                 self.assertEqual(scripts, expected_scripts)
                 if route == "/browse/popular":
                     links = [element["attrs"].get("href") for element in page.elements if element["tag"] == "a"]

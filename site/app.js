@@ -779,12 +779,13 @@
     const group = element("section", "discovery-group");
     group.dataset.discoveryFeed = key;
     const heading = element("div", "discovery-group-heading");
-    const label = element("h3", "", title);
+    const label = element("h3");
     label.id = `browse-${key}`;
     group.setAttribute("aria-labelledby", label.id);
-    const more = link("View all", `/browse/${key}`, "discovery-more");
+    const more = link(title, `/browse/${key}`, "discovery-heading-link");
     more.setAttribute("aria-label", `View all ${key === "updated" ? "recently updated" : key === "popular" ? "most downloaded" : "new"} packages`);
-    heading.append(label, more);
+    label.append(more);
+    heading.append(label);
     const header = element("div", "discovery-group-header");
     header.append(heading, element("p", "discovery-group-caption", caption));
     group.append(header);
