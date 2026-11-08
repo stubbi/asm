@@ -1,0 +1,32 @@
+name: Registry infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-infrastructure-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storage-mirrors-and-observations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the static origin and locked SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes nginx
+          python3 -m venv build/infra-venv
+          build/infra-venv/bin/python -m pip install --require-hashes -r requirements-storage.txt
+      - name: Check storage, mirrors, real HTTP transfers, and statistics
+        run: make registry-infrastructure-test PYTHON=build/infra-venv/bin/python NGINX=/usr/sbin/nginx

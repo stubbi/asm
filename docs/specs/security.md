@@ -10,11 +10,17 @@ The registry tools validate metadata, artifact size, and SHA-256. They compare i
 
 The native CLI parses the bounded index and verifies fetched bytes. Fetch does not extract, execute, or overwrite a destination. The archive module validates all members before extraction. It also compares cached files with the original archive bytes.
 
-The current index relies on HTTPS and control of the registry origin. It has no separate signature, expiry, rollback protection, or authenticated namespace service. Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services. Their status must remain `not-run`.
+The released V1 index relies on HTTPS and control of the registry origin.
+It has no separate signature, expiry, rollback protection, or authenticated namespace service.
+The unreleased [signed V2 profile](registry-v2.md) has separate trust, ownership, and freshness boundaries described below.
+No public V2 service is activated.
+Advisory scans, isolated third-party builds, Lean/Kraken proof checks, and agent review are not running registry services.
+Their status must remain `not-run`.
 
 Asm's own bootstrap installer and manual self-update command verify release provenance before installing a binary. This fixed release policy does not apply to general package downloads. A package must not inherit Asm's provenance result.
 
-The controls in the following sections are requirements for those later services. Passing the current validator is not evidence that the later controls have run.
+The following sections distinguish source controls from requirements for later activation.
+Passing an artifact validator does not establish deployment, isolation, provenance, or proof results.
 
 The website's optional GitHub star counter first reads a first-party public observation.
 On static hosting, it can request the fixed public repository API when that observation is absent or expired.
@@ -68,19 +74,42 @@ Treat package contents, manifests, documentation, proof projects, build output, 
 The initial alpha used reviewed pull requests for publication records.
 That intake route is retired; `registry/` retains compatibility records and bootstrap input.
 The [hosted publication boundary](../hosted-registry.md#publication-boundary) defines the intended replacement and remaining gates.
-There is no implemented public publisher endpoint.
+There is no deployed public publisher endpoint.
+The unreleased [assembly publisher](../../server/publisher/README.md) has a loopback-only task API with expiring, package-scoped credentials.
+It rechecks authorization at upload receipt and immutable intent commit.
+It does not expose the catalog operator's whole-catalog import authority.
+Its first migration stops at immutable `committed` intent.
+The separate distribution migration adds fenced `published` receipts and audited lifecycle operations.
+The optional native `asm registry` commands authenticate that distribution through maintained TUF verification.
+These local source checkpoints do not qualify public ingress, deployed storage, signing custody, or recovery.
+
+The check coordinator can place bytes before final intent authorization.
+Its retained store must remain private and separate from public serving, CDN aliases, and bucket listings.
+The distributor exposes only committed intent and refuses overlapping source and destination storage locations.
+Path and prefix checks do not prove external bucket privacy; provider and deployment policy require separate qualification.
+Private storage and credential writes check opened descriptors, including ACLs that can grant access beyond mode bits.
 
 The existing [catalog operator](../../server/catalog/README.md) imports exact accepted Git snapshots through a separate PostgreSQL identity.
 Database credentials authorize catalog operations; they do not authenticate the package publisher.
 Numeric GitHub namespace bindings remain operator assertions.
-The importer does not verify artifact bytes.
+Plain import does not verify artifact bytes.
+Its optional `--distribution-root` gate validates a matching snapshot and every artifact before opening database credentials.
+That receipt describes the operator invocation; it does not change stored evidence or authenticate the publisher.
 
 A maintainer must verify namespace claims and changes against the recorded owners before accepting publication input.
 A source URL, display name, or accepted commit alone is not identity verification.
 
 Validation runs must have read-only repository permissions. They must not receive deployment credentials or use `pull_request_target` to execute contributor-controlled code. A trusted publication job must validate accepted inputs again with an approved validator revision. Contributor-supplied CI output is not registry evidence.
 
-For unattended publishing, use short-lived OIDC credentials bound to a specific repository, workflow, and allowed release context. Verify issuer, audience, expiry, signature, repository identity, and workflow claims before authorizing a single package release. Changes to publisher identity require an auditable owner action. Retain no reusable publisher token in the source tree or artifacts.
+The [provider-independent publication contract](publication.md) starts with expiring Asm credentials scoped to an owner, exact packages, and permitted operations.
+Source hosting does not establish package ownership.
+Keep credentials outside source trees, task responses, URLs, logs, and package artifacts.
+Recheck revocation, expiry, scope, and current ownership before committing a release.
+
+An optional future OIDC exchange can issue the same scoped grant from a short-lived identity.
+Verify issuer, audience, expiry, signature, stable principal, workflow, and permitted release context.
+Changes to publisher identity require an auditable owner action.
+No GitHub account or CI issuer is required for the direct-credential workflow.
 
 [npm's trusted publishing](https://docs.npmjs.com/trusted-publishers/) and [PyPI's security model](https://docs.pypi.org/trusted-publishers/security-model/) provide useful precedents. Short-lived credentials reduce exposure. The workflow and people allowed to trigger it remain trusted.
 
@@ -96,9 +125,127 @@ A checksum served beside an archive is useful against accidental corruption. It 
 
 Use GitHub artifact attestations or a Sigstore bundle for release provenance. Verify the artifact digest, certificate identity, OIDC issuer, expected repository/workflow, and the relevant transparency evidence. Verification against any valid signer is insufficient. [GitHub documents artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations); [Sigstore documents identity-bound blob verification](https://docs.sigstore.dev/quickstart/quickstart-cosign/). A valid attestation establishes origin, not code safety, as [PyPI explicitly explains](https://docs.pypi.org/attestations/security-model/).
 
-Before the client supports unattended registry updates or unattended self-updates, implement an audited TUF client or an equivalently reviewed update protocol. Pin the initial root through the CLI release. Separate signing roles. Keep root authority offline. Test key rotation and compromise recovery. Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots. A custom signature over one JSON file is not a substitute for that protocol.
+The unreleased verifier reuses a maintained TUF client for separate registry and self-update profiles.
+Activation still requires independent root delivery, offline root custody, separate signing roles, native qualification, and compromise-recovery tests.
+Follow [TUF's specified client checks](https://theupdateframework.github.io/specification/) for metadata versions, expiry, hashes, signatures, and consistent snapshots.
+A custom signature over one JSON file is not a substitute for that protocol.
 
 Never silently downgrade verification after an unavailable service, expired metadata, or invalid signature. A future explicit offline mode may use already-verified, locked artifacts; it must show which freshness checks could not be performed.
+
+### Unreleased signed registry V2
+
+Assembly owns package parsing, dependency resolution, complete graph locks, target selection, lifecycle policy, mirror retries, and local installation.
+The Go adapter returns only bounded, TUF-authenticated target bytes through a fixed command interface.
+It does not select a package, interpret lifecycle rows, or choose another mirror.
+Mirrors cannot supply the initial trusted root or reset durable version history.
+The protected state binds the registry identity and initial root digest before cached metadata is read.
+Assembly tries at most three explicit HTTPS mirror bases under that same binding.
+An optional protected CA file supplies private TLS roots; ambient CA overrides are refused.
+
+Signed registry timestamps contain the expected `asm_registry_id` and canonical UTC `asm_issued_at`.
+The client enforces a five-minute maximum lifetime and age, current expiry, and at most thirty seconds of future clock skew.
+A reject-only prefilter prevents wrong-scope or stale timestamps from poisoning the durable version cache.
+Maintained TUF verification still establishes signatures and metadata bindings.
+The verifier checks the trusted checkpoint after refresh and again after target download, before exposing target bytes.
+This policy requires a correct client clock and an available current mirror.
+
+Assembly validates the signed release envelope and complete lifecycle table before selecting an artifact.
+It checks artifact length and digest before finalization.
+Source fetch also validates archive structure; executable installation checks the host container format.
+It refreshes lifecycle policy again after the artifact transfer, immediately before exposure or installation.
+Yanked or revoked selections fail, including exact repeated installations.
+Emergency revocation remains irreversible and audited; it cannot remove existing copies or stop an installed program.
+An expired checkpoint, invalid signature, wrong registry, or stale mirror never selects a V1 fallback.
+
+The distributor places committed opaque payloads before signing the five-minute checkpoint.
+It seals exact signed bytes before changing public TUF roles or conditional heads.
+Expired sealed checkpoints require reconciliation, audited abandonment, and a new reserved metadata version.
+Database authorization and storage writes do not share a transaction; uncertain results retain their identities and bytes.
+Mirrors need storage access and HTTPS serving, without database credentials, publisher tokens, or signing keys.
+These mechanisms establish scoped metadata authority and integrity, not package safety or source provenance.
+
+### Unreleased V2 dependency graphs
+
+Dependency declarations are authenticated release metadata bound to immutable package, release, source, and envelope identities.
+Native validation and the private checker compare each declaration with the exact archived source manifest.
+The first graph profile permits mandatory same-registry source dependencies for one explicit target.
+It selects one version per package; optional dependencies, features, parallel versions, and universal target solving are unsupported.
+The source requirement grammar uses bounded full numeric versions without whitespace, prereleases, alternatives, or implicit registry fallback.
+Version compatibility remains a publisher declaration; the solver does not establish ABI compatibility.
+
+Resolve authenticates the signed lifecycle inventory and candidate envelopes before solving.
+Every envelope must match the inventory's immutable package and release identities.
+Versions of one name must retain one package identity, including inactive policy rows.
+It eagerly reads at most 256 reached candidate versions, without downloading archives or executing package code.
+The native backtracking solver also bounds roots and per-candidate dependencies to 64, with a 100,000-step search limit.
+Exhaustion and unavailable or malformed metadata must not become false unsatisfiability reports.
+Mirrors remain byte origins for the same explicit registry and initial root; they cannot replace package authority.
+No new public resolver service or synchronous database query is required.
+
+The canonical `asm-lock-v3` binds the registry, initial root, selected target, exact root manifest, every selected node, and all dependency edges.
+Resolve refuses automatic replacement of legacy locks or locks from another authority or target.
+An explicit resolve can change selected versions within the declared constraints.
+It preserves the package identity of retained names and every node binding for an unchanged version.
+A newly signed view cannot silently replace a previously locked release.
+These checks depend on the retained project lock; deleting it discards those package and release pins.
+Sync authenticates only locked exact metadata and compares the entire reconstructed graph before cache changes.
+It checks current lifecycle policy for every selected node before and after source materialization.
+Source length, digest, archive structure, and dependency declarations must match before extraction.
+Existing source files and the previous lock survive failure; verified cache additions can remain after a later graph operation fails.
+
+Build checks validate local graph closure, reachability, requirements, root freshness, source declarations, and exact cache bytes.
+They do not refresh signatures or lifecycle policy and do not independently authenticate a locally edited lock.
+Use sync before building when current registry authentication is required.
+A correct graph does not make assembler imports hermetic or establish that package code is safe.
+The [V2 dependency contract](registry-v2.md#resolve-a-bounded-dependency-graph) records the format and qualification limits.
+
+### Native committed-project preparation
+
+The optional V2 CLI prepares source archives and canonical manifests in assembly.
+It reads selected local commit objects through fixed, bounded Git plumbing and uses fixed gzip compression.
+It disables ambient global/system Git configuration, replacement objects, lazy fetches, network protocols, hooks, and filters.
+It does not build, test, or execute submitted package code.
+Dirty and untracked working files do not enter that committed snapshot.
+
+Source validation and preparation precede publication credential reads.
+Physical directory checks refuse a supplied credential path inside the selected source subtree.
+Opened executable and prepared-object identities are compared with metadata-only credential identity before candidate reads.
+These checks protect the supplied credential file and its aliases; they do not detect arbitrary secrets committed under ordinary names.
+Known sensitive filenames, links, unsupported dependency declarations, malformed paths, and bounds violations fail before HTTP publication.
+Executable provenance remains a publisher assertion; the private checker supplies the existing structural checks.
+A malformed reply after POST requires task inspection and the same request identity, because task creation can already be durable.
+
+### V2 delivery observations
+
+V2 GETs append public selection identifiers to the unchanged digest object path.
+The normalized exporter accepts only the complete canonical path and query grammar.
+It writes no raw query, IP address, visitor identity, cookie, user-agent string, or referrer.
+Malformed or untagged requests remain outside its reporting scope.
+
+Private observation mapping checks operator-selected immutable metadata descriptors; it does not perform TUF authentication or grant publisher authority.
+The ledger pins registry and release bindings and refuses a location inside public storage.
+Package counts require exact identity, target, kind, digest, declared size, and complete public HTTP 200 transfer.
+Well-formed unknown selections are retained as noncountable diagnostics, so they cannot credit a package or poison an otherwise valid batch.
+Original event fingerprints, batch digests, and source/request deduplication remain intact.
+Other invalid fields and conflicting bindings fail before writes.
+
+Unknown counts, reporting gaps, unreported mirrors and CDN hits, stale state, and source coverage remain explicit.
+Counters describe sender observations, not verification, installation, unique people, or safety.
+The [V2 specification](registry-v2.md#v2-delivery-observations) defines the initial JSON snapshot and deployment qualifications.
+
+### V2 website projection
+
+The explicit V2 static build reads only the selected public inventory and optional private statistics ledger.
+It validates immutable envelope, manifest, lifecycle, and observation bindings without opening application credentials.
+The inventory is operator input; these checks do not authenticate TUF signatures or retain rollback state.
+Native fetch commands remain the authority for current signed metadata, lifecycle policy, and final artifact checks.
+The website cannot provision a root from a selected mirror or reset retained client trust.
+
+Generated pages escape package text, retain explicit target dimensions, and keep yanked and revoked actions disabled.
+The builder reads artifact bytes only for explicit validation; metadata checks cannot supply successful artifact evidence.
+Exact release counters bind the release identity rather than a shared blob or package-wide total.
+Public snapshots contain aggregates and coverage, without raw events, request identities, credentials, or private ledger files.
+V2 discovery failures never select the V1 catalog.
 
 ## Bootstrap and manual self-update
 
@@ -157,7 +304,10 @@ Each check result must identify:
 
 Use OSV for known-advisory checks where a dependency has a supported ecosystem identity or a known upstream commit. [OSV supports version and commit queries](https://google.github.io/osv.dev/api/). Do not invent an `asm` ecosystem identifier and assume coverage. An empty response means no matching advisory was returned at that time. Native Asm advisories need their own maintained identifiers and version ranges until an upstream mapping exists.
 
-Yanking removes a version from the v1 native index without changing its recorded bytes. There is no implemented client revocation service. A later emergency-revocation policy must block known malicious artifacts. It must preserve an audit record, reason, and replacement guidance. Any legal or secret-removal exception must leave a tombstone; the old version must never become assignable to different content.
+Yanking removes a version from the released V1 native index without changing its recorded bytes.
+V1 has no authenticated client revocation policy.
+The unreleased V2 profile separately enforces signed yank and emergency-revocation records.
+Any legal or secret-removal exception must retain a tombstone; an old version must never become assignable to different content.
 
 ## Lean and Kraken
 

@@ -827,6 +827,12 @@ read_manifest:
     mov eax, SYS_close
     mov rdi, r12
     syscall
+.ifdef ASM_REGISTRY_V2
+    lea rdi, [rip + manifest_buffer]
+    call g3_project_dependencies
+    test eax, eax
+    jnz manifest_error
+.endif
     lea r12, [rip + manifest_buffer]
     xor r13d, r13d
     xor r14d, r14d
@@ -847,6 +853,10 @@ read_manifest:
     je .Lmanifest_comment
     cmp al, '['
     je .Lmanifest_section
+.ifdef ASM_REGISTRY_V2
+    cmp r13d, 4
+    je .Lmanifest_comment
+.endif
     mov rdi, r12
     xor ecx, ecx
 .Lmanifest_key:
@@ -1029,6 +1039,16 @@ read_manifest:
     call streq
     test eax, eax
     jnz .Lsection_package
+.ifdef ASM_REGISTRY_V2
+    lea rdi, [rip + key_buffer]
+    lea rsi, [rip + g3_project_dependency_section]
+    call streq
+    test eax, eax
+    jz .Lsection_not_dependencies
+    mov r13d, 4
+    jmp .Lline_end
+.Lsection_not_dependencies:
+.endif
     lea rdi, [rip + key_buffer]
     lea rsi, [rip + section_build]
     call streq
@@ -1215,6 +1235,10 @@ manifest_start_build:
 manifest_finish_build:
     cmp r13d, 2
     jb .Lmanifest_build_done
+.ifdef ASM_REGISTRY_V2
+    cmp r13d, 3
+    ja .Lmanifest_build_done
+.endif
     test r14d, 4
     jz manifest_error
     cmp r13d, 2
@@ -1782,6 +1806,9 @@ clean_file:
 
 .section .rodata
 commands:
+.ifdef ASM_REGISTRY_V2
+    .quad command_registry_v2, cmd_registry_v2
+.endif
     .quad command_help, cmd_help, command_version, cmd_version
     .quad command_license, cmd_license
     .quad command_self, cmd_self
@@ -1801,6 +1828,9 @@ commands:
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
 command_help: .asciz "help"
+.ifdef ASM_REGISTRY_V2
+command_registry_v2: .asciz "registry"
+.endif
 command_version: .asciz "version"
 command_license: .asciz "license"
 command_self: .asciz "self"
@@ -2030,6 +2060,12 @@ made_test: .skip 1
 .include "cli/self_update.s"
 .include "cli/self_update_verify.s"
 .include "cli/self_update_metadata.s"
+.ifdef ASM_REGISTRY_V2
+.include "cli/registry_v2.s"
+.include "cli/registry_solver.s"
+.include "cli/project_dependencies.s"
+.include "cli/registry_graph.s"
+.endif
 
 .ifdef ASM_TRUSTED_DISTRIBUTION
 .include "cli/self_update_trust.s"

@@ -1,5 +1,23 @@
 # Change log
 
+## Unreleased
+
+- Add conditional filesystem and S3 storage with commit-bound byte-mirror snapshots.
+- Gate catalog imports on an optional verified local distribution before credential access.
+- Import private origin logs asynchronously and preserve unknown or incomplete reporting coverage.
+- Add a separate, loopback-only assembly publisher with scoped credentials and durable upload tasks.
+- Check task-bound objects in an isolated worker and retain immutable publication intent with a fenced outbox.
+- Add explicit native V2 publication, task recovery, signed exact fetch and installation, and ordered mirror selection.
+- Bind client trust state to the registry and initial root; enforce short-lived lifecycle policy through maintained TUF verification.
+- Complete fenced distribution through private signing jobs with immutable inventories, timestamp-only renewal, and recoverable public writes.
+- Keep V2 source opt-in; production trust custody, deployment, provider access rules, capacity, and restoration require qualification.
+- Publish committed projects through native archive and manifest preparation, with supplied-credential file isolation and explicit executable inputs.
+- Attribute V2 transfers through public selection tags and delayed private log imports without duplicating stored blobs.
+- Keep unknown and unattributed traffic explicit in registry-scoped package and release statistics.
+- Connect an explicit static website build to V2 releases, native fetch commands, lifecycle states, and identity-scoped download observations.
+- Resolve mandatory V2 source dependencies in assembly and retain complete target-specific graph locks, with exact synchronization and local build checks.
+- Document hosting costs, provider-independent publishing requirements, and remaining activation gates.
+
 ## 0.6.0
 
 - Consolidate hello and math into one project each, with seven target subdirectories and one manifest.

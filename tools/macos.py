@@ -84,6 +84,11 @@ def prepare(source: Path) -> str:
         text = text.replace('.quad registry_sha256sum, registry_sha_status, registry_sha_check, 0, 0',
                             '.quad registry_sha256sum, mac_sha256_option, registry_sha_status, registry_sha_check, 0, 0')
         text += '\n.data\nmac_sha256_option: .asciz "-a256"\n'
+    if source.name == 'registry_v2.s':
+        # Global host substitution must not change the six declared artifact
+        # tuples. The Linux target remains distinct from the macOS host.
+        text = text.replace('r2_target_arm: .asciz "aarch64-macos"',
+                            'r2_target_arm: .asciz "aarch64-linux"')
     if source.name == 'cross_build.s':
         text = text.replace('.equ CROSS_MACOS, 0', '.equ CROSS_MACOS, 1')
     if source.name == 'native_link.s':

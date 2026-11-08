@@ -1,6 +1,6 @@
 # Architecture gaps and acceptance gates
 
-**Status: proposed gates, 1 November 2026.**
+**Status: proposed gates with local source evidence, 8 November 2026.**
 
 This table accompanies the [global distribution architecture](architecture.md).
 It is not a claim that the proposed platform exists.
@@ -15,26 +15,32 @@ The [published assembly source experiment](../experiments/assembly-server/README
 | Discovery query | Public browser filters a JSON catalog; reference scans authoritative package data | Indexed projection meets relevance, query-plan, latency, and isolation targets under a declared workload |
 | Search pagination | Reference keyset cursor does not freeze concurrent updates | Qualified snapshots have aggregate retention and creation limits; expiry and generation changes never silently mix views |
 | Search eligibility | Reference supports a target filter and per-version licenses | Target, license, and evidence facets match the same release and applicable artifact |
-| Replay and rebuild | No production transactional outbox or projection lifecycle | Consistent source revisions, tombstones, and replay converge; conflicting equal revisions fail; rebuild preserves active queries |
-| Event positions | No production consumer protocol | Early sequence allocation and late commit cannot skip an event; acknowledgments survive worker failure |
-| Installation metadata | Whole-catalog v1 TSV, at most 1 MiB and 4,096 artifact rows | Exact installs retrieve bounded authenticated package data without search or a full catalog |
-| Metadata trust | Alpha package index relies on HTTPS and origin control | Reviewed TUF profile rejects invalid signatures, rollback, expiry, cross-registry confusion, and mixed snapshots |
+| Replay and rebuild | Local publisher has a transactional outbox and fenced acknowledgments; no production projection lifecycle | Consistent source revisions, tombstones, and replay converge; conflicting equal revisions fail; rebuild preserves active queries |
+| Event positions | Local SQL tests retain late allocated events after newer acknowledgments; no production consumer qualification | Early sequence allocation and late commit cannot skip an event; acknowledgments survive worker failure |
+| Installation metadata | Released V1 uses a bounded whole catalog; opt-in V2 retrieves authenticated exact release and policy targets | Exact installs retrieve bounded authenticated package data without search or a full catalog |
+| Metadata trust | Released alpha uses HTTPS; opt-in V2 has registry/root-bound TUF, rollback, expiry, rotation, and mixed-role regressions | Reviewed TUF profile rejects invalid signatures, rollback, expiry, cross-registry confusion, and mixed snapshots |
 | Trust scaling | No measured delegation or snapshot profile | Cold and warm dependency tests establish bounded trust requests, bytes, validation time, and rotation behavior |
-| Artifact storage | GitHub release assets; 64 MiB alpha limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
-| Mirrors and CDN | No qualified multi-origin artifact delivery | Corrupt and stale mirrors fail verification; healthy alternatives work without changing package authority |
-| Publication | Retained v1 records and hosted operator imports; public publisher authentication remains unimplemented | Authenticated durable tasks, final authorization checks, fencing, idempotency, and recoverable distribution steps |
-| Distribution heads | No authenticated metadata-head publication service | Fenced conditional advancement preserves monotonic revisions and critical policy despite reversed worker completion |
-| Discovery availability | No asynchronous public distribution state | Only distributed `published` releases appear as installable; that transition emits its own revisioned event |
-| Publisher identity | Reference numeric owner binding is an operator assertion | Verified provider identities and scoped publisher policies resist rename, transfer, expiry, and replay mistakes |
-| Version immutability | Reference seals artifact sets and checks retained digests | Preserve those invariants through upload retries, concurrent publication, failover, and administrative recovery |
-| Lifecycle policy | Initial yank state only; no later yank or emergency revocation service | Separate audited lifecycle operations; critical policy bypasses search lag and ordinary worker backlog |
+| Artifact storage | GitHub alpha assets plus conditional filesystem/S3 operator stores; 64 MiB object limit | Verified conditional creation, immutable digest keys, resumable transfers, retention, and recovery on the selected storage |
+| Mirrors and CDN | Conditional byte-mirror tools and native V2 failover tests pass locally; public CDN and provider access rules remain unqualified | Corrupt and stale mirrors fail verification; healthy alternatives work without changing package authority |
+| Publication | Unreleased assembly API, native publishing, fenced checks, and signed distribution pass local full-flow tests | Authenticated durable tasks, final authorization checks, fencing, idempotency, and recoverable distribution steps |
+| Distribution heads | Local private distributor seals exact bundles, checks policy/leases, and conditionally advances public heads; cross-system writes are not atomic | Fenced conditional advancement preserves monotonic revisions and critical policy despite reversed worker completion |
+| Discovery availability | Local task responses distinguish committed, distributing, and published; completion emits a revisioned event; discovery projection remains incomplete | Only distributed `published` releases appear as installable; that transition emits its own revisioned event |
+| Publisher identity | Direct credentials use opaque owner identities; private enrollment remains an operator assertion | Verified enrollment and scoped publisher policies resist rename, transfer, expiry, and replay mistakes |
+| Version immutability | Canonical V1 records and local V2 intents are immutable; local concurrency and retry checks pass | Preserve those invariants through upload retries, concurrent publication, failover, and administrative recovery |
+| Lifecycle policy | Audited yank/unyank and irreversible revocation; five-minute signed policy, checked again after transfer; deployed delivery remains unqualified | Separate audited lifecycle operations; critical policy bypasses search lag and ordinary worker backlog |
 | Evidence | Public registry marks unperformed checks as `not-run` | Every displayed result identifies check scope, artifact, target, policy, and checker; no aggregate LLM safety claim |
-| Download observations | Reference stores explicitly classified observations | Counters declare event type, coverage, deduplication, and delay; absent mirror reports do not imply zero downloads |
+| Download observations | Local V2 ledger, asynchronous private origin-log import, and explicit static website projection; no qualified edge pipeline | Counters declare event type, coverage, deduplication, and delay; absent mirror reports do not imply zero downloads |
 | Browser fallback | No qualified server-rendered search and publication flow | Search, pages, forms, and task recovery work with optional JavaScript disabled; HTMX preserves the same actions |
-| Public API | Experimental reference routes | Versioned machine-checked schemas, limits, error behavior, compatibility tests, and documented deprecation rules |
+| Public API | Three assembly V2 routes and opt-in native client have local HTTPS full-flow evidence; no public deployment | Versioned machine-checked schemas, limits, error behavior, compatibility tests, and documented deprecation rules |
 | Failure isolation | Reference has local HTTP and database bounds | Discovery saturation cannot consume publication reserves or block authenticated exact installs |
 | Regions and recovery | No deployment capacity, cost, or regional recovery qualification | Named fault model, fencing, tested restore, trust-state recovery, and budgeted capacity before traffic expansion |
 | Operations | Fixed metrics and redacted logs in the reference | Capacity rejection counts against availability; bounded metrics report lag, recovery, cache, and cost separately |
+
+The [V2 evidence record](registry-v2-evidence.md) gives exact artifacts, checks, failures, and remaining gates.
+The [project publication extension](project-publication-evidence.md) adds native archives and identity-scoped V2 origin observations.
+The [website extension](v2-website-evidence.md) records the explicit V2 static build and its qualification limits.
+The flat V2 profile has bounded roles and 4,095 releases; it does not meet the proposed global workload by assertion.
+Production custody, provider semantics, ingress, spending, isolation, and restoration need deployment evidence.
 
 ## Evidence-based scale decisions
 

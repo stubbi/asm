@@ -8,6 +8,7 @@ def digest: if type == "string" then test("^sha256:[0-9a-f]{64}$") else false en
 def source_files: [
   "LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py",
   "tools/operator_entrypoint.py", "tools/prepare_operator.py",
+  "tools/registry_mirror.py", "tools/registry_storage.py",
   "server/catalog/schema.sql", "server/catalog/reader-guard.sql", "server/catalog/read-exports.sql"
 ];
 def routes: ["/registry/v1/index.tsv", "/registry/v1/index-macos.tsv",

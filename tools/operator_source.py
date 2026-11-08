@@ -20,7 +20,8 @@ from registry_admin import AdminError, clean_environment, open_checked, require,
 MAX_BUNDLE = 64 * 1024 * 1024
 MAX_OBJECTS = 131072
 FILES = ("LICENSE", "README.md", "tools/registry.py", "tools/registry_admin.py", "tools/operator_entrypoint.py",
-         "tools/prepare_operator.py", "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
+         "tools/prepare_operator.py", "tools/registry_mirror.py", "tools/registry_storage.py",
+         "server/catalog/schema.sql", "server/catalog/reader-guard.sql",
          "server/catalog/read-exports.sql")
 REPOSITORY = "https://github.com/stubbi/asm"
 

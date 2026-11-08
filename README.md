@@ -207,6 +207,20 @@ Packages can provide separate artifacts for other targets, including RISC-V Linu
 Transitive dependencies, self-service publication, account recovery, isolated public build workers, and hosted formal verification are planned.
 The [roadmap](docs/roadmap.md) tracks that work.
 
+The unreleased [V2 source profile](docs/specs/registry-v2.md) adds publishing from committed projects, signed exact installation, and explicit mirror selection.
+Its [hosting guide](docs/hosting.md#operate-signed-v2-distribution) describes the minimal components and build commands.
+Application and package logic remain assembly; maintained libraries provide transport and cryptography.
+Private registry operations and tests use suitable other languages.
+The [signed distribution evidence](docs/registry-v2-evidence.md) records the baseline artifacts and deployment gates.
+The [project and statistics evidence](docs/project-publication-evidence.md) records the subsequent source extension.
+An [explicit V2 website build](docs/hosting.md#build-the-v2-website) connects package pages, native fetch commands, and download observations without another service.
+The [website evidence](docs/v2-website-evidence.md) records its checks and limits.
+The V2 source profile also adds mandatory transitive source dependencies and complete graph locks for one explicit target.
+Native `registry resolve` selects versions; `registry sync` restores those exact selections.
+The [dependency workflow](docs/hosting.md#resolve-and-restore-v2-dependencies) states the supported ranges, limits, and local build checks.
+The [dependency evidence](docs/v2-dependency-evidence.md) records qualification separately from the published release.
+This source profile does not change the published 0.6.0 binaries.
+
 ## Prepare a release record
 
 A package release records its source repository, exact Git commit, target, and artifact digests.
@@ -217,6 +231,8 @@ Public publisher authentication and hosted deployment remain unqualified.
 
 Use the [packaging and compatibility guide](registry/README.md) to prepare artifacts and records.
 The [hosted publication boundary](docs/hosted-registry.md#publication-boundary) states the remaining requirements.
+The [hosting guide](docs/hosting.md) covers conditional storage, byte mirrors, and asynchronous origin observations.
+The opt-in [`asm registry publish` command](docs/hosting.md#use-the-native-v2-preview) accepts a committed project or prepared V2 manifests and digest-named objects.
 
 ## Build with an AI
 

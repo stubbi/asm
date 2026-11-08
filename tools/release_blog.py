@@ -201,7 +201,8 @@ def _feed(posts: list[dict], now: datetime) -> bytes:
     return ElementTree.tostring(feed, encoding="utf-8", xml_declaration=True)
 
 
-def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *, release_dates=None, include_drafts=False) -> list[str]:
+def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *, release_dates=None, include_drafts=False,
+                       include_releases=True) -> list[str]:
     """Write articles, release posts, archives, and Atom; return public HTML routes.
 
     Only accepted stubbi/asm versions with released change-log sections qualify.
@@ -211,7 +212,8 @@ def write_release_blog(repo: Path, stage: Path, index: dict, publication=None, *
     Preview drafts are visibly unpublished, unindexed, and excluded from Atom
     and the returned sitemap routes. No authored Markdown is copied to stage.
     """
-    releases, sections = _releases(index), _sections(repo)
+    registry.require(type(include_releases) is bool, "invalid release-blog selection")
+    releases, sections = _releases(index) if include_releases else {}, _sections(repo)
     registry.require(set(releases) <= sections.keys(), "an accepted Asm release lacks its change log section")
     now = datetime.now(timezone.utc)
     dates = _dates(release_dates, releases, now)

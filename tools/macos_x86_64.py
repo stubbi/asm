@@ -83,6 +83,8 @@ def prepare(source: Path) -> str:
         text = text.replace('call pub_validate_elf', 'call mac_pub_validate_executable')
         text = text.replace('.quad registry_sha256sum, 0', '.quad registry_sha256sum, mac_sha256_option, 0')
         text += (ROOT / 'cli/macos/x86_64/publish.s').read_text()
+    if source.name == 'registry_v2.s':
+        text = text.replace('build/asm-verify-x86_64-linux', 'build/asm-verify-x86_64-macos')
     if source.name == 'self_update.s':
         text = text.replace('self_asset_suffix: .asciz "-x86_64-linux"',
                             'self_asset_suffix: .asciz "-x86_64-macos"')

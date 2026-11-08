@@ -1129,6 +1129,11 @@ read_manifest:
     strb w10, [x16]
     mov x0, x21
     ARM_CALL arm_close
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, manifest_buffer
+    ARM_CALL g3_project_dependencies
+    cbnz w9, manifest_error
+.endif
     ARM_ADDR x16, manifest_buffer
     mov x21, x16
     eor w22, w22, w22
@@ -1183,6 +1188,10 @@ read_manifest:
     lsl w11, w11, #24
     cmp w10, w11
     b.eq .Lmanifest_section
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #4
+    b.eq .Lmanifest_comment
+.endif
     mov x0, x21
     eor w3, w3, w3
     tst w3, w3
@@ -1481,6 +1490,15 @@ read_manifest:
     ARM_CALL streq
     tst w9, w9
     b.ne .Lsection_package
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, key_buffer
+    ARM_ADDR x1, g3_project_dependency_section
+    ARM_CALL streq
+    cbz w9, .Lsection_not_dependencies
+    mov w22, #4
+    b .Lline_end
+.Lsection_not_dependencies:
+.endif
     ARM_ADDR x16, key_buffer
     mov x0, x16
     ARM_ADDR x16, section_build
@@ -1700,6 +1718,10 @@ manifest_start_build:
 manifest_finish_build:
     cmp w22, #2
     b.lo .Lmanifest_build_done
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #3
+    b.hi .Lmanifest_build_done
+.endif
     tst w23, #4
     b.eq manifest_error
     cmp w22, #2
@@ -2565,6 +2587,9 @@ clean_file:
 
 .section .rodata
 commands:
+.ifdef ASM_REGISTRY_V2
+    .quad command_registry_v2, cmd_registry_v2
+.endif
     .quad command_help, cmd_help, command_version, cmd_version
     .quad command_license, cmd_license
     .quad command_self, cmd_self
@@ -2583,6 +2608,9 @@ commands:
     .quad command_lock, cmd_lock, command_login, cmd_unimplemented
     .quad command_sync, cmd_sync
     .quad command_yank, cmd_unimplemented, 0, 0
+.ifdef ASM_REGISTRY_V2
+command_registry_v2: .asciz "registry"
+.endif
 command_help: .asciz "help"
 command_version: .asciz "version"
 command_license: .asciz "license"
@@ -2819,6 +2847,13 @@ made_test: .skip 1
 .include "cli/aarch64/self_update.s"
 .include "cli/aarch64/self_update_verify.s"
 .include "cli/aarch64/self_update_metadata.s"
+
+.ifdef ASM_REGISTRY_V2
+.include "cli/aarch64/registry_v2.s"
+.include "cli/aarch64/registry_solver.s"
+.include "cli/aarch64/project_dependencies.s"
+.include "cli/aarch64/registry_graph.s"
+.endif
 
 .include "cli/aarch64/platform.s"
 

@@ -575,3 +575,118 @@ test("the math guide selects the unified routine and retains earlier include pat
   assert.equal(mathSourcePath("0.5.0"), "stubbi/math/0.5.0/x86_64-linux/src/min.s");
   assert.equal(mathSourcePath('0.6.0";bad'), null);
 });
+
+function v2Catalog() {
+  const id = { registry: "1".repeat(32), package: "2".repeat(32), release: "3".repeat(32) };
+  const item = { kind: "source", format: "tar.gz", target: "x86_64-linux", isa: "x86_64", os: "linux", abi: "sysv-amd64", cpu_features: [], bytes: 100,
+    sha256: "a".repeat(64), url: `https://mirror.example/asm/blobs/sha256/${"a".repeat(64)}?x-asm=${id.registry}.${id.package}.${id.release}.x86_64-linux.source` };
+  return { schema: 2, registry_id: id.registry, projection: { version: "1", publication_revision: "1", policy_revision: "0" },
+    mirrors: ["https://mirror.example/asm"], packages: [{ name: "owner/alpha", package_id: id.package, summary: "V2 fixture", latest: "1.0.0", targets: [item.target],
+      versions: [{ version: "1.0.0", release_id: id.release, manifest_sha256: "b".repeat(64), envelope_sha256: "c".repeat(64), summary: "V2 fixture", license: "MIT",
+        source: { commit: { algorithm: "git-sha1", digest: "d".repeat(40) }, path: ".", archive: { sha256: item.sha256, bytes: 100 } },
+        yanked: false, revoked: false, artifacts: [item], evidence: { metadata: "validated", artifacts: "not-run", provenance: "not-run", formal: "not-run", agent_review: "not-run" }, publication: {} }] }] };
+}
+
+test("V2 catalog supports exact mirror-bound artifacts without admitting general HTTPS URLs", () => {
+  const data = v2Catalog();
+  const packages = normalizeIndex(data);
+  assert.equal(packages.length, 1);
+  assert.equal(validArtifact(packages[0].versions[0].artifacts[0]), true);
+  assert.equal(findPackages(packages, "owner/alpha", "x86_64-linux", "source").length, 1);
+  assert.deepEqual(catalogStats(packages), { packages: 1, releases: 1, files: 1, targets: 1 });
+  assert.equal(validArtifact(data.packages[0].versions[0].artifacts[0]), false);
+  for (const mirror of ["https://[::1]:8443/asm", "https://mirror.example:443/asm"]) {
+    const accepted = structuredClone(data);
+    accepted.mirrors = [mirror];
+    accepted.packages[0].versions[0].artifacts[0].url = accepted.packages[0].versions[0].artifacts[0].url.replace(data.mirrors[0], mirror);
+    assert.equal(normalizeIndex(accepted).length, 1);
+  }
+  for (const value of ["https://evil.example/blob", data.packages[0].versions[0].artifacts[0].url + "&ignored=1",
+    data.packages[0].versions[0].artifacts[0].url.replace("3".repeat(32), "4".repeat(32)),
+    data.packages[0].versions[0].artifacts[0].url.replace("source", "executable")]) {
+    const invalid = structuredClone(data);
+    invalid.packages[0].versions[0].artifacts[0].url = value;
+    assert.throws(() => normalizeIndex(invalid), /V2|index/i);
+  }
+});
+
+test("V2 index rejects misleading mirrors, duplicate identities, and contradictory active releases", () => {
+  for (const change of [
+    (data) => { data.mirrors = ["http://mirror.example/asm"]; },
+    (data) => { data.mirrors = ["https://user@mirror.example/asm"]; },
+    (data) => { data.mirrors = ["https://mirror.example/asm/../other"]; },
+    (data) => { data.packages.push(structuredClone(data.packages[0])); },
+    (data) => { data.packages[0].versions[0].revoked = true; },
+    (data) => { data.packages[0].versions[0].artifacts[0].cpu_features = ["avx2"]; },
+    (data) => { data.packages[0].versions[0].artifacts[0].abi = "guess"; },
+    (data) => {
+      const artifact = data.packages[0].versions[0].artifacts[0];
+      artifact.target = "__proto__"; delete artifact.isa; delete artifact.os; delete artifact.abi;
+      artifact.url = artifact.url.replace("x86_64-linux", "__proto__");
+      data.packages[0].targets = ["__proto__"];
+    }
+  ]) {
+    const data = v2Catalog(); change(data);
+    assert.throws(() => normalizeIndex(data), /V2|index/i);
+  }
+  const data = v2Catalog();
+  data.packages[0].latest = null;
+  data.packages[0].targets = [];
+  data.packages[0].versions[0].revoked = true;
+  assert.equal(normalizeIndex(data)[0].latest, null);
+});
+
+test("V2 discovery binds counts to immutable IDs and keeps absent release dates unavailable", () => {
+  const { normalizeDiscovery, discoveryEmptyMessage } = require("../site/app.js");
+  const catalog = v2Catalog();
+  const data = { schema: 2, registry_id: catalog.registry_id, policy: "asm-deliveries-v2", source: "asm-delivery-events",
+    observed_at: null, publication_observed_at: null, stale: true, refresh_error: null, collection_started_at: null,
+    window: { days: 30, start: null, end: null, basis: "rolling-observation" }, coverage: { start: null, end: null, complete: false },
+    packages: [{ name: "owner/alpha", package_id: "2".repeat(32), first_published_at: null, last_published_at: null, publication_source: "asm-v2", downloads_30d: null, downloads_30d_exact: false, downloads_30d_coverage: "unavailable" }],
+    feeds: { popular: [], new: [], updated: [] }, categories: [] };
+  const packages = normalizeIndex(catalog);
+  const snapshot = normalizeDiscovery(data, packages);
+  assert.equal(snapshot.packages[0].downloads_30d, null);
+  assert.ok(require("../site/app.js").rejoinDiscovery(snapshot, packages));
+  assert.match(discoveryEmptyMessage(snapshot, "new"), /Publication dates are unavailable/);
+  const bad = structuredClone(data); bad.packages[0].package_id = "4".repeat(32);
+  assert.throws(() => normalizeDiscovery(bad, packages));
+  const foreign = structuredClone(data); foreign.registry_id = "5".repeat(32);
+  assert.throws(() => normalizeDiscovery(foreign, packages));
+  const fakeDate = structuredClone(data); fakeDate.packages[0].first_published_at = "2026-01-01T00:00:00Z";
+  assert.throws(() => normalizeDiscovery(fakeDate, packages));
+});
+
+test("V2 refresh selects its own paths and cannot silently use V1 data", () => {
+  const { registryPaths } = require("../site/app.js");
+  assert.deepEqual(registryPaths("2"), { index: "registry/v2/index.json", discovery: "registry/v2/discovery.json", schema: 2 });
+  assert.deepEqual(registryPaths("1"), { index: "registry/v1/index.json", discovery: "registry/v1/discovery.json", schema: 1 });
+  assert.throws(() => registryPaths("3"));
+});
+
+test("V2 sender observations cannot claim complete coverage or exact download counts", () => {
+  const { normalizeDiscovery, formatDiscoveryCount } = require("../site/app.js");
+  const catalog = v2Catalog();
+  const packages = normalizeIndex(catalog);
+  const data = { schema: 2, registry_id: catalog.registry_id, policy: "asm-deliveries-v2", source: "asm-delivery-events",
+    observed_at: "2026-01-31T00:00:00Z", publication_observed_at: null, stale: false, refresh_error: null,
+    collection_started_at: "2026-01-01T00:00:00Z",
+    window: { days: 30, start: "2026-01-01T00:00:00Z", end: "2026-01-31T00:00:00Z", basis: "rolling-observation" },
+    coverage: { start: "2026-01-01T00:00:00Z", end: "2026-01-31T00:00:00Z", complete: false },
+    packages: [{ name: "owner/alpha", package_id: "2".repeat(32), first_published_at: null, last_published_at: null,
+      publication_source: "asm-v2", downloads_30d: 1, downloads_30d_exact: false, downloads_30d_coverage: "lower-bound" }],
+    feeds: { popular: ["owner/alpha"], new: [], updated: [] }, categories: [] };
+  const now = Date.parse(data.observed_at);
+  const snapshot = normalizeDiscovery(data, packages, now);
+  assert.equal(formatDiscoveryCount(snapshot.packages[0]), "≥ 1 download");
+  for (const change of [
+    (value) => { value.coverage.complete = true; },
+    (value) => { value.coverage.complete = true; value.packages[0].downloads_30d_exact = true; value.packages[0].downloads_30d_coverage = "complete"; },
+    (value) => { value.packages[0].downloads_30d_exact = true; },
+    (value) => { value.packages[0].downloads_30d_coverage = "complete"; },
+    (value) => { value.packages[0].downloads_30d = null; value.packages[0].downloads_30d_coverage = "lower-bound"; }
+  ]) {
+    const invalid = structuredClone(data); change(invalid);
+    assert.throws(() => normalizeDiscovery(invalid, packages, now), /discovery/i);
+  }
+});

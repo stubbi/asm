@@ -73,7 +73,7 @@
       const source = shown === 1 && selected?.querySelector(".command-block code");
       quick.hidden = !source;
       selection.hidden = Boolean(source);
-      command.textContent = source ? source.textContent : "";
+      command.textContent = source ? selected.dataset.fetchCommand || source.textContent : "";
       if (source) label.textContent = `${selected.querySelector("h3").textContent} · ${selected.dataset.artifactTarget}`;
       selection.textContent = shown === 0 ? "No files match. Clear the file filters or choose another option."
         : "Choose a release file below. Each file includes its exact fetch command.";

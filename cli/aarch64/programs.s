@@ -154,6 +154,12 @@ program_before_load:
 .Lp_preflight_upgrade:
     cbz x9, program_not_managed
     mov x19, x9
+.ifdef ASM_REGISTRY_V2
+    ldr x0, [x19, #48]
+    ARM_ADDR x1, r2_origin_prefix
+    ARM_CALL self_prefix
+    cbnz x9, r2_legacy_upgrade
+.endif
     ldr x10, [x19, #40]
     P_STORE x10, registry_output
     P_BYTE w10, registry_origin_seen
@@ -1011,6 +1017,11 @@ program_validate_row:
     ARM_CALL streq
     cbnz w9, .Lp_validate_unique
     ldr x0, [x19, #48]
+.ifdef ASM_REGISTRY_V2
+    ARM_CALL r2_inventory_origin
+    cbnz w9, .Lp_validate_unique
+    ldr x0, [x19, #48]
+.endif
     ARM_CALL registry_https_url
     cbz w9, program_state_error
 .Lp_validate_unique:

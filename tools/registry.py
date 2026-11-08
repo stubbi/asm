@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
+import errno
 import gzip
 import hashlib
 import io
@@ -19,6 +21,7 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+import zlib
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -80,6 +83,34 @@ class RegistryError(ValueError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise RegistryError(message)
+
+
+def reject_extended_acl(descriptor):
+    """Inspect an opened private object; reject all extended ACLs.
+
+    This conservative private-file policy is shared by storage and credentials.
+    The observation ledger separately permits deny-only ACLs on trusted ancestors.
+    """
+    if sys.platform == "darwin":
+        library = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        library.acl_get_fd_np.argtypes = (ctypes.c_int, ctypes.c_int)
+        library.acl_get_fd_np.restype = ctypes.c_void_p
+        library.acl_free.argtypes = (ctypes.c_void_p,)
+        ctypes.set_errno(0)
+        acl = library.acl_get_fd_np(descriptor, 0x100)  # macOS ACL_TYPE_EXTENDED
+        if acl:
+            library.acl_free(acl)
+            raise RegistryError("Use private files and directories without extended ACLs.")
+        require(ctypes.get_errno() == errno.ENOENT, "Cannot inspect the private object's ACL.")
+    elif sys.platform == "linux":
+        try:
+            os.getxattr(descriptor, "system.posix_acl_access")
+        except OSError as error:
+            require(error.errno == errno.ENODATA, "Cannot inspect the private object's ACL.")
+        else:
+            raise RegistryError("Use private files and directories without extended ACLs.")
+    else:
+        raise RegistryError("Use the qualified Linux or macOS operator host.")
 
 
 def exact_keys(value: object, allowed: set[str], required: set[str], label: str) -> dict:
@@ -213,7 +244,7 @@ def strict_json(data: str | bytes) -> object:
     try:
         return json.loads(data, object_pairs_hook=unique_object,
                           parse_constant=invalid_constant)
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
         raise RegistryError(f"invalid JSON: {error}") from error
 
 
@@ -419,7 +450,7 @@ def read_archive(data: bytes) -> dict[str, bytes]:
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb") as compressed:
             raw = compressed.read(limit + 1)
-    except (OSError, EOFError) as error:
+    except (OSError, EOFError, zlib.error) as error:
         raise RegistryError("invalid gzip source archive") from error
     require(len(raw) <= limit, "expanded archive exceeds the byte limit")
     require(len(raw) % 512 == 0, "tar length must be a multiple of 512")
@@ -532,7 +563,7 @@ def project_build(project: object, target: str) -> dict:
     return builds[target]
 
 
-def validate_project(files: dict[str, bytes], name: str, version: str, target: str) -> dict:
+def validate_project(files: dict[str, bytes], name: str, version: str, target: str, *, v2_dependencies: bool = False) -> dict:
     """Validate project contents and return the parsed source manifest."""
     require("asm.toml" in files, "source archive needs asm.toml")
     require(any(path in files for path in ("LICENSE", "LICENSE.txt", "LICENSE.md")), "source archive needs a license file")
@@ -540,7 +571,10 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
     try:
         project = tomllib.loads(files["asm.toml"].decode("utf-8"))
         versioned = bool({"resolution", "dependencies", "features"} & project.keys())
-        if versioned:
+        if v2_dependencies:
+            require("asm.lock" not in files, "published source cannot contain a consumer lock")
+            v2_project_dependencies(files["asm.toml"], project)
+        elif versioned:
             validate_resolution_project(files["asm.toml"], project)
         require(project["package"]["name"] == name.split("/")[-1], "project name does not match release")
         require(project["package"]["version"] == version, "project version does not match release")
@@ -560,9 +594,58 @@ def validate_project(files: dict[str, bytes], name: str, version: str, target: s
             source = portable_path(project["build"]["source"])
             require(source in files, "declared assembly source is missing")
             require(source.endswith((".s", ".S", ".asm")), "build source must be an assembly file")
-    except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+    except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError) as error:
         raise RegistryError("invalid source asm.toml") from error
     return project
+
+
+def validate_v2_requirement(value: object) -> None:
+    """Validate the canonical range grammar shared by native V2 clients."""
+    requirement = plain_text(value, MAX_REQUIREMENT_BYTES, "dependency requirement")
+    if requirement == "*":
+        return
+    terms = requirement.split(",")
+    require(len(terms) <= MAX_REQUIREMENT_TERMS, "dependency requirement has too many comparators")
+    for term in terms:
+        match = re.fullmatch(r"(<=|>=|<|>|=|\^|~)?([^ ,\t]+)", term)
+        require(match is not None, "dependency requirement has an invalid comparator")
+        version_tuple(match[2])
+
+
+def v2_project_dependencies(data: bytes, project: dict) -> list[dict[str, str]]:
+    """Read mandatory same-registry declarations without running or resolving them."""
+    require(0 < len(data) <= MAX_PROJECT_BYTES, "source asm.toml exceeds 8190 bytes")
+    require(all(byte in (9, 10, 13) or 32 <= byte <= 126 for byte in data), "source manifest must use ASCII text")
+    require(not ({"resolution", "features"} & project.keys()), "V2 does not support resolution or feature tables")
+    dependencies = project.get("dependencies", {})
+    require(isinstance(dependencies, dict) and len(dependencies) <= MAX_DEPENDENCIES,
+            "project can declare at most 64 dependencies")
+    active = False
+    parsed = []
+    for line in data.decode("ascii").splitlines():
+        quoted = False
+        for offset, char in enumerate(line):
+            if char == '"':
+                quoted = not quoted
+            elif char == "#" and not quoted:
+                line = line[:offset]
+                break
+        line = line.strip(" \t")
+        if line.startswith("["):
+            active = line == "[dependencies]"
+        elif line and active:
+            match = re.fullmatch(r'"([a-z][a-z0-9-]*/[a-z][a-z0-9-]*)"[ \t]*=[ \t]*"([^"\\]*)"', line)
+            require(match is not None,
+                    "V2 dependencies need quoted names and string requirements")
+            parsed.append({"name": match[1], "requirement": match[2]})
+    result = []
+    for name, requirement in sorted(dependencies.items()):
+        package_name(name)
+        validate_v2_requirement(requirement)
+        result.append({"name": name, "requirement": requirement})
+    require(sorted(parsed, key=lambda item: item["name"]) == result,
+            "V2 dependencies need one explicit declaration for each dependency")
+    return result
 
 
 def validate_requirement(value: object) -> None:

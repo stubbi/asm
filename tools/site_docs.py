@@ -45,18 +45,32 @@ GROUPS = (
 )
 
 
-def write_docs(repo: Path, stage: Path) -> list[str]:
+def write_docs(repo: Path, stage: Path, *, registry_version=1) -> list[str]:
     """Write docs/ from shared chrome; source guides remain authoritative.
 
     The build's source checkout can omit documentation files. Fixed repository
     links still identify the maintained guides; tests verify their real anchors.
     """
+    registry.require(type(registry_version) is int and registry_version in (1, 2), "unsupported documentation registry version")
+    v2 = {
+        "Install Asm": ("Build the V2 preview", SOURCE + "docs/hosting.md#use-the-native-v2-preview",
+                        "Check host tools and build the optional native registry client."),
+        "Use a source package": ("Fetch an exact V2 file", SOURCE + "docs/hosting.md#use-the-native-v2-preview",
+                                 "Select a registry, trusted root, mirrors, target, and exact version."),
+        "Prepare a package release": ("Publish a committed project", SOURCE + "docs/hosting.md#use-the-native-v2-preview",
+                                      "Prepare source in assembly and submit a durable publication task."),
+        "Registry format": ("V2 registry format", SOURCE + "docs/specs/registry-v2.md#authenticate-bounded-release-records",
+                            "Inspect immutable identities, source commits, target dimensions, and artifact bindings."),
+        "Build with an AI": ("V2 hosting and statistics", SOURCE + "docs/hosting.md#build-the-v2-website",
+                             "Build static pages and project private sender observations without another service."),
+    } if registry_version == 2 else {}
     body = ('<header class="package-heading"><h1>Documentation</h1>'
             '<p>Install Asm, use packages, and inspect the formats and evidence behind each release.</p></header>'
             '<p class="package-note">Detailed guides open on GitHub.</p>')
     for identifier, heading, cards in GROUPS:
         body += '<section class="directory-section" aria-labelledby="docs-' + identifier + '"><h2 id="docs-' + identifier + '">' + heading + '</h2><div class="directory-grid">'
         for title, href, description in cards:
+            title, href, description = v2.get(title, (title, href, description))
             body += ('<a class="directory-card" href="' + escape(href, quote=True) + '"><h3>'
                      + escape(title) + '</h3><p>' + escape(description) + '</p></a>')
         body += '</div></section>'

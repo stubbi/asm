@@ -30,6 +30,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: matrix.target == 'x86_64-linux'
+        with:
+          go-version-file: verifier/go.mod
+          cache-dependency-path: verifier/go.sum
       - name: Assemble each Linux runtime source without execution
         shell: bash
         timeout-minutes: 2
@@ -154,6 +159,60 @@ jobs:
           export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
           export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
           make hosted-registry-test
+      - name: Build the pinned publisher cryptography library
+        if: matrix.target == 'x86_64-linux'
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 \
+            --output "$ASM_DEPS/downloads/openssl-3.5.9.tar.gz" \
+            https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+          printf '%s  %s\n' \
+            603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a \
+            "$ASM_DEPS/downloads/openssl-3.5.9.tar.gz" | sha256sum --check --strict
+          tar -xzf "$ASM_DEPS/downloads/openssl-3.5.9.tar.gz" -C "$ASM_DEPS"
+          cd "$ASM_DEPS/openssl-3.5.9"
+          ./Configure linux-x86_64 shared no-tests --prefix="$ASM_DEPS/openssl" \
+            --openssldir="$ASM_DEPS/openssl/ssl" --libdir=lib
+          make -j2 build_libs
+          make install_dev
+      - name: Check direct publication authority and assembly HTTP
+        if: matrix.target == 'x86_64-linux'
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
+          make publisher-tools-test publisher-authority-test \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/publisher-authority-tests.log"
+          make -C server publisher-test \
+            BUILD="$RUNNER_TEMP/publisher-build" SOURCE_REVISION="$GITHUB_SHA" \
+            MHD_PREFIX="$ASM_DEPS/mhd" PG_PREFIX="$ASM_DEPS/postgres" \
+            CC="cc -I$ASM_DEPS/openssl/include -L$ASM_DEPS/openssl/lib -Wl,--disable-new-dtags,-rpath,$ASM_DEPS/openssl/lib" \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/publisher-http-tests.log"
+          sha256sum "$RUNNER_TEMP/publisher-build/asm-publisher" \
+            | tee "$RUNNER_TEMP/server-port-evidence/publisher-executable.sha256"
+      - name: Install the static origin for the native full flow
+        if: matrix.target == 'x86_64-linux'
+        run: sudo apt-get install --no-install-recommends --yes nginx
+      - name: Check signed distribution authority and the complete native flow
+        if: matrix.target == 'x86_64-linux'
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          ASM_DEPS="$RUNNER_TEMP/asm-server-reference"
+          export ASM_PROTO_PG_BINDIR="$ASM_DEPS/postgres/bin"
+          export ASM_PROTO_LIBPQ="$ASM_DEPS/postgres/lib/libpq.so"
+          export ASM_PUBLISHER_BINARY="$RUNNER_TEMP/publisher-build/asm-publisher"
+          export ASM_SERVER_SOURCE_REVISION="$GITHUB_SHA"
+          export ASM_TEST_NGINX=/usr/sbin/nginx
+          make registry-v2-authority-test registry-v2-full-flow-test \
+            2>&1 | tee "$RUNNER_TEMP/server-port-evidence/registry-v2-full-flow.log"
       - name: Check build failure preserves both executables
         shell: bash
         run: |
@@ -182,6 +241,20 @@ jobs:
             --hosted "$RUNNER_TEMP/hosted-server-build/asm-hub" \
             --archive "$RUNNER_TEMP/asm-server-source.tar.gz" \
             --output "$RUNNER_TEMP/server-port-evidence/qualification.json"
+      - name: Bind V2 full-flow results to executable bytes
+        if: always() && matrix.target == 'x86_64-linux'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/server-port-evidence"
+          python3 - <<'PY' > "$RUNNER_TEMP/server-port-evidence/registry-v2-artifacts.json"
+          import hashlib, json, os
+          from pathlib import Path
+          paths = [Path('build/asm-registry-v2'), Path('build/asm-trust'), Path('build/asm-verify-x86_64-linux')]
+          paths += [Path(os.environ['RUNNER_TEMP']) / 'publisher-build/asm-publisher']
+          artifacts = {str(p): {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+                       for p in paths if p.is_file()}
+          print(json.dumps({'schema': 1, 'source_commit': os.environ['GITHUB_SHA'], 'artifacts': artifacts}, sort_keys=True))
+          PY
       - name: Retain passed and failed port evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -192,6 +265,7 @@ jobs:
             ${{ github.workspace }}/build/asm
             ${{ runner.temp }}/asm-server-source/build/app
             ${{ runner.temp }}/hosted-server-build/asm-hub
+            ${{ runner.temp }}/publisher-build/asm-publisher
             ${{ runner.temp }}/asm-server-source.tar.gz
           if-no-files-found: error
           retention-days: 7

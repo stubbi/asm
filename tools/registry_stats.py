@@ -20,10 +20,20 @@ def stats_snapshot(index: dict, observation: dict | None, records: list[dict]) -
     records = registry.check_records(records)
     registry.require({item["name"] for item in index["packages"]} == {item["name"] for item in records},
                      "statistics catalog differs from accepted records")
-    return {"schema": 1, "policy": "asm-deliveries-v1", "source": "asm-delivery-events",
+    result = {"schema": 1, "policy": "asm-deliveries-v1", "source": "asm-delivery-events",
             "catalog": package_pages.catalog_stats(index),
             "transfers": discovery.retained_counts(records, observation),
             "activity": discovery.delivery_activity(records, None, observation)}
+    if observation is not None and observation.get("reporting") == "origin-log-lower-bounds-v1":
+        sources = observation.get("sources")
+        registry.require(isinstance(sources, list) and 0 < len(sources) <= 32,
+                         "origin measurement sources are unavailable")
+        for source in sources:
+            registry.plain_text(source, 128, "origin measurement source")
+        result["measurement"] = {"profile": observation["reporting"], "sources": list(sources),
+            "deduplication": "source-request-id", "reported_through": observation.get("coverage_end"),
+            "observed_at": observation.get("observed_at")}
+    return result
 
 
 def _count(value: int | None, complete: bool) -> str:

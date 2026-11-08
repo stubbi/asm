@@ -8,6 +8,11 @@
 /* Preserve the legacy source-archive limit. Named target manifests use the
  * native build limit. One extra byte holds the copied manifest's NUL. */
 .equ PUB_LEGACY_MANIFEST_MAX, 16384
+.ifdef ASM_REGISTRY_V2
+.equ PUB_JSON_CAPACITY, 65536
+.else
+.equ PUB_JSON_CAPACITY, 16384
+.endif
 .equ PUB_TARGET_MANIFEST_MAX, 8190
 .equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
 
@@ -589,6 +594,12 @@ pub_check_project:
     call pub_source_paths
     test eax, eax
     jnz .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    lea rdi, [rip + dependency_lock_path]
+    call source_archive_member
+    test rax, rax
+    jnz .Lpub_project_bad
+.endif
     lea rbx, [rip + pub_readme_names]
     call pub_any_member
     test eax, eax
@@ -621,6 +632,13 @@ pub_check_project:
     cmp r8, rcx
     jb .Lpub_manifest_copy
     mov byte ptr [rdi + rcx], 0
+.ifdef ASM_REGISTRY_V2
+    lea rdi, [rip + pub_manifest]
+    call g3_project_dependencies
+    test eax, eax
+    jnz .Lpub_project_bad
+    lea rdi, [rip + pub_manifest]
+.endif
     mov r12, rdi
     xor r13d, r13d
     xor r15d, r15d
@@ -635,6 +653,10 @@ pub_check_project:
     je .Lpub_manifest_comment
     cmp al, '['
     je .Lpub_manifest_section
+.ifdef ASM_REGISTRY_V2
+    cmp r13d, 4
+    je .Lpub_manifest_comment
+.endif
     lea rdi, [rip + pub_key]
     xor ecx, ecx
 .Lpub_manifest_key:
@@ -715,6 +737,10 @@ pub_check_project:
 .Lpub_manifest_section:
     cmp r13d, 2
     jb .Lpub_manifest_section_start
+.ifdef ASM_REGISTRY_V2
+    cmp r13d, 3
+    ja .Lpub_manifest_section_start
+.endif
     call pub_project_entry
     test eax, eax
     jnz .Lpub_project_bad
@@ -744,6 +770,16 @@ pub_check_project:
     call streq
     test eax, eax
     jnz .Lpub_manifest_package
+.ifdef ASM_REGISTRY_V2
+    lea rdi, [rip + pub_key]
+    lea rsi, [rip + g3_project_dependency_section]
+    call streq
+    test eax, eax
+    jz .Lpub_manifest_not_dependencies
+    mov r13d, 4
+    jmp .Lpub_manifest_line_end
+.Lpub_manifest_not_dependencies:
+.endif
     lea rdi, [rip + pub_key]
     lea rsi, [rip + pub_build_section]
     call streq
@@ -819,6 +855,10 @@ pub_check_project:
 .Lpub_manifest_size_ready:
     cmp r13d, 2
     jb .Lpub_manifest_entries_done
+.ifdef ASM_REGISTRY_V2
+    cmp r13d, 3
+    ja .Lpub_manifest_entries_done
+.endif
     call pub_project_entry
     test eax, eax
     jnz .Lpub_project_bad
@@ -841,6 +881,12 @@ pub_check_project:
     call streq
     test eax, eax
     jz .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    /* Project preparation derives the version from this same strict parser.
+     * All existing callers retain the expected-version comparison. */
+    cmp byte ptr [rip + pub_project_inspect_version], 0
+    jne .Lpub_project_valid
+.endif
     lea rdi, [rip + pub_project_version]
     mov rsi, [rip + pub_version]
     call streq
@@ -1180,6 +1226,9 @@ pub_validate_elf:
  * Input: owned registry_temp_payload. EAX=0/1. Owns pub_hash_buffer[72], pipe
  * descriptors and child process. Stack frame:56 bytes; every child is reaped. */
 pub_hash_payload:
+    lea rdi, [rip + registry_temp_payload]
+/* RDI=owned regular snapshot path; same result/ABI as pub_hash_payload. */
+pub_hash_file:
     push rbx
     push rbp
     push r12
@@ -1192,7 +1241,6 @@ pub_hash_payload:
     mov r14, -1
     mov r15, -1
     mov eax, 2
-    lea rdi, [rip + registry_temp_payload]
     mov esi, 657408
     xor edx, edx
     syscall
@@ -1357,7 +1405,7 @@ pub_append:
     mov al, [rdi]
     test al, al
     jz .Lpub_append_done
-    cmp rdx, 16383
+    cmp rdx, PUB_JSON_CAPACITY - 1
     jae pub_bad_metadata
     mov [r8 + rdx], al
     inc rdx
@@ -1377,7 +1425,7 @@ pub_quote:
     mov al, [r9]
     test al, al
     jz .Lpub_quote_end
-    cmp rdx, 16380
+    cmp rdx, PUB_JSON_CAPACITY - 4
     jae pub_bad_metadata
     cmp al, '"'
     je .Lpub_quote_escape
@@ -1632,6 +1680,9 @@ pub_project_libraries: .skip 256
 pub_project_check: .skip 256
 pub_project_test: .skip 256
 pub_project_matched: .skip 1
+.ifdef ASM_REGISTRY_V2
+pub_project_inspect_version: .skip 1
+.endif
 pub_key: .skip 32
 pub_manifest_length: .skip 8
 pub_manifest: .skip PUB_MANIFEST_CAPACITY
@@ -1641,6 +1692,6 @@ pub_pipe: .skip 8
 pub_child_status: .skip 4
 pub_hash_buffer: .skip 72
 pub_json_length: .skip 8
-pub_json: .skip 16384
+pub_json: .skip PUB_JSON_CAPACITY
 pub_number: .skip 32
 .section .note.GNU-stack,"",@progbits

@@ -7,6 +7,11 @@
 /* Preserve the legacy source-archive limit. Named target manifests use the
  * native build limit. One extra byte holds the copied manifest's NUL. */
 .equ PUB_LEGACY_MANIFEST_MAX, 16384
+.ifdef ASM_REGISTRY_V2
+.equ PUB_JSON_CAPACITY, 65536
+.else
+.equ PUB_JSON_CAPACITY, 16384
+.endif
 .equ PUB_TARGET_MANIFEST_MAX, 8190
 .equ PUB_MANIFEST_CAPACITY, PUB_LEGACY_MANIFEST_MAX + 1
 
@@ -938,6 +943,11 @@ pub_check_project:
     mov w23, #0
     ARM_CALL pub_source_paths
     cbnz w9, .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, dependency_lock_path
+    ARM_CALL source_archive_member
+    cbnz x9, .Lpub_project_bad
+.endif
     ARM_ADDR x19, pub_readme_names
     ARM_CALL pub_any_member
     cbz w9, .Lpub_project_bad
@@ -965,6 +975,12 @@ pub_check_project:
     cmp x3, x2
     b.lo .Lpub_manifest_copy
     strb wzr, [x0, x3]
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, pub_manifest
+    ARM_CALL g3_project_dependencies
+    cbnz w9, .Lpub_project_bad
+    ARM_ADDR x0, pub_manifest
+.endif
     mov x21, x0
     mov w22, #0
     mov w24, #0
@@ -978,6 +994,10 @@ pub_check_project:
     b.eq .Lpub_manifest_comment
     cmp w10, #'['
     b.eq .Lpub_manifest_section
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #4
+    b.eq .Lpub_manifest_comment
+.endif
     ARM_ADDR x0, pub_key
     mov w3, #0
 .Lpub_manifest_key:
@@ -1058,6 +1078,10 @@ pub_check_project:
 .Lpub_manifest_section:
     cmp w22, #2
     b.lo .Lpub_manifest_section_start
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #3
+    b.hi .Lpub_manifest_section_start
+.endif
     ARM_CALL pub_project_entry
     cbnz w9, .Lpub_project_bad
 .Lpub_manifest_section_start:
@@ -1085,6 +1109,15 @@ pub_check_project:
     ARM_ADDR x1, pub_package_section
     ARM_CALL streq
     cbnz w9, .Lpub_manifest_package
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, pub_key
+    ARM_ADDR x1, g3_project_dependency_section
+    ARM_CALL streq
+    cbz w9, .Lpub_manifest_not_dependencies
+    mov w22, #4
+    b .Lpub_manifest_line_end
+.Lpub_manifest_not_dependencies:
+.endif
     ARM_ADDR x0, pub_key
     ARM_ADDR x1, pub_build_section
     ARM_CALL streq
@@ -1164,6 +1197,10 @@ pub_check_project:
 .Lpub_manifest_size_ready:
     cmp w22, #2
     b.lo .Lpub_manifest_entries_done
+.ifdef ASM_REGISTRY_V2
+    cmp w22, #3
+    b.hi .Lpub_manifest_entries_done
+.endif
     ARM_CALL pub_project_entry
     cbnz w9, .Lpub_project_bad
 .Lpub_manifest_entries_done:
@@ -1183,11 +1220,21 @@ pub_check_project:
     ARM_ADDR x0, pub_project_name
     ARM_CALL streq
     cbz w9, .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+    /* Project preparation reads the committed version through this parser.
+     * Ordinary publication retains its expected-version comparison. */
+    ARM_ADDR x16, pub_project_inspect_version
+    ldrb w10, [x16]
+    cbnz w10, .Lpub_project_valid
+.endif
     ARM_ADDR x0, pub_project_version
     ARM_ADDR x16, pub_version
     ldr x1, [x16]
     ARM_CALL streq
     cbz w9, .Lpub_project_bad
+.ifdef ASM_REGISTRY_V2
+.Lpub_project_valid:
+.endif
     mov w9, #0
     b .Lpub_project_return
 .Lpub_project_bad:
@@ -1640,6 +1687,11 @@ pub_validate_elf:
  * Input: owned registry_temp_payload. w9=0/1. Owns pub_hash_buffer[72], pipe
  * descriptors and child process. Stack frame: 112 bytes; every child is reaped. */
 pub_hash_payload:
+.ifdef ASM_REGISTRY_V2
+    ARM_ADDR x0, registry_temp_payload
+/* x0=owned regular snapshot path; same ABI and bounds as pub_hash_payload. */
+pub_hash_file:
+.endif
     ARM_SAVE x19
     ARM_SAVE x20
     ARM_SAVE x21
@@ -1655,8 +1707,10 @@ pub_hash_payload:
     mov x23, x10
     ARM_IMM x10, -1
     mov x24, x10
+.ifndef ASM_REGISTRY_V2
     ARM_ADDR x16, registry_temp_payload
     mov x0, x16
+.endif
     ARM_IMM w10, O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
     mov w1, w10
     eor w2, w2, w2
@@ -1870,7 +1924,7 @@ pub_append:
     lsl w11, w11, #24
     tst w10, w11
     b.eq .Lpub_append_done
-    ARM_IMM x11, 16383
+    ARM_IMM x11, PUB_JSON_CAPACITY - 1
     cmp x2, x11
     b.hs pub_bad_metadata
     and w10, w9, #255
@@ -1910,7 +1964,7 @@ pub_quote:
     lsl w11, w11, #24
     tst w10, w11
     b.eq .Lpub_quote_end
-    ARM_IMM x11, 16380
+    ARM_IMM x11, PUB_JSON_CAPACITY - 4
     cmp x2, x11
     b.hs pub_bad_metadata
     and w10, w9, #255
@@ -2243,6 +2297,9 @@ pub_project_libraries: .skip 256
 pub_project_check: .skip 256
 pub_project_test: .skip 256
 pub_project_matched: .skip 1
+.ifdef ASM_REGISTRY_V2
+pub_project_inspect_version: .skip 1
+.endif
 pub_key: .skip 32
 pub_manifest_length: .skip 8
 pub_manifest: .skip PUB_MANIFEST_CAPACITY
@@ -2252,6 +2309,6 @@ pub_pipe: .skip 8
 pub_child_status: .skip 4
 pub_hash_buffer: .skip 72
 pub_json_length: .skip 8
-pub_json: .skip 16384
+pub_json: .skip PUB_JSON_CAPACITY
 pub_number: .skip 32
 .section .note.GNU-stack,"",%progbits
