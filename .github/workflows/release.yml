@@ -49,7 +49,7 @@ jobs:
           if [ "$ASM_TRUSTED" = true ]; then ASM_TRUSTED_FLAG=--trusted-distribution; fi
           python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist $ASM_TRUSTED_FLAG
       - name: Retain exact native bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-macos-${{ github.sha }}
           path: native-dist/*
@@ -112,7 +112,7 @@ jobs:
           sudo chmod 755 "$ASM_NATIVE_ROOT"
           printf 'ASM_NATIVE_ARM_OUTPUT=%s/native-dist\n' "$ASM_NATIVE_ROOT" >> "$GITHUB_ENV"
       - name: Retain exact native ARM64 bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-arm64-${{ github.sha }}
           path: ${{ env.ASM_NATIVE_ARM_OUTPUT }}/*
@@ -159,12 +159,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y binutils-aarch64-linux-gnu binutils-riscv64-linux-gnu qemu-user
       - name: Receive the native macOS qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-macos-${{ github.sha }}
           path: native-input
       - name: Receive the native ARM64 qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-arm64-${{ github.sha }}
           path: native-arm64-input
@@ -206,7 +206,7 @@ jobs:
           printf 'manifest_sha256=%s\n' "$ASM_MANIFEST_SHA256" >> "$GITHUB_OUTPUT"
       - name: Retain only the qualified publication bytes
         id: release_artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-release-${{ github.sha }}
           path: |
@@ -220,7 +220,7 @@ jobs:
           retention-days: 7
 
       - name: Retain proposed compatibility records for review
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proposed-registry-${{ github.sha }}
           path: ${{ env.ASM_RELEASE_OUTPUT }}/registry/packages/
@@ -253,7 +253,7 @@ jobs:
             exit 1
           fi
       - name: Receive only this run's qualified release
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: dist

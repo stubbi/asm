@@ -48,12 +48,12 @@ jobs:
       - name: Build the static site
         run: python3 tools/build_site.py --output .pages
       - name: Receive the native macOS qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-macos-${{ github.sha }}
           path: native-input
       - name: Receive the native ARM64 qualification
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-arm64-${{ github.sha }}
           path: native-arm64-input
@@ -116,7 +116,7 @@ jobs:
           sudo chmod 755 "$ASM_NATIVE_ROOT"
           printf 'ASM_NATIVE_ARM_OUTPUT=%s/native-dist\n' "$ASM_NATIVE_ROOT" >> "$GITHUB_ENV"
       - name: Retain exact native ARM64 bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-arm64-${{ github.sha }}
           path: ${{ env.ASM_NATIVE_ARM_OUTPUT }}/*
@@ -144,7 +144,7 @@ jobs:
       - name: Build and test clean native release bytes
         run: python3 tools/release.py --commit "$GITHUB_SHA" --native-target aarch64-macos --output native-dist
       - name: Retain exact native bytes and runtime evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-macos-${{ github.sha }}
           path: native-dist/*
