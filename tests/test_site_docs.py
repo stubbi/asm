@@ -127,10 +127,13 @@ class DocsTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in items], [card["name"] for card in page.cards])
         self.assertEqual(items[0]["name"], "Use the V2 client")
         self.assertEqual(items[0]["url"], "https://github.com/stubbi/asm/blob/main/docs/hosting.md#use-the-native-v2-client")
+        self.assertEqual(len(page.cards), 12)
         hosting = (ROOT / "docs/hosting.md").read_text()
         self.assertIn("## Use the native V2 client", hosting)
         self.assertIn('<a id="use-the-native-v2-preview"></a>', hosting)
-        self.assertIn("Publish a committed project", [item["name"] for item in items])
+        publisher = [item for item in items if item["name"] == "Publish a package"]
+        self.assertEqual(len(publisher), 1)
+        self.assertEqual(publisher[0]["url"], "https://github.com/stubbi/asm/blob/main/docs/hosting.md#publish-a-project")
         self.assertIn("V2 registry format", [item["name"] for item in items])
         self.assertNotIn("Prepare a package release", [item["name"] for item in items])
 
@@ -147,6 +150,9 @@ class DocsTests(unittest.TestCase):
             self.assertNotIn(invented, schema)
         head = content.split("</head>", 1)[0]
         self.assertIn("Assembly package walkthrough and evidence | Asm", head)
+        self.assertIn({"href": "https://github.com/stubbi/asm/blob/main/docs/hosting.md#publish-a-project"}, page.links)
+        self.assertIn("configured V2 registry", content)
+        self.assertIn("Official hosted publication remains unavailable pending qualification.", content)
 
     def test_task_links_use_the_current_documents_and_real_repository_anchors(self):
         _, content = self.generate()
@@ -154,7 +160,7 @@ class DocsTests(unittest.TestCase):
         links = {link["href"] for link in page.links}
         base = "https://github.com/stubbi/asm/"
         self.assertTrue({base + "#install-the-command", base + "#run-your-first-project", base + "#status",
-                         base + "blob/main/docs/use-a-package.md", base + "blob/main/docs/specs/registry.md#package-and-prepare-a-record",
+                         base + "blob/main/docs/use-a-package.md", base + "blob/main/docs/hosting.md#publish-a-project",
                          base + "blob/main/docs/specs/registry.md#release-record", base + "blob/main/docs/target-distribution.md",
                          base + "blob/main/docs/specs/security.md", base + "blob/main/docs/agents.md",
                          "../guide.html", "../reference/", "../agents.md"}.issubset(links))
@@ -171,13 +177,17 @@ class DocsTests(unittest.TestCase):
                 anchors = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
                 self.assertIn(parsed.fragment, anchors, href)
 
-    def test_search_metadata_describes_a_task_hub_and_record_preparation_remains_local(self):
+    def test_search_metadata_describes_a_task_hub_and_publication_scope(self):
         _, content = self.generate()
         head = content.split("</head>", 1)[0]
         self.assertIn("<title>Installation and package documentation", head)
         self.assertIn("installation", head)
         self.assertIn("maintained repository", head)
-        self.assertIn("Prepare source-bound artifacts and a local release record without uploading.", content)
+        publishers = [card for card in Page(content).cards if card["name"] == "Publish a package"]
+        self.assertEqual(len(publishers), 1)
+        self.assertIn("Submit a committed project to a configured V2 registry.", content)
+        self.assertIn("Official hosted publication remains unavailable pending qualification.", content)
+        self.assertNotIn("Prepare a package release", content)
         self.assertNotIn("submit a registry pull request", content)
 
     def test_local_assets_and_cards_are_native_links_with_readable_task_labels(self):

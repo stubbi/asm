@@ -58,7 +58,7 @@ An instruction set does not establish an operating system, ABI, or required CPU 
 | Assembly registry runtime foundation | Linux x86-64, AArch64, and RV64GC/LP64D assembly ports | Canonical HTTP exports and deployment qualification remain incomplete. |
 | MCP adapter image | Native Linux AMD64 and ARM64 image checks passed in CI | No published service or assembly server port follows from these adapter checks. |
 | Private deployment | Prepared Linux AMD64 scheduling | Manifests do not qualify capacity, failover, or another architecture. |
-| Package catalog | Six accepted target labels; four CLI publication targets | A declared label does not qualify an artifact or server port. |
+| Package catalog | Six accepted target labels for V2 publication | A declared label does not qualify an artifact, CLI build target, or server port. |
 
 The [README](../README.md#status) states the released CLI host support.
 Intel macOS and Windows remain separate host-port requirements.

@@ -226,6 +226,55 @@ Success creates `build/asm-registry-v2` with the same command family.
 Use that path instead of `asm` in the commands below when selecting this source build.
 Ordinary `make` and published 0.7.0 CLIs include V2 commands.
 `make REGISTRY_V2=0` selects the explicit V1-only source profile.
+
+### Publish a project
+
+This workflow needs a configured V2 registry.
+Official hosted V2 publication remains unavailable pending qualification.
+The [project contact route](https://asm.build/contact) is available for service questions.
+No self-service enrollment or `asm login` exists.
+
+The registry operator supplies the HTTPS API address, exact package name, enrolled owner ID, and a credential file.
+The credential needs `publish` and `task-read` scope for that exact package.
+The [owner enrollment procedure](../server/publisher/README.md#enroll-an-owner-and-issue-a-credential) describes these operator actions.
+Credential delivery uses the operator's authenticated private channel.
+Consumer access also needs an initial trusted root, registry ID, and mirror addresses from an independent trusted route.
+
+1. For a new project, run `asm new package` in its parent directory.
+   The command creates `package/asm.toml`, `package/src/main.s`, and `package/tests/main.s`.
+   It does not create `README.md` or `LICENSE`.
+2. Add a `README.md` that explains the package and its use.
+3. Add the actual license text in `LICENSE`.
+   The publication license identifier must match that license.
+4. Set the intended version in `asm.toml`.
+   Declare the implementations for the source targets that you will publish.
+   The [V2 target profiles](specs/registry-v2.md) define six accepted labels.
+   A target label does not establish instruction compatibility or CLI host support.
+5. Store the credential outside the repository in an owned private directory.
+   Keep its file mode at `0600`, which permits access only by its owner.
+   Never put credentials in source files, command arguments, URLs, or logs.
+6. In the project directory, commit only the intended release files with Git.
+   For a new repository, run `git init` first.
+
+   ```sh
+   git add -- asm.toml README.md LICENSE src/main.s tests/main.s
+   git commit -m "Prepare package release"
+   git rev-parse HEAD
+   ```
+
+   The last command prints the full commit identity for `FULL_COMMIT` below.
+   Existing projects can need additional intended files in that commit.
+7. Generate a request ID with a cryptographic random generator.
+   Use 16 random bytes encoded as 32 lowercase hexadecimal characters for `REQUEST_ID_32_HEX`.
+   OpenSSL is an optional command-line cryptography tool that can generate this ID:
+
+   ```sh
+   openssl rand -hex 16
+   ```
+
+   The command prints one request ID.
+   Retain that ID with the full commit, publication arguments, and supplied executable bytes for retries.
+
 Project publication reads committed Git objects and prepares the archive and canonical manifest in assembly.
 It ignores dirty and untracked working files.
 It does not build, test, or execute the project.
@@ -235,6 +284,7 @@ The committed `asm.toml` supplies the version.
 ```sh
 asm registry publish \
   --project /absolute/project-repository \
+  --commit FULL_COMMIT \
   --name owner/package --owner-id OWNER_ID_32_HEX \
   --summary "The package purpose." --license SPDX_IDENTIFIER \
   --source-target TARGET \
@@ -285,11 +335,58 @@ asm registry publish \
 Do not combine prepared inputs with `--project`.
 Both modes return a schema-2 task response, not immediate publication.
 The client skips object receipts already confirmed by the server.
-Read the resulting task with `registry task TASK_ID --credential-file FILE --api HTTPS_BASE`.
+Read the returned task ID with the same API and scoped credential:
+
+```sh
+asm registry task TASK_ID \
+  --credential-file /private/asm/publisher.token \
+  --api https://api.registry.example --json
+```
+
+The command returns the current schema-2 task response.
+Publication can remain asynchronous after the initial command finishes.
+
+| Task result | Meaning and next step |
+| --- | --- |
+| `accepted` or `uploading` | The task exists; some transfers can remain incomplete. Repeat the identical publication request to resume eligible uploads. |
+| `checking` | All transfers have receipts. Wait for the configured checker; this state does not mean that checks passed. |
+| `committed` | Immutable publication intent exists. Wait for signed distribution. |
+| `distributing` | The intent belongs to the active frozen distribution batch. Wait for its completed receipt. |
+| `published` | The response exposes the signed release manifest and metadata URLs. |
+| Non-null `failure` | The attempt failed. Read `code`, `detail`, and `retryable`. Ask the operator about recovery. |
+
+`failed` is not a task state in this schema.
 Only `published` exposes a usable signed release.
 
-Get the initial root and registry identity through an independent trusted channel.
+| Problem | Recovery |
+| --- | --- |
+| Uncertain network result | Repeat the identical request with the same request ID and `--commit FULL_COMMIT`. Preserve metadata, executable bytes, and compression toolchain. |
+| Expired or revoked credential | Ask the operator for a new private credential with the same owner and exact-package scopes. Read the earlier task first. |
+| Expired uncommitted task | A replacement credential does not extend its upload deadline or restore its original grant. Ask the operator to expire and reconcile it before starting a new request. |
+| Reserved or committed version | Inspect the existing task with the operator. A committed version cannot accept different bytes; commit a new version for changed content. |
+
+Expiry releases only uncommitted reservations; it does not free a committed version.
+Retryable checker failures can retain the reservation and need operator recovery.
+Changing a request ID does not bypass a version reservation.
+
+After the configured V2 website rebuild, the exact package page is `https://WEBSITE_HOST/packages/owner/package/VERSION`.
+Use the website address supplied by that registry's operator.
+The page can lag publication; the native command checks current signed policy.
+Get the initial root, registry ID, and mirror selection through an independent trusted channel.
 Keep the root file and persistent trust directory under an owned private directory.
+Replace `VERSION` with the committed version, such as `1.0.0` in this source-fetch example:
+
+```sh
+asm registry fetch owner/package@1.0.0 \
+  --registry-id REGISTRY_ID_32_HEX \
+  --root /private/asm-trust/root.json --state /private/asm-trust/client-state \
+  --mirror https://mirror-one.example/asm --mirror https://mirror-two.example/asm \
+  --target x86_64-linux --kind source --output /absolute/downloads/package-1.0.0.tar.gz
+```
+
+Success is quiet and leaves the checked source archive at the selected output path.
+Fetch does not extract, build, install, or execute the package.
+
 Install an exact compatible executable through explicitly selected mirrors:
 
 ```sh
