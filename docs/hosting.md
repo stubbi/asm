@@ -229,6 +229,8 @@ Ordinary `make` and published 0.7.0 CLIs include V2 commands.
 
 ### Publish a project
 
+Before the steps below, complete the [native client requirements](#use-the-native-v2-client) for your supported host.
+
 This workflow needs a configured V2 registry.
 Official hosted V2 publication remains unavailable pending qualification.
 The [project contact route](https://asm.build/contact) is available for service questions.
@@ -335,7 +337,7 @@ asm registry publish \
 Do not combine prepared inputs with `--project`.
 Both modes return a schema-2 task response, not immediate publication.
 The client skips object receipts already confirmed by the server.
-Read the returned task ID with the same API and scoped credential:
+For `TASK_ID`, use the response's `id` value with the same API and scoped credential:
 
 ```sh
 asm registry task TASK_ID \
