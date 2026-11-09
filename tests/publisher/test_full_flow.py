@@ -293,13 +293,19 @@ class NativePublicationFullFlowTests(unittest.TestCase):
         self.manifest_file = self.work / "publication.json"
         self.manifest_file.write_bytes(registry.json_bytes(self.manifest)); self.manifest_file.chmod(0o600)
         self.project = self.work / "project"
-        (self.project / "src").mkdir(parents=True, mode=0o700)
-        self.project_files = registry.read_archive(archive)
+        created = subprocess.run([str(self.cli_binary), "new", "project"], cwd=self.work,
+            env=self.environment, capture_output=True, timeout=10)
+        self.assertEqual((created.returncode, created.stderr), (0, b""), (created.stdout, created.stderr))
+        starter_files = ("asm.toml", "src/main.s", "tests/main.s")
+        for name in starter_files:
+            self.assertTrue((self.project / name).is_file(), name)
+        self.project_files = {name: (self.project / name).read_bytes() for name in starter_files}
+        self.project_files.update(registry.read_archive(archive))
         for name, data in self.project_files.items():
             (self.project / name).parent.mkdir(parents=True, exist_ok=True)
             (self.project / name).write_bytes(data)
         self.tool("/usr/bin/git", "-C", self.project, "init", "--initial-branch=main")
-        self.tool("/usr/bin/git", "-C", self.project, "add", "--", "asm.toml", "LICENSE", "README.md", "src/main.s")
+        self.tool("/usr/bin/git", "-C", self.project, "add", "--", *sorted(self.project_files))
         self.tool("/usr/bin/git", "-C", self.project, "-c", "user.name=Asm synthetic fixture",
                   "-c", "user.email=fixture@example.invalid", "-c", "core.hooksPath=/dev/null",
                   "commit", "--no-gpg-sign", "-m", "Create synthetic publication fixture")

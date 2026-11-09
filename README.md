@@ -234,7 +234,15 @@ The [dependency workflow](docs/hosting.md#resolve-and-restore-v2-dependencies) s
 The [dependency evidence](docs/v2-dependency-evidence.md) records target-specific checks and deployment limits.
 Earlier published binaries retain their original bytes and behavior.
 
-## Prepare a release record
+## Publish a package
+
+Follow the [project publication instructions](docs/hosting.md#publish-a-project) to submit a committed project to a configured V2 registry.
+The registry operator supplies enrollment and a scoped credential.
+Official hosted V2 publication remains unavailable pending qualification.
+
+<a id="prepare-a-release-record"></a>
+
+### Prepare a local release record
 
 A package release records its source repository, exact Git commit, target, and artifact digests.
 `asm publish` checks the release files and prepares a local release record.
