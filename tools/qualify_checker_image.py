@@ -38,6 +38,7 @@ REQUIRED_CASES = ("absent-object", "corrupt-object", "feature-mismatch", "linked
                   "malformed-manifest", "target-mismatch", "valid-features", "valid-source")
 MAX_RECEIPT = 32768
 INPUT_REFUSAL = b"Asm checker: input is unavailable or invalid. Inspect the retained task and staged files.\n"
+LIMIT_REFUSAL = b"Asm checker: task limit is unavailable. Use a qualified isolated runtime.\n"
 LIMIT = ("These synthetic source-artifact tasks check the bundled entrypoint and receipt bindings. "
          "They do not qualify executable-container formats, Kubernetes, gVisor, network policy enforcement, PVC access, or hosted publication.")
 
@@ -251,9 +252,26 @@ def qualify(args, state=None):
         source_contract(report, args.revision, accepted)
         image_id = report["runtime_image_id"]
         # This fixed probe is separate from task execution. It mounts no input.
-        probe = ('import json,os;from pathlib import Path;'
-                 'print(json.dumps({"read_only_root":bool(os.statvfs("/").f_flag & os.ST_RDONLY),'
-                 '"cluster_token":Path("/var/run/secrets/kubernetes.io/serviceaccount/token").exists()}))')
+        # Observe main() at its first source access, after the real restriction.
+        # Trusted probe code replaces only source identity; no package is run.
+        probe = '''import json, os, resource, sys
+from pathlib import Path
+sys.path.insert(0, "/app/tools")
+import checker_entrypoint
+def observed():
+    soft, hard = resource.getrlimit(resource.RLIMIT_NPROC)
+    refused = False
+    try:
+        resource.setrlimit(resource.RLIMIT_NPROC, (17, 17))
+    except (ValueError, OSError):
+        refused = True
+    print(json.dumps({"read_only_root": bool(os.statvfs("/").f_flag & os.ST_RDONLY),
+        "cluster_token": Path("/var/run/secrets/kubernetes.io/serviceaccount/token").exists(),
+        "soft": soft, "hard": hard, "raise_refused": refused}))
+    raise SystemExit(0)
+checker_entrypoint.source_revision = observed
+raise SystemExit(checker_entrypoint.main(["--task", "a" * 32]))
+'''
         state["stage"] = "root-and-token-probe"
         probe_name = "asm-checker-probe-" + uuid.uuid4().hex
         try:
@@ -265,9 +283,24 @@ def qualify(args, state=None):
             run_case([*client, "rm", "--force", probe_name], timeout=5)
         measured = registry.strict_json(checked.stdout)
         need(checked.returncode == 0 and not checked.stderr and isinstance(measured, dict)
-             and set(measured) == {"read_only_root", "cluster_token"}
-             and measured["read_only_root"] is True and measured["cluster_token"] is False,
-             "The checker root filesystem or token policy differs.")
+             and measured == {"read_only_root": True, "cluster_token": False,
+                              "soft": 16, "hard": 16, "raise_refused": True}
+             and type(measured["soft"]) is int and type(measured["hard"]) is int
+             and measured["read_only_root"] is True and measured["cluster_token"] is False
+             and measured["raise_refused"] is True,
+             "The checker root filesystem, token, or guest task limit policy differs.")
+        state["stage"] = "privileged-task-refusal"
+        probe_name = "asm-checker-privileged-probe-" + uuid.uuid4().hex
+        try:
+            # The unchanged final entrypoint must reject root before source/input.
+            refused = run_case([*client, "run", "--rm", "--pull=never", "--name", probe_name,
+                "--platform", "linux/amd64", "--read-only", "--network", "none", "--user", "0:0",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "16",
+                "--memory", "512m", "--cpus", "1", image_id, "--task", "a" * 32])
+        finally:
+            run_case([*client, "rm", "--force", probe_name], timeout=5)
+        need(refused.returncode == 1 and not refused.stdout and refused.stderr == LIMIT_REFUSAL,
+             "A privileged checker must refuse its task limit before reading input.")
         cases = []
         for identity in REQUIRED_CASES:
             state["stage"] = "fixture-" + identity
@@ -299,6 +332,7 @@ def qualify(args, state=None):
         report.update(scope="v2-runtime-qualification", os="linux", architecture="amd64", execution="native",
             tests_run=len(cases), tests_skipped=0, test_ids=[case["id"] for case in cases], cases=cases,
             checker_policy_sha256=policy, inputs_unchanged=True, limit=LIMIT,
+            guest_task_limit={"soft": 16, "hard": 16, "raise_refused": True, "privileged_refused": True},
             security={"uid": 65532, "gid": 65532, "read_only_root": True, "effective_capabilities": 0,
                       "no_new_privileges": True, "cluster_token": False, "network": "none"})
         coverage_contract(report)

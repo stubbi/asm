@@ -10,6 +10,7 @@ import subprocess
 import sys
 import unittest
 import tempfile
+import resource
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,6 +19,98 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 
 class CheckerEntrypointTests(unittest.TestCase):
+    def test_ordinary_source_policy_command_does_not_require_process_limit_support(self):
+        program = '''import builtins, sys
+sys.path.insert(0, sys.argv[1])
+original = builtins.__import__
+def without_resource(name, *args, **kwargs):
+    if name == "resource":
+        raise ImportError("resource unavailable on this source host")
+    return original(name, *args, **kwargs)
+builtins.__import__ = without_resource
+import publication_check
+raise SystemExit(publication_check.main(["policy"]))
+'''
+        result = subprocess.run([sys.executable, "-I", "-c", program, str(ROOT / "tools")],
+                                capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stderr), (0, b""))
+        self.assertRegex(result.stdout.decode(), r"^[0-9a-f]{64}\n$")
+
+    def isolated(self, body):
+        # Linux uses real procfs and no_new_privs. macOS has no Linux procfs;
+        # only that unavailable mechanism is substituted, never set/getrlimit.
+        program = '''import sys, os, resource, json
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import checker_entrypoint as entry
+import publication_check as checker
+if sys.platform == "linux":
+    import ctypes
+    if os.getuid() == 0:
+        os.setgroups([])
+        os.setgid(65532)
+        os.setuid(65532)
+    assert ctypes.CDLL(None).prctl(38, 1, 0, 0, 0) == 0
+else:
+    status = "Uid:\\t501\\t501\\t501\\t501\\nCapInh:\\t0\\nCapPrm:\\t0\\nCapEff:\\t0\\nCapAmb:\\t0\\nNoNewPrivs:\\t1\\n"
+    patch.object(checker, "_checker_status", return_value=status, create=True).start()
+''' + body
+        return subprocess.run([sys.executable, "-I", "-c", program, str(ROOT / "tools")],
+                              capture_output=True, timeout=5)
+
+    def test_image_sets_exact_limit_before_source_access_and_cannot_raise_it(self):
+        before = resource.getrlimit(resource.RLIMIT_NPROC)
+        result = self.isolated('''
+def observed():
+    print(json.dumps(list(resource.getrlimit(resource.RLIMIT_NPROC))))
+    try:
+        resource.setrlimit(resource.RLIMIT_NPROC, (17, 17))
+    except (ValueError, OSError):
+        raise SystemExit(0)
+    raise SystemExit(7)
+entry.source_revision = observed
+raise SystemExit(entry.main(["--task", "a" * 32]))
+''')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"[16, 16]\n", b""))
+        self.assertEqual(resource.getrlimit(resource.RLIMIT_NPROC), before)
+
+    def test_refused_setup_does_not_access_source_or_task_inputs(self):
+        result = self.isolated('''
+resource.setrlimit(resource.RLIMIT_NPROC, (8, 8))
+def forbidden(*args):
+    print("UNEXPECTED INPUT ACCESS")
+    raise SystemExit(9)
+entry.source_revision = forbidden
+checker.check = forbidden
+raise SystemExit(entry.main(["--task", "a" * 32]))
+''')
+        self.assertEqual((result.returncode, result.stdout), (1, b""))
+        self.assertEqual(result.stderr, b"Asm checker: task limit is unavailable. Use a qualified isolated runtime.\n")
+
+    def test_privilege_bypass_or_failed_readback_refuses_before_source_access(self):
+        status = "Uid: 501 501 501 501\nCapInh: 0\nCapPrm: 0\nCapEff: 0\nCapAmb: 0\nNoNewPrivs: 1\n"
+        invalid = [status.replace("501 501 501 501", value) for value in ("0 0 0 0", "501 0 501 501")]
+        invalid.extend(status.replace(field + ": 0", field + ": 1000000")
+                       for field in ("CapInh", "CapPrm", "CapEff", "CapAmb"))
+        invalid.append(status.replace("NoNewPrivs: 1", "NoNewPrivs: 0"))
+        setups = [f'patch.object(checker, "_checker_status", return_value={value!r}).start()' for value in invalid]
+        setups.extend(('patch.object(resource, "getrlimit", return_value=(16, 17)).start()',
+                       'patch.object(resource, "getrlimit", side_effect=OSError("private detail")).start()',
+                       'patch.object(checker, "_checker_status", side_effect=OSError("private detail")).start()'))
+        for setup in setups:
+            with self.subTest(setup=setup):
+                result = self.isolated(setup + '''
+def forbidden(*args):
+    print("UNEXPECTED INPUT ACCESS")
+    raise SystemExit(9)
+entry.source_revision = forbidden
+checker.check = forbidden
+raise SystemExit(entry.main(["--task", "a" * 32]))
+''')
+                self.assertEqual((result.returncode, result.stdout), (1, b""))
+                self.assertEqual(result.stderr, b"Asm checker: task limit is unavailable. Use a qualified isolated runtime.\n")
+
     def test_checked_receipt_binds_source_and_corrupt_inputs_preserve_bytes(self):
         import checker_entrypoint
         import registry
@@ -49,6 +142,7 @@ class CheckerEntrypointTests(unittest.TestCase):
                 before = object_file.read_bytes()
                 output = io.BytesIO()
                 with patch.object(checker_entrypoint, "INPUT", root, create=True), \
+                        patch.object(publication_check, "restrict_guest_tasks"), \
                         patch.object(checker_entrypoint, "source_revision", return_value="d" * 40), \
                         patch.object(sys, "stdout", SimpleNamespace(buffer=output)):
                     self.assertEqual(checker_entrypoint.main(["--task", task]), 0)
@@ -75,6 +169,7 @@ class CheckerEntrypointTests(unittest.TestCase):
         import image_source
         output, errors = io.StringIO(), io.StringIO()
         with patch.object(image_source, "SOURCE", Path("/absent-image-source-marker")), \
+                patch("publication_check.restrict_guest_tasks"), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             self.assertEqual(checker_entrypoint.main(["--task", "a" * 32]), 1)
         self.assertEqual(output.getvalue(), "")

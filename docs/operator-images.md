@@ -209,8 +209,12 @@ The checker gate calls the final image's default entrypoint with nine fixed synt
 It mounts one private input directory read-only and mounts no application code.
 The cases include valid source and features, corrupt or absent objects, links, malformed inputs, and target or feature mismatches.
 The gate checks canonical receipt bindings and unchanged input bytes.
+Separate fixed probes observe both task limits at 16 before source access and confirm hard-limit raise refusal.
+The unchanged final entrypoint must also refuse a root launch before reading inputs.
+Publication requires these measurements as well as all nine task cases.
 It uses no network, credentials, capabilities, or cluster token.
 These source-artifact cases do not qualify every executable file format.
+The [checker contract](kubernetes-checker.md#guest-and-host-task-bounds) separates guest tasks from the unqualified host ceiling.
 
 Both gates require native Linux AMD64 and a named Docker context.
 The checker gate requires root access to assign its private fixture files to UID65532.

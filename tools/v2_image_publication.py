@@ -134,6 +134,11 @@ def validate(revision, role, report, image):
             and report.get('final_compiler_and_postgresql_server_absent') is True,
             'The publisher dependency or final tool contract differs.')
     else:
+        task_limit = report.get('guest_task_limit')
+        expected_limit = {'soft': 16, 'hard': 16, 'raise_refused': True, 'privileged_refused': True}
+        require(isinstance(task_limit, dict) and task_limit == expected_limit
+            and all(type(task_limit[name]) is type(value) for name, value in expected_limit.items()),
+            'The exact guest task limit and refusal measurements are required.')
         require(all(files.get('/app/' + path) == source['files'][path] for path in CHECKER_FILES)
             and report.get('checker_policy_sha256') == checker_policy_digest() and report.get('inputs_unchanged') is True,
             'The bundled checker source or preserved input evidence differs.')

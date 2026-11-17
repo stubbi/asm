@@ -30,6 +30,12 @@ Asm's own bootstrap installer and manual self-update command verify release prov
 The following sections distinguish source controls from requirements for later activation.
 Passing an artifact validator does not establish deployment, isolation, provenance, or proof results.
 
+The isolated checker image sets and reads back soft and hard guest task limits of 16 before reading inputs.
+It refuses root identities, held capabilities, and absent privilege-escalation protection.
+Its reusable source checker does not impose limits on an ordinary user account.
+The [Kubernetes checker contract](../kubernetes-checker.md#guest-and-host-task-bounds) requires separate measured host task enforcement.
+Actual gVisor accounting, the host ceiling, cluster isolation, and independent human security review remain activation gates.
+
 The website's optional GitHub star counter first reads a first-party public observation.
 On static hosting, it can request the fixed public repository API when that observation is absent or expired.
 This request omits credentials and referrers; GitHub receives the connection's network address.

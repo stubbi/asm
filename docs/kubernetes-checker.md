@@ -27,6 +27,18 @@ The checker image accepts only `--task TASK_ID`.
 Its entrypoint reads `/input/manifest.json` and `/input/objects`.
 Its source receipt supplies the checker revision.
 
+Before source identity or task files are read, the image sets both `RLIMIT_NPROC` values to 16.
+This limit counts guest tasks: processes and threads within the qualified sandbox's UID accounting scope.
+The image requires equal non-root user identifiers, no held Linux capabilities, and `no_new_privs`.
+It reads the limits back before continuing.
+A privilege, setup, or readback failure returns a fixed error without a receipt.
+The policy digest includes this restriction through `publication_check.py`.
+
+The reusable `check()` function and ordinary source command do not change process limits.
+Linux charges this limit to the real user identifier.
+Applying it to an ordinary shared user account could affect unrelated work.
+The image therefore requires a separately qualified isolated runtime contract.
+
 The Job has one container and no retries.
 It requests and limits one CPU, 512 MiB of memory, and 16 MiB of ephemeral storage.
 Its active deadline is 30 seconds.
@@ -53,13 +65,45 @@ The Job mounts no host container socket, database material, signing key, or stor
 5. Install the reviewed gVisor runtime on the selected node.
 6. Configure the selected RuntimeClass with the `runsc` handler.
 7. Qualify the actual runtime before accepting untrusted inputs.
-8. Set the node's Pod process limit to 16 or fewer processes.
+8. Enforce a separately qualified host task ceiling around the complete sandbox.
 9. Bound container logs and node storage through the existing cluster controls.
 10. Enforce namespace storage and compute quotas for pending or uncertain Jobs.
 
 The executor checks the Restricted namespace label, bound input claim, RuntimeClass configuration, and namespace network policies.
 These configuration checks do not prove runtime enforcement or network isolation.
 Admission must prevent replacement of these controls during execution.
+
+### Guest and host task bounds
+
+The guest task bound is 16.
+The host task ceiling, `H`, is a separate deployment value that requires measurement and enforcement evidence.
+It includes runtime work needed for startup, inspection, failure, and cleanup.
+No value of 128 or 256 is asserted or approved here.
+The existing local Docker executor retains `--pids-limit 16`.
+That Docker setting does not qualify gVisor guest accounting or a Kubernetes host envelope.
+
+The earlier node Pod limit of 16 had no demonstrated valid `runsc` launch.
+Replacing that requirement is a material design correction, not passed production evidence.
+gVisor guest tasks do not map one-to-one to host tasks.
+Its runtime can need additional host threads and platform processes.
+Retain both guest and host bounds in the deployment evidence.
+
+In containerd 2.3.4, the root Pod sandbox spec uses its own spec-generation path.
+The `base_runtime_spec` setting for workload containers does not establish that root sandbox's host limit.
+A compatibility subcgroup's `pids.max` also does not prove enforcement around the complete sandbox.
+Observe every relevant process's cgroup membership and the enforcing ancestor.
+
+Cluster deployment remains held until these checks pass:
+
+1. Test fork-only, thread-only, and mixed guest workloads against the 16-task bound.
+2. Test privileged launch refusal and attempts to raise the hard limit.
+3. Observe the encompassing host cgroup during startup, work, failure, and cleanup.
+4. Measure host task use and prove enforcement at the selected `H`.
+5. Retain same-node RWO storage, network denial, admission, and cleanup results.
+6. Obtain the independent human security review.
+
+Keep all existing CPU, memory, time, storage, network, and fixed Job restrictions.
+Native Docker image qualification does not complete these gVisor and cluster checks.
 
 The worker needs `get` access to its namespace, selected PVC, and selected RuntimeClass.
 When RuntimeClass scheduling adds node labels, it also needs `get` access to the selected Node by name.
@@ -202,6 +246,16 @@ The source tests use synthetic task bytes and a bounded Kubernetes transport sub
 They cover fixed Job construction, refusal paths, delayed results, malformed replies, identity changes, timeouts, and uncertain cleanup.
 They do not qualify a live cluster, an image build, a network plugin, a CSI driver, gVisor, or provider recovery.
 Public activation remains held until the [implementation plan](superpowers/plans/2026-11-08-hosted-v2.md) gates pass.
+
+Task-bound primary sources were checked on 2026-11-17:
+
+- [gVisor release-20261012.0 task creation](https://github.com/google/gvisor/blob/release-20261012.0/pkg/sentry/kernel/task_start.go).
+- [gVisor release-20261012.0 user task accounting and capability exceptions](https://github.com/google/gvisor/blob/release-20261012.0/pkg/sentry/kernel/kernel.go).
+- [gVisor resource model](https://gvisor.dev/docs/architecture_guide/resources/).
+- [gVisor release-20261012.0 host cgroup resources](https://github.com/google/gvisor/blob/release-20261012.0/runsc/cgroup/cgroup.go).
+- [containerd 2.3.4 root sandbox spec](https://github.com/containerd/containerd/blob/v2.3.4/internal/cri/server/podsandbox/sandbox_run_linux.go).
+- [containerd 2.3.4 root sandbox spec generation](https://github.com/containerd/containerd/blob/v2.3.4/internal/cri/server/podsandbox/helpers.go).
+- [Kubernetes 1.36 process ID limits and reservations](https://v1-36.docs.kubernetes.io/docs/concepts/policy/pid-limiting/).
 
 The contract targets Kubernetes v1.35 APIs.
 The following primary documentation was checked on 2026-11-08:

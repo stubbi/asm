@@ -43,6 +43,7 @@ def evidence(role):
     else:
         report['security']['network'] = 'none'
         report.update(checker_policy_sha256=policy.checker_policy_digest(), inputs_unchanged=True,
+            guest_task_limit={'soft': 16, 'hard': 16, 'raise_refused': True, 'privileged_refused': True},
             cases=[{'id': name, 'task_id': '4' * 32, 'manifest_sha256': 'f' * 64,
                 'expected_outcome': policy.CHECKER_OUTCOMES[name],
                 'exit_status': 1 if name == 'malformed-manifest' else 0,
@@ -55,6 +56,15 @@ def evidence(role):
 
 
 class V2PublicationTests(unittest.TestCase):
+    def test_checker_without_exact_task_limit_and_refusal_evidence_cannot_publish(self):
+        for value in (None, {}, {'soft': 16, 'hard': 17, 'raise_refused': True, 'privileged_refused': True},
+                      {'soft': 16, 'hard': 16, 'raise_refused': False, 'privileged_refused': True},
+                      {'soft': 16, 'hard': 16, 'raise_refused': True, 'privileged_refused': 1}):
+            report, image = evidence('checker')
+            report['guest_task_limit'] = value
+            with self.subTest(value=value):
+                self.refused(report, image, 'checker')
+
     def refused(self, report, image, role):
         with self.assertRaises(ValueError):
             policy.validate(REVISION, role, report, image)
