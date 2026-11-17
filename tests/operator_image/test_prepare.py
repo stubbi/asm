@@ -23,6 +23,11 @@ import prepare_operator as prepare
 from registry_admin import AdminError
 
 
+def stable_stat(path, *, follow=True):
+    info = path.stat() if follow else path.lstat()
+    return tuple(getattr(info, name) for name in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
+
+
 def source_url(tls, **changes):
     options = {"sslmode": "verify-full", "sslrootcert": str(tls / "ca.crt"),
                "sslcert": str(tls / "tls.crt"), "sslkey": str(tls / "tls.key")}
@@ -80,10 +85,223 @@ class PreparationTests(unittest.TestCase):
         path.write_bytes(source_url(self.tls, **options).replace(b"asm_operator@", b"asm_reader@"))
         path.chmod(0o440)
 
-    def reader(self, destination=None, *, resolve=False):
+    def reader(self, destination=None, *, resolve=False, reuse=False):
         self.assertTrue(callable(getattr(prepare, "prepare_reader", None)), "The fixed reader operation is missing.")
         return prepare.prepare_reader(self.config, self.tls, destination or self.base / "reader", self.psql,
-                                      resolve_dns=resolve)
+                                      resolve_dns=resolve, **({"reuse_matching": True} if reuse else {}))
+
+    def test_reader_reuse_matching_keeps_bytes_inodes_modes_and_cleans_staging(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader(reuse=True)
+        destination = self.base / "reader"
+        url = destination / "database.url"
+        before = (stable_stat(destination), stable_stat(url), url.read_bytes())
+        result = self.reader(reuse=True)
+        self.assertEqual(result, {"status": "prepared", "connection_file": str(url),
+                                  "role": "asm_reader", "dns_resolved": False})
+        self.assertEqual((stable_stat(destination), stable_stat(url), url.read_bytes()), before)
+        self.assertEqual(destination.stat().st_mode & 0o7777, 0o700)
+        self.assertEqual(url.stat().st_mode & 0o7777, 0o600)
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+        with self.assertRaises(FileExistsError):
+            self.reader()
+        self.assertEqual(url.read_bytes(), before[2])
+
+    def test_reader_reuse_matching_refuses_changed_url_or_resolved_address(self):
+        self.reader_source()
+        with patch.object(prepare, "resolve_ipv4", return_value="127.0.0.1"):
+            self.reader(resolve=True)
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        with patch.object(prepare, "resolve_ipv4", return_value="127.0.0.2"), self.assertRaises(AdminError):
+            self.reader(resolve=True, reuse=True)
+        self.reader_source(hostaddr="127.0.0.1")
+        source = self.config / "..generation_one/database.url"
+        source.chmod(0o600)
+        source.write_bytes(source.read_bytes().replace(b"/asm?", b"/other?"))
+        source.chmod(0o440)
+        with self.assertRaises(AdminError):
+            self.reader(reuse=True)
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+
+    def test_reader_reuse_matching_still_validates_config_tls_dns_and_connection(self):
+        self.reader_source()
+        self.reader(resolve=True)
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        for operation in ("resolve_ipv4", "read_projected", "Connection"):
+            with self.subTest(operation=operation), patch.object(prepare, operation, side_effect=AdminError("synthetic refusal")), \
+                    self.assertRaises(AdminError):
+                self.reader(resolve=True, reuse=True)
+            self.assertEqual((stable_stat(url), url.read_bytes()), before)
+            self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+        (self.tls / "tls.key").unlink()
+        with self.assertRaises((AdminError, OSError)):
+            self.reader(resolve=True, reuse=True)
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+
+    def test_reader_reuse_matching_accepts_new_valid_tls_generation(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader()
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        generation = self.tls / "..generation_two"
+        generation.mkdir(mode=0o750)
+        for name in prepare.TLS_FILES.values():
+            target = generation / name
+            target.write_bytes((self.tls / "..generation_one" / name).read_bytes() + b"\nrotated")
+            target.chmod(0o440)
+        replacement = self.tls / "..next"
+        replacement.symlink_to(generation.name)
+        replacement.replace(self.tls / "..data")
+        self.reader(reuse=True)
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+
+    def test_reader_reuse_matching_refuses_unsafe_destination_shapes_without_changes(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader()
+        valid = self.base / "reader"
+        content = (valid / "database.url").read_bytes()
+        for kind in ("file", "symlink", "url-symlink", "fifo", "nested", "extra", "hardlink", "directory-mode", "file-mode", "oversized", "truncated"):
+            destination = self.base / kind
+            if kind == "file":
+                destination.write_bytes(content)
+            elif kind == "symlink":
+                destination.symlink_to(valid, target_is_directory=True)
+            else:
+                destination.mkdir(mode=0o700)
+                url = destination / "database.url"
+                if kind == "url-symlink":
+                    url.symlink_to(valid / "database.url")
+                elif kind == "fifo":
+                    os.mkfifo(url, 0o600)
+                elif kind == "nested":
+                    url.mkdir(mode=0o700)
+                elif kind == "hardlink":
+                    os.link(valid / "database.url", url)
+                else:
+                    url.write_bytes(b"x" * 4097 if kind == "oversized" else content[:-1] if kind == "truncated" else content)
+                    url.chmod(0o640 if kind == "file-mode" else 0o600)
+                    if kind == "extra":
+                        (destination / "keep").write_bytes(b"unrelated")
+                    if kind == "directory-mode":
+                        destination.chmod(0o750)
+            # lstat does not follow any foreign link or block on the FIFO.
+            before = stable_stat(destination, follow=False)
+            with self.subTest(kind=kind), self.assertRaises((AdminError, OSError)):
+                self.reader(destination, reuse=True)
+            self.assertEqual(stable_stat(destination, follow=False), before)
+            self.assertEqual((valid / "database.url").read_bytes(), content)
+            if kind == "hardlink":
+                (destination / "database.url").unlink()
+            if kind == "extra":
+                self.assertEqual((destination / "keep").read_bytes(), b"unrelated")
+            self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+
+    def test_reader_reuse_matching_refuses_foreign_ownership_and_acl(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader()
+        destination = self.base / "reader"
+        url = destination / "database.url"
+        before = (stable_stat(destination), stable_stat(url), url.read_bytes())
+        real_fstat = os.fstat
+        for target in (destination, url):
+            inode = target.stat().st_ino
+            def foreign(fd):
+                info = real_fstat(fd)
+                if info.st_ino == inode:
+                    fields = list(info)
+                    fields[4] = os.geteuid() + 1
+                    return os.stat_result(fields)
+                return info
+            with self.subTest(target=target.name), patch.object(prepare.os, "fstat", side_effect=foreign), self.assertRaises(AdminError):
+                self.reader(reuse=True)
+        real_acl = prepare.reject_extended_acl
+        for target in (destination, url):
+            inode = target.stat().st_ino
+            def grant(fd):
+                if real_fstat(fd).st_ino == inode:
+                    raise AdminError("synthetic ACL grant")
+                return real_acl(fd)
+            with self.subTest(acl=target.name), patch.object(prepare, "reject_extended_acl", side_effect=grant), self.assertRaises(AdminError):
+                self.reader(reuse=True)
+        self.assertEqual((stable_stat(destination), stable_stat(url), url.read_bytes()), before)
+        if sys.platform == "darwin":
+            for target in (destination, url):
+                subprocess.run(["/bin/chmod", "+a", "everyone allow read", str(target)], check=True, timeout=5)
+                try:
+                    with self.subTest(real_acl=target.name), self.assertRaises(AdminError):
+                        self.reader(reuse=True)
+                    self.assertEqual(url.read_bytes(), before[2])
+                finally:
+                    subprocess.run(["/bin/chmod", "-N", str(target)], check=True, timeout=5)
+
+    def test_reader_reuse_matching_refuses_short_or_changing_reads(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader()
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        real_read = os.read
+        inode = url.stat().st_ino
+        with patch.object(prepare.os, "read", side_effect=lambda fd, maximum: real_read(fd, min(maximum, 3) if os.fstat(fd).st_ino == inode else maximum)):
+            self.reader(reuse=True)
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+        for kind in ("short", "changed"):
+            def read(fd, maximum):
+                if os.fstat(fd).st_ino == inode:
+                    if kind == "short":
+                        return b""
+                    with url.open("r+b") as output:
+                        output.write(b"x")
+                return real_read(fd, maximum)
+            with self.subTest(kind=kind), patch.object(prepare.os, "read", side_effect=read), self.assertRaises(AdminError):
+                self.reader(reuse=True)
+            self.assertEqual(url.stat().st_ino, before[0][1])
+            if kind == "short":
+                self.assertEqual(url.read_bytes(), before[1])
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+
+    def test_reader_reuse_matching_only_handles_eexist_and_preserves_uncertain_cleanup(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        self.reader()
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        with patch.object(prepare, "publish_snapshot", side_effect=OSError(errno.EIO, "synthetic publication error")), self.assertRaises(OSError) as error:
+            self.reader(reuse=True)
+        self.assertEqual(error.exception.errno, errno.EIO)
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
+        real_stat, real_publish = os.stat, prepare.publish_snapshot
+        attempted = False
+        def publish(*args):
+            nonlocal attempted
+            attempted = True
+            return real_publish(*args)
+        def uncertain(path, *args, **kwargs):
+            if attempted and str(path).startswith(".asm-operator-"):
+                raise OSError(errno.EIO, "synthetic uncertain cleanup")
+            return real_stat(path, *args, **kwargs)
+        with patch.object(prepare, "publish_snapshot", side_effect=publish), patch.object(prepare.os, "stat", side_effect=uncertain):
+            self.reader(reuse=True)
+        staged = list(self.base.glob(".asm-operator-*"))
+        self.assertEqual(len(staged), 1)
+        self.assertEqual((staged[0] / "database.url").read_bytes(), before[1])
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+
+    def test_reader_postpublication_interruption_allows_explicit_matching_reentry(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        real_publish = prepare.publish_snapshot
+        def interrupted(*args):
+            real_publish(*args)
+            raise KeyboardInterrupt
+        with patch.object(prepare, "publish_snapshot", side_effect=interrupted), self.assertRaises(KeyboardInterrupt):
+            self.reader(reuse=True)
+        url = self.base / "reader/database.url"
+        before = (stable_stat(url), url.read_bytes())
+        self.reader(reuse=True)
+        self.assertEqual((stable_stat(url), url.read_bytes()), before)
+        self.assertEqual(list(self.base.glob(".asm-operator-*")), [])
 
     def test_reader_emits_only_private_url_and_keeps_live_tls_generation_paths(self):
         self.reader_source()
@@ -484,6 +702,78 @@ class RootProjectedImageTests(unittest.TestCase):
                     else:
                         self.assertEqual((result.returncode, result.stdout), (1, b""))
                         self.assertFalse(destination.exists())
+
+    def test_real_reader_entrypoint_reuses_matching_output_and_preserves_refusals(self):
+        path = os.environ.get("ASM_OPERATOR_PROJECTION_FIXTURES")
+        if not path:
+            self.skipTest("Requires the derived Linux image's synthetic root:GID65532 projection fixtures.")
+        self.assertEqual((os.geteuid(), os.getegid()), (65532, 65532))
+        base = Path(path)
+        root = base / "reader-valid"
+        with tempfile.TemporaryDirectory(prefix="asm-root-reader-rerun-") as temp:
+            destination = Path(temp) / "reader"
+            def run(*, reuse=False, source=root):
+                result = subprocess.run(["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py", "prepare-reader",
+                    "--config-directory", str(source / "config"), "--tls-directory", str(source / "tls"),
+                    "--destination-directory", str(destination), "--resolve-dns", *(["--reuse-matching"] if reuse else [])],
+                    capture_output=True, timeout=15, env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"})
+                self.assertEqual(list(Path(temp).glob(".asm-operator-*")), [])
+                return result
+            first = run(reuse=True)
+            self.assertEqual((first.returncode, first.stderr), (0, b""))
+            url = destination / "database.url"
+            before = (stable_stat(destination), stable_stat(url), url.read_bytes())
+            second = run(reuse=True)
+            self.assertEqual((second.returncode, second.stdout, second.stderr), (0, first.stdout, b""))
+            self.assertEqual((stable_stat(destination), stable_stat(url), url.read_bytes()), before)
+            self.assertEqual(destination.stat().st_mode & 0o7777, 0o700)
+            self.assertEqual(url.stat().st_mode & 0o7777, 0o600)
+            refused = run()
+            self.assertEqual((refused.returncode, refused.stdout), (1, b""))
+            self.assertIn(b"preparation refused", refused.stderr)
+            for kind in ("changed-url", "file-mode", "directory-mode", "extra-entry", "linked-url", "symlink-url", "fifo", "oversized"):
+                if kind == "changed-url":
+                    url.write_bytes(before[2].replace(b"/asm?", b"/other?"))
+                elif kind == "file-mode":
+                    url.chmod(0o640)
+                elif kind == "directory-mode":
+                    destination.chmod(0o750)
+                elif kind == "extra-entry":
+                    (destination / "keep").write_bytes(b"unrelated")
+                elif kind == "linked-url":
+                    os.link(url, Path(temp) / "linked")
+                elif kind == "symlink-url":
+                    url.unlink()
+                    url.symlink_to(root / "config/..generation_one/database.url")
+                elif kind == "fifo":
+                    url.unlink()
+                    os.mkfifo(url, 0o600)
+                else:
+                    url.write_bytes(b"x" * 4097)
+                current = (stable_stat(destination), stable_stat(url, follow=False))
+                refused = run(reuse=True)
+                with self.subTest(kind=kind):
+                    self.assertEqual((refused.returncode, refused.stdout), (1, b""))
+                    self.assertIn(b"preparation refused", refused.stderr)
+                    self.assertEqual((stable_stat(destination), stable_stat(url, follow=False)), current)
+                if kind == "extra-entry":
+                    self.assertEqual((destination / "keep").read_bytes(), b"unrelated")
+                    (destination / "keep").unlink()
+                if kind == "linked-url":
+                    (Path(temp) / "linked").unlink()
+                if url.is_symlink() or kind == "fifo":
+                    url.unlink()
+                destination.chmod(0o700)
+                url.write_bytes(before[2])
+                url.chmod(0o600)
+            # Even apparently matching old URL bytes cannot bypass current projection checks.
+            invalid = base / "reader-bad-mode"
+            url.write_bytes(before[2].replace(b"reader-valid", b"reader-bad-mode"))
+            current = (stable_stat(url), url.read_bytes())
+            refused = run(reuse=True, source=invalid)
+            self.assertEqual((refused.returncode, refused.stdout), (1, b""))
+            self.assertIn(b"preparation refused", refused.stderr)
+            self.assertEqual((stable_stat(url), url.read_bytes()), current)
 
 
 class ImagePreparationFixtureTests(unittest.TestCase):

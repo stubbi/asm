@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import ctypes
+import errno
 import ipaddress
 import os
 from pathlib import Path
@@ -24,6 +25,7 @@ from registry_admin import AdminError, Connection, reject_extended_acl, require,
 SOURCE_UID = 0
 SOURCE_GID = 65532
 PSQL = Path("/opt/asm/postgres/bin/psql")
+READER_URL_LIMIT = 4096
 TLS_FILES = {"sslrootcert": "ca.crt", "sslcert": "tls.crt", "sslkey": "tls.key"}
 ROLES = ("asm_migrator", "asm_operator", "asm_publisher", "asm_publication_worker", "asm_distributor")
 DNS_PROGRAM = """import ipaddress,socket,sys
@@ -89,7 +91,7 @@ def _source_url(body, role, tls_directory, destination, *, resolve_dns, reader=F
         options[key] = str(destination / name)
     result = (urlunsplit(("postgresql", parsed.netloc, parsed.path, urlencode(options, quote_via=quote), "")) + "\n").encode("ascii")
     if reader:
-        require(len(result) <= 4096, "The reader connection file exceeds its byte limit.")
+        require(len(result) <= READER_URL_LIMIT, "The reader connection file exceeds its byte limit.")
     return result
 
 
@@ -152,6 +154,52 @@ def publish_snapshot(parent_fd, staging_name, destination_name):
     function.restype = ctypes.c_int
     if function(parent_fd, os.fsencode(staging_name), parent_fd, os.fsencode(destination_name), flags) != 0:
         raise OSError(ctypes.get_errno(), "Atomic private snapshot publication refused")
+
+
+def reuse_reader(parent_fd, name, expected):
+    """Check exact existing output through owned descriptors; never change it.
+
+    Root, same-UID writers, the Job group, and runtime mounts remain trusted.
+    Bounded reads and identity checks do not isolate a hostile same-UID writer.
+    """
+    directory = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+    try:
+        info = os.fstat(directory)
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+                and stat.S_IMODE(info.st_mode) == 0o700, "Use an owned mode0700 reader directory.")
+        reject_extended_acl(directory)
+        with os.scandir(directory) as entries:
+            first = next(entries, None)
+            require(first is not None and first.name == "database.url" and next(entries, None) is None,
+                    "Reuse only a reader directory containing database.url alone.")
+        fd = os.open("database.url", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            before = os.fstat(fd)
+            require(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid() and before.st_nlink == 1
+                    and stat.S_IMODE(before.st_mode) == 0o600 and 1 <= before.st_size <= READER_URL_LIMIT,
+                    "Use one owned mode0600 bounded reader file without other links.")
+            reject_extended_acl(fd)
+            body = bytearray()
+            while len(body) <= READER_URL_LIMIT:
+                value = os.read(fd, READER_URL_LIMIT + 1 - len(body))
+                if not value:
+                    break
+                body.extend(value)
+            after = os.fstat(fd)
+            fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+            require(all(getattr(before, field) == getattr(after, field) for field in fields)
+                    and len(body) == before.st_size and bytes(body) == expected,
+                    "The existing reader file changed or differs from the validated URL.")
+            current = os.stat("database.url", dir_fd=directory, follow_symlinks=False)
+            require((current.st_dev, current.st_ino) == (after.st_dev, after.st_ino), "The existing reader file changed.")
+        finally:
+            os.close(fd)
+        after = os.fstat(directory)
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        require(all(getattr(info, field) == getattr(after, field) for field in fields)
+                and (current.st_dev, current.st_ino) == (after.st_dev, after.st_ino), "The existing reader directory changed.")
+    finally:
+        os.close(directory)
 
 
 @contextmanager
@@ -246,7 +294,7 @@ def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, re
     return _prepare(config_directory, tls_directory, destination, role, psql, resolve_dns=resolve_dns)
 
 
-def prepare_reader(config_directory, tls_directory, destination, psql=PSQL, *, resolve_dns=False):
+def prepare_reader(config_directory, tls_directory, destination, psql=PSQL, *, resolve_dns=False, reuse_matching=False):
     """Publish only an owner-only reader URL; retain live projected TLS paths.
 
     Temporary TLS copies serve unchanged Connection validation only. The final
@@ -254,10 +302,10 @@ def prepare_reader(config_directory, tls_directory, destination, psql=PSQL, *, r
     writers and runtime mounts remain required throughout reader operation.
     """
     return _prepare(config_directory, tls_directory, destination, "asm_reader", psql,
-                    resolve_dns=resolve_dns, reader=True)
+                    resolve_dns=resolve_dns, reader=True, reuse_matching=reuse_matching)
 
 
-def _prepare(config_directory, tls_directory, destination, role, psql, *, resolve_dns, reader=False):
+def _prepare(config_directory, tls_directory, destination, role, psql, *, resolve_dns, reader=False, reuse_matching=False):
     require(all(path.is_absolute() for path in (config_directory, tls_directory, destination)),
             "Use absolute projected and private volume paths.")
     with projected(config_directory) as config:
@@ -300,8 +348,14 @@ def _prepare(config_directory, tls_directory, destination, role, psql, *, resolv
         current = os.stat(staging_name, dir_fd=parent, follow_symlinks=False)
         require((current.st_dev, current.st_ino) == (os.fstat(private).st_dev, os.fstat(private).st_ino),
                 "The private staging directory changed.")
-        # Last state-changing operation: no partial snapshot is visible at the final name.
-        publish_snapshot(parent, staging_name, destination.name)
+        # No partial snapshot is visible at the final name.
+        try:
+            publish_snapshot(parent, staging_name, destination.name)
+        except OSError as failure:
+            if not reader or not reuse_matching or failure.errno != errno.EEXIST:
+                raise
+            reuse_reader(parent, destination.name, url)
+            discard_owned_staging(parent, staging_name, private)
     except BaseException:
         # A post-publication signal leaves the descriptor attached to the final directory.
         # Establish staging-name/inode ownership before any destructive cleanup.
@@ -332,12 +386,15 @@ def _main(argv, *, reader=False):
     parser.add_argument("--destination-directory", type=Path, required=True)
     if not reader:
         parser.add_argument("--role", choices=ROLES, required=True)
+    if reader:
+        parser.add_argument("--reuse-matching", action="store_true",
+                            help="Accept exact owned reader output after fresh validation; never replace it.")
     parser.add_argument("--resolve-dns", action="store_true")
     args = parser.parse_args(argv)
     try:
         if reader:
             value = prepare_reader(args.config_directory, args.tls_directory, args.destination_directory,
-                                   resolve_dns=args.resolve_dns)
+                                   resolve_dns=args.resolve_dns, reuse_matching=args.reuse_matching)
         else:
             value = prepare(args.config_directory, args.tls_directory, args.destination_directory, args.role,
                             resolve_dns=args.resolve_dns)

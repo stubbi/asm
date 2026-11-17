@@ -103,7 +103,7 @@ An existing directory, file, or symlink is preserved.
 An interruption after publication preserves the complete final snapshot.
 If cleanup cannot establish staging inode ownership, it preserves those private files.
 Inspect the result after an interrupted command.
-Use a new destination for a deliberate retry.
+For operator snapshots, use a new destination for a deliberate retry.
 Atomic publication does not establish directory durability after power loss.
 
 ### Reader serving configuration
@@ -131,10 +131,35 @@ The reader refuses operator-only connection options before publication.
 Preparation does not authenticate a certificate or establish the database role's actual privileges.
 The reader performs those checks when it connects.
 
+For an init rerun, select `prepare-reader --reuse-matching` explicitly.
+All other required preparation arguments remain necessary.
+The default operation still refuses every existing destination.
+The operator snapshot operation rejects this option.
+
+Every run validates the current configuration, TLS projection, bounded DNS result, and temporary private copies before publication.
+Only an atomic publication refusal for an existing destination can attempt reuse.
+Reuse requires an owned mode-0700 directory containing only `database.url`.
+The URL must be an owned, single-link, mode-0600 regular file.
+Both objects must have no ACL grants.
+A bounded descriptor read must match the freshly validated URL exactly.
+The command preserves existing bytes, inodes, and permissions on success or refusal.
+Its existing `prepared` machine response remains unchanged.
+Cleanup removes only the helper's still-owned staging directory.
+Uncertain staging ownership preserves those private files for inspection.
+These checks retain the trusted root, same-UID writer, Job-group, and runtime-mount assumptions.
+They do not isolate a hostile same-UID writer.
+
+After a post-publication interruption, retry with `--reuse-matching` to accept the same validated preparation.
+A different URL or resolved address refuses reuse.
+For a changed service address, replace the Pod to obtain a new emptyDir volume.
+Do not remove unrelated output to force reuse.
+Valid TLS generations can rotate because the prepared URL retains the live mount paths.
+The next preparation still validates those current projected files.
+
 TLS generation changes remain visible through the retained live paths.
 The source tests demonstrate this path contract with owned synthetic generations.
 Native image qualification also checks actual root:GID65532 projections through the fixed entrypoint.
-The publication gate requires the ten named reader preparation tests in the exact native image receipt.
+The publication gate requires all 21 named reader preparation tests in the exact native image receipt.
 These checks do not qualify deployed certificate rotation, accepted-response draining, or reader behavior against private PostgreSQL 18.6.
 The selected numeric address remains fixed until a new preparation run.
 No watcher or automatic address retry is added.

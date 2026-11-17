@@ -18,15 +18,26 @@ def source_files: [
 ];
 def reader_cases: [
   "test_entrypoint.EntrypointTests.test_reader_operation_has_no_role_client_or_source_override",
+  "test_entrypoint.EntrypointTests.test_reuse_matching_is_explicit_and_reader_only",
   "test_prepare.PreparationTests.test_reader_dns_failure_and_existing_destination_preserve_files",
   "test_prepare.PreparationTests.test_reader_emits_only_private_url_and_keeps_live_tls_generation_paths",
   "test_prepare.PreparationTests.test_reader_failure_removes_only_owned_staging_and_rejects_linked_projection",
+  "test_prepare.PreparationTests.test_reader_postpublication_interruption_allows_explicit_matching_reentry",
   "test_prepare.PreparationTests.test_reader_real_resolver_deadline_refuses_before_publication",
   "test_prepare.PreparationTests.test_reader_refuses_missing_or_redirected_live_tls_links",
   "test_prepare.PreparationTests.test_reader_refuses_other_authorities_and_psql_only_options_without_publication",
   "test_prepare.PreparationTests.test_reader_rejects_expanded_url_beyond_the_native_file_limit",
   "test_prepare.PreparationTests.test_reader_rejects_tls_paths_beyond_the_native_profile_before_file_access",
-  "test_prepare.RootProjectedImageTests.test_real_reader_entrypoint_preserves_live_paths_and_refuses_unsafe_projections"
+  "test_prepare.PreparationTests.test_reader_reuse_matching_accepts_new_valid_tls_generation",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_keeps_bytes_inodes_modes_and_cleans_staging",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_only_handles_eexist_and_preserves_uncertain_cleanup",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_changed_url_or_resolved_address",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_foreign_ownership_and_acl",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_short_or_changing_reads",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_unsafe_destination_shapes_without_changes",
+  "test_prepare.PreparationTests.test_reader_reuse_matching_still_validates_config_tls_dns_and_connection",
+  "test_prepare.RootProjectedImageTests.test_real_reader_entrypoint_preserves_live_paths_and_refuses_unsafe_projections",
+  "test_prepare.RootProjectedImageTests.test_real_reader_entrypoint_reuses_matching_output_and_preserves_refusals"
 ];
 def routes: ["/registry/v1/index.tsv", "/registry/v1/index-macos.tsv",
   "/registry/v1/index-all.tsv", "/registry/v1/index.json"];
@@ -38,8 +49,8 @@ length == 1 and ($image | length == 1) and
   ($report.scope == "explicit-registry-operator") and
   ($report.os == "linux") and ($report.architecture == "amd64") and
   ($report.execution == "native") and ($report.source_revision == $revision) and
-  ($report.tests_run | integer) and ($report.tests_run >= 56) and
-  ($report.applicable_tests_run | integer) and ($report.applicable_tests_run >= 55) and
+  ($report.tests_run | integer) and ($report.tests_run >= 67) and
+  ($report.applicable_tests_run | integer) and ($report.applicable_tests_run >= 66) and
   ($report.applicable_tests_skipped == 0) and
   ($report.reader_preparation_test_ids == reader_cases) and
   ($report.not_applicable | type == "array") and

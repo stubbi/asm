@@ -28,6 +28,17 @@ PREFIX = "ASM_OPERATOR_QUALIFICATION="
 ENTRYPOINT = ["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py"]
 MAC_CASE = "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation"
 READER_CASES = tuple(sorted([
+    "test_entrypoint.EntrypointTests.test_reuse_matching_is_explicit_and_reader_only",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_keeps_bytes_inodes_modes_and_cleans_staging",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_changed_url_or_resolved_address",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_still_validates_config_tls_dns_and_connection",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_accepts_new_valid_tls_generation",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_unsafe_destination_shapes_without_changes",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_foreign_ownership_and_acl",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_refuses_short_or_changing_reads",
+    "test_prepare.PreparationTests.test_reader_reuse_matching_only_handles_eexist_and_preserves_uncertain_cleanup",
+    "test_prepare.PreparationTests.test_reader_postpublication_interruption_allows_explicit_matching_reentry",
+    "test_prepare.RootProjectedImageTests.test_real_reader_entrypoint_reuses_matching_output_and_preserves_refusals",
     "test_entrypoint.EntrypointTests.test_reader_operation_has_no_role_client_or_source_override",
     "test_prepare.PreparationTests.test_reader_emits_only_private_url_and_keeps_live_tls_generation_paths",
     "test_prepare.PreparationTests.test_reader_refuses_missing_or_redirected_live_tls_links",
@@ -432,7 +443,7 @@ def inside(args):
     for directory in ("/qualification/tests/hosted_registry", "/qualification/tests/operator_image"):
         suite.addTests(unittest.TestLoader().discover(directory, pattern="test_*.py"))
     count = suite.countTestCases()
-    need(count >= 56, "The complete operator qualification suite is unavailable.")
+    need(count >= 67, "The complete operator qualification suite is unavailable.")
     started = time.monotonic()
     result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2, resultclass=PreparationResult).run(suite)
     inapplicable = test_contract(result, count)

@@ -116,6 +116,10 @@ The fixed `prepare-reader` operation accepts only reader-authority projected con
 It publishes an owner-only numeric-address connection file while retaining the exact live projected TLS paths.
 Temporary TLS copies validate the unchanged private-file policy and are removed before final publication.
 The operation grants no database authority and opens no database connection.
+Explicit `--reuse-matching` accepts only exact owned reader output after fresh input and connection-policy validation.
+Descriptor checks refuse links, extra entries, ACL grants, changed bytes, or unexpected ownership and modes.
+Default preparation still refuses existing destinations; no reuse path replaces or deletes their output.
+Root, same-UID writers, the trusted Job group, and runtime mounts remain trusted.
 Trusted projection writers and runtime mounts remain required.
 Actual deployed rotation, shutdown draining, and PostgreSQL compatibility require separate qualification.
 
