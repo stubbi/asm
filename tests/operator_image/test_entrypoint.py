@@ -32,6 +32,16 @@ class EntrypointTests(unittest.TestCase):
                                  "--role", "asm_reader"], capture_output=True, timeout=5)
         self.assertEqual((result.returncode, result.stdout), (2, b""))
 
+    def test_reuse_matching_is_explicit_and_reader_only(self):
+        script = str(ROOT / "tools/operator_entrypoint.py")
+        result = subprocess.run([sys.executable, "-I", script, "prepare-reader", "--help"], capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertIn(b"--reuse-matching", result.stdout)
+        result = subprocess.run([sys.executable, "-I", script, "prepare-operator", "--config-directory", "/absent/config",
+            "--tls-directory", "/absent/tls", "--destination-directory", "/absent/private", "--role", "asm_operator",
+            "--reuse-matching"], capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout), (2, b""))
+
     def test_v2_help_and_privileged_overrides(self):
         script = str(ROOT / "tools/operator_entrypoint.py")
         for command in (["publisher-admin", "--help"], ["distribution", "publish", "--help"], ["prepare-signers", "--help"],
