@@ -112,6 +112,13 @@ The distributor exposes only committed intent and refuses overlapping source and
 Path and prefix checks do not prove external bucket privacy; provider and deployment policy require separate qualification.
 Private storage and credential writes check opened descriptors, including ACLs that can grant access beyond mode bits.
 
+The fixed `prepare-reader` operation accepts only reader-authority projected configuration.
+It publishes an owner-only numeric-address connection file while retaining the exact live projected TLS paths.
+Temporary TLS copies validate the unchanged private-file policy and are removed before final publication.
+The operation grants no database authority and opens no database connection.
+Trusted projection writers and runtime mounts remain required.
+Actual deployed rotation, shutdown draining, and PostgreSQL compatibility require separate qualification.
+
 The existing [catalog operator](../../server/catalog/README.md) imports exact accepted Git snapshots through a separate PostgreSQL identity.
 Database credentials authorize catalog operations; they do not authenticate the package publisher.
 Numeric GitHub namespace bindings remain operator assertions.

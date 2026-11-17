@@ -1,6 +1,7 @@
 # Explicit registry operator image
 
-Status: source candidate, 8 November 2026. V2 runtime image qualification and publication remain pending.
+Status: reader preparation source candidate, 17 November 2026.
+Its native image qualification and publication are separate gates.
 
 This image packages deliberate registry operations for short AMD64 Linux Jobs.
 The native CLI and HTTP application remain assembly.
@@ -26,6 +27,7 @@ The default command is `--help`; starting the image does not change a database.
 | Command arguments | Result |
 | --- | --- |
 | `prepare-operator --config-directory SOURCE --tls-directory TLS --destination-directory PRIVATE --role asm_migrator --resolve-dns` | Prepare one private migration snapshot; no database connection |
+| `prepare-reader --config-directory SOURCE --tls-directory TLS --destination-directory PRIVATE --resolve-dns` | Prepare a private reader URL with live projected TLS paths; no database connection |
 | `migrate --connection-file PRIVATE/database.url` | Apply or check the exact migration |
 | `grant --connection-file PRIVATE/database.url` | Restore fixed reader/operator object grants |
 | `bind-namespace --connection-file PRIVATE/database.url --namespace NAME --github-id ID` | Record a deliberate operator ownership assertion |
@@ -103,6 +105,42 @@ If cleanup cannot establish staging inode ownership, it preserves those private 
 Inspect the result after an interrupted command.
 Use a new destination for a deliberate retry.
 Atomic publication does not establish directory durability after power loss.
+
+### Reader serving configuration
+
+`prepare-reader` is a separate fixed operation for `asm_reader` only.
+It has no role, client, source, or executable override.
+The five `prepare-operator` roles and their snapshot behavior remain unchanged.
+
+The reader operation uses the same protected projections, bounded resolver, private staging, and atomic no-replace publication.
+It validates temporary private TLS copies through the unchanged connection policy without connecting to the database.
+It removes those copies before publication.
+The final mode-0700 directory contains only mode-0600 `database.url`.
+Its TLS paths still identify the exact supplied live projection mount.
+The serving process needs that mount throughout its lifetime.
+Trusted controllers and mount configuration remain part of this boundary.
+Preparation checks each visible TLS link's owner, group, and exact `..data/NAME` target.
+This startup check does not continuously validate trusted projected-volume writers.
+
+The reader URL retains the DNS hostname for TLS identity and supplies canonical numeric IPv4 `hostaddr`.
+Its fixed profile permits only `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, and `hostaddr` query fields.
+The file has a 4096-byte limit, including its final newline.
+Each TLS path permits printable ASCII and has a 1024-byte limit.
+The port uses canonical decimal digits without leading zeros.
+The reader refuses operator-only connection options before publication.
+Preparation does not authenticate a certificate or establish the database role's actual privileges.
+The reader performs those checks when it connects.
+
+TLS generation changes remain visible through the retained live paths.
+The source tests demonstrate this path contract with owned synthetic generations.
+Native image qualification also checks actual root:GID65532 projections through the fixed entrypoint.
+The publication gate requires the ten named reader preparation tests in the exact native image receipt.
+These checks do not qualify deployed certificate rotation, accepted-response draining, or reader behavior against private PostgreSQL 18.6.
+The selected numeric address remains fixed until a new preparation run.
+No watcher or automatic address retry is added.
+
+Use only an image whose exact source and native preparation results have been qualified.
+Earlier published images do not acquire this operation from documentation or a changed deployment alias.
 Snapshots apply to short operator Jobs; they do not implement serving certificate rotation.
 
 ## Isolation and source

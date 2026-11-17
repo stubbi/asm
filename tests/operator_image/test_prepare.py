@@ -3,6 +3,7 @@
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import ipaddress
+from functools import partial
 import errno
 import json
 import os
@@ -67,6 +68,129 @@ class PreparationTests(unittest.TestCase):
     def snapshot(self, destination=None, *, resolve=False):
         return prepare.prepare(self.config, self.tls, destination or self.base / "private", "asm_operator",
                                self.psql, resolve_dns=resolve)
+
+    def reader_source(self, **options):
+        for name in prepare.TLS_FILES.values():
+            link = self.base / "tls" / name
+            if not link.is_symlink():
+                link.symlink_to("..data/" + name)
+                os.lchown(link, -1, os.getegid())
+        path = self.config / "..generation_one/database.url"
+        path.chmod(0o600)
+        path.write_bytes(source_url(self.tls, **options).replace(b"asm_operator@", b"asm_reader@"))
+        path.chmod(0o440)
+
+    def reader(self, destination=None, *, resolve=False):
+        self.assertTrue(callable(getattr(prepare, "prepare_reader", None)), "The fixed reader operation is missing.")
+        return prepare.prepare_reader(self.config, self.tls, destination or self.base / "reader", self.psql,
+                                      resolve_dns=resolve)
+
+    def test_reader_emits_only_private_url_and_keeps_live_tls_generation_paths(self):
+        self.reader_source()
+        self.assertEqual(self.reader(resolve=True)["role"], "asm_reader")
+        private = self.base / "reader"
+        self.assertEqual({p.name for p in private.iterdir()}, {"database.url"})
+        self.assertEqual(private.stat().st_mode & 0o7777, 0o700)
+        self.assertEqual((private / "database.url").stat().st_mode & 0o7777, 0o600)
+        options = dict(parse_qsl(urlsplit((private / "database.url").read_text()).query))
+        self.assertEqual(options["hostaddr"], "127.0.0.1")
+        for field, name in prepare.TLS_FILES.items():
+            self.assertEqual(options[field], str(self.tls / name))
+        generation = self.tls / "..generation_two"
+        generation.mkdir(mode=0o750)
+        for name in prepare.TLS_FILES.values():
+            path = generation / name
+            path.write_bytes(b"changed synthetic generation " + name.encode())
+            path.chmod(0o440)
+        replacement = self.tls / "..next"
+        replacement.symlink_to(generation.name)
+        replacement.replace(self.tls / "..data")
+        for field, name in prepare.TLS_FILES.items():
+            self.assertEqual(Path(options[field]).read_bytes(), b"changed synthetic generation " + name.encode())
+        self.assertEqual({p.name for p in private.iterdir()}, {"database.url"})
+
+    def test_reader_refuses_missing_or_redirected_live_tls_links(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        link = self.tls / "tls.key"
+        link.unlink()
+        for target in (None, "..generation_one/tls.key", "/unrelated.key"):
+            if target is not None:
+                link.symlink_to(target)
+            with self.subTest(target=target), self.assertRaises((AdminError, OSError)):
+                self.reader()
+            self.assertFalse((self.base / "reader").exists())
+            if target is not None:
+                link.unlink()
+
+    def test_reader_refuses_other_authorities_and_psql_only_options_without_publication(self):
+        for options in (None, {"gssencmode": "disable"}, {"connect_timeout": "2"},
+                        {"ssl_min_protocol_version": "TLSv1.2"}, {"sslmode": "disable"},
+                        {"sslkey": "/unrelated.key"}, {"hostaddr": "not-an-address"}):
+            if options is not None:
+                self.reader_source(**options)
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.reader(resolve=True)
+            self.assertFalse((self.base / "reader").exists())
+        self.reader_source(hostaddr="127.0.0.1")
+        source = self.config / "..generation_one/database.url"
+        source.chmod(0o600)
+        source.write_bytes(source.read_bytes().replace(b":5432/", b":05432/"))
+        source.chmod(0o440)
+        with self.assertRaisesRegex(AdminError, "canonical reader port"):
+            self.reader()
+        self.assertFalse((self.base / "reader").exists())
+
+    def test_reader_dns_failure_and_existing_destination_preserve_files(self):
+        self.reader_source()
+        with patch.object(prepare, "resolve_ipv4", side_effect=AdminError("synthetic deadline")), self.assertRaises(AdminError):
+            self.reader(resolve=True)
+        self.assertFalse((self.base / "reader").exists())
+        destination = self.base / "reader"
+        destination.mkdir()
+        (destination / "keep").write_bytes(b"existing")
+        with self.assertRaises(OSError):
+            self.reader(resolve=True)
+        self.assertEqual((destination / "keep").read_bytes(), b"existing")
+        self.assertEqual({p.name for p in destination.iterdir()}, {"keep"})
+
+    def test_reader_real_resolver_deadline_refuses_before_publication(self):
+        self.reader_source()
+        resolver = partial(prepare.resolve_ipv4, timeout=0.1)
+        started = time.monotonic()
+        with patch.object(prepare, "DNS_PROGRAM", "import time;time.sleep(2)"), \
+                patch.object(prepare, "resolve_ipv4", side_effect=resolver), self.assertRaises(AdminError):
+            self.reader(resolve=True)
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertFalse((self.base / "reader").exists())
+
+    def test_reader_rejects_tls_paths_beyond_the_native_profile_before_file_access(self):
+        for path in ("/" + "x" * 1017, "/tls\t", "/tls\u00e9"):
+            self.tls = Path(path)
+            self.reader_source(hostaddr="127.0.0.1")
+            with self.subTest(path=path), self.assertRaisesRegex(AdminError, "reader TLS path"):
+                self.reader()
+            self.assertFalse((self.base / "reader").exists())
+
+    def test_reader_rejects_expanded_url_beyond_the_native_file_limit(self):
+        # Percent encoding can exceed the native limit even when each decoded path fits.
+        self.tls = Path("/" + " " * 500)
+        self.reader_source(hostaddr="127.0.0.1")
+        with self.assertRaisesRegex(AdminError, "reader connection file"):
+            self.reader()
+        self.assertFalse((self.base / "reader").exists())
+
+    def test_reader_failure_removes_only_owned_staging_and_rejects_linked_projection(self):
+        self.reader_source(hostaddr="127.0.0.1")
+        with patch.object(prepare, "write_private", side_effect=OSError("synthetic failure")), self.assertRaises(OSError):
+            self.reader()
+        self.assertFalse((self.base / "reader").exists())
+        self.assertFalse(list(self.base.glob(".asm-operator-*")))
+        key = self.tls / "..generation_one/tls.key"
+        key.unlink()
+        key.symlink_to(self.psql)
+        with self.assertRaises((AdminError, OSError)):
+            self.reader()
+        self.assertFalse((self.base / "reader").exists())
 
     def test_snapshot_preserves_exact_tls_bytes_and_default_operator_policy(self):
         result = self.snapshot(resolve=True)
@@ -326,6 +450,40 @@ class RootProjectedImageTests(unittest.TestCase):
                     prepare.prepare(base / case / "config", base / case / "tls", destination,
                                     "asm_operator", Path("/opt/asm/postgres/bin/psql"), resolve_dns=True)
                 self.assertFalse(destination.exists())
+
+    def test_real_reader_entrypoint_preserves_live_paths_and_refuses_unsafe_projections(self):
+        path = os.environ.get("ASM_OPERATOR_PROJECTION_FIXTURES")
+        if not path:
+            self.skipTest("Requires the derived Linux image's synthetic root:GID65532 projection fixtures.")
+        base = Path(path)
+        with tempfile.TemporaryDirectory(prefix="asm-root-reader-") as temp:
+            for case in ("valid", "wrong-owner", "wrong-gid", "bad-mode", "symlink-key", "missing-key", "escaping-generation",
+                         "missing-live-key", "redirected-live-key", "wrong-live-owner", "wrong-live-gid"):
+                destination = Path(temp) / case
+                root = base / ("reader-" + case)
+                argv = ["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py", "prepare-reader",
+                        "--config-directory", str(root / "config"), "--tls-directory", str(root / "tls"),
+                        "--destination-directory", str(destination), "--resolve-dns"]
+                result = subprocess.run(argv, capture_output=True, timeout=15,
+                                        env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"})
+                with self.subTest(case=case):
+                    if case == "valid":
+                        self.assertEqual(result.returncode, 0, result.stderr.decode())
+                        self.assertEqual(json.loads(result.stdout)["role"], "asm_reader")
+                        self.assertEqual({p.name for p in destination.iterdir()}, {"database.url"})
+                        self.assertEqual((destination / "database.url").stat().st_mode & 0o7777, 0o600)
+                        options = dict(parse_qsl(urlsplit((destination / "database.url").read_text()).query))
+                        self.assertEqual(options["hostaddr"], "127.0.0.1")
+                        for field, name in prepare.TLS_FILES.items():
+                            self.assertEqual(options[field], str(root / "tls" / name))
+                            self.assertEqual(Path(options[field]).read_bytes(), (root / "tls/..generation_one" / name).read_bytes())
+                        before = (destination / "database.url").read_bytes()
+                        refused = subprocess.run(argv, capture_output=True, timeout=15)
+                        self.assertEqual((refused.returncode, refused.stdout), (1, b""))
+                        self.assertEqual((destination / "database.url").read_bytes(), before)
+                    else:
+                        self.assertEqual((result.returncode, result.stdout), (1, b""))
+                        self.assertFalse(destination.exists())
 
 
 class ImagePreparationFixtureTests(unittest.TestCase):

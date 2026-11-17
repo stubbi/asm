@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import operator_source
+import test_operator_image
 
 REVISION = "1" * 40
 CHECK = ROOT / "tools/operator_publication.py"
@@ -29,6 +30,7 @@ def evidence():
         "architecture": "amd64", "execution": "native", "source_revision": REVISION,
         "runtime_image_id": "sha256:" + "2" * 64, "qualification_image_id": "sha256:" + "3" * 64,
         "tests_run": 100, "applicable_tests_run": 99, "applicable_tests_skipped": 0,
+        "reader_preparation_test_ids": list(test_operator_image.READER_CASES),
         "not_applicable": [{"id": MAC_CASE, "reason": "macOS extended ACL interface"}], "seconds": 0.125,
         "database_fixture_version": "16.15", "loaded_libraries": {"libpq": "16.15", "OpenSSL": "Synthetic OpenSSL fixture"},
         "security": {"uid": 65532, "gid": 65532, "projected_reader_gid": 65532, "read_only_root": True,
@@ -66,6 +68,15 @@ MISSING = object()
 
 
 class PublicationGateTests(unittest.TestCase):
+    def test_reader_preparation_named_profile_is_required_without_missing_or_duplicate_cases(self):
+        report, image = evidence()
+        expected = report.pop("reader_preparation_test_ids")
+        self.assertNotEqual(self.gate(report, image).returncode, 0)
+        for ids in ([], expected[:-1], [*expected, expected[0]], [*expected[:-1], "unrelated.test"]):
+            report["reader_preparation_test_ids"] = ids
+            with self.subTest(ids=ids):
+                self.assertNotEqual(self.gate(report, image).returncode, 0)
+
     def gate(self, report, image, *, extra_document=False, raw_report=None, raw_image=None):
         with tempfile.TemporaryDirectory(prefix="asm-publication-gate-") as name:
             base = Path(name)

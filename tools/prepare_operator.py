@@ -45,6 +45,10 @@ def resolve_ipv4(host, *, timeout=5):
 
 def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
     require(role in ROLES, "Select one explicit operator authority.")
+    return _source_url(body, role, tls_directory, destination, resolve_dns=resolve_dns)
+
+
+def _source_url(body, role, tls_directory, destination, *, resolve_dns, reader=False):
     value = body.decode("ascii").removesuffix("\n")
     require(value.startswith("postgresql://") and "\n" not in value and "\r" not in value and "\0" not in value,
             "Use one canonical connection URL.")
@@ -52,6 +56,8 @@ def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
     require(parsed.scheme == "postgresql" and not parsed.fragment and parsed.username == role
             and parsed.password is None and parsed.port is not None and 1 <= parsed.port <= 65535,
             "Use the selected certificate role without a password.")
+    if reader:
+        require(parsed.netloc.endswith(":" + str(parsed.port)), "Use one canonical reader port.")
     host = parsed.hostname or ""
     require(len(host) <= 253 and host == parsed.netloc.split("@", 1)[-1].rsplit(":", 1)[0]
             and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split("."))
@@ -59,7 +65,9 @@ def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
     pairs = parse_qsl(parsed.query, strict_parsing=True, keep_blank_values=True)
     options = dict(pairs)
     required = {"sslmode", *TLS_FILES}
-    allowed = required | {"hostaddr", "gssencmode", "connect_timeout", "ssl_min_protocol_version"}
+    allowed = required | {"hostaddr"}
+    if not reader:
+        allowed |= {"gssencmode", "connect_timeout", "ssl_min_protocol_version"}
     require(len(options) == len(pairs) and required <= set(options) <= allowed
             and options["sslmode"] == "verify-full"
             and options.get("gssencmode", "disable") == "disable"
@@ -68,6 +76,9 @@ def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
             "Use the fixed TLS, deadline, and connection field policy.")
     for key, name in TLS_FILES.items():
         require(options[key] == str(tls_directory / name), "Use the fixed files in the projected TLS mount.")
+        if reader:
+            require(len(options[key]) <= 1024 and all(32 <= ord(char) <= 126 for char in options[key]),
+                    "Use a bounded printable ASCII reader TLS path.")
     if "hostaddr" in options:
         require(str(ipaddress.IPv4Address(options["hostaddr"])) == options["hostaddr"], "Use a canonical IPv4 hostaddr.")
     else:
@@ -76,7 +87,10 @@ def parse_source_url(body, role, tls_directory, destination, *, resolve_dns):
     # Rewrite only after all source authority, option, and path checks succeed.
     for key, name in TLS_FILES.items():
         options[key] = str(destination / name)
-    return (urlunsplit(("postgresql", parsed.netloc, parsed.path, urlencode(options, quote_via=quote), "")) + "\n").encode("ascii")
+    result = (urlunsplit(("postgresql", parsed.netloc, parsed.path, urlencode(options, quote_via=quote), "")) + "\n").encode("ascii")
+    if reader:
+        require(len(result) <= 4096, "The reader connection file exceeds its byte limit.")
+    return result
 
 
 def check_directory(fd):
@@ -141,11 +155,16 @@ def publish_snapshot(parent_fd, staging_name, destination_name):
 
 
 @contextmanager
-def projected(directory):
+def projected(directory, *, live_files=()):
     mount = open_protected_directory(directory)
     generation = None
     try:
         check_directory(mount)
+        for name in live_files:
+            link = os.stat(name, dir_fd=mount, follow_symlinks=False)
+            require(stat.S_ISLNK(link.st_mode) and link.st_uid == SOURCE_UID and link.st_gid == SOURCE_GID
+                    and os.readlink(name, dir_fd=mount) == "..data/" + name,
+                    "Use owned live projected TLS links to the current generation.")
         pointer = os.stat("..data", dir_fd=mount, follow_symlinks=False)
         require(stat.S_ISLNK(pointer.st_mode) and pointer.st_uid == SOURCE_UID and pointer.st_gid == SOURCE_GID,
                 "Use one owned AtomicWriter generation pointer.")
@@ -224,12 +243,28 @@ def discard_owned_staging(parent_fd, staging_name, private_fd, *, names=(*TLS_FI
 
 
 def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, resolve_dns=False):
+    return _prepare(config_directory, tls_directory, destination, role, psql, resolve_dns=resolve_dns)
+
+
+def prepare_reader(config_directory, tls_directory, destination, psql=PSQL, *, resolve_dns=False):
+    """Publish only an owner-only reader URL; retain live projected TLS paths.
+
+    Temporary TLS copies serve unchanged Connection validation only. The final
+    directory contains no key or certificate snapshot. Trusted projected-volume
+    writers and runtime mounts remain required throughout reader operation.
+    """
+    return _prepare(config_directory, tls_directory, destination, "asm_reader", psql,
+                    resolve_dns=resolve_dns, reader=True)
+
+
+def _prepare(config_directory, tls_directory, destination, role, psql, *, resolve_dns, reader=False):
     require(all(path.is_absolute() for path in (config_directory, tls_directory, destination)),
             "Use absolute projected and private volume paths.")
     with projected(config_directory) as config:
         body = read_projected(config, "database.url", 8192)
-    url = parse_source_url(body, role, tls_directory, destination, resolve_dns=resolve_dns)
-    with projected(tls_directory) as tls:
+    url = (_source_url(body, role, tls_directory, tls_directory, resolve_dns=resolve_dns, reader=True) if reader
+           else parse_source_url(body, role, tls_directory, destination, resolve_dns=resolve_dns))
+    with projected(tls_directory, live_files=TLS_FILES.values() if reader else ()) as tls:
         files = {name: read_projected(tls, name, 65536) for name in TLS_FILES.values()}
     parent = open_protected_directory(destination.parent)
     private = None
@@ -255,6 +290,9 @@ def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, re
         with Connection(staging / ".check.url", psql, role):
             pass
         os.unlink(".check.url", dir_fd=private)
+        if reader:
+            for name in TLS_FILES.values():
+                os.unlink(name, dir_fd=private)
         write_private(private, "database.url", url)
         os.fsync(private)
         os.fsync(parent)
@@ -278,20 +316,36 @@ def prepare(config_directory, tls_directory, destination, role, psql=PSQL, *, re
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    return _main(argv)
+
+
+def reader_main(argv=None):
+    return _main(argv, reader=True)
+
+
+def _main(argv, *, reader=False):
+    parser = argparse.ArgumentParser(
+        description="Prepare a private reader URL with live projected TLS paths." if reader else __doc__,
+        allow_abbrev=not reader)
     parser.add_argument("--config-directory", type=Path, required=True)
     parser.add_argument("--tls-directory", type=Path, required=True)
     parser.add_argument("--destination-directory", type=Path, required=True)
-    parser.add_argument("--role", choices=ROLES, required=True)
+    if not reader:
+        parser.add_argument("--role", choices=ROLES, required=True)
     parser.add_argument("--resolve-dns", action="store_true")
     args = parser.parse_args(argv)
     try:
-        value = prepare(args.config_directory, args.tls_directory, args.destination_directory, args.role,
-                        resolve_dns=args.resolve_dns)
+        if reader:
+            value = prepare_reader(args.config_directory, args.tls_directory, args.destination_directory,
+                                   resolve_dns=args.resolve_dns)
+        else:
+            value = prepare(args.config_directory, args.tls_directory, args.destination_directory, args.role,
+                            resolve_dns=args.resolve_dns)
         sys.stdout.buffer.write(registry.json_bytes(value))
         return 0
     except (AdminError, OSError, ValueError, UnicodeError):
-        print("prepare-operator: preparation refused. Check projected permissions, URL policy, DNS deadline, and a new private destination.", file=sys.stderr)
+        operation = "prepare-reader" if reader else "prepare-operator"
+        print(operation + ": preparation refused. Check projected permissions, URL policy, DNS deadline, and a new private destination.", file=sys.stderr)
         return 1
 
 
