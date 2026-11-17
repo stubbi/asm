@@ -8,6 +8,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -450,8 +451,12 @@ class ReleaseAssetRecoveryTests(unittest.TestCase):
             existing.write_bytes(b"Unrelated existing bytes")
             output = base / "candidate"
             stdout, stderr = StringIO(), StringIO()
-            with patch.object(build_site, "build_opener", return_value=opener), redirect_stdout(stdout), redirect_stderr(stderr):
-                status = build_site.main(["--repo", str(ROOT), "--registry", str(ROOT / "registry"),
+            # Source exports have no Git metadata. Refuse discovery in a parent repository.
+            with patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(base.parent)}), \
+                    patch.object(build_site, "resolve_commit", return_value="a" * 40), \
+                    patch.object(build_site, "build_opener", return_value=opener), \
+                    redirect_stdout(stdout), redirect_stderr(stderr):
+                status = build_site.main(["--repo", str(base), "--registry", str(ROOT / "registry"),
                                           "--output", str(output), "--verify-artifacts"])
             self.assertEqual((status, stdout.getvalue()), (1, ""))
             self.assertFalse(output.exists())
