@@ -55,6 +55,39 @@ def check_https_url(url: str, hosts: set[str]) -> None:
                          "metrics URL must identify an approved GitHub resource")
 
 
+def _http_location(value) -> str:
+    """Log only bounded HTTPS origins and plain paths; never decode URL data."""
+    if not isinstance(value, str) or len(value) > 16384 or not all(33 <= ord(char) <= 126 for char in value):
+        return "[unavailable]"
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return "[unavailable]"
+    if parsed.scheme != "https" or port not in (None, 443) or host not in ASSET_HOSTS | {"api.github.com"}:
+        return "[unavailable]"
+    # Encoded delimiters, controls, credentials, and signed URL data cannot
+    # become log syntax through later decoding. Omit such paths completely.
+    path = parsed.path or "/"
+    if re.fullmatch(r"/[A-Za-z0-9._~/-]{0,511}", path) is None:
+        path = "/[redacted-path]"
+    return "https://" + host + path
+
+
+def http_failure(error: HTTPError) -> str:
+    """Describe the failed request without server reason text or body reads."""
+    code = error.code if type(error.code) is int and 100 <= error.code <= 599 else "unknown"
+    fields = ["HTTP " + str(code), "request=" + _http_location(getattr(error, "_asm_request_url", error.url)),
+              "response=" + _http_location(error.url)]
+    headers = error.headers or {}
+    for name in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-used", "x-ratelimit-reset", "retry-after"):
+        value = headers.get(name)
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{1,12}", value):
+            fields.append(name + "=" + value)
+    return "; ".join(fields)
+
+
 class RestrictedRedirects(HTTPRedirectHandler):
     max_redirections = 4
     max_repeats = 2
@@ -90,7 +123,12 @@ def _https_bytes(url: str, limit: int, hosts: set[str], *, expected_size: int | 
     if api_asset_url is not None:
         headers["Accept"] = "application/octet-stream"
     request = Request(url, headers=headers)
-    with opener.open(request, timeout=20) as response:
+    try:
+        response = opener.open(request, timeout=20)
+    except HTTPError as error:
+        error._asm_request_url = url
+        raise
+    with response:
         registry.require(exact_url is None or response.geturl() == exact_url,
                          "release API metadata moved to a different route")
         if api_asset_url is None or response.geturl() != api_asset_url:
@@ -678,7 +716,11 @@ def main(argv: list[str] | None = None) -> int:
         if not args.verify_artifacts:
             print("Artifact evidence remains not-run. Use --verify-artifacts after the release assets are public.")
         return 0
-    except (registry.RegistryError, OSError, UnicodeError, ValueError, HTTPError, URLError, subprocess.SubprocessError) as error:
+    except HTTPError as error:
+        print("build-site: " + http_failure(error), file=sys.stderr)
+        print("build-site: Check the endpoint and response limits before another build.", file=sys.stderr)
+        return 1
+    except (registry.RegistryError, OSError, UnicodeError, ValueError, URLError, subprocess.SubprocessError) as error:
         print(f"build-site: {error}", file=sys.stderr)
         return 1
 

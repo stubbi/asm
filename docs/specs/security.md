@@ -282,6 +282,10 @@ The website cannot provision a root from a selected mirror or reset retained cli
 
 Generated pages escape package text, retain explicit target dimensions, and keep yanked and revoked actions disabled.
 The builder reads artifact bytes only for explicit validation; metadata checks cannot supply successful artifact evidence.
+Site HTTP failures report bounded HTTPS host/path context and allowlisted numeric rate-limit, reset, and retry headers.
+Diagnostics omit credentials, queries, fragments, response bodies, and server reason text.
+Encoded, nonplain, or oversized paths are redacted; unsupported locations are omitted.
+These diagnostics preserve failure status, credential-free requests, artifact checks, and existing recovery conditions.
 Exact release counters bind the release identity rather than a shared blob or package-wide total.
 Public snapshots contain aggregates and coverage, without raw events, request identities, credentials, or private ledger files.
 V2 discovery failures never select the V1 catalog.
