@@ -109,7 +109,7 @@ class CheckerImageQualificationTests(unittest.TestCase):
                 image.source_contract(changed, REVISION, accepted)
 
     @contextlib.contextmanager
-    def orchestration(self, directory, *, malformed_error=None, forged_source=False):
+    def orchestration(self, directory, *, malformed_error=None, forged_source=False, probe=None, privileged_error=None):
         image = self.module()
         args = SimpleNamespace(context="default", image="synthetic-final", revision=REVISION,
                                output=str(Path(directory) / "report.json"))
@@ -127,7 +127,10 @@ class CheckerImageQualificationTests(unittest.TestCase):
         def docker(arguments, **_):
             if "--task" not in arguments:
                 return subprocess.CompletedProcess(arguments, 0,
-                    b'{"read_only_root":true,"cluster_token":false}\n', b"")
+                    probe or b'{"read_only_root":true,"cluster_token":false,"soft":16,"hard":16,"raise_refused":true}\n', b"")
+            if "0:0" in arguments:
+                return subprocess.CompletedProcess(arguments, 1, b"",
+                    privileged_error or b"Asm checker: task limit is unavailable. Use a qualified isolated runtime.\n")
             mount = arguments[arguments.index("--mount") + 1]
             root = Path(mount.split(",src=", 1)[1].split(",dst=", 1)[0])
             if root.name == "malformed-manifest" and malformed_error is not None:
@@ -156,6 +159,8 @@ class CheckerImageQualificationTests(unittest.TestCase):
                 self.assertEqual([case["id"] for case in report["cases"]], list(CASES))
                 self.assertEqual(report["checker_policy_sha256"], publication_check.policy_digest())
                 self.assertTrue(report["inputs_unchanged"])
+                self.assertEqual(report["guest_task_limit"],
+                    {"soft": 16, "hard": 16, "raise_refused": True, "privileged_refused": True})
                 before = Path(args.output).read_bytes()
                 with self.assertRaises(FileExistsError):
                     image.qualify(args)
@@ -173,6 +178,20 @@ class CheckerImageQualificationTests(unittest.TestCase):
                 with self.orchestration(directory, malformed_error=error) as args, self.assertRaises(ValueError):
                     image.qualify(args)
                 self.assertFalse(Path(args.output).exists())
+
+    def test_wrong_limits_raise_success_and_unrelated_root_error_cannot_qualify(self):
+        image = self.module()
+        for measured in ({"read_only_root": True, "cluster_token": False, "soft": 16, "hard": 17, "raise_refused": True},
+                         {"read_only_root": True, "cluster_token": False, "soft": 16, "hard": 16, "raise_refused": False},
+                         {"read_only_root": True, "cluster_token": False, "soft": 16.0, "hard": 16, "raise_refused": True}):
+            with self.subTest(probe=measured), tempfile.TemporaryDirectory(prefix="asm-checker-limit-") as directory:
+                with self.orchestration(directory, probe=json.dumps(measured).encode()) as args, self.assertRaises(ValueError):
+                    image.qualify(args)
+                self.assertFalse(Path(args.output).exists())
+        with tempfile.TemporaryDirectory(prefix="asm-checker-root-") as directory:
+            with self.orchestration(directory, privileged_error=b"Cannot connect to Docker.\n") as args, self.assertRaises(ValueError):
+                image.qualify(args)
+            self.assertFalse(Path(args.output).exists())
 
     def test_skips_missing_cases_duplicates_and_emulation_cannot_produce_passing_coverage(self):
         image = self.module()

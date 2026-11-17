@@ -21,6 +21,7 @@ import registry
 from registry_storage import _absolute, _directory, _regular
 
 MAX_MANIFEST = 65536
+GUEST_TASK_LIMIT = 16
 TARGETS = {
     ("x86_64", "linux", "sysv-amd64"): ("x86_64-linux", "elf"),
     ("aarch64", "linux", "aapcs64"): ("aarch64-linux", "elf"),
@@ -33,6 +34,35 @@ TARGETS = {
 
 class InputUnavailable(ValueError):
     """A retained staging input cannot be read exactly; it is not a package verdict."""
+
+
+def _checker_status() -> str:
+    """Read bounded kernel credentials, never task input or source identity."""
+    with open("/proc/self/status", encoding="ascii") as stream:
+        status = stream.read(16385)
+    if len(status) > 16384:
+        raise ValueError("checker status exceeds its byte limit")
+    return status
+
+
+def restrict_guest_tasks() -> None:
+    """Restrict only the isolated image process before it reads task input.
+
+    Linux accounts RLIMIT_NPROC against the real UID, including threads.
+    Require equal non-root UIDs, no held capabilities, and no_new_privs.
+    The runtime must separately isolate UID accounting and host resources.
+    Do not call this from reusable check() or ordinary source commands.
+    """
+    import resource
+    status = dict(line.split(":", 1) for line in _checker_status().splitlines() if ":" in line)
+    uids = [int(value) for value in status["Uid"].split()]
+    if (len(uids) != 4 or len(set(uids)) != 1 or uids[0] <= 0
+            or any(int(status[field], 16) != 0 for field in ("CapInh", "CapPrm", "CapEff", "CapAmb"))
+            or status["NoNewPrivs"].strip() != "1"):
+        raise ValueError("checker privilege policy differs")
+    resource.setrlimit(resource.RLIMIT_NPROC, (GUEST_TASK_LIMIT, GUEST_TASK_LIMIT))
+    if resource.getrlimit(resource.RLIMIT_NPROC) != (GUEST_TASK_LIMIT, GUEST_TASK_LIMIT):
+        raise ValueError("checker task limit differs")
 
 
 def policy_digest() -> str:

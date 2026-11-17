@@ -21,6 +21,11 @@ def main(argv=None):
     parser.add_argument("--task", required=True)
     args = parser.parse_args(argv)
     try:
+        publication_check.restrict_guest_tasks()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError):
+        print("Asm checker: task limit is unavailable. Use a qualified isolated runtime.", file=sys.stderr)
+        return 1
+    try:
         revision = source_revision()
     except (registry.RegistryError, OSError, ValueError):
         print("Asm checker: image source identity is invalid. Use a qualified image.", file=sys.stderr)
