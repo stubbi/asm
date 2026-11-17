@@ -16,9 +16,26 @@ import operator_entrypoint as entrypoint
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_reader_operation_has_no_role_client_or_source_override(self):
+        script = str(ROOT / "tools/operator_entrypoint.py")
+        argv = [sys.executable, "-I", script, "prepare-reader", "--config-directory", "/absent/config",
+                "--tls-directory", "/absent/tls", "--destination-directory", "/absent/private", "--resolve-dns"]
+        for option, value in (("--role", "asm_operator"), ("--psql", "/untrusted"),
+                              ("--reader", "asm_reader"), ("--source", "/untrusted")):
+            with self.subTest(option=option):
+                result = subprocess.run([*argv, option, value], capture_output=True, timeout=5)
+                self.assertEqual((result.returncode, result.stdout), (2, b""))
+        result = subprocess.run(argv, capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout), (1, b""))
+        self.assertEqual(result.stderr, b"prepare-reader: preparation refused. Check projected permissions, URL policy, DNS deadline, and a new private destination.\n")
+        result = subprocess.run([sys.executable, "-I", script, "prepare-operator", *argv[4:],
+                                 "--role", "asm_reader"], capture_output=True, timeout=5)
+        self.assertEqual((result.returncode, result.stdout), (2, b""))
+
     def test_v2_help_and_privileged_overrides(self):
         script = str(ROOT / "tools/operator_entrypoint.py")
-        for command in (["publisher-admin", "--help"], ["distribution", "publish", "--help"], ["prepare-signers", "--help"]):
+        for command in (["publisher-admin", "--help"], ["distribution", "publish", "--help"], ["prepare-signers", "--help"],
+                        ["prepare-reader", "--help"]):
             result = subprocess.run([sys.executable, script, *command], capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             self.assertNotIn(b"--psql", result.stdout)

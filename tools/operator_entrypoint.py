@@ -105,6 +105,8 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "prepare-operator":
         return prepare_operator.main(argv[1:])
+    if argv and argv[0] == "prepare-reader":
+        return prepare_operator.reader_main(argv[1:])
     if argv and argv[0] == "prepare-signers":
         import prepare_signers
         return prepare_signers.main(argv[1:])
@@ -119,6 +121,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("prepare-operator", help="Snapshot explicitly authorized projected credentials; use its --help.")
+    commands.add_parser("prepare-reader", help="Prepare a private reader URL with live projected TLS paths; use its --help.")
     commands.add_parser("prepare-signers", help="Snapshot authorized projected online keys; use its --help.")
     commands.add_parser("check-worker", help="Run one fixed-image Kubernetes check; use its --help.")
     v2_parser(commands)

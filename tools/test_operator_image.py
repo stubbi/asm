@@ -27,6 +27,18 @@ import registry
 PREFIX = "ASM_OPERATOR_QUALIFICATION="
 ENTRYPOINT = ["/usr/bin/python3", "-I", "/app/tools/operator_entrypoint.py"]
 MAC_CASE = "test_database.CatalogDatabaseTests.test_extended_acl_on_private_key_cannot_reach_mutation"
+READER_CASES = tuple(sorted([
+    "test_entrypoint.EntrypointTests.test_reader_operation_has_no_role_client_or_source_override",
+    "test_prepare.PreparationTests.test_reader_emits_only_private_url_and_keeps_live_tls_generation_paths",
+    "test_prepare.PreparationTests.test_reader_refuses_missing_or_redirected_live_tls_links",
+    "test_prepare.PreparationTests.test_reader_refuses_other_authorities_and_psql_only_options_without_publication",
+    "test_prepare.PreparationTests.test_reader_dns_failure_and_existing_destination_preserve_files",
+    "test_prepare.PreparationTests.test_reader_real_resolver_deadline_refuses_before_publication",
+    "test_prepare.PreparationTests.test_reader_rejects_tls_paths_beyond_the_native_profile_before_file_access",
+    "test_prepare.PreparationTests.test_reader_rejects_expanded_url_beyond_the_native_file_limit",
+    "test_prepare.PreparationTests.test_reader_failure_removes_only_owned_staging_and_rejects_linked_projection",
+    "test_prepare.RootProjectedImageTests.test_real_reader_entrypoint_preserves_live_paths_and_refuses_unsafe_projections",
+]))
 
 
 class CheckFailure(ValueError):
@@ -191,6 +203,18 @@ def test_contract(result, count):
     return inapplicable
 
 
+class PreparationResult(unittest.TextTestResult):
+    """Record only named reader cases that completed successfully."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reader_preparation_test_ids = []
+
+    def addSuccess(self, test):
+        if test.id() in READER_CASES:
+            self.reader_preparation_test_ids.append(test.id())
+        super().addSuccess(test)
+
+
 def security():
     return ["--read-only", "--network", "none", "--user", "65532:65532",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "128",
@@ -244,7 +268,9 @@ def make_projection_fixtures(base):
     keys.mkdir(mode=0o700)
     command(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
              "-subj", "/CN=Synthetic operator image fixture", "-keyout", str(keys / "key"), "-out", str(keys / "cert")])
-    for case in ("valid", "wrong-owner", "wrong-gid", "bad-mode", "symlink-key", "missing-key", "escaping-generation"):
+    cases = ("valid", "wrong-owner", "wrong-gid", "bad-mode", "symlink-key", "missing-key", "escaping-generation")
+    reader_cases = (*cases, "missing-live-key", "redirected-live-key", "wrong-live-owner", "wrong-live-gid")
+    for case in (*cases, *("reader-" + name for name in reader_cases)):
         root = base / case
         root.mkdir(mode=0o755)
         mounts = {}
@@ -261,8 +287,9 @@ def make_projection_fixtures(base):
         tls = root / "tls"
         query = {"sslmode": "verify-full", "sslrootcert": str(tls / "ca.crt"),
                  "sslcert": str(tls / "tls.crt"), "sslkey": str(tls / "tls.key")}
+        role = "asm_reader" if case.startswith("reader-") else "asm_operator"
         content = {mounts["config"] / "database.url":
-            ("postgresql://asm_operator@localhost:5432/asm?" + urlencode(query, quote_via=quote) + "\n").encode(),
+            ("postgresql://" + role + "@localhost:5432/asm?" + urlencode(query, quote_via=quote) + "\n").encode(),
             mounts["tls"] / "ca.crt": (keys / "cert").read_bytes(),
             mounts["tls"] / "tls.crt": (keys / "cert").read_bytes(),
             mounts["tls"] / "tls.key": (keys / "key").read_bytes()}
@@ -271,22 +298,36 @@ def make_projection_fixtures(base):
             os.chown(path, 0, 65532)
             path.chmod(0o440)
         key = mounts["tls"] / "tls.key"
-        if case == "wrong-owner":
+        for name in ("ca.crt", "tls.crt", "tls.key"):
+            (tls / name).symlink_to("..data/" + name)
+            os.lchown(tls / name, 0, 65532)
+        policy_case = case.removeprefix("reader-")
+        if policy_case == "wrong-owner":
             os.chown(key, 65531, 65532)
-        elif case == "wrong-gid":
+        elif policy_case == "wrong-gid":
             os.chown(key, 0, 440)
-        elif case == "bad-mode":
+        elif policy_case == "bad-mode":
             key.chmod(0o444)
-        elif case in {"symlink-key", "missing-key"}:
+        elif policy_case in {"symlink-key", "missing-key"}:
             key.unlink()
-            if case == "symlink-key":
+            if policy_case == "symlink-key":
                 key.symlink_to("ca.crt")
                 os.lchown(key, 0, 65532)
-        elif case == "escaping-generation":
+        elif policy_case == "escaping-generation":
             pointer = tls / "..data"
             pointer.unlink()
             pointer.symlink_to("../outside")
             os.lchown(pointer, 0, 65532)
+        elif policy_case == "missing-live-key":
+            (tls / "tls.key").unlink()
+        elif policy_case == "redirected-live-key":
+            (tls / "tls.key").unlink()
+            (tls / "tls.key").symlink_to("..generation_one/tls.key")
+            os.lchown(tls / "tls.key", 0, 65532)
+        elif policy_case == "wrong-live-owner":
+            os.lchown(tls / "tls.key", 65531, 65532)
+        elif policy_case == "wrong-live-gid":
+            os.lchown(tls / "tls.key", 0, 440)
 
     # These fixed seeds are SYNTHETIC TEST ONLY. This derived qualification
     # target never supplies a production root or a runtime signing credential.
@@ -393,12 +434,15 @@ def inside(args):
     count = suite.countTestCases()
     need(count >= 56, "The complete operator qualification suite is unavailable.")
     started = time.monotonic()
-    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
+    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2, resultclass=PreparationResult).run(suite)
     inapplicable = test_contract(result, count)
+    need(sorted(result.reader_preparation_test_ids) == list(READER_CASES),
+         "The complete named reader preparation profile did not pass.")
     report = {"schema": 1, "status": "pass", "scope": "explicit-registry-operator", "architecture": "amd64",
               "os": "linux", "execution": "native", "source_revision": args.revision,
               "tests_run": result.testsRun, "applicable_tests_run": result.testsRun - len(inapplicable),
               "applicable_tests_skipped": 0, "not_applicable": inapplicable,
+              "reader_preparation_test_ids": sorted(result.reader_preparation_test_ids),
               "seconds": round(time.monotonic() - started, 3), "database_fixture_version": "16.15",
               "database_limit": "PostgreSQL 18.6 private activation compatibility remains unqualified.",
               "loaded_libraries": {"libpq": "16.15", "OpenSSL": openssl},
