@@ -1,7 +1,7 @@
 """Static checks for accessible references and local website assets."""
 
 from html.parser import HTMLParser
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 from datetime import datetime, timezone
 from io import BytesIO, StringIO
@@ -439,6 +439,91 @@ class ReleaseAssetRecoveryTests(unittest.TestCase):
             if isinstance(event, Exception):
                 raise event
             return event
+
+    def cli_http_failure(self, error):
+        self.addCleanup(error.close)
+        requested = "https://github.com/stubbi/asm/releases/download/v0.1.0/asm-0.1.0-x86_64-linux"
+        opener = self.Opener([(requested, error)])
+        with tempfile.TemporaryDirectory(prefix="asm-site-http-error-") as temporary:
+            base = Path(temporary)
+            existing = base / "keep"
+            existing.write_bytes(b"Unrelated existing bytes")
+            output = base / "candidate"
+            stdout, stderr = StringIO(), StringIO()
+            with patch.object(build_site, "build_opener", return_value=opener), redirect_stdout(stdout), redirect_stderr(stderr):
+                status = build_site.main(["--repo", str(ROOT), "--registry", str(ROOT / "registry"),
+                                          "--output", str(output), "--verify-artifacts"])
+            self.assertEqual((status, stdout.getvalue()), (1, ""))
+            self.assertFalse(output.exists())
+            self.assertEqual(existing.read_bytes(), b"Unrelated existing bytes")
+            self.assertFalse(opener.events)
+            return stderr.getvalue()
+
+    def test_http_failure_reports_original_request_response_and_numeric_rate_context(self):
+        response = "https://api.github.com/repos/stubbi/asm/releases/tags/v0.7.0"
+        body = BytesIO(b"SECRET_RESPONSE_BODY")
+        error = HTTPError(response, 403, "SECRET_REASON", {
+            "x-ratelimit-limit": "60", "x-ratelimit-remaining": "0", "x-ratelimit-used": "60", "x-ratelimit-reset": "1794902745",
+            "retry-after": "60", "authorization": "SECRET_HEADER", "set-cookie": "SECRET_COOKIE"}, body)
+        message = self.cli_http_failure(error)
+        self.assertIn("HTTP 403", message)
+        self.assertIn("request=https://github.com/stubbi/asm/releases/download/v0.1.0/asm-0.1.0-x86_64-linux", message)
+        self.assertIn("response=" + response, message)
+        for field in ("x-ratelimit-limit=60", "x-ratelimit-remaining=0", "x-ratelimit-used=60", "x-ratelimit-reset=1794902745", "retry-after=60"):
+            self.assertIn(field, message)
+        self.assertNotIn("SECRET", message)
+        self.assertEqual(body.tell(), 0)
+
+    def test_http_failure_redacts_userinfo_queries_fragments_controls_and_encoded_paths(self):
+        cases = (
+            ("https://user:SECRET_USER@release-assets.githubusercontent.com/asset?token=SECRET_QUERY#SECRET_FRAGMENT",
+             "response=https://release-assets.githubusercontent.com/asset"),
+            ("https://release-assets.githubusercontent.com/asset%3Ftoken%3DSECRET_ENCODED", "response=https://release-assets.githubusercontent.com/[redacted-path]"),
+            ("https://release-assets.githubusercontent.com/asset%250ASECRET_ENCODED", "response=https://release-assets.githubusercontent.com/[redacted-path]"),
+            ("https://release-assets.githubusercontent.com/asset\r\nSECRET_CONTROL", "response=[unavailable]"),
+        )
+        for response, expected in cases:
+            with self.subTest(response=response):
+                message = self.cli_http_failure(HTTPError(response, 403, "SECRET_REASON", {}, None))
+                self.assertIn(expected, message)
+                self.assertNotIn("SECRET", message)
+                self.assertNotIn("\r", message)
+                self.assertNotIn("\x1b", message)
+
+    def test_http_failure_omits_malformed_or_oversized_rate_headers(self):
+        for value in ("-1", "1.0", "1e3", "1\nSECRET", "1" * 13, "", "SECRET", None, 1, True):
+            headers = {name: value for name in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset", "retry-after")}
+            with self.subTest(value=value):
+                message = self.cli_http_failure(HTTPError(self.url, 403, "SECRET_REASON", headers, None))
+                for name in headers:
+                    self.assertNotIn(name + "=", message)
+                self.assertNotIn("SECRET", message)
+
+    def test_http_failure_bounds_or_omits_untrusted_response_locations(self):
+        for response in ("http://api.github.com/SECRET", "https://evil.invalid/SECRET",
+                         "https://api.github.com:8443/SECRET", "https://api.github.com:invalid/SECRET",
+                         "https://[invalid/SECRET", "https://api.github.com/" + "SECRET" * 4000,
+                         "https://api.github.com/path;token=SECRET", "https://api.github.com/\x1bSECRET"):
+            with self.subTest(response=response):
+                message = self.cli_http_failure(HTTPError(response, 403, "SECRET_REASON", None, None))
+                self.assertLess(len(message), 1500)
+                self.assertNotIn("SECRET", message)
+                self.assertNotIn("\x1b", message)
+                self.assertIn("HTTP 403", message)
+
+    def test_http_diagnostics_do_not_replace_an_existing_output_directory(self):
+        with tempfile.TemporaryDirectory(prefix="asm-site-existing-output-") as temporary:
+            output = Path(temporary) / "published"
+            output.mkdir()
+            (output / "keep").write_bytes(b"Existing published bytes")
+            stdout, stderr = StringIO(), StringIO()
+            with patch.object(build_site, "build_opener", side_effect=AssertionError("No network for an existing destination")), \
+                    redirect_stdout(stdout), redirect_stderr(stderr):
+                status = build_site.main(["--repo", str(ROOT), "--registry", str(ROOT / "registry"),
+                                          "--output", str(output), "--verify-artifacts"])
+            self.assertEqual((status, stdout.getvalue()), (1, ""))
+            self.assertIn("output already exists", stderr.getvalue())
+            self.assertEqual({p.name: p.read_bytes() for p in output.iterdir()}, {"keep": b"Existing published bytes"})
 
     def release(self):
         return {"tag_name": "v0.6.0", "draft": False, "assets": [
